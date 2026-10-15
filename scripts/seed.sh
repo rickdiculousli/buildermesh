@@ -10,8 +10,45 @@ root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 dir=${BMESH_SEED_DIR:-$HOME/.cache/bmesh-scratch/seed}
 http=${BMESH_SEED_HTTP:-127.0.0.1:3775}
 
-rm -rf "$dir/jetstream" "$dir/serve.log" "$dir/cli.toml"
-mkdir -p "$dir"
+rm -rf "$dir/jetstream" "$dir/serve.log" "$dir/cli.toml" "$dir/app" "$dir/quota.json"
+mkdir -p "$dir/app/docs/proposals" "$dir/app/.bmesh/routines"
+cat >"$dir/app/docs/proposals/0042-map.md" <<'MD'
+---
+title: The map
+status: building
+merged: 0123abcd4567ef89
+verified: review ok, verify ok at 0123abcd
+---
+# The map
+
+A page on the daemon that draws the mesh as a tree.
+
+## Endpoints
+
+- /api/tree, /api/lead/{path}, /api/routines, /api/strip
+- /events replays the last day
+
+```
+curl -s http://127.0.0.1:3775/api/tree | jq .
+```
+
+## Done when
+
+The map works at 390x844 and 1280x800.
+MD
+cat >"$dir/app/.bmesh/routines/review.toml" <<'TOML'
+mode = "pooled"
+model = "claude-opus-5-5"
+prompt = "Review the change."
+TOML
+cat >"$dir/app/.bmesh/routines/verify.toml" <<'TOML'
+mode = "inline"
+deterministic = true
+command = "go test ./..."
+TOML
+git -C "$dir/app" init -q -b main
+git -C "$dir/app" add -A
+git -C "$dir/app" -c user.name=seed -c user.email=seed@localhost commit -q -m seed
 cat >"$dir/serve.toml" <<TOML
 [mesh]
 nats = ""
@@ -25,6 +62,12 @@ listen = "$http"
 checkouts = ""
 [notify]
 ntfy = ""
+[repos]
+app = "$dir/app"
+[quota]
+command = "cat '$dir/quota.json'"
+[console]
+thread_url = "http://127.0.0.1:3773/env/{thread}"
 TOML
 
 (cd "$root" && go build -o "$dir/bmesh" ./cmd/bmesh)
@@ -51,7 +94,7 @@ nats = "$url"
 name = "seed"
 TOML
 
-(cd "$root" && go run ./scripts/seed -nats "$url" -map "http://$http/" "$@")
+(cd "$root" && go run ./scripts/seed -nats "$url" -map "http://$http/" -quota "$dir/quota.json" "$@")
 printf 'cli: BMESH_CONFIG=%s %s --node app-0042 send app-0042.api hi\nserving until Ctrl-C (log: %s)\n' \
 	"$dir/cli.toml" "$dir/bmesh" "$dir/serve.log"
 wait "$pid"

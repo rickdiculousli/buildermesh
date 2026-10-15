@@ -432,6 +432,355 @@ function drawRecent() {
   $("drawer-count").textContent = items.length ? "(" + items.length + ")" : "";
 }
 
+// --- pages: the lead, the routines, the strip -------------------------------
+
+const STRIP_MS = 60000; // the server caches the quota 5 min; never poll faster
+const ROUTINES_MS = 30000;
+const STALE_MS = 10 * 60000; // a quota reading older than this shows its age
+const TIMELINE_MAX = 200;
+
+// el makes an HTML element with a class and text (both optional) and appends
+// the children.
+function el(tag, cls, text, ...children) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined && text !== null && text !== "") e.textContent = String(text);
+  e.append(...children);
+  return e;
+}
+
+function badge(state) {
+  const s = String(state || "idle");
+  return el("span", "badge st-" + s.replace(/[^a-z-]/g, ""), s);
+}
+
+// dur renders ms as "1d 3h", "1h 10m", "4m" or, with secs, "4m 10s".
+function dur(ms, secs) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  if (d) return d + "d " + h + "h";
+  if (h) return h + "h " + m + "m";
+  return secs ? m + "m " + (s % 60) + "s" : Math.max(m, s > 0 ? 1 : 0) + "m";
+}
+
+function ago(at) {
+  const ms = Date.now() - Date.parse(at);
+  if (isNaN(ms)) return "";
+  return ms < 60000 ? "just now" : dur(ms) + " ago";
+}
+
+// Clocks: [data-until] elements count down to a time and [data-since] ones
+// count up from it; tick rewrites them every second.
+const CLOCK = {
+  lease: (ms) => ms > 0 ? "expires in " + dur(ms, true) : "expired",
+  reset: (ms) => ms > 0 ? "resets in " + dur(ms) : "reset due",
+  read: (ms) => ms > STALE_MS ? "· read " + dur(ms) + " ago" : "",
+  digest: (ms) => "digest " + (ms < 60000 ? "just now" : dur(ms) + " ago"),
+};
+
+function clock(kind, at, until) {
+  const e = el("span", "clock " + kind);
+  const t = Date.parse(at);
+  if (isNaN(t)) return e;
+  e.dataset[until ? "until" : "since"] = String(t);
+  e.dataset.clock = kind;
+  tickOne(e);
+  return e;
+}
+
+function tickOne(e) {
+  const now = Date.now();
+  const ms = e.dataset.until ? +e.dataset.until - now : now - +e.dataset.since;
+  e.textContent = CLOCK[e.dataset.clock](ms);
+  e.classList.toggle("past", !!e.dataset.until && ms <= 0);
+}
+
+function tick() {
+  for (const e of document.querySelectorAll("[data-clock]")) tickOne(e);
+}
+
+// fetchJSON reads a same-origin URL: {status, body}, body null unless 2xx.
+async function fetchJSON(url) {
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), FETCH_MS);
+  try {
+    const r = await fetch(url, { cache: "no-store", signal: stop.signal });
+    return { status: r.status, body: r.ok ? await r.json() : null };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// loader is loadTree's discipline for another read: run() reads one at a
+// time (a call during a read queues one more), soon() reads REFETCH_MS after
+// the last call but no later than REFETCH_MAX_MS after the first waiting.
+function loader(load) {
+  let busy = false, again = false, timer = 0, first = 0;
+  const run = async () => {
+    if (busy) {
+      again = true;
+      return;
+    }
+    busy = true;
+    try {
+      await load();
+    } catch (e) {
+      // The next frame or poll tries again.
+    } finally {
+      busy = false;
+      if (again) {
+        again = false;
+        run();
+      }
+    }
+  };
+  const soon = () => {
+    const now = Date.now();
+    if (!timer) first = now;
+    clearTimeout(timer);
+    timer = setTimeout(() => { timer = 0; run(); }, Math.max(0, Math.min(REFETCH_MS, first + REFETCH_MAX_MS - now)));
+  };
+  return { run, soon };
+}
+
+const pages = { view: "map", lead: "", leadShown: "" };
+
+// --- the lead page
+
+// specBody renders a spec's markdown as text: its frontmatter dropped,
+// "#" lines bold, fenced blocks monospace, every other line a text line
+// (a blank line after text a small gap).
+function specBody(text) {
+  const out = el("div", "spec-body");
+  let lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+  if (lines[0] && lines[0].trim() === "---") {
+    const end = lines.findIndex((l, i) => i > 0 && l.trim() === "---");
+    if (end > 0) lines = lines.slice(end + 1);
+  }
+  let pre = null, afterText = false;
+  for (const line of lines) {
+    if (line.trimStart().startsWith("```")) {
+      if (pre) {
+        out.append(pre);
+        pre = null;
+      } else {
+        pre = el("pre");
+      }
+      continue;
+    }
+    if (pre) {
+      pre.append(line + "\n");
+    } else if (line.startsWith("#")) {
+      out.append(el("strong", "h", line.replace(/^#+\s*/, "")));
+    } else if (line.trim()) {
+      out.append(line, el("br"));
+    } else if (afterText) {
+      out.append(el("span", "gap"));
+    }
+    afterText = !pre && line.trim() !== "" && !line.startsWith("#");
+  }
+  if (pre) out.append(pre);
+  return out;
+}
+
+function card(title, ...children) {
+  return el("section", "card", null, el("h3", null, title), ...children);
+}
+
+function field(name, value) {
+  return el("div", "field", null, el("span", "k", name), el("span", "v", value || "–"));
+}
+
+function msgText(m) {
+  if (m.text) return m.text;
+  if (m.reply) return (m.reply.ok ? "ok" : "fail") + (m.reply.output ? " " + m.reply.output : "");
+  if (m.job) return m.job.text || m.job.kind || "";
+  return "";
+}
+
+function safeURL(u) {
+  return /^https?:\/\//i.test(String(u || "")) ? String(u) : "";
+}
+
+function renderLead(path, v) {
+  const head = $("lead-head"), panel = $("lead-panel");
+  if (!v) {
+    head.replaceChildren();
+    panel.replaceChildren(el("p", "empty", "no such node: " + path));
+    return;
+  }
+  const n = v.node || {}, st = v.state || {}, sp = v.spec;
+  const parts = [badge(st.state)];
+  if (st.text) parts.push(el("span", "muted", st.text));
+  if (n.branch) parts.push(el("code", "branch", n.branch));
+  const url = safeURL(v.console_url);
+  if (url) {
+    const a = el("a", "btn tap", "console");
+    a.setAttribute("href", url);
+    a.setAttribute("target", "_blank");
+    a.setAttribute("rel", "noopener");
+    parts.push(a);
+  }
+  head.replaceChildren(...parts);
+
+  let spec;
+  if (sp) {
+    const merged = sp.merged ? String(sp.merged).slice(0, 8) : "";
+    spec = card("spec " + (sp.id || n.spec || ""), el("p", "spec-title", sp.title || "(untitled)"),
+      el("div", "fields", null, field("status", sp.status), field("merged", merged),
+        field("verified", sp.verified || "not verified")),
+      specBody(sp.text));
+  } else {
+    spec = card("spec", el("p", "empty", n.spec ? "spec " + n.spec + " is not on main of a repo configured here" : "no spec"));
+  }
+
+  const inbox = (v.inbox || []).map((m) => el("li", null, null,
+    el("span", "t", stamp(m.at)),
+    el("span", "p", (m.from || "?") + " → " + (m.kind || "message") + ":"),
+    el("span", "x", msgText(m))));
+  const tl = (v.timeline || []).slice(-TIMELINE_MAX).reverse().map((f) => {
+    const d = describe(f);
+    return el("li", "ev-" + d.event, null, el("span", "t", stamp((f.payload && f.payload.at) || f.at)),
+      el("span", "p", d.path), el("span", "e", d.event), el("span", "x", d.text));
+  });
+  panel.replaceChildren(spec, el("div", "stack", null,
+    card("inbox", inbox.length ? el("ol", "rows", null, ...inbox) : el("p", "empty", "no messages")),
+    card("timeline", tl.length ? el("ol", "rows", null, ...tl) : el("p", "empty", "no events in the last day"))));
+}
+
+const lead = loader(async () => {
+  const path = pages.lead;
+  if (!path) return;
+  let r;
+  try {
+    r = await fetchJSON("/api/lead/" + encodeURIComponent(path));
+  } catch (e) {
+    r = { status: 0, body: null };
+  }
+  if (pages.lead !== path) return; // the route moved on
+  if (r.status === 404) {
+    renderLead(path, null);
+  } else if (r.body) {
+    renderLead(path, r.body);
+  } else if (pages.leadShown !== path) {
+    $("lead-panel").replaceChildren(el("p", "empty", "could not load " + path + "; retrying on the next event"));
+    return;
+  } else {
+    return; // keep what is shown
+  }
+  pages.leadShown = path;
+  if (check) checkSoon();
+});
+
+// touchesLead reports whether a live frame is about the lead shown: its
+// tree's events, its inbox, or a daemon event naming it.
+function touchesLead(rest, p) {
+  const l = pages.lead;
+  if (!l) return false;
+  if (rest === "inbox." + l) return true;
+  if (rest.startsWith("daemon.")) return typeof p.to === "string" && (p.to === l || p.to.startsWith(l + "."));
+  return rest.startsWith(l + ".");
+}
+
+// --- the routines panel
+
+function leaseRow(l) {
+  return el("li", null, null, el("span", "p", l.key), el("span", "muted", l.holder), clock("lease", l.expires_at, true));
+}
+
+function renderRoutines(v) {
+  const cards = (v.routines || []).map((k) => {
+    const tags = el("div", "tags", null, el("span", "tag", k.mode || "no kind file"));
+    if (k.deterministic) tags.append(el("span", "tag det", "deterministic"));
+    tags.append(el("span", "tag", (k.depth || 0) + " queued"),
+      el("span", "tag", (k.results === 1 ? "1 result" : (k.results || 0) + " results")));
+    const inst = (k.instances || []).map((i) => el("li", null, null,
+      el("span", "p", (i.node && i.node.path) || "?"), badge(i.state && i.state.state),
+      el("span", "muted", instanceSub(i).join(" · "))));
+    const leases = (k.leases || []).map(leaseRow);
+    return card(k.kind, tags,
+      inst.length ? el("ol", "rows", null, ...inst) : el("p", "empty", "no instances"),
+      ...(leases.length ? [el("h4", null, "leases"), el("ol", "rows", null, ...leases)] : []));
+  });
+  const free = (v.leases || []).map(leaseRow);
+  if (free.length) cards.push(card("other leases", el("ol", "rows", null, ...free)));
+  $("routines-panel").replaceChildren(...(cards.length ? cards : [el("p", "empty", "No routine kinds.")]));
+  if (check) checkSoon();
+}
+
+const routines = loader(async () => {
+  if (pages.view !== "routines") return;
+  const r = await fetchJSON("/api/routines");
+  if (r.body) renderRoutines(r.body);
+});
+
+// --- the strip
+
+const strip = { quota: [], digest: null };
+
+function pct(x) {
+  return Math.round(+x || 0) + "%";
+}
+
+function renderStrip() {
+  const s = $("strip");
+  const q = strip.quota || [], d = strip.digest;
+  if (!q.length && !d) {
+    s.hidden = true;
+    s.replaceChildren();
+    return;
+  }
+  const rows = q.map((r) => {
+    const line = el("div", "quota", null, el("b", null, r.provider || "?"),
+      " · 5h " + pct(r.five_hour) + " · wk " + pct(r.week));
+    if (+r.five_hour >= 80 || +r.week >= 80) line.classList.add("high");
+    if (r.five_reset) line.append(" · ", clock("reset", r.five_reset, true));
+    if (r.read_at) line.append(" ", clock("read", r.read_at, false));
+    return line;
+  });
+  if (d) {
+    const sum = el("summary", "tap", null, clock("digest", d.at, false), ": " + (d.title || ""));
+    if (d.body) {
+      rows.push(el("details", "digest", null, sum, el("pre", null, d.body)));
+    } else {
+      rows.push(el("div", "digest", null, ...sum.childNodes));
+    }
+  }
+  s.replaceChildren(...rows);
+  s.hidden = false;
+}
+
+async function loadStrip() {
+  try {
+    const r = await fetchJSON("/api/strip");
+    if (!r.body) return; // keep the last strip
+    const open = $("strip").querySelector("details[open]") !== null;
+    strip.quota = r.body.quota || [];
+    strip.digest = r.body.digest || strip.digest;
+    renderStrip();
+    if (open) $("strip").querySelector("details")?.setAttribute("open", "");
+  } catch (e) {
+    // The next minute tries again.
+  }
+}
+
+// liveDigest shows a daemon digest from a live frame at once, without a
+// read (the strip reads at most once a minute).
+function liveDigest(f) {
+  const p = f.payload && typeof f.payload === "object" ? f.payload : {};
+  strip.digest = { at: p.at || f.at, title: String(p.text || ""), body: String(p.body || "") };
+  renderStrip();
+}
+
+// pagesApply routes a live frame to the open page.
+function pagesApply(f) {
+  const rest = f.subject.replace(/^bm\./, "");
+  const p = f.payload && typeof f.payload === "object" ? f.payload : {};
+  if (/^daemon\.[^.]+\.digest$/.test(rest)) liveDigest(f);
+  if (pages.view === "lead" && touchesLead(rest, p)) lead.soon();
+  if (pages.view === "routines" && (rest.startsWith("routine.") || rest.startsWith("inbox.routine."))) routines.soon();
+}
+
 // --- events, routes, start ------------------------------------------------
 
 function parseFrame(data) {
@@ -469,6 +818,8 @@ function connect() {
     drawRecent();
     setConn("live");
     loadTree();
+    if (pages.view === "lead") lead.run();
+    if (pages.view === "routines") routines.run();
   };
   es.onerror = () => {
     setConn("reconnecting");
@@ -494,6 +845,7 @@ function connect() {
     }
     remember(f);
     apply(f);
+    pagesApply(f);
   });
 }
 
@@ -508,15 +860,15 @@ function checkSoon() {
 function selfCheck() {
   const sw = document.documentElement.scrollWidth, iw = window.innerWidth;
   let tap = Infinity;
-  for (const e of document.querySelectorAll(".node.link .box, nav a, .drawer summary, header h1 a")) {
+  for (const e of document.querySelectorAll(".node.link .box, nav a, .drawer summary, header h1 a, .tap")) {
     const r = e.getBoundingClientRect();
     if (r.width || r.height) tap = Math.min(tap, r.height, r.width);
   }
   const c = check;
-  document.title = `bmesh ${sw <= iw ? "ok" : "SCROLLS"} scrollWidth=${sw} innerWidth=${iw} minTap=${Math.round(tap)}` +
+  document.title = `bmesh ${sw <= iw ? "ok" : "SCROLLS"} view=${pages.view} scrollWidth=${sw} innerWidth=${iw} minTap=${Math.round(tap)}` +
     ` svgWidth=${mesh.width} mapWidth=${$("map").clientWidth}` +
     ` vertical=${mesh.vertical} leads=${c.leads} trees=${c.trees} conn=${c.conn.join(">")}` +
-    ` replay=${c.replay} live=${c.live} flashes=${c.flashes}`;
+    ` replay=${c.replay} live=${c.live} flashes=${c.flashes} strip=${$("strip").hidden ? "hidden" : $("strip").children.length}`;
 }
 
 // route shows the view the hash names: #/ the map, #/lead/<path> a lead,
@@ -524,17 +876,25 @@ function selfCheck() {
 function route() {
   const h = location.hash.replace(/^#\/?/, "");
   let view = "map";
+  let path = "";
   if (h.startsWith("lead/")) {
     view = "lead";
-    let path = h.slice(5);
+    path = h.slice(5);
     try { path = decodeURIComponent(path); } catch (e) { /* shown as written */ }
-    $("lead-title").textContent = path;
-    $("lead-panel").replaceChildren();
-    $("lead-panel").dataset.path = path;
+    if (path !== pages.leadShown) {
+      $("lead-title").textContent = path;
+      $("lead-head").replaceChildren();
+      $("lead-panel").replaceChildren();
+      pages.leadShown = "";
+    }
   } else if (h === "routines") {
     view = "routines";
   }
+  pages.view = view;
+  pages.lead = path;
   for (const v of ["map", "lead", "routines"]) $("view-" + v).hidden = v !== view;
+  if (view === "lead") lead.run();
+  if (view === "routines") routines.run();
   if (view === "map" && mesh.vertical) render(); // the width may have changed while hidden
   for (const a of document.querySelectorAll("nav a[data-route]")) a.classList.toggle("on", a.dataset.route === view);
 }
@@ -560,4 +920,8 @@ window.addEventListener("hashchange", route);
 route();
 loadTree();
 connect();
+loadStrip();
 setInterval(loadTree, POLL_MS);
+setInterval(loadStrip, STRIP_MS);
+setInterval(() => { if (pages.view === "routines" && !document.hidden) routines.run(); }, ROUTINES_MS);
+setInterval(tick, 1000);

@@ -1,12 +1,15 @@
 // Command seed fills a scratch mesh (scripts/seed.sh runs it against a
 // throwaway bmesh serve) with two leads, their executors, an orphan, a pooled
-// routine kind with two instances and a few events and messages. -leads N
+// routine kind with two instances, a few events and messages, two leases, a
+// result and a daemon digest, and writes the quota fixture the seeded
+// config's quota command reads (-quota). -leads N
 // adds leads up to N in all, each with one working executor, to look at a
 // crowded map (and long names) on a phone.
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -19,7 +22,14 @@ func main() {
 	url := flag.String("nats", "nats://127.0.0.1:4222", "the scratch mesh's NATS URL")
 	mapURL := flag.String("map", "http://127.0.0.1:3775/", "the map's URL, printed when done")
 	leads := flag.Int("leads", 2, "how many leads in all (at least the two seeded)")
+	quota := flag.String("quota", "", "where to write the quota fixture (none when empty)")
 	flag.Parse()
+	if *quota != "" {
+		if err := writeQuota(*quota, time.Now()); err != nil {
+			fmt.Fprintln(os.Stderr, "seed:", err)
+			os.Exit(1)
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	if err := seed(ctx, *url, *leads); err != nil {
@@ -37,7 +47,8 @@ func seed(ctx context.Context, url string, leads int) error {
 	defer c.Close()
 	ago := func(m int) string { return time.Now().UTC().Add(-time.Duration(m) * time.Minute).Format(time.RFC3339) }
 	for _, n := range []mesh.Node{
-		{Path: "app-0042", Role: "lead", Repo: "app", Spec: "0042", StartedAt: ago(50)},
+		{Path: "app-0042", Role: "lead", Repo: "app", Spec: "0042", StartedAt: ago(50), Branch: "bmesh/app-0042",
+			Runner: mesh.NodeRunner{Kind: "t3", Thread: "thread-0042"}},
 		{Path: "app-0042.api", Role: "executor", Repo: "app", Parent: "app-0042", StartedAt: ago(45)},
 		{Path: "app-0042.web", Role: "executor", Repo: "app", Parent: "app-0042", StartedAt: ago(40)},
 		{Path: "docs-0007", Role: "lead", Repo: "docs", Spec: "0007", StartedAt: ago(30)},
@@ -83,6 +94,7 @@ func seed(ctx context.Context, url string, leads int) error {
 	for _, m := range []mesh.Message{
 		{From: "app-0042", To: "app-0042.api", Text: "keep the handlers small"},
 		{From: "app-0042.web", To: "app-0042", Text: "ask from app-0042.web: which chart library?"},
+		{From: "rick", To: "app-0042", Text: "ship the lead page before the strip"},
 		{From: "app-0042", To: "routine.review", Kind: "job", Text: "review api",
 			Job: &mesh.Job{ID: "seed-j2", Kind: "review", Repo: "app", Commit: "0123abcd"}},
 	} {
@@ -111,6 +123,39 @@ func seed(ctx context.Context, url string, leads int) error {
 			}
 		}
 	}
+	now := time.Now()
+	if _, err := mesh.AcquireLease(ctx, c, "app.review", "routine.review.opus-5-5-1", 25*time.Minute, 1, now); err != nil {
+		return err
+	}
+	if _, err := mesh.AcquireLease(ctx, c, "app.deploy", "app-0042", 90*time.Second, 1, now); err != nil {
+		return err
+	}
+	if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "review", Tree: "seedtree1", Commit: "0123abcd", OK: true,
+		Output: "looks good", By: "routine.review.opus-5-5-1"}); err != nil {
+		return err
+	}
+	if err := mesh.PublishEvent(ctx, c, mesh.Event{From: "daemon.seed", Event: "digest", At: ago(23),
+		Text: "1 asking, 1 done, 1 silent",
+		Body: "asking: app-0042.web: which chart library?\ndone: docs-0007.guide @0123abcd\nsilent: docs-0007 (quiet for 25m)"}); err != nil {
+		return err
+	}
 	return mesh.SendReply(ctx, c, mesh.Path{"routine", "review", "opus-5-5-1"}, mesh.Path{"app-0042"},
 		mesh.Reply{Job: "seed-j1", Kind: "review", OK: true, Output: "looks good", By: "routine.review.opus-5-5-1"})
+}
+
+// writeQuota writes two providers' readings in the quota command's output
+// format, their resets counted from now.
+func writeQuota(path string, now time.Time) error {
+	at := func(d time.Duration) string { return now.Add(d).UTC().Format(time.RFC3339) }
+	rs := []map[string]any{
+		{"reading": map[string]any{"provider": "claude", "five_hour": 42.4, "week": 21.2,
+			"five_reset": at(70 * time.Minute), "week_reset": at(76 * time.Hour)}},
+		{"reading": map[string]any{"provider": "codex", "five_hour": 87.6, "week": 64,
+			"five_reset": at(3*time.Hour + 5*time.Minute), "week_reset": at(30 * time.Hour)}},
+	}
+	b, err := json.Marshal(rs)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0o644)
 }
