@@ -1,6 +1,7 @@
 package mesh_test
 
 import (
+	"strings"
 	"testing"
 
 	. "github.com/rickdiculousli/buildermesh/internal/mesh"
@@ -48,5 +49,62 @@ func TestFetchAckRemovesUnread(t *testing.T) {
 	}
 	if _, err := Send(ctx, c, Message{From: "a", To: "bad path"}); err == nil {
 		t.Fatal("bad to accepted")
+	}
+}
+
+// Pending lists what is above the ack floor, oldest first, and takes nothing:
+// Unread is the same before and after. A message acked out of order stays
+// listed while an older one is unread.
+func TestPendingReadsAboveAckFloorWithoutFetching(t *testing.T) {
+	c, ctx := connect(t)
+	p, _ := ParsePath("b")
+	if got, err := Pending(ctx, c, p); err != nil || len(got) != 0 {
+		t.Fatal(got, err)
+	}
+	send := func(text string) {
+		t.Helper()
+		if _, err := Send(ctx, c, Message{From: "a", To: "b", Text: text}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	send("old")
+	if _, err := Fetch(ctx, c, p, true); err != nil {
+		t.Fatal(err)
+	}
+	send("one")
+	send("two")
+	send("three")
+	texts := func() string {
+		t.Helper()
+		got, err := Pending(ctx, c, p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var s []string
+		for _, m := range got {
+			s = append(s, m.Text)
+		}
+		return strings.Join(s, ",")
+	}
+	if got := texts(); got != "one,two,three" {
+		t.Fatal(got)
+	}
+	if n, err := Unread(ctx, c, p); err != nil || n != 3 {
+		t.Fatal(n, err)
+	}
+	if _, ok, err := FetchMatch(ctx, c, p, func(m Message) bool { return m.Text == "two" }); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	if got := texts(); got != "one,two,three" {
+		t.Fatal(got)
+	}
+	if n, err := Unread(ctx, c, p); err != nil || n != 2 {
+		t.Fatal(n, err)
+	}
+	if _, err := Fetch(ctx, c, p, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := texts(); got != "" {
+		t.Fatal(got)
 	}
 }

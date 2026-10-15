@@ -26,6 +26,8 @@ const executorHeader = "You are executor %s in buildermesh. Work only in %s on b
 	"and every shell command starts with `cd %s &&` (the working directory and environment do not persist between tool calls). " +
 	"Every bmesh command carries --node %s. " +
 	"Before anything else run `cd %s && bmesh --node %s started --text \"<what you will do>\"`. " +
+	"Report the finished piece with `bmesh --node %s done --commit <sha> --text \"<one line>\"` alone: " +
+	"the mesh puts it, with your branch, in your lead's inbox. " +
 	"Read your brief below, then invoke the `buildermesh:executor` skill.\n"
 
 var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
@@ -194,7 +196,7 @@ func (a *app) cmdExecutorNew(args []string) error {
 	}
 	fmt.Fprintf(a.stdout, "%s\n", line)
 	if !a.json {
-		fmt.Fprintf(a.stdout, executorHeader, path, wt, branch, wt, path, wt, path)
+		fmt.Fprintf(a.stdout, executorHeader, path, wt, branch, wt, path, wt, path, path)
 	}
 	return nil
 }

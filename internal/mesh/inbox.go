@@ -3,24 +3,37 @@ package mesh
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/nats-io/nats.go"
 
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/nats-io/nuid"
 )
 
-// Message is one inbox entry. Kind is message, wake, job or reply; a job
-// carries Job and a reply carries Reply.
+// Message is one inbox entry. Kind is message, wake, job, reply or report; a
+// job carries Job, a reply carries Reply and a report carries Report.
 type Message struct {
-	ID    string `json:"id"`
-	From  string `json:"from"`
-	To    string `json:"to"`
-	Kind  string `json:"kind"`
-	At    string `json:"at"`
-	Text  string `json:"text"`
-	Job   *Job   `json:"job,omitempty"`
-	Reply *Reply `json:"reply,omitempty"`
+	ID     string  `json:"id"`
+	From   string  `json:"from"`
+	To     string  `json:"to"`
+	Kind   string  `json:"kind"`
+	At     string  `json:"at"`
+	Text   string  `json:"text"`
+	Job    *Job    `json:"job,omitempty"`
+	Reply  *Reply  `json:"reply,omitempty"`
+	Report *Report `json:"report,omitempty"`
+}
+
+// Report is an executor's done or blocked as its parent's inbox receives it;
+// Branch and Commit are set for done.
+type Report struct {
+	Event  string `json:"event"`
+	From   string `json:"from"`
+	Branch string `json:"branch,omitempty"`
+	Commit string `json:"commit,omitempty"`
 }
 
 // Send delivers m to its recipient's inbox. dup reports a repeat of an id the
@@ -110,4 +123,58 @@ func Unread(ctx context.Context, c *Client, p Path) (int, error) {
 		return 0, err
 	}
 	return int(info.NumPending) + info.NumAckPending, nil
+}
+
+// Pending reads p's inbox subject from the stream after its consumer's ack
+// floor, oldest first, without fetching: no message is held in flight or
+// acked. A message acked out of order (a reply `routine wait` took) can sit
+// above the floor, so this may list more than Unread counts.
+func Pending(ctx context.Context, c *Client, p Path) ([]Message, error) {
+	if err := ensureAnyInbox(ctx, c, p); err != nil {
+		return nil, err
+	}
+	cons, err := c.JS.Consumer(ctx, StreamMesh, InboxConsumer(p))
+	if err != nil {
+		return nil, err
+	}
+	info, err := cons.Info(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if info.NumPending == 0 && info.NumAckPending == 0 {
+		return nil, nil
+	}
+	ord, err := c.JS.OrderedConsumer(ctx, StreamMesh, jetstream.OrderedConsumerConfig{
+		FilterSubjects: []string{InboxSubject(p)},
+		DeliverPolicy:  jetstream.DeliverByStartSequencePolicy,
+		OptStartSeq:    info.AckFloor.Stream + 1,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var out []Message
+	for {
+		m, err := ord.Next(jetstream.FetchMaxWait(2 * time.Second))
+		if err != nil {
+			if ctx.Err() != nil {
+				return out, ctx.Err()
+			}
+			if errors.Is(err, jetstream.ErrNoMessages) || errors.Is(err, nats.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
+				return out, nil
+			}
+			return out, err
+		}
+		var msg Message
+		if err := json.Unmarshal(m.Data(), &msg); err != nil {
+			msg = Message{Kind: "malformed", Text: string(m.Data())}
+		}
+		out = append(out, msg)
+		meta, err := m.Metadata()
+		if err != nil {
+			return out, err
+		}
+		if meta.NumPending == 0 {
+			return out, nil
+		}
+	}
 }

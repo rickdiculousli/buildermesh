@@ -80,7 +80,8 @@ func TestExecutorNewMakesWorktreeBranchNode(t *testing.T) {
 	}
 	if !strings.Contains(rest, "You are executor demo-012.alpha in buildermesh. Work only in "+wt+" on branch t3code/lead-alpha:") ||
 		!strings.Contains(rest, "Every bmesh command carries --node demo-012.alpha.") || !strings.Contains(rest, "starts with `cd "+wt+" &&`") ||
-		!strings.Contains(rest, "`cd "+wt+" && bmesh --node demo-012.alpha started --text") || !strings.Contains(rest, "`buildermesh:executor` skill") {
+		!strings.Contains(rest, "`cd "+wt+" && bmesh --node demo-012.alpha started --text") || !strings.Contains(rest, "`buildermesh:executor` skill") ||
+		!strings.Contains(rest, "`bmesh --node demo-012.alpha done --commit <sha> --text \"<one line>\"` alone") {
 		t.Fatalf("header %q", rest)
 	}
 	if b := gitLines(t, wt, "rev-parse", "--abbrev-ref", "HEAD"); len(b) != 1 || b[0] != "t3code/lead-alpha" {
@@ -116,6 +117,50 @@ func TestExecutorNewMakesWorktreeBranchNode(t *testing.T) {
 	}
 	if _, errs, code := runCLI(t, nil, "executor", "new", "--name", "Bad_Name"); code != 2 || !strings.Contains(errs, "name") {
 		t.Fatalf("bad name: %d %q", code, errs)
+	}
+}
+
+// The done report names the worktree's current branch (renamed here) and the
+// full commit; a detached worktree falls back to the recorded branch.
+func TestExecutorDoneReportsWorktreeBranch(t *testing.T) {
+	c, _, _ := executorSetup(t)
+	ctx := t.Context()
+	if _, errs, code := runCLI(t, nil, "executor", "new", "--name", "alpha", "--json"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	n, _, err := mesh.GetNode(ctx, c, "demo-012.alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, n.Worktree, "branch", "-m", "t3code/renamed")
+	head := gitLines(t, n.Worktree, "rev-parse", "HEAD")[0]
+	lead, _ := mesh.ParsePath("demo-012")
+	done := func() mesh.Message {
+		t.Helper()
+		for _, ev := range []string{"started", "done"} {
+			if _, errs, code := runCLI(t, as("demo-012.alpha"), ev, "--commit", head[:7], "--text", "x"); code != 0 {
+				t.Fatalf("%s: %d %q", ev, code, errs)
+			}
+		}
+		msgs, err := mesh.Fetch(ctx, c, lead, true)
+		if err != nil || len(msgs) != 1 || msgs[0].Report == nil {
+			t.Fatalf("lead inbox %+v %v", msgs, err)
+		}
+		return msgs[0]
+	}
+	m := done()
+	if m.Report.Branch != "t3code/renamed" || m.Report.Commit != head || m.ID != "done-demo-012.alpha-"+head ||
+		m.Text != "done from demo-012.alpha: branch t3code/renamed at "+head[:8]+": x" {
+		t.Fatalf("report %+v %+v", m, *m.Report)
+	}
+	runGit(t, n.Worktree, "checkout", "--detach")
+	runGit(t, n.Worktree, "commit", "--allow-empty", "-m", "detached")
+	head = gitLines(t, n.Worktree, "rev-parse", "HEAD")[0]
+	if err := mesh.ResetState(ctx, c, "demo-012.alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if m := done(); m.Report.Branch != "t3code/lead-alpha" || m.Report.Commit != head {
+		t.Fatalf("detached report %+v", *m.Report)
 	}
 }
 

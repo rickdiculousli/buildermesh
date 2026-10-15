@@ -54,7 +54,8 @@ func wakeOnce(ctx context.Context, d Deps, act *Activity) {
 	}
 }
 
-// wake sends the wake text to n's thread unless it was woken within
+// wake sends the wake text (the count and what waits, read from the
+// stream) to n's thread unless it was woken within
 // WakeEvery, and on delivery records the wake as a daemon event. A thread
 // found running (ErrRunning) is not delivered: nothing is recorded, and the
 // next poll tries again. It reports whether the wake was delivered.
@@ -65,7 +66,16 @@ func wake(ctx context.Context, d Deps, act *Activity, n mesh.Node, unread int) b
 	if last := act.LastWake(n.Path); !last.IsZero() && now.Sub(last) < d.Cfg.Liveness.WakeEvery {
 		return false
 	}
-	text := WakeText(unread)
+	// Read only once the wake is due, so the stream is read at most once
+	// per WakeEvery; a failed read leaves the count alone.
+	var pending []mesh.Message
+	if p, err := mesh.ParsePath(n.Path); err == nil {
+		if pending, err = mesh.Pending(ctx, d.Client, p); err != nil {
+			d.Log.Warn("wake: pending", "path", n.Path, "err", err)
+			pending = nil
+		}
+	}
+	text := WakeText(unread, pending)
 	// Runner.Send reads Status itself and refuses a running thread.
 	err := d.Runner.Send(ctx, n.Runner.Thread, text)
 	if errors.Is(err, runner.ErrRunning) {

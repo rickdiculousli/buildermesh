@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -56,9 +57,51 @@ func (d *Deps) defaults() {
 
 func (d *Deps) from() string { return "daemon." + d.Host }
 
-// WakeText is the message a woken lead receives.
-func WakeText(unread int) string {
-	return fmt.Sprintf("bmesh: you have %d unread messages. Run `bmesh inbox` now, then continue.", unread)
+// wakeItems is how many pending messages the wake text names.
+const wakeItems = 5
+
+// WakeText is the message a woken lead receives: the unread count, then what
+// is waiting, read from pending (up to five, then how many more). With no
+// pending messages (the read failed) it is the count alone.
+func WakeText(unread int, pending []mesh.Message) string {
+	var items []string
+	for i, m := range pending {
+		if i == wakeItems {
+			items = append(items, fmt.Sprintf("and %d more", len(pending)-wakeItems))
+			break
+		}
+		items = append(items, wakeItem(m))
+	}
+	head := fmt.Sprintf("bmesh: %d unread", unread)
+	if len(items) > 0 {
+		head += ": " + strings.Join(items, "; ")
+	}
+	return head + ". Run `bmesh inbox` now, then continue."
+}
+
+// wakeItem names one pending message: a report by its event and, for done,
+// branch and commit; a reply by its job and verdict; anything else by its
+// kind and sender.
+func wakeItem(m mesh.Message) string {
+	switch {
+	case m.Kind == "report" && m.Report != nil && m.Report.Event == "done":
+		c := m.Report.Commit
+		if len(c) > 8 {
+			c = c[:8]
+		}
+		return fmt.Sprintf("done from %s (branch %s at %s)", m.From, m.Report.Branch, c)
+	case m.Kind == "report" && m.Report != nil:
+		return m.Report.Event + " from " + m.From
+	case m.Kind == "reply" && m.Reply != nil:
+		verdict := "ok"
+		if !m.Reply.OK {
+			verdict = "fail"
+		}
+		return fmt.Sprintf("reply to job %s (%s %s)", m.Reply.Job, m.Reply.Kind, verdict)
+	case m.From == "":
+		return m.Kind + " message"
+	}
+	return m.Kind + " from " + m.From
 }
 
 func decodeEvent(data []byte) (mesh.Event, error) {

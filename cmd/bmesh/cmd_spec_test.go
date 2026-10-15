@@ -109,6 +109,10 @@ func TestDoneRequiresVerifiedMatchingResults(t *testing.T) {
 	if got := stateOf(t, c, ctx, "app-012"); got != "done" {
 		t.Fatalf("state %s", got)
 	}
+	// A lead's done is its own event: no inbox hears of it.
+	if hist, err := mesh.History(ctx, c, "bm.inbox.>", time.Time{}); err != nil || len(hist) != 0 {
+		t.Fatalf("inbox messages after a lead's done: %d %v", len(hist), err)
+	}
 
 	// An executor has no spec to check.
 	putNode(t, c, ctx, mesh.Node{Path: "app-012.x1", Role: "executor"})

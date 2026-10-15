@@ -13,8 +13,9 @@ import (
 // cmdEvent reports started|progress|blocked|ask|done: the move is checked
 // against the node's state first, so a refused event publishes nothing. A
 // lead's done is checked against its spec; an executor's or an engineer's
-// (a round's thread) needs only --commit. An executor's ask is also sent to its parent's inbox, since the
-// operator reads only leads' asks.
+// (a round's thread) needs only --commit. An executor's ask, done and blocked
+// are also sent to its parent's inbox, since the operator reads only leads'
+// events and the lead acts on its executors' from there.
 func (a *app) cmdEvent(name string, args []string) error {
 	fs := a.flags(name)
 	text := fs.String("text", "", "what to say")
@@ -38,7 +39,7 @@ func (a *app) cmdEvent(name string, args []string) error {
 	}
 	path := p.String()
 	var n mesh.Node
-	if name == "done" || name == "ask" {
+	if name == "done" || name == "ask" || name == "blocked" {
 		var ok bool
 		n, ok, err = mesh.GetNode(ctx, a.client, path)
 		if err != nil {
@@ -60,7 +61,7 @@ func (a *app) cmdEvent(name string, args []string) error {
 	if !mesh.Legal(cur.State, to) {
 		return fail(exitRefused, "refused: %v", mesh.ErrIllegalTransition{From: cur.State, To: to})
 	}
-	if name == "ask" && n.Role == "executor" {
+	if n.Role == "executor" && (name == "ask" || name == "done" || name == "blocked") {
 		parent := n.Parent
 		if parent == "" {
 			if pp, ok := p.Parent(); ok {
@@ -68,14 +69,9 @@ func (a *app) cmdEvent(name string, args []string) error {
 			}
 		}
 		if parent == "" {
-			return fail(exitError, "executor %s has no parent to ask", path)
+			return fail(exitError, "executor %s has no parent to %s", path, name)
 		}
-		// The id is the ask itself, so a retry after a failure further
-		// down (publish, state) is one message in the lead's inbox.
-		sum := sha256.Sum256([]byte(path + "\x00" + *text))
-		m := mesh.Message{ID: "ask-" + path + "-" + hex.EncodeToString(sum[:8]), From: path, To: parent, Kind: "message",
-			Text: "ask from " + path + ": " + *text}
-		if _, err := mesh.Send(ctx, a.client, m); err != nil {
+		if _, err := mesh.Send(ctx, a.client, executorMessage(ctx, name, n, parent, *text, *commit)); err != nil {
 			return err
 		}
 	}
@@ -90,6 +86,54 @@ func (a *app) cmdEvent(name string, args []string) error {
 		return err
 	}
 	return nil
+}
+
+// executorMessage is what an executor's ask, done or blocked puts in its
+// parent's inbox. The id is the event itself, so a retry after a failure
+// further down (publish, state) is one message in the lead's inbox.
+func executorMessage(ctx context.Context, name string, n mesh.Node, parent, text, commit string) mesh.Message {
+	path := n.Path
+	m := mesh.Message{From: path, To: parent}
+	switch name {
+	case "ask":
+		m.ID, m.Kind, m.Text = "ask-"+path+"-"+textHash(path, text), "message", "ask from "+path+": "+text
+	case "blocked":
+		m.ID, m.Kind, m.Text = "blocked-"+path+"-"+textHash(path, text), "report", "blocked from "+path
+		if text != "" {
+			m.Text += ": " + text
+		}
+		m.Report = &mesh.Report{Event: "blocked", From: path}
+	case "done":
+		branch := n.Branch
+		if n.Worktree != "" {
+			// The worktree's current branch, as a console may have renamed it.
+			if b, err := gitIn(ctx, n.Worktree, "rev-parse", "--abbrev-ref", "HEAD"); err == nil && b != "HEAD" {
+				branch = b
+			}
+			if full, err := gitIn(ctx, n.Worktree, "rev-parse", "--verify", "--quiet", "--end-of-options", commit+"^{commit}"); err == nil {
+				commit = full
+			}
+		}
+		m.ID, m.Kind = "done-"+path+"-"+commit, "report"
+		m.Text = "done from " + path + ": branch " + branch + " at " + short8(commit)
+		if text != "" {
+			m.Text += ": " + text
+		}
+		m.Report = &mesh.Report{Event: "done", From: path, Branch: branch, Commit: commit}
+	}
+	return m
+}
+
+func textHash(path, text string) string {
+	sum := sha256.Sum256([]byte(path + "\x00" + text))
+	return hex.EncodeToString(sum[:8])
+}
+
+func short8(sha string) string {
+	if len(sha) > 8 {
+		return sha[:8]
+	}
+	return sha
 }
 
 // checkSpecDone refuses done unless the node's spec has landed as done with

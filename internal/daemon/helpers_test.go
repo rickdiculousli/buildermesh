@@ -130,6 +130,15 @@ func (f *fixture) daemonEvents(t *testing.T, event string) []mesh.Event {
 	return out
 }
 
+// wakeLine is the fake t3's line for a wake of n messages sent by f.send.
 func wakeLine(thread string, n int) string {
-	return "send " + thread + " " + WakeText(n)
+	return "send " + thread + " " + WakeText(n, fromRick(n))
+}
+
+func fromRick(n int) []mesh.Message {
+	var out []mesh.Message
+	for i := 0; i < n; i++ {
+		out = append(out, mesh.Message{From: "rick", Kind: "message"})
+	}
+	return out
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -445,6 +446,63 @@ func TestInboxEmptyReturnsAtOnce(t *testing.T) {
 	out, errs, code := runCLI(t, as("app-012"), "inbox")
 	if took := time.Since(start); code != 0 || out != "" || took > 500*time.Millisecond {
 		t.Fatalf("empty inbox: %d %q %q in %v", code, out, errs, took)
+	}
+}
+
+func TestExecutorDoneAndBlockedReportToParent(t *testing.T) {
+	c, ctx := setup(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012"})
+	// No worktree: the report names the recorded branch and the commit as given.
+	putNode(t, c, ctx, mesh.Node{Path: "app-012.alpha", Role: "executor", Parent: "app-012", Branch: "t3code/x-alpha"})
+	lead, _ := mesh.ParsePath("app-012")
+	run := func(args ...string) {
+		t.Helper()
+		if out, errs, code := runCLI(t, as("app-012.alpha"), args...); code != 0 || out != "" {
+			t.Fatalf("%v: %d %q %q", args, code, out, errs)
+		}
+	}
+	run("started")
+	run("blocked", "--text", "no db")
+	msgs, err := mesh.Fetch(ctx, c, lead, true)
+	if err != nil || len(msgs) != 1 || msgs[0].Kind != "report" || msgs[0].From != "app-012.alpha" ||
+		msgs[0].Text != "blocked from app-012.alpha: no db" || !strings.HasPrefix(msgs[0].ID, "blocked-app-012.alpha-") ||
+		msgs[0].Report == nil || *msgs[0].Report != (mesh.Report{Event: "blocked", From: "app-012.alpha"}) {
+		t.Fatalf("lead inbox after blocked %+v %v", msgs, err)
+	}
+	// The same block again (a retry) is no second message.
+	run("started")
+	run("blocked", "--text", "no db")
+	if n, err := mesh.Unread(ctx, c, lead); err != nil || n != 0 {
+		t.Fatalf("lead unread after a repeated block: %d %v", n, err)
+	}
+	run("started")
+	run("progress", "--text", "half way")
+	run("done", "--commit", "1a2b3c4d5e6f", "--text", "parser and its tests")
+	out, errs, code := runCLI(t, as("app-012"), "inbox", "--json")
+	var got mesh.Message
+	if code != 0 || json.Unmarshal([]byte(out), &got) != nil {
+		t.Fatalf("lead inbox --json: %d %q %q", code, out, errs)
+	}
+	if got.ID != "done-app-012.alpha-1a2b3c4d5e6f" || got.Kind != "report" ||
+		got.Text != "done from app-012.alpha: branch t3code/x-alpha at 1a2b3c4d: parser and its tests" || got.Report == nil ||
+		*got.Report != (mesh.Report{Event: "done", From: "app-012.alpha", Branch: "t3code/x-alpha", Commit: "1a2b3c4d5e6f"}) {
+		t.Fatalf("done report %q", out)
+	}
+	if !strings.Contains(out, `"report":{"event":"done","from":"app-012.alpha","branch":"t3code/x-alpha","commit":"1a2b3c4d5e6f"}`) {
+		t.Fatalf("report field %q", out)
+	}
+	// A retry of the same done is one message.
+	if err := mesh.ResetState(ctx, c, "app-012.alpha"); err != nil {
+		t.Fatal(err)
+	}
+	run("started")
+	run("done", "--commit", "1a2b3c4d5e6f", "--text", "parser and its tests")
+	if n, err := mesh.Unread(ctx, c, lead); err != nil || n != 0 {
+		t.Fatalf("lead unread after a repeated done: %d %v", n, err)
+	}
+	// One block and one done; progress is an event only.
+	if hist, err := mesh.History(ctx, c, "bm.inbox.>", time.Time{}); err != nil || len(hist) != 2 {
+		t.Fatalf("inbox messages: %d %v", len(hist), err)
 	}
 }
 
