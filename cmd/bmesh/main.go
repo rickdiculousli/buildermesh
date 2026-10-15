@@ -52,6 +52,13 @@ commands:
                                            start a lead through the runner and register it
   propose <repo> [--model M]               run a proposal round: an engineer and a UI/UX engineer thread, each in a
                                            bmesh worktree from main, as nodes <repo>-round-<N>.eng|ux
+  build <repo> <NNN> [--model M] [--path P]
+                                           dispatch an accepted spec: record building on main, render the build
+                                           brief and start the lead (as lead start)
+  build --accepted <repo> [--model M]      dispatch every accepted spec, lowest id first, a spec naming a lower id
+                                           after that one is done, three leads at a time; print what waits
+  align <repo> [--check]                   give a ship repo its AGENTS.md sections, docs/proposals and the routine
+                                           kinds its row names; --check prints the diff and exits 1 when any
   executor new --name N [--base REF] [--model M] [--json]
                                            make a worktree, branch and node for an executor under this node;
                                            print {"path","branch","worktree"} and (without --json) its header
@@ -68,8 +75,9 @@ commands:
   lease run <slot> [--ttl D] -- <cmd...>   hold a lease while a command runs; exit with its code
   routine list [--json]                    the repo's kinds with their instances and queue depth
   routine status [<kind>] [--json]         a kind's (or every kind's) instances with state and model
-  routine queue <kind> [--commit C] [--model M] [--go] [--rerun] [--text T] [-- args...]
-                                           queue a job (a deterministic kind answers from a recorded result)
+  routine queue <kind> [--commit C] [--model M] [--go] [--rerun] [--again] [--text T] [-- args...]
+                                           queue a job (a deterministic kind answers from a recorded result; a
+                                           review for a branch that has one is refused without --again)
   routine go <kind>                        tell the kind's instances to start on waiting jobs
   routine wait <job id> [--timeout D]      wait for a job's reply; print its output, exit 0 ok / 1 fail / 5 timeout
   routine run <kind> [--commit HEAD] [--model M] [--here] [--rerun] [--text T] [-- args...]
@@ -176,6 +184,10 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdLead(rest)
 	case "propose":
 		return a.cmdPropose(rest)
+	case "build":
+		return a.cmdBuild(rest)
+	case "align":
+		return a.cmdAlign(rest)
 	case "serve":
 		return a.cmdServe(rest)
 	case "result":

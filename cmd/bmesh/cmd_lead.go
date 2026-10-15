@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -44,51 +43,97 @@ func (a *app) cmdLeadStart(args []string) error {
 	if err != nil {
 		return fail(exitUsage, "%v", err)
 	}
-	p := *pathFlag
-	if p == "" {
-		p = name + "-" + *spec
-	}
-	pp, err := mesh.ParsePath(p)
-	if err != nil {
-		return fail(exitUsage, "path %q: %v", p, err)
-	}
-	if _, ok := mesh.KindFromPath(pp); ok {
-		return fail(exitRefused, "refused: path %s: the first token routine is for the routine pool", p)
-	}
 	briefPath, err := filepath.Abs(*brief)
 	if err != nil {
 		return err
 	}
-	r, err := runner.New(a.cfg)
+	started, err := a.startLead(leadStart{Name: name, RepoPath: repoPath, Spec: *spec, BriefPath: briefPath, Model: *model,
+		Title: *title, Path: *pathFlag})
 	if err != nil {
 		return err
 	}
-	ctx, cancel := cmdCtx()
-	defer cancel()
-	if err := a.connect(ctx, "lead-start"); err != nil {
-		return err
+	return a.printJSON(started)
+}
+
+// leadStart is what starting a lead takes: the repo (its registry name and
+// checkout), the spec, the brief and, optionally, the model (default
+// [models] lead), the title (default "[build] <repo> <spec>"), the node
+// path (default <repo>-<spec>) and the thread id (default a fresh UUID).
+type leadStart struct {
+	Name, RepoPath, Spec, BriefPath, Model, Title, Path, Thread string
+}
+
+// leadStarted is what startLead prints: the node and its session.
+type leadStarted struct {
+	Path     string `json:"path"`
+	Thread   string `json:"thread"`
+	Branch   string `json:"branch"`
+	Worktree string `json:"worktree"`
+}
+
+// leadPath is the node path a lead start registers: --path, else
+// <repo>-<spec>. It refuses the routine pool's paths.
+func leadPath(name, spec, flag string) (string, error) {
+	p := flag
+	if p == "" {
+		p = name + "-" + spec
 	}
-	_, exists, err := mesh.GetNode(ctx, a.client, p)
+	pp, err := mesh.ParsePath(p)
 	if err != nil {
-		return err
+		return "", fail(exitUsage, "path %q: %v", p, err)
 	}
-	st, _, err := mesh.ReadState(ctx, a.client, p)
+	if _, ok := mesh.KindFromPath(pp); ok {
+		return "", fail(exitRefused, "refused: path %s: the first token routine is for the routine pool", p)
+	}
+	return p, nil
+}
+
+// leadFree checks that path can take a lead now: a node there must be done
+// or blocked (its previous state is returned), and [runner] max_leads is
+// not reached on this host.
+func (a *app) leadFree(ctx context.Context, path string) (prev string, err error) {
+	_, exists, err := mesh.GetNode(ctx, a.client, path)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if exists {
-		if st.State != "done" && st.State != "blocked" {
-			return fail(exitRefused, "refused: path %s is taken (state %s); use --path %s-2", p, st.State, p)
-		}
+	st, _, err := mesh.ReadState(ctx, a.client, path)
+	if err != nil {
+		return "", err
+	}
+	if exists && st.State != "done" && st.State != "blocked" {
+		return "", fail(exitRefused, "refused: path %s is taken (state %s); use --path %s-2", path, st.State, path)
 	}
 	if max := a.cfg.Runner.MaxLeads; max > 0 {
 		n, err := a.liveLeads(ctx)
 		if err != nil {
-			return err
+			return "", err
 		}
 		if n >= max {
-			return fail(exitRefused, "%d leads already working on this host", n)
+			return "", fail(exitRefused, "%d leads already working on this host", n)
 		}
+	}
+	return st.State, nil
+}
+
+// startLead starts a lead through the configured runner and registers it
+// as a node (role lead) at its path.
+func (a *app) startLead(o leadStart) (leadStarted, error) {
+	p, err := leadPath(o.Name, o.Spec, o.Path)
+	if err != nil {
+		return leadStarted{}, err
+	}
+	r, err := runner.New(a.cfg)
+	if err != nil {
+		return leadStarted{}, err
+	}
+	ctx, cancel := cmdCtx()
+	defer cancel()
+	if err := a.connect(ctx, "lead-start"); err != nil {
+		return leadStarted{}, err
+	}
+	prev, err := a.leadFree(ctx, p)
+	if err != nil {
+		return leadStarted{}, err
 	}
 	if a.configPath != "" {
 		// The runner's session must report to the mesh this CLI was told about.
@@ -96,41 +141,37 @@ func (a *app) cmdLeadStart(args []string) error {
 			os.Setenv("BMESH_CONFIG", abs)
 		}
 	}
-	if *model == "" {
-		*model = a.cfg.Models.Lead
+	if o.Model == "" {
+		o.Model = a.cfg.Models.Lead
 	}
-	if *title == "" {
-		*title = fmt.Sprintf("[build] %s %s", name, *spec)
+	if o.Title == "" {
+		o.Title = fmt.Sprintf("[build] %s %s", o.Name, o.Spec)
 	}
-	thread, err := uuid4()
-	if err != nil {
-		return err
+	thread := o.Thread
+	if thread == "" {
+		if thread, err = uuid4(); err != nil {
+			return leadStarted{}, err
+		}
 	}
 	// The runner bounds its own calls (T3: 120 s), so the start doesn't share
 	// the CLI's one-minute deadline, and registration gets a fresh one.
 	cancel()
-	started, err := r.Start(context.Background(), runner.StartSpec{RepoPath: repoPath, Model: *model, Title: *title,
-		BriefPath: briefPath, ThreadID: thread})
+	started, err := r.Start(context.Background(), runner.StartSpec{RepoPath: o.RepoPath, Model: o.Model, Title: o.Title,
+		BriefPath: o.BriefPath, ThreadID: thread})
 	if errors.Is(err, runner.ErrTimeout) {
-		return fmt.Errorf("start timed out; thread id %s may exist", thread)
+		return leadStarted{}, fmt.Errorf("start timed out; thread id %s may exist", thread)
 	}
 	if err != nil {
-		return fmt.Errorf("runner start (thread id %s): %w", thread, err)
+		return leadStarted{}, fmt.Errorf("runner start (thread id %s): %w", thread, err)
 	}
 	ctx, cancel = cmdCtx()
 	defer cancel()
-	if err := a.register(ctx, started, mesh.Node{Path: p, Role: "lead", Repo: name, RepoPath: repoPath, Spec: *spec,
-		Host: a.cfg.HostName(), Model: *model}, st.State); err != nil {
-		return fmt.Errorf("thread %s started (branch %s, worktree %s) but registering the node failed: %w",
+	if err := a.register(ctx, started, mesh.Node{Path: p, Role: "lead", Repo: o.Name, RepoPath: o.RepoPath, Spec: o.Spec,
+		Host: a.cfg.HostName(), Model: o.Model}, prev); err != nil {
+		return leadStarted{}, fmt.Errorf("thread %s started (branch %s, worktree %s) but registering the node failed: %w",
 			started.Thread, started.Branch, started.Worktree, err)
 	}
-	line, err := json.Marshal(map[string]string{"path": p, "thread": started.Thread, "branch": started.Branch,
-		"worktree": started.Worktree})
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(a.stdout, "%s\n", line)
-	return nil
+	return leadStarted{Path: p, Thread: started.Thread, Branch: started.Branch, Worktree: started.Worktree}, nil
 }
 
 // liveLeads counts the leads registered on this host that are not done or

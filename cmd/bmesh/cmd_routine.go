@@ -19,7 +19,7 @@ import (
 )
 
 const routineUsage = "usage: bmesh routine list [--json] | status [<kind>] [--json] | " +
-	"queue <kind> [--commit C] [--model M] [--go] [--rerun] [--text T] [-- args...] | go <kind> | wait <job id> [--timeout D] | " +
+	"queue <kind> [--commit C] [--model M] [--go] [--rerun] [--again] [--text T] [-- args...] | go <kind> | wait <job id> [--timeout D] | " +
 	"run <kind> [--commit HEAD] [--model M] [--here] [--rerun] [--text T] [-- args...]"
 
 func (a *app) cmdRoutine(args []string) error {
@@ -265,6 +265,7 @@ func (a *app) cmdRoutineQueue(args []string) error {
 	model := fs.String("model", "", "one of the kind's models (default the first)")
 	goNow := fs.Bool("go", false, "start the batch now")
 	rerun := fs.Bool("rerun", false, "run even when a result is recorded")
+	again := fs.Bool("again", false, "review: queue although this branch already has a review result")
 	text := fs.String("text", "", "text for a model kind")
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -294,6 +295,15 @@ func (a *app) cmdRoutineQueue(args []string) error {
 	self, err := a.identity(ctx, "routine")
 	if err != nil {
 		return err
+	}
+	if name == reviewKind && !*again {
+		if prior, ok, err := a.priorReview(ctx, top); err != nil {
+			return err
+		} else if ok {
+			return fail(exitRefused, "this branch already has a review: %s (%s, commit %.8s, at %s). A review's findings are fixed and then landed; "+
+				"the second pass only after a rebase changed the code, with --again",
+				mesh.ResultKey(prior.Kind, prior.Tree, prior.Args, prior.Model), okWord(prior.OK), prior.Commit, prior.At)
+		}
 	}
 	if k.Deterministic && !*rerun {
 		tree, err := gitRev("--verify", "--end-of-options", *commit+"^{tree}")
@@ -572,4 +582,49 @@ func (a *app) printVerdict(ok bool, out string) error {
 		return fail(exitError, "")
 	}
 	return nil
+}
+
+// reviewKind is the kind a branch is reviewed by once: a second review job
+// for a branch that has a review result needs --again.
+const reviewKind = "review"
+
+// priorReview finds the newest review result recorded for a commit of this
+// branch: one whose commit is an ancestor of the worktree's HEAD but not of
+// main (origin/main when the repo has an origin), so a landed spec's review
+// in the history does not count. A result whose commit is unknown here is
+// skipped.
+func (a *app) priorReview(ctx context.Context, top string) (mesh.Result, bool, error) {
+	results, err := mesh.ListResults(ctx, a.client, reviewKind)
+	if err != nil {
+		return mesh.Result{}, false, err
+	}
+	sort.Slice(results, func(i, j int) bool { return results[i].At > results[j].At })
+	mainRef := "main"
+	if hasOrigin(ctx, top) {
+		mainRef = "origin/main"
+	}
+	onMain := func(commit string) bool {
+		_, err := gitIn(ctx, top, "merge-base", "--is-ancestor", commit, mainRef)
+		return err == nil
+	}
+	for _, r := range results {
+		if r.Commit == "" {
+			continue
+		}
+		if _, err := gitIn(ctx, top, "merge-base", "--is-ancestor", r.Commit, "HEAD"); err != nil {
+			continue
+		}
+		if onMain(r.Commit) {
+			continue
+		}
+		return r, true, nil
+	}
+	return mesh.Result{}, false, nil
+}
+
+func okWord(ok bool) string {
+	if ok {
+		return "ok"
+	}
+	return "fail"
 }
