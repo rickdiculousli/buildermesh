@@ -9,6 +9,6 @@ Each spec's frontmatter is the ledger: its status, who proposed and built it, th
 - `proposed`: landed on `main` by the proposing thread, waiting for the operator's review.
 - `accepted`, `adjusting` (being edited to match the operator's note, then `accepted`), `later`, or `rejected` with a one-line `reason`: the review. Rejected specs stay so they aren't proposed again.
 - `building`: dispatched; `built_by`, `branch` and `host` name the build thread.
-- `done` with the `merged` commit and the `verified` line, or `blocked` with a one-line `reason`: set by the build thread.
+- `done` with the `merged` commit and the `verified` line (and `branch` corrected to the branch merged, if the runner renamed it), or `blocked` with a one-line `reason`: set by the build thread.
 
 The template and field guide is `bmesh spec template`; `bmesh spec list --repo .` reads the ledger.

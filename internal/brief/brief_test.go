@@ -72,7 +72,8 @@ func TestBuildBriefEmbedsSpecAndNode(t *testing.T) {
 	for _, s := range []string{"## Opportunity", "docs/proposals/012-a.md", "Your node is `pb-012`.", "{{nope}}",
 		"`bmesh --node pb-012 routine run verify`", "`bmesh --node pb-012 result record review --ok|--fail --model <m>`",
 		"`bmesh --node pb-012 spec verified --write`", "bmesh spec set --repo . --id 012 --status done --from building",
-		"follow the `buildermesh:lead` skill", "## Landing it", "`git push origin HEAD`", "pushed to `example/pb`",
+		"follow the `buildermesh:lead` skill", "## Landing it", "landing the branch your worktree is on (`git branch --show-current`), never the name in your brief",
+		"adding `--field branch=<that name>` when `git branch --show-current` differs", "`git push origin HEAD`", "pushed to `example/pb`",
 		"`npm test`"} {
 		if !strings.Contains(out, s) {
 			t.Errorf("missing %q", s)
@@ -168,5 +169,22 @@ func TestDoneRule(t *testing.T) {
 	}
 	if got := DoneRule(config.Repo{Name: "local", Verify: []string{"make"}}); !strings.HasSuffix(got, "fast-forward to `main`.") {
 		t.Fatal(got)
+	}
+}
+
+func TestLeadSkillLandsTheWorktreesBranch(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "skills", "lead", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, sec, ok := strings.Cut(string(b), "## 7. Land")
+	if !ok {
+		t.Fatal("no section 7")
+	}
+	sec, _, _ = strings.Cut(sec, "\n## ")
+	for _, s := range []string{"`git branch --show-current`", "never the name in your brief", "--field branch=<that name>"} {
+		if !strings.Contains(sec, s) {
+			t.Errorf("lead skill §7 missing %q", s)
+		}
 	}
 }
