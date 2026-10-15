@@ -4,13 +4,15 @@ title: Registry, init and the claude runner
 kind: feature
 size: L
 judge: fable
-status: building
+status: done
 lens: eng
 proposed_by: da6488fd-38bd-4c4c-994c-a7de257d9424
 proposed_on: 2026-10-15
 built_by: 1b1cb23f-47fd-46b3-b7b9-544983ce3fce
 branch: t3code/2937914a
 host: k16
+verified: review ok t:8c948b1b m:claude-opus-5-5; verify ok t:8c948b1b
+merged: 5f74fec268d08de00e2039720b9c144c0bd4ab21
 ---
 
 ## Opportunity
