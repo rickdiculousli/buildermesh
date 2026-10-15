@@ -2,7 +2,8 @@
 # Fake `claude -p`: records argv in $FAKE_LOG and stdin in $FAKE_LOG.stdin,
 # then prints a JSON result for the --session-id or --resume value.
 # FAKE_RESULT is the result text (newlines and a literal \n decode as newlines),
-# FAKE_CACHE the cache-read tokens, FAKE_IS_ERROR=1 sets is_error, FAKE_EXIT the exit code, FAKE_SLEEP a delay.
+# FAKE_CACHE the cache-read tokens, FAKE_IS_ERROR=1 sets is_error, FAKE_EXIT the exit code, FAKE_SLEEP a delay;
+# FAKE_NOJSON=1 prints a line that is not JSON instead of the result.
 if [ -n "$FAKE_LOG" ]; then
   printf '%s\n' "$*" >> "$FAKE_LOG"
   cat >> "$FAKE_LOG.stdin"
@@ -16,6 +17,10 @@ for a in "$@"; do
   prev="$a"
 done
 if [ -n "$FAKE_SLEEP" ]; then sleep "$FAKE_SLEEP"; fi
+if [ "$FAKE_NOJSON" = 1 ]; then
+  echo "claude: session broke"
+  exit "${FAKE_EXIT:-0}"
+fi
 result=$(printf '%s' "$FAKE_RESULT" | sed 's/"/\\"/g' | awk 'NR > 1 { printf "\\n" } { printf "%s", $0 }')
 iserr=false
 if [ "$FAKE_IS_ERROR" = 1 ]; then iserr=true; fi

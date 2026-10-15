@@ -102,15 +102,15 @@ func (m *Model) Run(ctx context.Context, j Job) Reply {
 	res, parsed := parseResult(stdout.Bytes())
 
 	m.mu.Lock()
-	switch {
-	case parsed || !first:
+	if parsed {
 		m.uses++
 		m.lastUse = time.Now()
-		if parsed {
-			m.lastContext = res.Usage.InputTokens + res.Usage.CacheReadInputTokens
-		}
-	default: // the session may not exist, or only half: start the next job on a new one
-		m.session = uuid4()
+		m.lastContext = res.Usage.InputTokens + res.Usage.CacheReadInputTokens
+	} else {
+		// The session may not exist, only half, or be broken: the next job
+		// starts a new one and sends the prompt again, whatever the kind's
+		// recycle settings.
+		m.session, m.uses, m.lastUse, m.lastContext = uuid4(), 0, time.Time{}, 0
 	}
 	m.mu.Unlock()
 
@@ -129,7 +129,9 @@ func (m *Model) Run(ctx context.Context, j Job) Reply {
 	case res.IsError:
 		return Reply{Output: res.Result}
 	}
-	ok := true
+	// A reply without a verdict passes by its exit code, unless the prompt
+	// asked for one (R18).
+	ok := !strings.Contains(m.k.Prompt, "VERDICT:")
 	if v, found := verdict(res.Result); found {
 		ok = strings.EqualFold(v, "ok")
 	}
@@ -192,12 +194,17 @@ func parseResult(b []byte) (result, bool) {
 	}
 }
 
-// verdict returns the value of the last line starting with "VERDICT:".
+// decoration is markdown a model may wrap a verdict line in.
+const decoration = "*_#`> \t"
+
+// verdict returns the value of the last line starting with "VERDICT:",
+// markdown decoration around the key and the value ignored:
+// **VERDICT: fail**, **VERDICT:** fail and VERDICT: **ok** all read.
 func verdict(text string) (string, bool) {
 	v, found := "", false
 	for _, line := range strings.Split(text, "\n") {
-		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "VERDICT:"); ok {
-			v, found = strings.TrimSpace(rest), true
+		if rest, ok := strings.CutPrefix(strings.TrimLeft(strings.TrimSpace(line), decoration), "VERDICT:"); ok {
+			v, found = strings.Trim(rest, decoration), true
 		}
 	}
 	return v, found

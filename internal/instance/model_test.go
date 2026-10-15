@@ -114,6 +114,41 @@ func TestModelInstanceResumesAndRecycles(t *testing.T) {
 	}
 }
 
+// A resumed run whose output does not parse leaves the session behind: the
+// next run starts a new one with the prompt, though recycle_uses is 0.
+func TestModelRotatesSessionAfterBadOutput(t *testing.T) {
+	k := kind.Kind{Name: "review", Model: "m-test", Prompt: "SETUP PROMPT"}
+	m := NewModel(k, "m-test", fakeClaude(t))
+	j := Job{ID: "j1", Kind: "review", Text: "look", Dir: t.TempDir()}
+	t.Setenv("FAKE_RESULT", "fine")
+	_, argv, _ := runLogged(t, m, j)
+	id := flag(argv, "--session-id")
+	_, argv, _ = runLogged(t, m, j)
+	if flag(argv, "--resume") != id {
+		t.Fatalf("second argv %q: want --resume %s", argv, id)
+	}
+	for _, exit := range []string{"0", "1"} {
+		t.Setenv("FAKE_NOJSON", "1")
+		t.Setenv("FAKE_EXIT", exit)
+		r, argv, _ := runLogged(t, m, j)
+		if r.OK || flag(argv, "--resume") != id {
+			t.Fatalf("exit %s: reply %+v argv %q: want a failed --resume %s", exit, r, argv, id)
+		}
+		t.Setenv("FAKE_NOJSON", "")
+		t.Setenv("FAKE_EXIT", "0")
+		_, argv, stdin := runLogged(t, m, j)
+		nid := flag(argv, "--session-id")
+		if nid == "" || nid == id || flag(argv, "--resume") != "" || !strings.Contains(stdin, "SETUP PROMPT") {
+			t.Fatalf("after bad output (exit %s) argv %q stdin %q: want a new --session-id and the prompt", exit, argv, stdin)
+		}
+		_, argv, _ = runLogged(t, m, j)
+		if flag(argv, "--resume") != nid {
+			t.Fatalf("argv %q: want --resume %s", argv, nid)
+		}
+		id = nid
+	}
+}
+
 func TestModelVerdictParsing(t *testing.T) {
 	k := kind.Kind{Name: "review", Model: "m-test", Prompt: "p"}
 	j := Job{ID: "j1", Kind: "review", Text: "t", Dir: t.TempDir()}
@@ -127,6 +162,11 @@ func TestModelVerdictParsing(t *testing.T) {
 		{"exit 1 beats ok verdict", `VERDICT: ok`, "1", false},
 		{"no verdict exit 0", "all good", "0", true},
 		{"no verdict exit 2", "broken", "2", false},
+		{"bold line", `findings\n**VERDICT: fail**`, "0", false},
+		{"bold key", `**VERDICT:** fail`, "0", false},
+		{"bold value", `VERDICT: **ok**`, "0", true},
+		{"heading and code", "## VERDICT: `fail`", "0", false},
+		{"quoted", `> VERDICT: _fail_`, "0", false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Setenv("FAKE_RESULT", c.result)
@@ -138,6 +178,21 @@ func TestModelVerdictParsing(t *testing.T) {
 			}
 			if c.exit == "0" && (r.Context != 1500 || r.Output != strings.ReplaceAll(c.result, `\n`, "\n")) {
 				t.Fatalf("reply %+v: want context 1500 and the result text", r)
+			}
+		})
+	}
+
+	// R18: a prompt that asks for a verdict fails a reply without one.
+	asks := kind.Kind{Name: "review", Model: "m-test", Prompt: "Review it. End with VERDICT: ok or VERDICT: fail."}
+	for _, c := range []struct {
+		result string
+		ok     bool
+	}{{"all good", false}, {"**VERDICT:** ok", true}, {"VERDICT: fail", false}} {
+		t.Run("prompt asks: "+c.result, func(t *testing.T) {
+			t.Setenv("FAKE_RESULT", c.result)
+			r := NewModel(asks, "m-test", fakeClaude(t)).Run(context.Background(), j)
+			if r.OK != c.ok || r.Output != c.result {
+				t.Fatalf("reply %+v: want OK %v and the result text", r, c.ok)
 			}
 		})
 	}
