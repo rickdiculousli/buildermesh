@@ -29,7 +29,7 @@ var transitions = map[string][]string{
 	"idle":    {"working"},
 	"working": {"working", "blocked", "asking", "done", "silent"},
 	"blocked": {"working", "done"},
-	"asking":  {"working", "blocked", "done"},
+	"asking":  {"working", "blocked", "asking", "done"},
 	"silent":  {"working", "blocked", "asking", "done"},
 }
 

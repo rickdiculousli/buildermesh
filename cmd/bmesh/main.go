@@ -28,6 +28,8 @@ const (
 
 const usage = `usage: bmesh [--config FILE] [--node PATH] [--json] <command> [args]
 
+--config, --node and --json are accepted before or after the command.
+
 commands:
   whoami                                   print this node's path
   started|progress|blocked|ask [--text T]  report an event
@@ -92,8 +94,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 func (a *app) dispatch(args []string) error {
 	fs := a.flags("bmesh")
-	fs.StringVar(&a.configPath, "config", "", "config file (default $BMESH_CONFIG or ~/.config/bmesh/config.toml)")
-	fs.StringVar(&a.node, "node", "", "act as this node path")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			fmt.Fprint(a.stdout, usage)
@@ -134,10 +134,14 @@ func (a *app) dispatch(args []string) error {
 }
 
 // flags returns a FlagSet that reports errors through exit code 2 and has
-// --json bound to the global flag.
+// the global flags (--config, --node, --json) bound, so they are accepted
+// before or after the subcommand. The config is loaded lazily, after the
+// subcommand's flags are parsed, so a --config given late still counts.
 func (a *app) flags(name string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
+	fs.StringVar(&a.configPath, "config", a.configPath, "config file (default $BMESH_CONFIG or ~/.config/bmesh/config.toml)")
+	fs.StringVar(&a.node, "node", a.node, "act as this node path")
 	fs.BoolVar(&a.json, "json", a.json, "print JSON")
 	return fs
 }

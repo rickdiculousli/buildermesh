@@ -220,6 +220,25 @@ func TestSendInboxRoundTrip(t *testing.T) {
 	}
 }
 
+func TestGlobalFlagsAfterSubcommand(t *testing.T) {
+	c, ctx := setup(t)
+	putNode(t, c, ctx, mesh.Node{Path: "demo-000"})
+	cfg := os.Getenv("BMESH_CONFIG")
+	t.Setenv("BMESH_CONFIG", filepath.Join(t.TempDir(), "missing.toml"))
+	out, errs, code := runCLI(t, nil, "send", "demo-000", "hello", "--node", "operator", "--config", cfg)
+	if code != 0 || !strings.HasPrefix(out, "sent ") {
+		t.Fatalf("send: %d %q %q", code, out, errs)
+	}
+	out, errs, code = runCLI(t, nil, "inbox", "--node", "demo-000", "--config", cfg)
+	if code != 0 || !strings.HasSuffix(out, " operator: hello\n") {
+		t.Fatalf("inbox: %d %q %q", code, out, errs)
+	}
+	// Without the late --config the missing file's defaults apply.
+	if _, errs, code := runCLI(t, nil, "inbox", "--node", "demo-000"); code == 0 || !strings.Contains(errs, "[mesh] nats is empty") {
+		t.Fatalf("no --config: %d %q", code, errs)
+	}
+}
+
 func TestIdentityFromWorktree(t *testing.T) {
 	c, ctx := setup(t)
 	wt := t.TempDir()
@@ -241,6 +260,17 @@ func TestIdentityFromWorktree(t *testing.T) {
 	out, _, code = runCLI(t, nil, "--node", "other", "whoami")
 	if code != 0 || out != "other\n" {
 		t.Fatalf("--node: %d %q", code, out)
+	}
+	// Re-registered through a symlink to the worktree, found from the real path.
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	putNode(t, c, ctx, mesh.Node{Path: "app-007", Worktree: link})
+	t.Chdir(real)
+	out, errs, code = runCLI(t, nil, "whoami")
+	if code != 0 || out != "app-007\n" {
+		t.Fatalf("symlinked worktree: %d %q %q", code, out, errs)
 	}
 	t.Chdir(t.TempDir())
 	_, errs, code = runCLI(t, nil, "whoami")

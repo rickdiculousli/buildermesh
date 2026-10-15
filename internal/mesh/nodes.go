@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"sync"
 
@@ -120,18 +121,30 @@ func ListNodes(ctx context.Context, c *Client) ([]Node, error) {
 	return out, nil
 }
 
-// NodeForWorktree finds the node with this worktree on this host.
+// NodeForWorktree finds the node with this worktree on this host. Both
+// sides are compared with symlinks resolved, so a node registered through a
+// symlinked path matches the real checkout and vice versa.
 func NodeForWorktree(ctx context.Context, c *Client, worktree, host string) (Node, bool, error) {
 	nodes, err := ListNodes(ctx, c)
 	if err != nil {
 		return Node{}, false, err
 	}
+	want := resolve(worktree)
 	for _, n := range nodes {
-		if n.Worktree == worktree && n.Host == host {
+		if n.Host == host && n.Worktree != "" && resolve(n.Worktree) == want {
 			return n, true, nil
 		}
 	}
 	return Node{}, false, nil
+}
+
+// resolve returns p with symlinks resolved, or p itself when that fails
+// (a worktree on another box, or one since removed).
+func resolve(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return p
 }
 
 func PutRunner(ctx context.Context, c *Client, path string, s RunnerSample) error {

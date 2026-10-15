@@ -21,9 +21,12 @@ const deliverTimeout = 10 * time.Second
 // the ages are measured to now. states is the source of truth (a state with
 // no registered node still counts); nodes is reserved for enrichment.
 //
-// The body has one line per asking, silent or blocked node, then one per node
-// done in the window (since, now]; a done stamped after now waits for the
-// next pass, so none is lost between passes. changed is false when there are no such lines.
+// The body has one line per node that entered asking, silent or blocked in
+// the window (since, now], then one per node done in that window. A state is
+// listed only in the pass whose window holds its At, so a standing state is
+// posted once rather than every pass; one stamped after now waits for the
+// next pass, so none is lost between passes. The title's counts cover every
+// node. changed is false when there are no such lines.
 func Digest(host string, states map[string]mesh.State, nodes []mesh.Node, since, now time.Time) (title, body string, changed bool) {
 	paths := make([]string, 0, len(states))
 	for p := range states {
@@ -44,13 +47,16 @@ func Digest(host string, states map[string]mesh.State, nodes []mesh.Node, since,
 			} else if st.State == "silent" {
 				silent++
 			}
+			if !inWindow(at, since, now) {
+				continue
+			}
 			line := fmt.Sprintf("%s: %s since %s", p, st.State, age(now.Sub(at)))
 			if st.Text != "" {
 				line += ": " + st.Text
 			}
 			attention = append(attention, line)
 		case "done":
-			if at.After(since) && !at.After(now) {
+			if inWindow(at, since, now) {
 				finished = append(finished, p+": done")
 			}
 		}
@@ -59,6 +65,9 @@ func Digest(host string, states map[string]mesh.State, nodes []mesh.Node, since,
 	lines := append(attention, finished...)
 	return title, strings.Join(lines, "\n"), len(lines) > 0
 }
+
+// inWindow reports whether at is in (since, now].
+func inWindow(at, since, now time.Time) bool { return at.After(since) && !at.After(now) }
 
 // age renders d as 5m or 2h10m (minutes at least).
 func age(d time.Duration) string {
