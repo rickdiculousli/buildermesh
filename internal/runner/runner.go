@@ -1,5 +1,6 @@
 // Package runner starts and observes the agent sessions behind nodes: a T3
-// Code thread (T3) or claude in a tmux window (Tmux).
+// Code thread (T3), claude in a tmux window (Tmux) or headless claude -p
+// turns (Claude).
 package runner
 
 import (
@@ -59,6 +60,8 @@ func New(cfg *config.Config) (Runner, error) {
 		return r, nil
 	case "tmux":
 		return Tmux{Session: cfg.Runner.TmuxSession, Worktrees: cfg.Expand(cfg.Runner.Worktrees)}, nil
+	case "claude":
+		return Claude{Claude: cfg.Runner.Claude, Worktrees: cfg.Expand(cfg.Runner.Worktrees)}, nil
 	}
 	return nil, fmt.Errorf("unknown runner kind %s", cfg.Runner.Kind)
 }
