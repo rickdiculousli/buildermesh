@@ -4,10 +4,12 @@ title: Leads leave feedback; the coordinator drains it into fixes and rounds
 kind: feature
 size: M
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-15
+built_by: 6db8bf14-782d-4931-99f9-d2c7084f66e0
+host: k16
 ---
 
 ## Opportunity
