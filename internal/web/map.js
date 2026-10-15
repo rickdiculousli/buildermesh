@@ -469,6 +469,7 @@ async function loadTree() {
       else mesh.live.delete(path);
     }
     renderBand();
+    renderStrip();
   } catch (e) {
     // The next event or poll tries again.
   } finally {
@@ -501,6 +502,7 @@ function liveState(path, state, text, since) {
   setState(path, state, text);
   if (moved) refetchSoon();
   renderBand();
+  renderStrip();
 }
 
 // apply acts on a live frame: node and daemon events restyle nodes, inbox
@@ -1055,32 +1057,68 @@ function pct(x) {
   return Math.round(+x || 0) + "%";
 }
 
+// COUNTED are the states the summary row counts, in the order it names them.
+const COUNTED = ["working", "asking", "blocked", "silent", "done"];
+
+// stateCounts counts the loaded tree's leads, rounds and their children by
+// state (routines are not nodes of it); a live event's state wins over the
+// tree's, as on the boxes. Null when the tree has no nodes.
+function stateCounts() {
+  const n = new Map();
+  let any = false;
+  const walk = (t) => {
+    const live = mesh.live.get(t.node.path);
+    const s = live ? live.state : t.state && t.state.state;
+    n.set(s, (n.get(s) || 0) + 1);
+    any = true;
+    for (const c of t.children || []) walk(c);
+  };
+  for (const t of mesh.tree ? mesh.tree.leads : []) walk(t);
+  return any ? n : null;
+}
+
+// summaryRow is the strip's first row: the count per state, zero counts
+// dropped, each word coloured as its badge. Null when there is no tree.
+function summaryRow() {
+  const n = stateCounts();
+  if (!n) return null;
+  const row = el("div", "sum");
+  for (const s of COUNTED) {
+    if (!n.get(s)) continue;
+    if (row.childNodes.length) row.append(" · ");
+    row.append(el("span", "st-" + s, n.get(s) + " " + s));
+  }
+  if (!row.childNodes.length) row.append(el("span", "st-idle", "all idle"));
+  return row;
+}
+
 // renderStrip draws the strip; an open digest stays open.
 function renderStrip() {
   const s = $("strip");
   const q = strip.quota || [], d = strip.digest;
   const open = s.querySelector("details[open]") !== null;
-  if (!q.length && !d) {
+  const top = summaryRow();
+  if (!top && !q.length && !d) {
     s.hidden = true;
     s.replaceChildren();
     return;
   }
-  const rows = q.map((r) => {
+  const rows = (top ? [top] : []).concat(q.map((r) => {
     const line = el("div", "quota", null, el("b", null, r.provider || "?"),
       " · 5h " + pct(r.five_hour) + " · wk " + pct(r.week));
     if (+r.five_hour >= 80 || +r.week >= 80) line.classList.add("high");
     if (r.five_reset) line.append(" · ", clock("reset", r.five_reset, true));
     if (r.read_at) line.append(" ", clock("read", r.read_at, false));
     return line;
-  });
+  }));
   if (d) {
-    const sum = el("summary", "tap", null, clock("digest", d.at, false), ": " + (d.title || ""));
+    const head = el("summary", "tap", null, clock("digest", d.at, false), ": " + (d.title || ""));
     if (d.body) {
-      const det = el("details", "digest", null, sum, el("pre", null, d.body));
+      const det = el("details", "digest", null, head, el("pre", null, d.body));
       if (open) det.setAttribute("open", "");
       rows.push(det);
     } else {
-      rows.push(el("div", "digest", null, ...sum.childNodes));
+      rows.push(el("div", "digest", null, ...head.childNodes));
     }
   }
   s.replaceChildren(...rows);

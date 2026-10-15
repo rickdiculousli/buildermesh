@@ -84,7 +84,7 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
 .conn { font-size: 12px; color: var(--muted); }
 .conn.down { padding: 2px 10px; border-radius: 999px; background: var(--asking); color: var(--bar); font-weight: 600; }
 
-/* The strip: quota per provider and the newest digest, under the header. */
+/* The strip: the live counts, quota per provider and the newest digest, under the header. */
 .strip {
   background: var(--bar);
   border-bottom: 1px solid var(--line);
@@ -93,6 +93,11 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+.strip .sum { padding: 2px 0; overflow-wrap: anywhere; }
+.strip .sum .st-working { color: var(--working); }
+.strip .sum .st-asking { color: var(--asking); }
+.strip .sum .st-blocked, .strip .sum .st-silent { color: var(--blocked); }
+.strip .sum .st-done { color: var(--done-fg); }
 .strip .quota { padding: 2px 0; overflow-wrap: anywhere; }
 .strip .quota b { color: var(--fg); }
 .strip .quota.high b { color: var(--asking); }
