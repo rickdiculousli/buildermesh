@@ -333,7 +333,7 @@ func pushClaim(ctx context.Context, d Deps, s mesh.Stored, path, event string, j
 	}
 	linked := n
 	if n.Role == "round" {
-		// The action opens the engineer's thread: the operator replies there.
+		// The tap opens the engineer's thread: the operator replies there.
 		if eng, ok, err := mesh.GetNode(ctx, d.Client, path+".eng"); err == nil && ok {
 			linked = eng
 		}
