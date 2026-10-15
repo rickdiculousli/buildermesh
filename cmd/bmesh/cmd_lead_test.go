@@ -30,7 +30,7 @@ func leadSetup(t *testing.T) (*mesh.Client, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	extra := "[runner]\nkind = \"t3\"\n[models]\nlead = \"lead-model\"\n"
+	extra := "[runner]\nkind = \"t3\"\n[models]\nlead = \"lead-model\"\nproposer = \"prop-model\"\n"
 	if _, err := f.WriteString(extra); err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestLeadStartRegistersNode(t *testing.T) {
 		n.Branch != "t3code/"+got.Thread || n.Worktree != "/wt/"+got.Thread || got.Worktree != n.Worktree {
 		t.Fatalf("output %+v node %+v", got, n)
 	}
-	if n.Role != "lead" || n.Repo != "demo" || n.Spec != "012" || n.Host != testHost || n.Model != "lead-model" ||
+	if n.Role != "lead" || n.Repo != "demo" || n.Spec != "012" || n.Host != testHost || n.Model != "lead-model" || n.Effort != "high" ||
 		n.StartedAt == "" || n.RepoPath == "" {
 		t.Fatalf("node %+v", n)
 	}
@@ -66,7 +66,7 @@ func TestLeadStartRegistersNode(t *testing.T) {
 		t.Fatalf("state %s", s)
 	}
 	l, _ := os.ReadFile(log)
-	if !strings.Contains(string(l), "--model lead-model --title [build] demo 012 --prompt-file /dev/null --thread-id "+got.Thread) {
+	if !strings.Contains(string(l), "--model lead-model --title [build] demo 012 --prompt-file /dev/null --thread-id "+got.Thread+" --effort high\n") {
 		t.Fatalf("log %q", l)
 	}
 }
@@ -226,7 +226,7 @@ func TestLeadStartClaudeRunner(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 		l, _ = os.ReadFile(log)
 	}
-	if want := "-p --output-format json --session-id " + got.Thread + " --model m --dangerously-skip-permissions\n"; string(l) != want {
+	if want := "-p --output-format json --session-id " + got.Thread + " --model m --effort high --dangerously-skip-permissions\n"; string(l) != want {
 		t.Fatalf("argv %q, want %q", l, want)
 	}
 	if in, _ := os.ReadFile(log + ".stdin"); string(in) != "build it" {

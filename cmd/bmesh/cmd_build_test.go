@@ -80,7 +80,7 @@ func TestBuildRecordsBuildingThenStartsTheLead(t *testing.T) {
 	}
 	// The node is a lead for the spec, with the thread the brief was started with.
 	n, ok, err := mesh.GetNode(ctx, c, "demo-002")
-	if err != nil || !ok || n.Role != "lead" || n.Spec != "002" || n.Runner.Thread != got.Thread || n.Model != "claude-opus-5-5" {
+	if err != nil || !ok || n.Role != "lead" || n.Spec != "002" || n.Runner.Thread != got.Thread || n.Model != "claude-opus-5-5" || n.Effort != "high" {
 		t.Fatalf("node %+v %v %v", n, ok, err)
 	}
 	// The brief came from the binary, with the spec, the node and the row's facts.
@@ -100,7 +100,7 @@ func TestBuildRecordsBuildingThenStartsTheLead(t *testing.T) {
 	}
 	l, _ := os.ReadFile(log)
 	if !strings.Contains(string(l), "--model claude-opus-5-5 --title [build] demo 002: Spec 002 --prompt-file ") ||
-		!strings.Contains(string(l), "--thread-id "+got.Thread) {
+		!strings.Contains(string(l), "--thread-id "+got.Thread+" --effort high\n") {
 		t.Fatalf("log:\n%s", l)
 	}
 	// Main's worktrees and branches are left as they were.
@@ -128,9 +128,15 @@ func TestBuildRecordsBuildingThenStartsTheLead(t *testing.T) {
 	if gitOut(t, "-C", repo, "rev-parse", "main") != head {
 		t.Fatal("a refused build recorded on main")
 	}
-	out, errs, code = runCLI(t, nil, "build", "demo", "002", "--path", "demo-002-2", "--model", "claude-sonnet-5-5")
+	out, errs, code = runCLI(t, nil, "build", "demo", "002", "--path", "demo-002-2", "--model", "claude-sonnet-5-5", "--effort", "medium")
 	if code != 0 || !strings.Contains(out, `"path":"demo-002-2"`) || !strings.Contains(out, `"model":"claude-sonnet-5-5"`) {
 		t.Fatalf("--path: %d %q %q", code, out, errs)
+	}
+	if n, _, _ := mesh.GetNode(ctx, c, "demo-002-2"); n.Effort != "medium" {
+		t.Fatalf("node %+v", n)
+	}
+	if _, errs, code := runCLI(t, nil, "build", "demo", "002", "--effort", "lots"); code != 2 || !strings.Contains(errs, `effort "lots"`) {
+		t.Fatalf("bad effort: %d %q", code, errs)
 	}
 }
 

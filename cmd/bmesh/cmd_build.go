@@ -16,7 +16,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
-const buildUsage = "usage: bmesh build <repo> <NNN> [--model M] [--path P] | bmesh build --accepted <repo> [--model M]"
+const buildUsage = "usage: bmesh build <repo> <NNN> [--model M] [--effort E] [--path P] | bmesh build --accepted <repo> [--model M] [--effort E]"
 
 // buildSlots is how many leads --accepted keeps working on one repo.
 const buildSlots = 3
@@ -46,6 +46,7 @@ func (a *app) cmdBuild(args []string) error {
 	fs := a.flags("build")
 	accepted := fs.Bool("accepted", false, "build every accepted spec, in order, up to three at a time")
 	model := fs.String("model", "", "model the lead runs on (default the spec's judge)")
+	effort := fs.String("effort", "", "the lead's effort (default [models] lead_effort)")
 	pathFlag := fs.String("path", "", "node path (default <repo>-<NNN>)")
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -55,6 +56,9 @@ func (a *app) cmdBuild(args []string) error {
 		return fail(exitUsage, buildUsage)
 	}
 	if err := checkModel(*model); err != nil {
+		return err
+	}
+	if err := checkEffort(*effort); err != nil {
 		return err
 	}
 	if err := a.loadConfig(); err != nil {
@@ -84,7 +88,7 @@ func (a *app) cmdBuild(args []string) error {
 		return err
 	}
 	if *accepted {
-		return a.buildAccepted(ctx, row, repoPath, specs, *model)
+		return a.buildAccepted(ctx, row, repoPath, specs, *model, *effort)
 	}
 	n, err := strconv.Atoi(pos[1])
 	if err != nil {
@@ -94,7 +98,7 @@ func (a *app) cmdBuild(args []string) error {
 	if !ok {
 		return fail(exitError, "no spec %03d on main in %s", n, repoPath)
 	}
-	started, err := a.buildOne(ctx, row, repoPath, s, *model, *pathFlag)
+	started, err := a.buildOne(ctx, row, repoPath, s, *model, *effort, *pathFlag)
 	if err != nil {
 		return err
 	}
@@ -110,7 +114,7 @@ func (a *app) cmdBuild(args []string) error {
 // <path>.md and the lead is started with that thread id; a runner that
 // names the branch itself (t3) gets it recorded in a second commit. A
 // start that fails moves the spec back to accepted.
-func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s *spec.Spec, model, pathFlag string) (buildStarted, error) {
+func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s *spec.Spec, model, effort, pathFlag string) (buildStarted, error) {
 	if s.Status() != "accepted" {
 		return buildStarted{}, fail(exitRefused, "refused: spec %s is %s, not accepted", s.IDString(), s.Status())
 	}
@@ -158,7 +162,7 @@ func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s 
 		return buildStarted{}, err
 	}
 	started, err := a.startLead(leadStart{Name: row.Name, RepoPath: repoPath, Spec: s.IDString(), BriefPath: briefPath,
-		Model: model, Title: fmt.Sprintf("[build] %s %s: %s", row.Name, s.IDString(), s.Title()), Path: p, Thread: thread})
+		Model: model, Effort: effort, Title: fmt.Sprintf("[build] %s %s: %s", row.Name, s.IDString(), s.Title()), Path: p, Thread: thread})
 	if err != nil {
 		if _, rerr := a.recordOnMain(ctx, row.Name, repoPath, fmt.Sprintf("Dispatch %s: did not start", s.IDString()),
 			s.ID, "accepted", []string{"building"}); rerr != nil {
@@ -236,7 +240,7 @@ func (a *app) recordOnMain(ctx context.Context, name, repoPath, msg string, id i
 // one line per spec: started, waits (on a named lower spec that is not
 // done, or for a slot) or not started (with the refusal). One spec's
 // refusal does not stop the others.
-func (a *app) buildAccepted(ctx context.Context, row config.Repo, repoPath string, specs []*spec.Spec, model string) error {
+func (a *app) buildAccepted(ctx context.Context, row config.Repo, repoPath string, specs []*spec.Spec, model, effort string) error {
 	working, err := a.repoLeads(ctx, row.Name)
 	if err != nil {
 		return err
@@ -258,7 +262,7 @@ func (a *app) buildAccepted(ctx context.Context, row config.Repo, repoPath strin
 			l.State, l.Reason = "waits", "on "+strings.Join(waits, ", ")
 		} else if working >= buildSlots {
 			l.State, l.Reason = "waits", fmt.Sprintf("%d leads working on %s", working, row.Name)
-		} else if started, err := a.buildOne(ctx, row, repoPath, s, model, ""); err != nil {
+		} else if started, err := a.buildOne(ctx, row, repoPath, s, model, effort, ""); err != nil {
 			l.State, l.Reason = "not started", err.Error()
 		} else {
 			l.State, l.buildStarted = "started", &started

@@ -25,7 +25,7 @@ var ErrRunning = errors.New("runner: thread is running, nothing sent")
 // runs in (its branch is Branch): no runner makes one then. Project is the
 // repo T3 files the thread under ("" = RepoPath); other runners ignore it.
 type StartSpec struct {
-	RepoPath, Model, Title, BriefPath, ThreadID, Branch, Worktree, Project string
+	RepoPath, Model, Effort, Title, BriefPath, ThreadID, Branch, Worktree, Project string
 }
 
 // Started is the session a runner started.

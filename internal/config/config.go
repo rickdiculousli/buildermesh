@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -55,7 +56,23 @@ type LivenessConfig struct {
 
 type SpecConfig struct{ Glob string }
 
-type ModelsConfig struct{ Lead string }
+type ModelsConfig struct {
+	Lead           string // a lead's model when neither --model nor the spec's judge names one
+	LeadEffort     string `toml:"lead_effort"` // a lead's effort
+	Proposer       string // a proposal round's threads
+	ProposerEffort string `toml:"proposer_effort"` // a proposal round's effort
+}
+
+// Efforts are the effort levels a thread can be started at.
+var Efforts = []string{"low", "medium", "high", "xhigh", "max"}
+
+// CheckEffort is nil for "" (the runner's default) and a level of Efforts.
+func CheckEffort(e string) error {
+	if e == "" || slices.Contains(Efforts, e) {
+		return nil
+	}
+	return fmt.Errorf("effort %q: want one of %s", e, strings.Join(Efforts, ", "))
+}
 
 // QuotaConfig names the command whose JSON output the map's strip shows; ""
 // hides the strip.
@@ -137,8 +154,9 @@ func defaults() *Config {
 		Liveness: LivenessConfig{Grace: 20 * time.Minute, PollEvery: 60 * time.Second, WakeEvery: 10 * time.Minute},
 		Repos:    map[string]Repo{},
 		Spec:     SpecConfig{Glob: "docs/proposals/{id}-*.md"},
-		Models:   ModelsConfig{Lead: "claude-fable-5-1"},
-		Console:  ConsoleConfig{Hosts: map[string]string{}},
+		Models: ModelsConfig{Lead: "claude-opus-5-5", LeadEffort: "high", Proposer: "claude-opus-5-5",
+			ProposerEffort: "xhigh"},
+		Console: ConsoleConfig{Hosts: map[string]string{}},
 	}
 }
 
@@ -229,6 +247,11 @@ func Load(path string) (*Config, error) {
 	}
 	c.Mesh, c.Host, c.Serve, c.Runner, c.Spec, c.Models = f.Mesh, f.Host, f.Serve, f.Runner, f.Spec, f.Models
 	c.Quota, c.Console = f.Quota, f.Console
+	for key, e := range map[string]string{"lead_effort": c.Models.LeadEffort, "proposer_effort": c.Models.ProposerEffort} {
+		if err := CheckEffort(e); err != nil {
+			return nil, fmt.Errorf("config %s: [models] %s: %w", path, key, err)
+		}
+	}
 	if c.Console.Hosts == nil {
 		c.Console.Hosts = map[string]string{}
 	}

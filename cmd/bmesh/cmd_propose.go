@@ -23,7 +23,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
-const proposeUsage = "usage: bmesh propose <repo> [--model M] [--context <text|->]"
+const proposeUsage = "usage: bmesh propose <repo> [--model M] [--effort E] [--context <text|->]"
 
 // proposedCap is how many proposed specs a repo may hold before a round is
 // refused: they are waiting on the operator's review.
@@ -45,7 +45,7 @@ type childStarted struct {
 }
 
 // cmdPropose runs a proposal round on a ship repo: bmesh propose <repo>
-// [--model M] [--context <text|->]. It refuses five or more proposed specs, levels main, picks
+// [--model M] [--effort E] [--context <text|->]. It refuses five or more proposed specs, levels main, picks
 // the next round number from the nodes bucket, registers the round node
 // and starts the two children through the runner on the row's host and
 // ux_host (a remote host runs this command's child form over ssh). The
@@ -54,7 +54,8 @@ type childStarted struct {
 // registers its node; the full form calls it for a child on another box.
 func (a *app) cmdPropose(args []string) error {
 	fs := a.flags("propose")
-	model := fs.String("model", "", "model the threads run on (default [models] lead)")
+	model := fs.String("model", "", "model the threads run on (default [models] proposer)")
+	effort := fs.String("effort", "", "the threads' effort (default [models] proposer_effort)")
 	child := fs.String("child", "", "start one child only: eng or ux (the child form)")
 	round := fs.Int("round", 0, "child form: the round number")
 	nextID := fs.Int("next-id", 0, "child form: the first spec id")
@@ -68,6 +69,9 @@ func (a *app) cmdPropose(args []string) error {
 		return fail(exitUsage, proposeUsage)
 	}
 	if err := checkModel(*model); err != nil {
+		return err
+	}
+	if err := checkEffort(*effort); err != nil {
 		return err
 	}
 	if *focus == "-" {
@@ -93,7 +97,10 @@ func (a *app) cmdPropose(args []string) error {
 		return fail(exitRefused, "refused: %s is %s; proposal rounds are for ship repos only", name, row.Mode)
 	}
 	if *model == "" {
-		*model = a.cfg.Models.Lead
+		*model = a.cfg.Models.Proposer
+	}
+	if *effort == "" {
+		*effort = a.cfg.Models.ProposerEffort
 	}
 	if a.configPath != "" {
 		if abs, err := filepath.Abs(a.configPath); err == nil {
@@ -106,17 +113,17 @@ func (a *app) cmdPropose(args []string) error {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		started, err := a.startChild(ctx, row, repoPath, *round, *child, *nextID, *thread, *model, *focus)
+		started, err := a.startChild(ctx, row, repoPath, *round, *child, *nextID, *thread, *model, *effort, *focus)
 		if err != nil {
 			return err
 		}
 		return a.printJSON(started)
 	}
-	return a.runRound(row, repoPath, *model, *focus)
+	return a.runRound(row, repoPath, *model, *effort, *focus)
 }
 
 // runRound is the full form.
-func (a *app) runRound(row config.Repo, repoPath, model, focus string) error {
+func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	me := a.cfg.HostName()
@@ -169,7 +176,7 @@ func (a *app) runRound(row config.Repo, repoPath, model, focus string) error {
 			return err
 		}
 	}
-	round := mesh.Node{Path: roundPath, Role: "round", Repo: row.Name, RepoPath: repoPath, Host: me, Model: model,
+	round := mesh.Node{Path: roundPath, Role: "round", Repo: row.Name, RepoPath: repoPath, Host: me, Model: model, Effort: effort,
 		StartedAt: time.Now().UTC().Format(time.RFC3339)}
 	if err := mesh.PutNode(ctx, a.client, round); err != nil {
 		return err
@@ -191,9 +198,9 @@ func (a *app) runRound(row config.Repo, repoPath, model, focus string) error {
 	for _, c := range children {
 		var started childStarted
 		if hosts[c] == me {
-			started, err = a.startChild(ctx, row, repoPath, n, c, ids[c], threads[c], model, focus)
+			started, err = a.startChild(ctx, row, repoPath, n, c, ids[c], threads[c], model, effort, focus)
 		} else {
-			started, err = a.startRemoteChild(ctx, hosts[c], row.Name, n, c, ids[c], threads[c], model, focus)
+			started, err = a.startRemoteChild(ctx, hosts[c], row.Name, n, c, ids[c], threads[c], model, effort, focus)
 		}
 		if err != nil {
 			// The other child is still started: the one that did not is
@@ -243,7 +250,7 @@ func nextRound(ctx context.Context, c *mesh.Client, repo string) (int, error) {
 // startChild makes one child's bmesh worktree from main, renders its brief,
 // starts it through this box's runner and registers its node.
 func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, round int, child string, nextID int,
-	thread, model, focus string) (childStarted, error) {
+	thread, model, effort, focus string) (childStarted, error) {
 	if err := levelMain(ctx, repoPath); err != nil {
 		return childStarted{}, fail(exitRefused, "refused: %v", err)
 	}
@@ -316,7 +323,7 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 			return childStarted{}, fmt.Errorf("[runner] t3_project: %w", err)
 		}
 	}
-	started, err := r.Start(context.WithoutCancel(ctx), runner.StartSpec{RepoPath: repoPath, Model: model,
+	started, err := r.Start(context.WithoutCancel(ctx), runner.StartSpec{RepoPath: repoPath, Model: model, Effort: effort,
 		Title: fmt.Sprintf("[propose] %s round %d: %s", row.Name, round, title), BriefPath: briefPath, ThreadID: thread,
 		Branch: branch, Worktree: wt, Project: project})
 	if errors.Is(err, runner.ErrTimeout) {
@@ -327,7 +334,7 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 		return childStarted{}, fmt.Errorf("runner start (thread id %s): %w", thread, err)
 	}
 	node := mesh.Node{Path: path, Role: "engineer", Parent: roundPath, Repo: row.Name, RepoPath: repoPath,
-		Branch: branch, Worktree: wt, Host: a.cfg.HostName(), Model: model,
+		Branch: branch, Worktree: wt, Host: a.cfg.HostName(), Model: model, Effort: effort,
 		Runner:    mesh.NodeRunner{Kind: a.cfg.Runner.Kind, Thread: started.Thread},
 		StartedAt: time.Now().UTC().Format(time.RFC3339)}
 	if err := mesh.PutNode(ctx, a.client, node); err != nil {
@@ -399,9 +406,12 @@ func reachable(ctx context.Context, host string) error {
 
 // startRemoteChild runs the child form on host and reads what it printed.
 func (a *app) startRemoteChild(ctx context.Context, host, repo string, round int, child string, nextID int,
-	thread, model, focus string) (childStarted, error) {
+	thread, model, effort, focus string) (childStarted, error) {
 	parts := []string{"bmesh", "propose", repo, "--child", child, "--round", strconv.Itoa(round),
 		"--next-id", strconv.Itoa(nextID), "--thread-id", thread, "--model", model}
+	if effort != "" {
+		parts = append(parts, "--effort", effort)
+	}
 	if focus != "" {
 		parts = append(parts, "--context", focus)
 	}

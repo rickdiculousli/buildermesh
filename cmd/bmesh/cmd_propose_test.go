@@ -102,7 +102,7 @@ func TestProposeStartsARoundWithTwoChildren(t *testing.T) {
 		}
 		wantBranch := "demo-round-1-" + child
 		if n.Role != "engineer" || n.Parent != "demo-round-1" || n.Branch != wantBranch || n.Repo != "demo" || n.RepoPath != repo ||
-			n.Runner.Kind != "t3" || !uuidRE.MatchString(n.Runner.Thread) || n.Model != "lead-model" || n.Host != testHost {
+			n.Runner.Kind != "t3" || !uuidRE.MatchString(n.Runner.Thread) || n.Model != "prop-model" || n.Effort != "xhigh" || n.Host != testHost {
 			t.Fatalf("%s: %+v", child, n)
 		}
 		if filepath.Base(n.Worktree) != wantBranch || filepath.Base(filepath.Dir(n.Worktree)) != "demo" {
@@ -122,10 +122,10 @@ func TestProposeStartsARoundWithTwoChildren(t *testing.T) {
 	eng, _, _ := mesh.GetNode(ctx, c, "demo-round-1.eng")
 	ux, _, _ := mesh.GetNode(ctx, c, "demo-round-1.ux")
 	for _, want := range []string{
-		"argv start --repo " + repo + " --provider claude --model lead-model --title [propose] demo round 1: engineer --prompt-file ",
-		"--thread-id " + eng.Runner.Thread + " --worktree " + eng.Worktree + " --branch demo-round-1-eng",
+		"argv start --repo " + repo + " --provider claude --model prop-model --title [propose] demo round 1: engineer --prompt-file ",
+		"--thread-id " + eng.Runner.Thread + " --worktree " + eng.Worktree + " --branch demo-round-1-eng --effort xhigh\n",
 		"--title [propose] demo round 1: UI/UX --prompt-file ",
-		"--thread-id " + ux.Runner.Thread + " --worktree " + ux.Worktree + " --branch demo-round-1-ux",
+		"--thread-id " + ux.Runner.Thread + " --worktree " + ux.Worktree + " --branch demo-round-1-ux --effort xhigh\n",
 	} {
 		if !strings.Contains(string(l), want) {
 			t.Errorf("log lacks %q:\n%s", want, l)
@@ -190,8 +190,21 @@ func TestProposeCarriesTheOperatorsContext(t *testing.T) {
 		t.Fatalf("%v %q", err, b)
 	}
 	l, _ := os.ReadFile(os.Getenv("FAKE_SSH_LOG"))
-	if !strings.Contains(string(l), " --model lead-model --context ") || !strings.Contains(string(l), "the map") {
+	if !strings.Contains(string(l), " --model prop-model --effort xhigh --context ") || !strings.Contains(string(l), "the map") {
 		t.Fatalf("ssh log:\n%s", l)
+	}
+}
+
+func TestProposeEffortFlag(t *testing.T) {
+	_, _, log := proposeSetup(t, "")
+	if _, errs, code := runCLI(t, nil, "propose", "demo", "--effort", "huge"); code != 2 || !strings.Contains(errs, `effort "huge"`) {
+		t.Fatalf("code %d err %q", code, errs)
+	}
+	if _, errs, code := runCLI(t, nil, "propose", "demo", "--model", "claude-fable-5-1", "--effort", "max"); code != 0 {
+		t.Fatalf("code %d err %q", code, errs)
+	}
+	if l, _ := os.ReadFile(log); strings.Count(string(l), "--model claude-fable-5-1 ") != 2 || strings.Count(string(l), " --effort max\n") != 2 {
+		t.Fatalf("log:\n%s", l)
 	}
 }
 
@@ -261,7 +274,7 @@ func TestProposeRemoteChildGoesThroughSSH(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(string(l)), "\n")
 	if len(lines) != 2 || lines[0] != "ssh other bash -lc 'bmesh help >/dev/null'" ||
 		!strings.HasPrefix(lines[1], "ssh other bash -lc 'bmesh propose demo --child ux --round 1 --next-id 19 --thread-id ") ||
-		!strings.HasSuffix(lines[1], " --model lead-model'") {
+		!strings.HasSuffix(lines[1], " --model prop-model --effort xhigh'") {
 		t.Fatalf("ssh log:\n%s", l)
 	}
 	if _, ok, _ := mesh.GetNode(ctx, c, "demo-round-1.eng"); !ok {

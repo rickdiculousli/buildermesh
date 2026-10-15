@@ -27,7 +27,7 @@ The spec is the record. Build what it puts in and nothing it puts out. You alone
 An executor is your subagent in its own worktree on its own branch, with a node of its own under yours.
 
 1. `bmesh executor new --name <name> [--model <m>]` makes the worktree and branch (`<your branch>-<name>`) from your HEAD, registers the node and prints a JSON line and the executor header.
-2. Spawn it with the Agent tool, in the background, model of your choice. The prompt is the header, pasted verbatim at the top, then a brief that names: the piece, the files it owns (and the ones it must not touch), its done condition, and how to report: `bmesh --node <its path> send <your path> "branch <b> at <sha>: <one line>"` then `bmesh --node <its path> done --commit <sha>`.
+2. Spawn it with the Agent tool, in the background, model of your choice, at medium effort (`effort: "medium"`). The prompt is the header, pasted verbatim at the top, then a brief that names: the piece, the files it owns (and the ones it must not touch), its done condition, and how to report: `bmesh --node <its path> send <your path> "branch <b> at <sha>: <one line>"` then `bmesh --node <its path> done --commit <sha>`.
 3. Resume it with SendMessage when you have a question or a correction; it keeps its context. Start a fresh one for a new piece.
 4. `bmesh executor list` shows your tree: state, branch, head, unread.
 

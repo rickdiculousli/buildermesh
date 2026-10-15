@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
@@ -46,6 +47,14 @@ func gitRev(args ...string) (string, error) {
 func checkModel(model string) error {
 	if model != "" && !kind.ModelRE.MatchString(model) {
 		return fail(exitUsage, "model %q: want no spaces or \";\"", model)
+	}
+	return nil
+}
+
+// checkEffort refuses an effort level the runner cannot start a thread at.
+func checkEffort(effort string) error {
+	if err := config.CheckEffort(effort); err != nil {
+		return fail(exitUsage, "%v", err)
 	}
 	return nil
 }

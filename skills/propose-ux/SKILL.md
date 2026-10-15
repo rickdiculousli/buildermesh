@@ -37,7 +37,7 @@ Then rank: three to five specs, best first, at least one that isn't a feature.
 - The shape is `bmesh spec template`. Fill every placeholder in its frontmatter (`lens: ux`), keep `status: proposed`, delete the `#` guide lines, keep the six headings in order. `proposed_by` is the thread id in your brief; `proposed_on` is today.
 - No product code changes. A one-line fix is a size `XS` proposal, not a change made here.
 - Sizes are relative, never hours: `XS` one file, `S` one module, `M` crosses modules, `L` changes an interface others depend on.
-- Name the judge honestly, the model that should build the spec: `fable` when the work is taste-heavy and needs judgment the spec can't pin down; `opus` when it's rigid but complex, the spec pins the result and only the path is hard; `sonnet` when it's trivial, something a careful junior could do from the spec. Justify it in one clause in the Proposal section: "Judge: fable, because the spacing needs an eye, not a rule."
+- Name the judge honestly, the model that should build the spec. `opus` is the default: it builds complex work and work that needs judgment as well as `fable` does. `fable` only when the spec turns on exceptional taste or nuance that opus would visibly miss (a voice, a feel no rule captures), never because the work is large or hard; say what opus would miss. `sonnet` when it's trivial, something a careful junior could do from the spec. Justify it in one clause in the Proposal section: "Judge: opus, because the layout has a rule to follow even where the spec leaves room."
 - Half a page each. Evidence over adjectives. "Needs from the operator" stays empty unless a taste call really is theirs.
 - Check the ledger reads them: `bmesh spec list --repo .` lists each with no error.
 

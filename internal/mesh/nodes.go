@@ -31,6 +31,7 @@ type Node struct {
 	Runner    NodeRunner `json:"runner"`
 	Parent    string     `json:"parent"`
 	Model     string     `json:"model"`
+	Effort    string     `json:"effort,omitempty"`
 	StartedAt string     `json:"started_at"`
 }
 

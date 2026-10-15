@@ -176,6 +176,9 @@ func (r T3) Start(ctx context.Context, s StartSpec) (Started, error) {
 			args = append(args, "--branch", s.Branch)
 		}
 	}
+	if s.Effort != "" {
+		args = append(args, "--effort", s.Effort)
+	}
 	out, err := r.run(ctx, args...)
 	if err != nil {
 		return Started{}, err

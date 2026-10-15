@@ -15,7 +15,7 @@ import (
 
 func (a *app) cmdLead(args []string) error {
 	if len(args) == 0 || args[0] != "start" {
-		return fail(exitUsage, "usage: bmesh lead start --repo R --spec NNN --brief FILE [--model M] [--title T] [--path P]")
+		return fail(exitUsage, "usage: bmesh lead start --repo R --spec NNN --brief FILE [--model M] [--effort E] [--title T] [--path P]")
 	}
 	return a.cmdLeadStart(args[1:])
 }
@@ -27,6 +27,7 @@ func (a *app) cmdLeadStart(args []string) error {
 	spec := fs.String("spec", "", "spec id, e.g. 012")
 	brief := fs.String("brief", "", "file holding the lead's first prompt")
 	model := fs.String("model", "", "model (default [models] lead)")
+	effort := fs.String("effort", "", "effort: low, medium, high, xhigh or max (default [models] lead_effort)")
 	title := fs.String("title", "", "thread title (default \"[build] <repo> <spec>\")")
 	pathFlag := fs.String("path", "", "node path (default <repo>-<spec>)")
 	pos, err := parse(fs, args)
@@ -34,7 +35,10 @@ func (a *app) cmdLeadStart(args []string) error {
 		return err
 	}
 	if len(pos) > 0 || *repo == "" || *spec == "" || *brief == "" {
-		return fail(exitUsage, "usage: bmesh lead start --repo R --spec NNN --brief FILE [--model M] [--title T] [--path P]")
+		return fail(exitUsage, "usage: bmesh lead start --repo R --spec NNN --brief FILE [--model M] [--effort E] [--title T] [--path P]")
+	}
+	if err := checkEffort(*effort); err != nil {
+		return err
 	}
 	if err := a.loadConfig(); err != nil {
 		return err
@@ -47,7 +51,7 @@ func (a *app) cmdLeadStart(args []string) error {
 	if err != nil {
 		return err
 	}
-	started, err := a.startLead(leadStart{Name: name, RepoPath: repoPath, Spec: *spec, BriefPath: briefPath, Model: *model,
+	started, err := a.startLead(leadStart{Name: name, RepoPath: repoPath, Spec: *spec, BriefPath: briefPath, Model: *model, Effort: *effort,
 		Title: *title, Path: *pathFlag})
 	if err != nil {
 		return err
@@ -60,7 +64,7 @@ func (a *app) cmdLeadStart(args []string) error {
 // [models] lead), the title (default "[build] <repo> <spec>"), the node
 // path (default <repo>-<spec>) and the thread id (default a fresh UUID).
 type leadStart struct {
-	Name, RepoPath, Spec, BriefPath, Model, Title, Path, Thread string
+	Name, RepoPath, Spec, BriefPath, Model, Effort, Title, Path, Thread string
 }
 
 // leadStarted is what startLead prints: the node and its session.
@@ -144,6 +148,9 @@ func (a *app) startLead(o leadStart) (leadStarted, error) {
 	if o.Model == "" {
 		o.Model = a.cfg.Models.Lead
 	}
+	if o.Effort == "" {
+		o.Effort = a.cfg.Models.LeadEffort
+	}
 	if o.Title == "" {
 		o.Title = fmt.Sprintf("[build] %s %s", o.Name, o.Spec)
 	}
@@ -156,7 +163,7 @@ func (a *app) startLead(o leadStart) (leadStarted, error) {
 	// The runner bounds its own calls (T3: 120 s), so the start doesn't share
 	// the CLI's one-minute deadline, and registration gets a fresh one.
 	cancel()
-	started, err := r.Start(context.Background(), runner.StartSpec{RepoPath: o.RepoPath, Model: o.Model, Title: o.Title,
+	started, err := r.Start(context.Background(), runner.StartSpec{RepoPath: o.RepoPath, Model: o.Model, Effort: o.Effort, Title: o.Title,
 		BriefPath: o.BriefPath, ThreadID: thread})
 	if errors.Is(err, runner.ErrTimeout) {
 		return leadStarted{}, fmt.Errorf("start timed out; thread id %s may exist", thread)
@@ -167,7 +174,7 @@ func (a *app) startLead(o leadStart) (leadStarted, error) {
 	ctx, cancel = cmdCtx()
 	defer cancel()
 	if err := a.register(ctx, started, mesh.Node{Path: p, Role: "lead", Repo: o.Name, RepoPath: o.RepoPath, Spec: o.Spec,
-		Host: a.cfg.HostName(), Model: o.Model}, prev); err != nil {
+		Host: a.cfg.HostName(), Model: o.Model, Effort: o.Effort}, prev); err != nil {
 		return leadStarted{}, fmt.Errorf("thread %s started (branch %s, worktree %s) but registering the node failed: %w",
 			started.Thread, started.Branch, started.Worktree, err)
 	}

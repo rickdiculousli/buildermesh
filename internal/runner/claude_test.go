@@ -142,7 +142,7 @@ func TestClaudeSendQueuesWhileRunning(t *testing.T) {
 func TestClaudeSendWhenIdleResumes(t *testing.T) {
 	log := useFake(t, "BMESH_CLAUDE_COMMAND", "fake-claude.sh", "FAKE_LOG")
 	r, repo, brief := claudeRepo(t)
-	if _, err := r.Start(context.Background(), StartSpec{RepoPath: repo, BriefPath: brief, ThreadID: "th-1", Model: "m"}); err != nil {
+	if _, err := r.Start(context.Background(), StartSpec{RepoPath: repo, BriefPath: brief, ThreadID: "th-1", Model: "m", Effort: "xhigh"}); err != nil {
 		t.Fatal(err)
 	}
 	until(t, "turn 1 to end", idle(t, r, "th-1"))
@@ -155,7 +155,7 @@ func TestClaudeSendWhenIdleResumes(t *testing.T) {
 		return err == nil && !st.Running && st.LastReply == "second"
 	})
 	// The model is named on the resume too: claude does not restore it.
-	if l := lines(t, log); len(l) != 2 || l[1] != "-p --output-format json --resume th-1 --model m --dangerously-skip-permissions" {
+	if l := lines(t, log); len(l) != 2 || l[1] != "-p --output-format json --resume th-1 --model m --effort xhigh --dangerously-skip-permissions" {
 		t.Fatalf("log %q", l)
 	}
 }

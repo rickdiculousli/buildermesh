@@ -20,7 +20,7 @@ func TestLoadMissingFileIsDefaults(t *testing.T) {
 	}
 	if c.Mesh.Listen != "127.0.0.1:4222" || c.Liveness.PollEvery != 60*time.Second ||
 		c.Liveness.WakeEvery != 10*time.Minute || c.Notify.DigestEvery != time.Hour ||
-		c.Spec.Glob != "docs/proposals/{id}-*.md" || c.Models.Lead != "claude-fable-5-1" ||
+		c.Spec.Glob != "docs/proposals/{id}-*.md" || c.Models != (ModelsConfig{Lead: "claude-opus-5-5", LeadEffort: "high", Proposer: "claude-opus-5-5", ProposerEffort: "xhigh"}) ||
 		c.Runner.TmuxSession != "bmesh" || c.Runner.T3Dispatch != "t3_dispatch.py" ||
 		c.Runner.Checkouts != "~/.bmesh/checkouts" || c.Runner.Claude != "claude" {
 		t.Fatalf("defaults wrong: %+v", c)
@@ -109,6 +109,14 @@ func TestLoadUnknownKeysAndBadDuration(t *testing.T) {
 	os.WriteFile(p, []byte("[liveness]\ngrace = \"soon\"\n"), 0o644)
 	if _, err := Load(p); err == nil {
 		t.Fatal("bad duration accepted")
+	}
+	os.WriteFile(p, []byte("[models]\nlead = \"m\"\nproposer_effort = \"huge\"\n"), 0o644)
+	if _, err := Load(p); err == nil || !strings.Contains(err.Error(), `[models] proposer_effort: effort "huge": want one of low, medium, high, xhigh, max`) {
+		t.Fatalf("bad effort: %v", err)
+	}
+	os.WriteFile(p, []byte("[models]\nlead = \"m\"\nlead_effort = \"\"\n"), 0o644)
+	if c, err := Load(p); err != nil || c.Models.Lead != "m" || c.Models.LeadEffort != "" || c.Models.ProposerEffort != "xhigh" {
+		t.Fatalf("%v %+v", err, c.Models)
 	}
 }
 

@@ -102,7 +102,7 @@ func TestT3StartInAnExistingWorktreeUnderAProject(t *testing.T) {
 	}
 	r := T3{Dispatch: "t3_dispatch.py", Dir: t.TempDir()}
 	got, err := r.Start(context.Background(), StartSpec{RepoPath: "/r/demo", Model: "m1", Title: "[propose] demo round 1: engineer",
-		BriefPath: brief, ThreadID: "uuid-2", Branch: "demo-round-1-eng", Worktree: "/bm/wt/demo/demo-round-1-eng", Project: "/r/bm"})
+		BriefPath: brief, ThreadID: "uuid-2", Branch: "demo-round-1-eng", Worktree: "/bm/wt/demo/demo-round-1-eng", Project: "/r/bm", Effort: "xhigh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestT3StartInAnExistingWorktreeUnderAProject(t *testing.T) {
 		t.Fatalf("started %+v", got)
 	}
 	want := "argv start --repo /r/bm --provider claude --model m1 --title [propose] demo round 1: engineer --prompt-file " + brief +
-		" --thread-id uuid-2 --worktree /bm/wt/demo/demo-round-1-eng --branch demo-round-1-eng\n"
+		" --thread-id uuid-2 --worktree /bm/wt/demo/demo-round-1-eng --branch demo-round-1-eng --effort xhigh\n"
 	if l := readLog(t, log); !strings.HasPrefix(l, want) {
 		t.Fatalf("log %q\nwant prefix %q", l, want)
 	}

@@ -64,7 +64,7 @@ func (r Tmux) Start(ctx context.Context, s StartSpec) (Started, error) {
 	if cfg := os.Getenv("BMESH_CONFIG"); cfg != "" {
 		args = append(args, "-e", "BMESH_CONFIG="+cfg)
 	}
-	if _, err := r.tmux(ctx, append(args, "claude")...); err != nil {
+	if _, err := r.tmux(ctx, append(args, withModel([]string{"claude"}, s.Model, s.Effort)...)...); err != nil {
 		return Started{}, err
 	}
 	if err := r.awaitPrompt(ctx, s.ThreadID); err != nil {

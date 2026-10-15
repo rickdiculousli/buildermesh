@@ -80,10 +80,13 @@ func (r Claude) Start(ctx context.Context, s StartSpec) (Started, error) {
 	if err := os.WriteFile(filepath.Join(d, "model"), []byte(s.Model), 0o644); err != nil {
 		return Started{}, err
 	}
+	if err := os.WriteFile(filepath.Join(d, "effort"), []byte(s.Effort), 0o644); err != nil {
+		return Started{}, err
+	}
 	// Under the lock, like every other turn start: a Status or Send that
 	// lands between the turn and pid writes must not read turn 1 as dead.
 	if err := locked(d, func() error {
-		return r.turn(d, wt, 1, string(brief), withModel([]string{"--session-id", s.ThreadID}, s.Model))
+		return r.turn(d, wt, 1, string(brief), withModel([]string{"--session-id", s.ThreadID}, s.Model, s.Effort))
 	}); err != nil {
 		return Started{}, err
 	}
@@ -331,17 +334,23 @@ func (r Claude) resume(d, thread string, n int, text string) error {
 	if err != nil {
 		return err
 	}
-	// --resume does not restore the session's model, so every turn names it.
+	// --resume does not restore the session's model or effort, so every
+	// turn names them.
 	model, _ := os.ReadFile(filepath.Join(d, "model"))
-	return r.turn(d, strings.TrimSpace(string(wt)), n, text, withModel([]string{"--resume", thread}, strings.TrimSpace(string(model))))
+	effort, _ := os.ReadFile(filepath.Join(d, "effort"))
+	return r.turn(d, strings.TrimSpace(string(wt)), n, text,
+		withModel([]string{"--resume", thread}, strings.TrimSpace(string(model)), strings.TrimSpace(string(effort))))
 }
 
-// withModel appends --model when one is set.
-func withModel(args []string, model string) []string {
-	if model == "" {
-		return args
+// withModel appends --model and --effort when they are set.
+func withModel(args []string, model, effort string) []string {
+	if model != "" {
+		args = append(args, "--model", model)
 	}
-	return append(args, "--model", model)
+	if effort != "" {
+		args = append(args, "--effort", effort)
+	}
+	return args
 }
 
 // Send starts the next turn with text, or queues it under queue/ when a turn

@@ -104,12 +104,12 @@ func TestTmuxStartAnswersDialogsBeforeTyping(t *testing.T) {
 	t.Setenv("FAKE_TMUX_PANES", panes)
 	t.Setenv("BMESH_CONFIG", "/cfg/bm.toml")
 	r := Tmux{Session: "mesh", Worktrees: filepath.Join(root, "wt")}
-	if _, err := r.Start(context.Background(), StartSpec{RepoPath: repo, BriefPath: brief, ThreadID: "th-1"}); err != nil {
+	if _, err := r.Start(context.Background(), StartSpec{RepoPath: repo, BriefPath: brief, ThreadID: "th-1", Model: "m", Effort: "max"}); err != nil {
 		t.Fatal(err)
 	}
 	wt := filepath.Join(root, "wt", "demo", "th-1")
 	want := "has-session -t mesh\n" +
-		"new-window -t mesh -n th-1 -c " + wt + " -e BMESH_CONFIG=/cfg/bm.toml claude\n" +
+		"new-window -t mesh -n th-1 -c " + wt + " -e BMESH_CONFIG=/cfg/bm.toml claude --model m --effort max\n" +
 		"capture-pane -p -t mesh:th-1\n" + // nothing yet
 		"capture-pane -p -t mesh:th-1\n" + // the trust question
 		"send-keys -t mesh:th-1 Down\nsend-keys -t mesh:th-1 Enter\n" +
