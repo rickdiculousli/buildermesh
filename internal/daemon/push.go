@@ -41,10 +41,12 @@ var pushKinds = map[string]struct{ title, priority, tags string }{
 
 // Push builds the push for node event ev of node n (ev.From is n's path).
 // ok is false unless n is a lead, a round or (for ask) an engineer, and
-// ev.Event is listed in cfg.Push. console is the thread link ("" = no
-// action button): the lead's or engineer's, or for a round its eng child's. A round's done is titled `<repo> round N
-// proposed` and carries the merged pitch; its blocked, `<repo> round N
-// blocked`.
+// ev.Event is listed in cfg.Push. console is the thread link (""= none):
+// the lead's or engineer's, or for a round its eng child's. The tap opens
+// the thread, and an Open map action the map page (leads and engineers,
+// with cfg.MapURL); without a thread the tap opens the map. A round's done
+// is titled `<repo> round N proposed` and carries the merged pitch; its
+// blocked, `<repo> round N blocked`.
 func Push(ev mesh.Event, n mesh.Node, cfg config.NotifyConfig, console string) (req PushRequest, ok bool) {
 	k, known := pushKinds[ev.Event]
 	if (n.Role != "lead" && n.Role != "round" && n.Role != "engineer") || !known || !slices.Contains(cfg.Push, ev.Event) {
@@ -67,11 +69,21 @@ func Push(ev mesh.Event, n mesh.Node, cfg config.NotifyConfig, console string) (
 		if ev.Event == "done" {
 			req.Tags = "memo"
 		}
-	} else if cfg.MapURL != "" {
-		req.Click = cfg.MapURL + "#/lead/" + ev.From
 	}
-	if console != "" {
-		req.Actions = "view, Open thread, " + console
+	mapURL := ""
+	if n.Role != "round" && cfg.MapURL != "" {
+		mapURL = cfg.MapURL + "#/lead/" + ev.From
+	}
+	// A tap opens the thread, where the operator answers; the map is the
+	// action. Without a thread the tap opens the map.
+	switch {
+	case console != "":
+		req.Click = console
+		if mapURL != "" {
+			req.Actions = "view, Open map, " + mapURL
+		}
+	default:
+		req.Click = mapURL
 	}
 	req.Body = cutUTF8(ev.Text, pushBodyMax)
 	if ev.Event == "done" && ev.Commit != "" && n.Role != "round" {

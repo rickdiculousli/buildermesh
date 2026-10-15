@@ -147,7 +147,7 @@ func TestPushRoundProposed(t *testing.T) {
 	stop()
 	r := got[0]
 	if r.Title != "demo round 3 proposed" || r.Priority != "default" || r.Tags != "memo" || r.Body != "013 A: why\n018 B: look" ||
-		r.Click != "" || r.Actions != "view, Open thread, http://t3.test/t/th-eng" {
+		r.Click != "http://t3.test/t/th-eng" || r.Actions != "" {
 		t.Fatalf("%+v", r)
 	}
 	req, ok := Push(mesh.Event{From: "demo-round-3", Event: "blocked", Text: "ux blocked: x"}, mesh.Node{Path: "demo-round-3", Role: "round", Repo: "demo"},
@@ -163,7 +163,7 @@ func TestPushRoundProposed(t *testing.T) {
 	}
 	req, ok = Push(mesh.Event{From: "demo-round-3.eng", Event: "ask", Text: "which?"}, mesh.Node{Path: "demo-round-3.eng", Role: "engineer"},
 		f.d.Cfg.Notify, "http://t3.test/t/th-eng")
-	if !ok || req.Title != "demo-round-3.eng asks" || req.Body != "which?" || req.Actions != "view, Open thread, http://t3.test/t/th-eng" {
+	if !ok || req.Title != "demo-round-3.eng asks" || req.Body != "which?" || req.Click != "http://t3.test/t/th-eng" {
 		t.Fatalf("an engineer's ask: %+v %v", req, ok)
 	}
 }

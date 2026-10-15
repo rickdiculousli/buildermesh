@@ -161,9 +161,9 @@ func TestPushLeadAskBlockedDone(t *testing.T) {
 	f.event(t, mesh.Event{From: "a", Event: "done", Text: "shipped", Commit: "0123456789abcdef"})
 	got := n.waitRequests(t, 3)
 	want := []ntfyReq{
-		{"POST", "a asks", "high", "question", "http://map.test/#/lead/a", "view, Open thread, http://t3.test/t/th-a", "which colour?"},
-		{"POST", "a is blocked", "high", "no_entry", "http://map.test/#/lead/a", "view, Open thread, http://t3.test/t/th-a", "no creds"},
-		{"POST", "a is done", "default", "white_check_mark", "http://map.test/#/lead/a", "view, Open thread, http://t3.test/t/th-a", "shipped\ncommit 01234567"},
+		{"POST", "a asks", "high", "question", "http://t3.test/t/th-a", "view, Open map, http://map.test/#/lead/a", "which colour?"},
+		{"POST", "a is blocked", "high", "no_entry", "http://t3.test/t/th-a", "view, Open map, http://map.test/#/lead/a", "no creds"},
+		{"POST", "a is done", "default", "white_check_mark", "http://t3.test/t/th-a", "view, Open map, http://map.test/#/lead/a", "shipped\ncommit 01234567"},
 	}
 	for i := range want {
 		if got[i] != want[i] {
@@ -192,6 +192,15 @@ func TestPushRequest(t *testing.T) {
 	if req, _ := Push(mesh.Event{From: "a", Event: "done", Text: "x"}, lead, cfg, ""); req.Click != "http://map.test#/lead/a" || req.Body != "x" {
 		t.Errorf("done without commit: %+v", req)
 	}
+	if req, _ := Push(mesh.Event{From: "a", Event: "ask"}, lead, cfg, "http://t3.test/t/th-a"); req.Click != "http://t3.test/t/th-a" ||
+		req.Actions != "view, Open map, http://map.test#/lead/a" {
+		t.Errorf("thread and map: %+v", req)
+	}
+	cfg.MapURL = ""
+	if req, _ := Push(mesh.Event{From: "a", Event: "ask"}, lead, cfg, "http://t3.test/t/th-a"); req.Click != "http://t3.test/t/th-a" || req.Actions != "" {
+		t.Errorf("thread, no map: %+v", req)
+	}
+	cfg.MapURL = "http://map.test"
 	if _, ok := Push(mesh.Event{From: "a.x", Event: "ask"}, mesh.Node{Path: "a.x", Role: "executor"}, cfg, ""); ok {
 		t.Error("executor pushed")
 	}
@@ -460,8 +469,8 @@ func TestPushCommandGetsHeadersInEnv(t *testing.T) {
 	startPush(t, f.d)
 	f.event(t, mesh.Event{From: "a", Event: "done", Text: "shipped", Commit: "0123456789abcdef"})
 	want := "a is done\nshipped\ncommit 01234567\nNTFY_TITLE=a is done\nNTFY_PRIORITY=default\n" +
-		"NTFY_TAGS=white_check_mark\nNTFY_CLICK=http://map.test/#/lead/a\n" +
-		"NTFY_ACTIONS=view, Open thread, http://t3.test/t/th-a\n---\n"
+		"NTFY_TAGS=white_check_mark\nNTFY_CLICK=http://t3.test/t/th-a\n" +
+		"NTFY_ACTIONS=view, Open map, http://map.test/#/lead/a\n---\n"
 	var got string
 	deadline := time.Now().Add(10 * time.Second)
 	for !strings.Contains(got, "---\n") && time.Now().Before(deadline) {
