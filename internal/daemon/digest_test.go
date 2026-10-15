@@ -1,6 +1,9 @@
 package daemon
 
 import (
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,5 +101,73 @@ func TestDigestLoopPostsOnlyWhenChanged(t *testing.T) {
 	digestOnce(f.ctx, f.d, &since)
 	if n := records(); n != 2 {
 		t.Fatalf("records after done = %d, want 2", n)
+	}
+}
+
+func TestDigestDoneWindow(t *testing.T) {
+	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
+	since := now.Add(-time.Hour)
+	st := func(at time.Time) map[string]mesh.State {
+		return map[string]mesh.State{"x": {State: "done", At: at.Format(time.RFC3339)}}
+	}
+	if _, _, ch := Digest("h", st(since), nil, since, now); ch {
+		t.Error("done exactly at since was reported again")
+	}
+	if _, _, ch := Digest("h", st(now), nil, since, now); !ch {
+		t.Error("done at now was not reported")
+	}
+	if _, _, ch := Digest("h", st(now.Add(time.Second)), nil, since, now); ch {
+		t.Error("done after now was reported early")
+	}
+	// Next pass: since = old now, so the late done is reported and the one at old now is not.
+	next := now.Add(time.Hour)
+	if _, _, ch := Digest("h", st(now), nil, now, next); ch {
+		t.Error("done at the previous now was reported twice")
+	}
+	if _, _, ch := Digest("h", st(now.Add(time.Second)), nil, now, next); !ch {
+		t.Error("done just after the previous now was lost")
+	}
+}
+
+func TestDigestFailedDeliveryKeepsSince(t *testing.T) {
+	f := setup(t)
+	f.lead(t, "a", "t1", "asking")
+	orig := f.now.Add(-time.Hour)
+
+	f.d.Cfg.Notify.Command = "exit 1"
+	since := orig
+	digestOnce(f.ctx, f.d, &since)
+	if !since.Equal(orig) {
+		t.Errorf("command failure moved since to %v", since)
+	}
+	if evs := f.daemonEvents(t, "digest"); len(evs) != 0 {
+		t.Errorf("event published after failed delivery: %+v", evs)
+	}
+
+	var gotBody, gotTitle string
+	status := http.StatusInternalServerError
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody, gotTitle = string(b), r.Header.Get("Title")
+		w.WriteHeader(status)
+	}))
+	defer srv.Close()
+	f.d.Cfg.Notify.Command = ""
+	f.d.Cfg.Notify.Ntfy = srv.URL
+	digestOnce(f.ctx, f.d, &since)
+	if !since.Equal(orig) {
+		t.Errorf("non-2xx moved since to %v", since)
+	}
+	if gotTitle != "bmesh "+testHost+": 0 working, 1 asking, 0 silent" || !strings.HasPrefix(gotBody, "a: asking since") {
+		t.Errorf("request: title %q body %q", gotTitle, gotBody)
+	}
+	if err := deliver(f.ctx, f.d, "t", "b"); err == nil {
+		t.Error("deliver: non-2xx returned nil")
+	}
+
+	status = http.StatusOK
+	digestOnce(f.ctx, f.d, &since)
+	if !since.Equal(f.now) {
+		t.Errorf("success left since at %v", since)
 	}
 }

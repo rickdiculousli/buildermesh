@@ -22,7 +22,8 @@ const deliverTimeout = 10 * time.Second
 // no registered node still counts); nodes is reserved for enrichment.
 //
 // The body has one line per asking, silent or blocked node, then one per node
-// done after since. changed is false when there are no such lines.
+// done in the window (since, now]; a done stamped after now waits for the
+// next pass, so none is lost between passes. changed is false when there are no such lines.
 func Digest(host string, states map[string]mesh.State, nodes []mesh.Node, since, now time.Time) (title, body string, changed bool) {
 	paths := make([]string, 0, len(states))
 	for p := range states {
@@ -49,7 +50,7 @@ func Digest(host string, states map[string]mesh.State, nodes []mesh.Node, since,
 			}
 			attention = append(attention, line)
 		case "done":
-			if at.After(since) {
+			if at.After(since) && !at.After(now) {
 				finished = append(finished, p+": done")
 			}
 		}
@@ -71,6 +72,7 @@ func age(d time.Duration) string {
 // then moves *since to now. A failed delivery leaves *since alone so the next
 // pass reports the same things again.
 func digestOnce(ctx context.Context, d Deps, since *time.Time) {
+	now := d.Now() // before the read, so the window (since, now] has no gap
 	states, err := mesh.ReadAllStates(ctx, d.Client)
 	if err != nil {
 		d.Log.Warn("digest: read states", "err", err)
@@ -81,7 +83,6 @@ func digestOnce(ctx context.Context, d Deps, since *time.Time) {
 		d.Log.Warn("digest: list nodes", "err", err)
 		return
 	}
-	now := d.Now()
 	title, body, changed := Digest(d.Host, states, nodes, *since, now)
 	if !changed {
 		return
@@ -105,6 +106,7 @@ func deliver(ctx context.Context, d Deps, title, body string) error {
 	if cmd := d.Cfg.Notify.Command; cmd != "" {
 		c := exec.CommandContext(ctx, "sh", "-c", cmd)
 		c.Stdin = strings.NewReader(body)
+		c.WaitDelay = 2 * time.Second // a child holding the pipes can't block Wait past the timeout
 		c.Env = append(os.Environ(), "BMESH_TITLE="+title)
 		if out, err := c.CombinedOutput(); err != nil {
 			return fmt.Errorf("notify command: %w: %s", err, strings.TrimSpace(string(out)))
