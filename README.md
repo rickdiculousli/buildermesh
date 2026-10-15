@@ -1,0 +1,77 @@
+# buildermesh (bmesh)
+
+A NATS-based mesh for coordinating coding agents: lead and executor threads report events, exchange inbox messages and are woken when they go quiet.
+
+## Build and test
+
+```
+GOBIN=~/.local/bin go install ./cmd/bmesh
+TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test ./...
+```
+
+Tests never use `/tmp`: `meshtest.Start` fails when `TMPDIR` is `/tmp`.
+
+## Names
+
+Paths match `^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*$`; the first token is never `inbox`, `routine` or `daemon`.
+
+| Kind | Name | Subjects / keys |
+|---|---|---|
+| stream | `bm-mesh` | `bm.>` (30 days, file store, 2m duplicate window) |
+| event subject | | `bm.<path>.<event>` |
+| inbox subject | | `bm.inbox.<path>` |
+| daemon subject | | `bm.daemon.<host>.<event>` |
+| consumer per inbox | `inbox-<path, "." as "--">` | filter `bm.inbox.<path>` |
+| KV | `bm-nodes` | `<path>` to Node |
+| KV | `bm-state` | `<path>` to State |
+| KV | `bm-runner` | `<path>` to RunnerSample |
+
+JetStream is addressed through the domain from `[mesh] domain` (default `hub`).
+
+## Config
+
+`~/.config/bmesh/config.toml` (`BMESH_CONFIG` overrides the path). Keys and defaults:
+
+```toml
+[mesh]
+nats = ""                                   # "" = embedded server; else e.g. "nats://localhost:4222"
+domain = "hub"
+token_file = ""                             # "" = no token
+store = "~/.local/state/bmesh/jetstream"    # embedded server's store
+listen = "127.0.0.1:4222"                   # embedded server's bind
+[host]
+name = ""                                   # "" = `hostname -s`
+[serve]
+listen = "127.0.0.1:3774"
+[runner]
+kind = "t3"                                 # t3 | tmux
+t3_dispatch = "t3_dispatch.py"              # path; run as `uv run <path>`
+tmux_session = "bmesh"
+worktrees = "~/.bmesh/worktrees"            # tmux runner's worktree root
+[notify]
+ntfy = ""                                   # "" = no digest; else "http://k16:2586/bmesh"
+command = ""                                # test hook: receives the POST body on stdin instead of HTTP
+digest_every = "1h"
+[liveness]
+grace = "20m"
+poll_every = "60s"
+wake_every = "10m"
+[repos]                                     # name = path
+[spec]
+glob = "docs/proposals/{id}-*.md"
+[models]
+lead = "claude-fable-5-1"
+```
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | ok |
+| 1 | error |
+| 2 | usage |
+| 3 | refused (a `done` the spec doesn't support, a reserved or taken path, a send to a running thread) |
+
+## License
+
+MIT.
