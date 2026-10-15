@@ -13,12 +13,12 @@ import (
 // command hands cmd the line raw through CmdLine: Go's own argument quoting
 // follows the C runtime's rules, which cmd does not read, so a quote in the
 // line would reach it as \". Every argument is wrapped in quotes, inside
-// which cmd reads no operator; an argument holding a quote has no safe
-// spelling under cmd and is refused when the command starts.
+// which cmd reads no operator but %; an argument holding a quote or a %
+// has no safe spelling under cmd and is refused when the command starts.
 func command(ctx context.Context, line string, args []string) *exec.Cmd {
 	c := exec.CommandContext(ctx, "cmd")
 	for _, a := range args {
-		if strings.ContainsAny(a, "\"\r\n") {
+		if strings.ContainsAny(a, "\"%\r\n") { // cmd reads % even inside quotes
 			c.Err = fmt.Errorf("shell: argument %q cannot be passed to cmd", a)
 		}
 		line += ` "` + a + `"`

@@ -249,6 +249,14 @@ func writeService(configDir string) (string, []string, error) {
 	if dir := filepath.Dir(exe); !strings.Contains(path, dir) {
 		path = dir + string(os.PathListSeparator) + path
 	}
+	// The daemon must see the same config, cache (the claude runner's state)
+	// and store as the shell that runs the CLI.
+	env := "PATH=" + path + "\nBMESH_CONFIG=" + filepath.Join(configDir, "config.toml")
+	for _, k := range []string{"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"} {
+		if v := os.Getenv(k); v != "" {
+			env += "\n" + k + "=" + v
+		}
+	}
 	switch runtime.GOOS {
 	case "linux":
 		ucd, err := os.UserConfigDir()
@@ -259,7 +267,7 @@ func writeService(configDir string) (string, []string, error) {
 		body := "[Unit]\nDescription=buildermesh daemon (bmesh serve)\nAfter=network-online.target\n\n[Service]\n" +
 			"ExecStart=" + exe + " serve\nRestart=always\nRestartSec=5\n" +
 			"KillMode=process\n" + // a restart must not take the claude turns the daemon started with it
-			"Environment=PATH=" + path + "\nEnvironment=BMESH_CONFIG=" + filepath.Join(configDir, "config.toml") + "\n\n" +
+			"Environment=" + strings.ReplaceAll(env, "\n", "\nEnvironment=") + "\n\n" +
 			"[Install]\nWantedBy=default.target\n"
 		if err := os.MkdirAll(filepath.Dir(unit), 0o755); err != nil {
 			return "", nil, err
@@ -283,9 +291,7 @@ func writeService(configDir string) (string, []string, error) {
 	<key>Label</key><string>com.buildermesh.bmesh</string>
 	<key>ProgramArguments</key><array><string>` + exe + `</string><string>serve</string></array>
 	<key>EnvironmentVariables</key><dict>
-		<key>PATH</key><string>` + path + `</string>
-		<key>BMESH_CONFIG</key><string>` + filepath.Join(configDir, "config.toml") + `</string>
-	</dict>
+` + plistEnv(env) + `	</dict>
 	<key>RunAtLoad</key><true/>
 	<key>KeepAlive</key><true/>
 	<key>StandardOutPath</key><string>` + filepath.Join(logDir, "bmesh.log") + `</string>
@@ -302,6 +308,16 @@ func writeService(configDir string) (string, []string, error) {
 		return plist, []string{"launchctl bootstrap gui/$(id -u) " + plist + "   # the daemon; log in ~/Library/Logs/bmesh.log"}, nil
 	}
 	return "", []string{"bmesh serve        # no service file for " + runtime.GOOS + "; keep this running"}, nil
+}
+
+// plistEnv renders KEY=value lines as launchd environment entries.
+func plistEnv(env string) string {
+	var b strings.Builder
+	for _, kv := range strings.Split(env, "\n") {
+		k, v, _ := strings.Cut(kv, "=")
+		fmt.Fprintf(&b, "\t\t<key>%s</key><string>%s</string>\n", k, v)
+	}
+	return b.String()
 }
 
 // ensureSetup runs before every command but init and help: with no setup

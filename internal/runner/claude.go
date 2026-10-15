@@ -161,7 +161,12 @@ func locked(d string, f func() error) error {
 			return err
 		}
 		if st, serr := os.Stat(lock); serr == nil && time.Since(st.ModTime()) > lockStale {
-			os.Remove(lock)
+			// Take a crashed holder's lock over by renaming it: of two
+			// waiters only one rename succeeds, so only one goes on.
+			stale := lock + ".stale-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+			if os.Rename(lock, stale) == nil {
+				os.Remove(stale)
+			}
 			continue
 		}
 		if time.Now().After(end) {

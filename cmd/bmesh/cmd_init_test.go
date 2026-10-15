@@ -131,6 +131,7 @@ func TestInitServiceWritesUnit(t *testing.T) {
 	}
 	root := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "xdg"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(root, "xdg-cache"))
 	cfg := filepath.Join(root, "config.toml")
 	out, _, code := runInit(t, cfg, root, "", "init", "--service", "--no-repo", "--runner", "claude")
 	if code != 0 {
@@ -143,7 +144,8 @@ func TestInitServiceWritesUnit(t *testing.T) {
 	}
 	exe, _ := os.Executable()
 	if !strings.Contains(string(b), "ExecStart="+exe+" serve") || !strings.Contains(string(b), "BMESH_CONFIG="+cfg) ||
-		!strings.Contains(string(b), "KillMode=process\n") {
+		!strings.Contains(string(b), "KillMode=process\n") ||
+		!strings.Contains(string(b), "Environment=XDG_CACHE_HOME="+filepath.Join(root, "xdg-cache")+"\n") {
 		t.Fatalf("unit:\n%s", b)
 	}
 	if !strings.Contains(out, "systemctl --user enable --now bmesh") || !strings.Contains(out, "wrote "+unit) {
