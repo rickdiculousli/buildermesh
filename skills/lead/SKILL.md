@@ -44,7 +44,7 @@ On committed work, in this order, once the code is final:
 
 1. `bmesh routine run verify` (an inline kind runs in your worktree and records the result for HEAD's tree). In a repo without a `verify` kind, run its verify commands yourself and record the outcome: `bmesh result record verify --ok` or `--fail`.
 2. One review, by one model of a different family than yours (the first entry of the kind's `models` that is not your family): `bmesh routine queue review --model <m> --go --text "base: $(git merge-base origin/main HEAD)"`, then at once `bmesh routine wait <job id>`. One reviewer is the sized count for every size of change: on a seeded six-defect fixture, eight single reviewers of either family each found all six, so a second one buys nothing. Fix what it finds. One pass, not a loop: the review runs again only when a later rebase changed the code.
-3. One `surface` job per touched UI surface when the repo has that kind (`bmesh routine queue surface --go -- <url> <file>`), or the operator's equivalent from your brief.
+3. One `surface` job per touched UI surface when the repo has that kind (`bmesh routine queue surface --go -- <args>`, with the args the kind's own comment names: a repo's `surface.toml` says what it takes), or the operator's equivalent from your brief.
 4. `bmesh spec verified --write` composes the spec's `verified` line from the results recorded for HEAD's tree. Commit it with the spec's status change.
 
 Results are keyed by tree, so re-run what the final rebase changed.
