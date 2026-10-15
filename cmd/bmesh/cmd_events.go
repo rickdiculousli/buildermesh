@@ -12,8 +12,8 @@ import (
 
 // cmdEvent reports started|progress|blocked|ask|done: the move is checked
 // against the node's state first, so a refused event publishes nothing. A
-// lead's done is checked against its spec; an executor's needs only
-// --commit. An executor's ask is also sent to its parent's inbox, since the
+// lead's done is checked against its spec; an executor's or an engineer's
+// (a round's thread) needs only --commit. An executor's ask is also sent to its parent's inbox, since the
 // operator reads only leads' asks.
 func (a *app) cmdEvent(name string, args []string) error {
 	fs := a.flags(name)
@@ -47,7 +47,7 @@ func (a *app) cmdEvent(name string, args []string) error {
 		if !ok && name == "done" {
 			return fail(exitError, "node %s is not registered", path)
 		}
-		if name == "done" && n.Role != "executor" {
+		if name == "done" && (n.Role == "lead" || n.Role == "") {
 			if err := a.checkSpecDone(ctx, n); err != nil {
 				return err
 			}

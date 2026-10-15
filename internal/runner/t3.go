@@ -159,10 +159,24 @@ func (r T3) Send(ctx context.Context, thread, text string) error {
 }
 
 // Start creates a thread in a fresh T3 worktree with the brief as its prompt,
-// under the caller's thread id so a lost reply can be reconciled.
+// under the caller's thread id so a lost reply can be reconciled. With
+// s.Worktree set the thread runs in that checkout instead (`--worktree`,
+// with s.Branch as its branch), filed under s.Project's T3 project when
+// that is set.
 func (r T3) Start(ctx context.Context, s StartSpec) (Started, error) {
-	out, err := r.run(ctx, "start", "--repo", s.RepoPath, "--provider", "claude", "--model", s.Model,
-		"--title", s.Title, "--prompt-file", s.BriefPath, "--thread-id", s.ThreadID)
+	project := s.Project
+	if project == "" {
+		project = s.RepoPath
+	}
+	args := []string{"start", "--repo", project, "--provider", "claude", "--model", s.Model,
+		"--title", s.Title, "--prompt-file", s.BriefPath, "--thread-id", s.ThreadID}
+	if s.Worktree != "" {
+		args = append(args, "--worktree", s.Worktree)
+		if s.Branch != "" {
+			args = append(args, "--branch", s.Branch)
+		}
+	}
+	out, err := r.run(ctx, args...)
 	if err != nil {
 		return Started{}, err
 	}

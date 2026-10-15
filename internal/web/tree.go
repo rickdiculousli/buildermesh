@@ -65,9 +65,9 @@ func stateOf(states map[string]mesh.State, path string) mesh.State {
 	return mesh.State{State: "idle"}
 }
 
-// Tree groups nodes into leads with their executors (nested by Parent),
-// routine instances by kind and repo, and orphans; every list is sorted by
-// path.
+// Tree groups nodes into leads with their executors (nested by Parent; a
+// round with its engineers is drawn the same way), routine instances by
+// kind and repo, and orphans; every list is sorted by path.
 func Tree(nodes []mesh.Node, states map[string]mesh.State, x Extras) TreeView {
 	v := TreeView{Leads: []TreeNode{}, Routines: []RoutineGroup{}, Orphans: []TreeNode{}}
 	sorted := append([]mesh.Node(nil), nodes...)
@@ -81,7 +81,7 @@ func Tree(nodes []mesh.Node, states map[string]mesh.State, x Extras) TreeView {
 	}
 	children := map[string][]mesh.Node{}
 	for _, n := range sorted {
-		if n.Role == "routine" || n.Role == "lead" {
+		if n.Role == "routine" || n.Role == "lead" || n.Role == "round" {
 			continue
 		}
 		if _, ok := byPath[n.Parent]; ok && n.Parent != n.Path {
@@ -104,7 +104,7 @@ func Tree(nodes []mesh.Node, states map[string]mesh.State, x Extras) TreeView {
 		return t
 	}
 	for _, n := range sorted {
-		if n.Role == "lead" && !drawn[n.Path] {
+		if (n.Role == "lead" || n.Role == "round") && !drawn[n.Path] {
 			v.Leads = append(v.Leads, build(n))
 		}
 	}
@@ -115,7 +115,7 @@ func Tree(nodes []mesh.Node, states map[string]mesh.State, x Extras) TreeView {
 			if n.Role == "routine" || drawn[n.Path] {
 				continue
 			}
-			if p, ok := byPath[n.Parent]; pass == 0 && ok && !drawn[p.Path] && p.Role != "lead" {
+			if p, ok := byPath[n.Parent]; pass == 0 && ok && !drawn[p.Path] && p.Role != "lead" && p.Role != "round" {
 				continue
 			}
 			v.Orphans = append(v.Orphans, build(n))

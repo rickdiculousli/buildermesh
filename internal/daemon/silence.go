@@ -45,17 +45,15 @@ func silenceOnce(ctx context.Context, d Deps, act *Activity) {
 		if err := mesh.PublishEvent(ctx, d.Client, ev); err != nil {
 			d.Log.Warn("silence: publish", "path", path, "err", err)
 		}
-		if !strings.Contains(path, ".") {
-			wakeSilentLead(ctx, d, act, path)
-		}
+		wakeSilentLead(ctx, d, act, path)
 	}
 }
 
-// wakeSilentLead wakes a silent lead this host runs if its thread is idle,
-// whatever its unread count.
+// wakeSilentLead wakes a silent lead (or engineer) this host runs if its
+// thread is idle, whatever its unread count.
 func wakeSilentLead(ctx context.Context, d Deps, act *Activity, path string) {
 	n, ok, err := mesh.GetNode(ctx, d.Client, path)
-	if err != nil || !ok || n.Role != "lead" || n.Host != d.Host || n.Runner.Thread == "" {
+	if err != nil || !ok || !threaded(n) || n.Host != d.Host || n.Runner.Thread == "" {
 		return
 	}
 	if last := act.LastWake(path); !last.IsZero() && d.Now().Sub(last) < d.Cfg.Liveness.WakeEvery {

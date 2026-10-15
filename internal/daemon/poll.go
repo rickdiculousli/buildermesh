@@ -7,7 +7,11 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
 
-// localLeads returns the leads this host runs that have a thread.
+// threaded reports whether a node is a session the daemon polls and wakes:
+// a lead, or an engineer (a round's thread).
+func threaded(n mesh.Node) bool { return n.Role == "lead" || n.Role == "engineer" }
+
+// localLeads returns the leads and engineers this host runs that have a thread.
 func localLeads(ctx context.Context, d Deps) ([]mesh.Node, error) {
 	nodes, err := mesh.ListNodes(ctx, d.Client)
 	if err != nil {
@@ -15,7 +19,7 @@ func localLeads(ctx context.Context, d Deps) ([]mesh.Node, error) {
 	}
 	var out []mesh.Node
 	for _, n := range nodes {
-		if n.Role == "lead" && n.Host == d.Host && n.Runner.Thread != "" {
+		if threaded(n) && n.Host == d.Host && n.Runner.Thread != "" {
 			out = append(out, n)
 		}
 	}
