@@ -212,8 +212,12 @@ func LoadAt(repoPath, commit, name string) (Kind, error) {
 	if !nameRE.MatchString(name) {
 		return Kind{}, fmt.Errorf("kind name %q: want lowercase letters, digits and hyphens", name)
 	}
+	sha, err := resolveCommit(repoPath, commit)
+	if err != nil {
+		return Kind{}, err
+	}
 	var cfg []byte
-	switch b, err := gitShow(repoPath, commit, configFile); {
+	switch b, err := gitShow(repoPath, sha, configFile); {
 	case err == nil:
 		cfg = []byte(b)
 	case !errors.Is(err, ErrNotFound):
@@ -223,7 +227,7 @@ func LoadAt(repoPath, commit, name string) (Kind, error) {
 	if err != nil {
 		return Kind{}, err
 	}
-	data, err := gitShow(repoPath, commit, path.Join(rc.RoutinesDir, name+".toml"))
+	data, err := gitShow(repoPath, sha, path.Join(rc.RoutinesDir, name+".toml"))
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return Kind{}, fmt.Errorf("kind %s at %s: %w", name, commit, ErrNotFound)
@@ -233,10 +237,24 @@ func LoadAt(repoPath, commit, name string) (Kind, error) {
 	return Parse(name, []byte(data))
 }
 
+// resolveCommit turns a caller-supplied commit into a SHA, so a value that
+// looks like an option can never reach git show.
+func resolveCommit(repo, commit string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "-C", repo, "rev-parse", "--verify", "--end-of-options", commit+"^{commit}").Output()
+	if err != nil {
+		return "", fmt.Errorf("commit %q: not a commit in %s", commit, repo)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 func gitShow(repo, commit, file string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", "-C", repo, "show", commit+":"+file).Output()
+	cmd := exec.CommandContext(ctx, "git", "-C", repo, "show", commit+":"+file)
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	out, err := cmd.Output()
 	if err == nil {
 		return string(out), nil
 	}

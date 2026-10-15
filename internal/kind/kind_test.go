@@ -23,7 +23,10 @@ func TestParseDefaultsAndValidation(t *testing.T) {
 	if err != nil || !m.IsModel() || m.ModelsList()[0] != "a" {
 		t.Fatalf("models: %+v %v", m, err)
 	}
-	s, _ := Parse("r", []byte(`model = "x"`))
+	s, err := Parse("r", []byte(`model = "x"`))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got := s.ModelsList(); len(got) != 1 || got[0] != "x" {
 		t.Fatalf("ModelsList = %v", got)
 	}
@@ -106,7 +109,7 @@ func TestLoadRepoConfig(t *testing.T) {
 
 func git(t *testing.T, repo string, args ...string) string {
 	t.Helper()
-	full := append([]string{"-C", repo, "-c", "user.name=t", "-c", "user.email=t@t"}, args...)
+	full := append([]string{"-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"}, args...)
 	out, err := exec.Command("git", full...).CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
@@ -148,6 +151,12 @@ func TestKindReadFromJobCommit(t *testing.T) {
 	k, err := LoadAt(repo, "HEAD", "lint")
 	if err != nil || k.Command != "make lint" {
 		t.Fatalf("custom dir: %+v %v", k, err)
+	}
+	if _, err := LoadAt(repo, "--output=x", "verify"); err == nil {
+		t.Fatal("option-like commit: want error")
+	}
+	if _, err := os.Stat(filepath.Join(repo, "x")); err == nil {
+		t.Fatal("option-like commit created a file")
 	}
 	if _, err := LoadAt(repo, "HEAD", "../x"); err == nil {
 		t.Fatal("bad name: want error")
