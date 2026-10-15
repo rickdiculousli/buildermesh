@@ -4,7 +4,7 @@ title: bmesh installs itself when main moves
 kind: time-cost
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: fd21a373-851c-4e68-beb6-831cb4be0fa9
 proposed_on: 2026-10-15
