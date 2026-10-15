@@ -15,7 +15,7 @@ The working style: if the pstack plugin is installed, run `pstack:poteto-mode` a
 
 ## 2. Checkpoints
 
-Run `bmesh --node <path> inbox` at every milestone and before you ask anything: your lead's corrections arrive there. Reading it acks it, and it prints a routine reply it finds whole, after which `routine wait` for that job would wait in vain: so `wait` right after `queue`, before the next inbox.
+Run `bmesh --node <path> inbox` at every milestone and before you ask anything: your lead's corrections arrive there. Reading it acks it; a routine reply shows there as one line, and `routine wait <job id>` prints it whole whenever you run it.
 
 ## 3. Routines
 

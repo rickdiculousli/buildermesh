@@ -88,13 +88,13 @@ func (a *app) cmdInbox(args []string) error {
 			continue
 		}
 		if m.Kind == "reply" && m.Reply != nil {
-			// A reply read here is gone for `routine wait`, so show it whole.
+			// One line: `routine wait` reads the whole reply from the stream.
 			verdict := "ok"
 			if !m.Reply.OK {
 				verdict = "fail"
 			}
-			fmt.Fprintf(a.stdout, "%s %s: reply to job %s: %s %s\n%s", m.At, m.From, m.Reply.Job, m.Reply.Kind, verdict,
-				withNewline(m.Reply.Output))
+			fmt.Fprintf(a.stdout, "%s %s: reply to job %s: %s %s, %d lines; bmesh routine wait %s prints it\n",
+				m.At, m.From, m.Reply.Job, m.Reply.Kind, verdict, lineCount(m.Reply.Output), m.Reply.Job)
 			continue
 		}
 		fmt.Fprintf(a.stdout, "%s %s: %s\n", m.At, m.From, m.Text)
@@ -102,9 +102,10 @@ func (a *app) cmdInbox(args []string) error {
 	return nil
 }
 
-func withNewline(s string) string {
-	if s == "" || strings.HasSuffix(s, "\n") {
-		return s
+// lineCount counts s's lines, a last line without a newline included.
+func lineCount(s string) int {
+	if s == "" {
+		return 0
 	}
-	return s + "\n"
+	return strings.Count(strings.TrimSuffix(s, "\n"), "\n") + 1
 }

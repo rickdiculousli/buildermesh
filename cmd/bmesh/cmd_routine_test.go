@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
@@ -248,5 +249,66 @@ func TestQueueReviewOncePerBranch(t *testing.T) {
 	runGit(t, repo, "commit", "-qm", "c")
 	if out, errs, code := runCLI(t, as("app-001"), "routine", "queue", "review"); code != 0 || !strings.HasPrefix(out, "queued ") {
 		t.Fatalf("other branch: %d %q %q", code, out, errs)
+	}
+}
+
+func TestWaitFindsReplyInboxAlreadyRead(t *testing.T) {
+	c, ctx := setup(t)
+	me, _ := mesh.ParsePath("app-001")
+	if err := mesh.SendReply(ctx, c, mesh.RoutinePath("verify"), me, mesh.Reply{Job: "j1", Kind: "verify", Output: "broke\n"}); err != nil {
+		t.Fatal(err)
+	}
+	if out, errs, code := runCLI(t, as("app-001"), "inbox"); code != 0 || !strings.Contains(out, "reply to job j1: verify fail, 1 lines;") {
+		t.Fatalf("inbox: %d %q %q", code, out, errs)
+	}
+	start := time.Now()
+	out, errs, code := runCLI(t, as("app-001"), "routine", "wait", "j1", "--timeout", "10s")
+	if took := time.Since(start); code != 1 || out != "broke\n" || took > time.Second {
+		t.Fatalf("wait: %d %q %q in %v", code, out, errs, took)
+	}
+}
+
+func TestWaitAcksPendingReply(t *testing.T) {
+	c, ctx := setup(t)
+	me, _ := mesh.ParsePath("app-001")
+	if err := mesh.SendReply(ctx, c, mesh.RoutinePath("verify"), me, mesh.Reply{Job: "j1", Kind: "verify", OK: true, Output: "fine\n"}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := mesh.Unread(ctx, c, me); err != nil || n != 1 {
+		t.Fatalf("unread before: %d %v", n, err)
+	}
+	if out, errs, code := runCLI(t, as("app-001"), "routine", "wait", "j1", "--timeout", "10s"); code != 0 || out != "fine\n" {
+		t.Fatalf("wait: %d %q %q", code, out, errs)
+	}
+	if n, err := mesh.Unread(ctx, c, me); err != nil || n != 0 {
+		t.Fatalf("unread after: %d %v", n, err)
+	}
+}
+
+func TestWaitFollowsALateReply(t *testing.T) {
+	c, ctx := setup(t)
+	me, _ := mesh.ParsePath("app-001")
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		_ = mesh.SendReply(ctx, c, mesh.RoutinePath("verify"), me, mesh.Reply{Job: "j1", Kind: "verify", OK: true, Output: "late\n"})
+	}()
+	if out, errs, code := runCLI(t, as("app-001"), "routine", "wait", "j1", "--timeout", "10s"); code != 0 || out != "late\n" {
+		t.Fatalf("wait: %d %q %q", code, out, errs)
+	}
+}
+
+func TestWaitTimeoutFromKind(t *testing.T) {
+	c, ctx := setup(t)
+	kindRepo(t, map[string]string{"slow": "command = \"true\"\ntimeout = \"5m\"\n"})
+	out, errs, code := runCLI(t, as("app-001"), "routine", "queue", "slow")
+	id, ok := strings.CutPrefix(strings.TrimSpace(out), "queued ")
+	if code != 0 || !ok {
+		t.Fatalf("queue: %d %q %q", code, out, errs)
+	}
+	if d := waitTimeout(ctx, c, id); d != 26*time.Minute {
+		t.Fatalf("known kind: %v", d)
+	}
+	if d := waitTimeout(ctx, c, "no-such-job"); d != 20*time.Minute {
+		t.Fatalf("unknown job: %v", d)
 	}
 }

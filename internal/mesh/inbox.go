@@ -53,8 +53,9 @@ func Send(ctx context.Context, c *Client, m Message) (dup bool, err error) {
 	return ack.Duplicate, nil
 }
 
-// Fetch pulls up to 100 messages from p's inbox, acking them when ack and
-// returning them to the inbox otherwise.
+// Fetch pulls up to 100 messages from p's inbox, what it holds now without
+// waiting for more, acking them when ack and returning them to the inbox
+// otherwise.
 func Fetch(ctx context.Context, c *Client, p Path, ack bool) ([]Message, error) {
 	if err := ensureAnyInbox(ctx, c, p); err != nil {
 		return nil, err
@@ -63,7 +64,7 @@ func Fetch(ctx context.Context, c *Client, p Path, ack bool) ([]Message, error) 
 	if err != nil {
 		return nil, err
 	}
-	batch, err := cons.Fetch(100, jetstream.FetchMaxWait(2*time.Second))
+	batch, err := cons.FetchNoWait(100)
 	if err != nil {
 		return nil, err
 	}

@@ -427,9 +427,24 @@ func TestInboxPrintsReplies(t *testing.T) {
 	if err := mesh.SendReply(ctx, c, mesh.RoutinePath("review"), me, reply); err != nil {
 		t.Fatal(err)
 	}
-	out, errs, code := runCLI(t, as("app-012"), "inbox")
-	if code != 0 || !strings.Contains(out, " routine.review: reply to job J1: review fail\n### high: breaks\nVERDICT: fail\n") {
+	out, errs, code := runCLI(t, as("app-012"), "--json", "inbox", "--peek")
+	if code != 0 || !strings.Contains(out, `"output":"### high: breaks\nVERDICT: fail"`) {
+		t.Fatalf("json inbox: %d %q %q", code, out, errs)
+	}
+	out, errs, code = runCLI(t, as("app-012"), "inbox")
+	if code != 0 || !strings.HasSuffix(out, " routine.review: reply to job J1: review fail, 2 lines; bmesh routine wait J1 prints it\n") ||
+		strings.Count(out, "\n") != 1 {
 		t.Fatalf("inbox: %d %q %q", code, out, errs)
+	}
+}
+
+func TestInboxEmptyReturnsAtOnce(t *testing.T) {
+	c, ctx := setup(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012"})
+	start := time.Now()
+	out, errs, code := runCLI(t, as("app-012"), "inbox")
+	if took := time.Since(start); code != 0 || out != "" || took > 500*time.Millisecond {
+		t.Fatalf("empty inbox: %d %q %q in %v", code, out, errs, took)
 	}
 }
 

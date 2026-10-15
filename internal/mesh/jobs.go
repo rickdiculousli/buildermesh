@@ -172,8 +172,9 @@ func SendReply(ctx context.Context, c *Client, from, to Path, r Reply) error {
 	return err
 }
 
-// FetchMatch pulls a batch from p's inbox, acks the first message match
-// accepts and returns the rest to the inbox. ok is false when none matched.
+// FetchMatch pulls what p's inbox holds now (up to 100 messages), acks the
+// first message match accepts and returns the rest to the inbox. ok is false
+// when none matched.
 func FetchMatch(ctx context.Context, c *Client, p Path, match func(Message) bool) (Message, bool, error) {
 	if err := ensureAnyInbox(ctx, c, p); err != nil {
 		return Message{}, false, err
@@ -182,7 +183,7 @@ func FetchMatch(ctx context.Context, c *Client, p Path, match func(Message) bool
 	if err != nil {
 		return Message{}, false, err
 	}
-	batch, err := cons.Fetch(100, jetstream.FetchMaxWait(time.Second))
+	batch, err := cons.FetchNoWait(100)
 	if err != nil {
 		return Message{}, false, err
 	}
@@ -212,4 +213,81 @@ func FetchMatch(ctx context.Context, c *Client, p Path, match func(Message) bool
 		}
 	}
 	return found, hit >= 0, nil
+}
+
+// WaitReply returns the reply to job from p's inbox subject, read from the
+// stream rather than the consumer: the subject keeps every message for the
+// stream's age, acked or not, so a reply `inbox` already read is found too.
+// It scans the history, then follows the subject until the reply arrives or
+// ctx ends.
+func WaitReply(ctx context.Context, c *Client, p Path, job string) (Message, error) {
+	cons, err := c.JS.OrderedConsumer(ctx, StreamMesh, jetstream.OrderedConsumerConfig{
+		FilterSubjects: []string{InboxSubject(p)},
+		DeliverPolicy:  jetstream.DeliverAllPolicy,
+	})
+	if err != nil {
+		return Message{}, err
+	}
+	it, err := cons.Messages()
+	if err != nil {
+		return Message{}, err
+	}
+	defer it.Stop()
+	for {
+		m, err := it.Next(jetstream.NextContext(ctx))
+		if err != nil {
+			return Message{}, err
+		}
+		var msg Message
+		if json.Unmarshal(m.Data(), &msg) == nil && msg.Kind == "reply" && msg.Reply != nil && msg.Reply.Job == job {
+			return msg, nil
+		}
+	}
+}
+
+// JobKind finds the kind a job id was queued to, scanning the headers of
+// every kind's inbox; ok is false when no kind's inbox holds it.
+func JobKind(ctx context.Context, c *Client, id string) (string, bool, error) {
+	filter := InboxSubject(RoutinePath("*"))
+	st, err := c.JS.Stream(ctx, StreamMesh)
+	if err != nil {
+		return "", false, err
+	}
+	info, err := st.Info(ctx, jetstream.WithSubjectFilter(filter))
+	if err != nil {
+		return "", false, err
+	}
+	if len(info.State.Subjects) == 0 {
+		return "", false, nil
+	}
+	cons, err := c.JS.OrderedConsumer(ctx, StreamMesh, jetstream.OrderedConsumerConfig{
+		FilterSubjects: []string{filter},
+		DeliverPolicy:  jetstream.DeliverAllPolicy,
+		HeadersOnly:    true,
+	})
+	if err != nil {
+		return "", false, err
+	}
+	it, err := cons.Messages()
+	if err != nil {
+		return "", false, err
+	}
+	defer it.Stop()
+	prefix := InboxSubject(RoutinePath(""))
+	for {
+		m, err := it.Next(jetstream.NextContext(ctx))
+		if err != nil {
+			return "", false, err
+		}
+		if m.Headers().Get(jetstream.MsgIDHeader) == id {
+			return strings.TrimPrefix(m.Subject(), prefix), true, nil
+		}
+		meta, err := m.Metadata()
+		if err != nil {
+			return "", false, err
+		}
+		if meta.NumPending == 0 {
+			return "", false, nil
+		}
+	}
 }

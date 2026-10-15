@@ -401,11 +401,12 @@ func (a *app) cmdRoutineGo(args []string) error {
 	return nil
 }
 
-// cmdRoutineWait follows this node's inbox for the reply to a job, leaving
-// every other message unread, and exits by the reply's verdict.
+// cmdRoutineWait finds the reply to a job in this node's inbox history, or
+// follows the inbox until it arrives, and exits by the reply's verdict. A
+// reply still unread is acked, leaving every other message unread.
 func (a *app) cmdRoutineWait(args []string) error {
 	fs := a.flags("routine wait")
-	timeout := fs.Duration("timeout", 20*time.Minute, "give up after this long (exit 5)")
+	timeout := fs.Duration("timeout", 0, "give up after this long (exit 5; default 20m, plus the kind's timeout and 1m when the cwd repo defines it)")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -414,6 +415,11 @@ func (a *app) cmdRoutineWait(args []string) error {
 		return fail(exitUsage, routineUsage)
 	}
 	id := pos[0]
+	if *timeout <= 0 {
+		lookup, cancelLookup := cmdCtx()
+		*timeout = waitTimeout(lookup, a.client, id)
+		cancelLookup()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 	timedOut := func(err error) error {
@@ -426,21 +432,40 @@ func (a *app) cmdRoutineWait(args []string) error {
 	if err != nil {
 		return timedOut(err)
 	}
+	m, err := mesh.WaitReply(ctx, a.client, self, id)
+	if err != nil {
+		return timedOut(err)
+	}
+	// Ack it when still pending, so no wake follows and inbox does not print
+	// it again; a reply inbox already read is simply not there.
 	isReply := func(m mesh.Message) bool { return m.Kind == "reply" && m.Reply != nil && m.Reply.Job == id }
-	for {
-		m, ok, err := mesh.FetchMatch(ctx, a.client, self, isReply)
-		if err != nil {
-			return timedOut(err)
-		}
-		if ok {
-			return a.printVerdict(m.Reply.OK, m.Reply.Output)
-		}
-		select {
-		case <-ctx.Done():
-			return timedOut(ctx.Err())
-		case <-time.After(time.Second):
+	if _, _, err := mesh.FetchMatch(ctx, a.client, self, isReply); err != nil {
+		return timedOut(err)
+	}
+	return a.printVerdict(m.Reply.OK, m.Reply.Output)
+}
+
+// waitQueueing is how long wait allows a job to queue before it runs.
+const waitQueueing = 20 * time.Minute
+
+// waitTimeout is wait's default: waitQueueing plus the job's kind's timeout
+// plus the 1m the daemon allows beyond it (its kind consumer's AckWait), when
+// the cwd repo defines the kind the job was queued to; else waitQueueing.
+func waitTimeout(ctx context.Context, c *mesh.Client, id string) time.Duration {
+	_, kinds, err := cwdKinds()
+	if err != nil || len(kinds) == 0 {
+		return waitQueueing
+	}
+	name, ok, err := mesh.JobKind(ctx, c, id)
+	if err != nil || !ok {
+		return waitQueueing
+	}
+	for _, k := range kinds {
+		if k.Name == name {
+			return waitQueueing + k.Timeout + time.Minute
 		}
 	}
+	return waitQueueing
 }
 
 // cmdRoutineRun runs a kind in this worktree: the requester's own run of
