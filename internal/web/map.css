@@ -107,6 +107,41 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
 
 .view { padding: var(--pad); }
 .view h2 { margin: 0 0 var(--pad); font-size: 16px; word-break: break-all; }
+
+/* The needs-you band, between the strip and the map: one row per node that
+   asks, is blocked or is silent, with what it said. */
+.needs { display: grid; gap: 6px; margin-bottom: var(--pad); }
+.need {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0 12px;
+  align-items: start;
+  min-height: 40px;
+  padding: 0 var(--pad) 10px 10px;
+  background: var(--node-bg);
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--asking);
+  border-radius: 8px;
+}
+.need.st-blocked { border-left-color: var(--blocked); }
+.need.st-silent { border-left-color: var(--blocked); border-left-style: dashed; }
+.need .who { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; color: var(--fg); }
+.need .who .p { font-weight: 600; overflow-wrap: anywhere; }
+/* The row's bottom padding sits on the row, not the words: a clamped box
+   shows its overflow through its own padding. */
+.need .say { min-height: 30px; font-size: 13px; line-height: 20px; padding-top: 10px; overflow-wrap: anywhere; }
+.need.st-asking .say { color: var(--fg); }
+.need .say:empty::before { content: "no words"; color: var(--muted); }
+.need .say .clock { color: var(--muted); }
+
+/* Rows clamped to three lines until tapped: the band's words and the
+   drawer's rows (the row itself, its spans flowing inline), the lead page's
+   inbox and timeline rows (their words, the row staying a flex line). */
+.clamp, .rows li.clamp .x { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.clamp { cursor: pointer; }
+.rows li.clamp { display: flex; }
+.clamp.open, .rows li.clamp.open .x { -webkit-line-clamp: none; }
 .panel:empty { min-height: 120px; border: 1px dashed var(--line); border-radius: 8px; }
 .empty { color: var(--muted); }
 .muted { color: var(--muted); }
@@ -125,7 +160,7 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
 .badge.st-working { border-color: var(--working); color: var(--working); }
 .badge.st-asking { border-color: var(--asking); color: var(--asking); }
 .badge.st-blocked { border-color: var(--blocked); color: var(--blocked); }
-.badge.st-silent { opacity: .5; }
+.badge.st-silent { border-style: dashed; border-color: var(--blocked); }
 .badge.st-done { background: var(--done-bg); border-color: var(--done-bg); color: var(--done-fg); }
 .tag { color: var(--muted); }
 .tag.det { border-color: var(--msg); color: var(--msg); }
@@ -218,7 +253,7 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
 .st-blocked .ring { stroke: var(--blocked); }
 .st-blocked .sub { fill: var(--blocked); }
 .st-asking .sub { fill: var(--asking); }
-.st-silent { opacity: .4; }
+.st-silent .box { stroke: var(--blocked); stroke-dasharray: 4 3; }
 .st-done .box { fill: var(--done-bg); stroke: var(--done-bg); }
 .st-done .label, .st-done .sub { fill: var(--done-fg); }
 .st-done .check { display: inline; }
@@ -257,7 +292,9 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
 .drawer summary { cursor: pointer; padding: 10px var(--pad); min-height: 44px; font-weight: 600; }
 .drawer .count { color: var(--muted); font-weight: normal; }
 .drawer ol { list-style: none; margin: 0; padding: 0 0 8px; }
-.drawer li { padding: 4px var(--pad); border-top: 1px solid var(--line); word-break: break-word; font-size: 13px; }
+/* The row's bottom space is a margin: a clamped row shows its overflow
+   through padding. */
+.drawer li { padding: 4px var(--pad) 0; margin-bottom: 4px; border-top: 1px solid var(--line); word-break: break-word; font-size: 13px; }
 .drawer li span { margin-right: 6px; }
 .drawer .t { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .drawer .p { font-weight: 600; }
@@ -271,6 +308,7 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
    same query), and the drawer is a bottom sheet. */
 @media (max-width: 699px) {
   .map { overflow-x: hidden; }
+  .need { grid-template-columns: minmax(0, 1fr); }
   .drawer {
     max-height: 70vh;
     border: 1px solid var(--line);
