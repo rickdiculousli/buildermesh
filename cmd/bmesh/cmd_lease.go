@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/kind"
@@ -16,7 +19,17 @@ import (
 const leaseUsage = "usage: bmesh lease acquire <slot> [--ttl D] | lease renew <key> [--ttl D] | " +
 	"lease release <key> | lease run <slot> [--ttl D] -- <cmd...>"
 
-const defaultTTL = 10 * time.Minute
+const (
+	defaultTTL = 10 * time.Minute
+	minTTL     = 3 * time.Second // renewals run every ttl/3
+)
+
+// leaseSignals delivers the signals that interrupt `lease run`; tests replace it.
+var leaseSignals = func() (<-chan os.Signal, func()) {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
+	return c, func() { signal.Stop(c) }
+}
 
 func (a *app) cmdLease(args []string) error {
 	if len(args) == 0 {
@@ -35,11 +48,11 @@ func (a *app) cmdLease(args []string) error {
 	if err != nil {
 		return err
 	}
-	if ttl != nil && *ttl <= 0 {
-		return fail(exitUsage, "lease %s: --ttl must be positive", sub)
+	if ttl != nil && *ttl < minTTL {
+		return fail(exitUsage, "lease %s: --ttl must be at least %s", sub, minTTL)
 	}
 	switch {
-	case sub == "run" && len(pos) >= 2 && nameRE.MatchString(pos[0]):
+	case sub == "run" && len(pos) >= 2 && kind.NameRE.MatchString(pos[0]):
 		return a.leaseRun(pos[0], pos[1:], *ttl)
 	case sub == "run" || len(pos) != 1:
 		return fail(exitUsage, leaseUsage)
@@ -79,7 +92,7 @@ func leaseErr(err error, key string) error {
 // acquire takes a place in slot for this node (or host) and returns the key
 // and the holder.
 func (a *app) acquire(ctx context.Context, slot string, ttl time.Duration) (string, string, error) {
-	if !nameRE.MatchString(slot) {
+	if !kind.NameRE.MatchString(slot) {
 		return "", "", fail(exitUsage, "invalid slot %q", slot)
 	}
 	capacity, err := slotCapacity(slot)
@@ -114,9 +127,11 @@ func slotCapacity(slot string) (int, error) {
 	return 1, nil
 }
 
-// leaseRun holds a lease on slot while argv runs, renewing every ttl/3. A
-// failed renew kills the command and exits 1 "lease lost"; otherwise the
-// lease is released and the command's exit code is returned.
+// leaseRun holds a lease on slot while argv runs, renewing every ttl/3. The
+// command runs in its own process group so the whole group can be killed. A
+// failed renew kills the group and exits 1 "lease lost"; SIGINT or SIGTERM
+// kills it, releases the lease and exits 1 "interrupted"; otherwise the lease
+// is released and the command's exit code is returned.
 func (a *app) leaseRun(slot string, argv []string, ttl time.Duration) error {
 	ctx, cancel := cmdCtx()
 	key, holder, err := a.acquire(ctx, slot, ttl)
@@ -124,21 +139,29 @@ func (a *app) leaseRun(slot string, argv []string, ttl time.Duration) error {
 	if err != nil {
 		return err
 	}
+	sigs, stopSigs := leaseSignals()
+	defer stopSigs()
 	runCtx, kill := context.WithCancel(context.Background())
 	defer kill()
 	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = a.stdin, a.stdout, a.stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.WaitDelay = time.Second // a killed command's children may hold its output open
-	var lost atomic.Bool
+	var lost, interrupted atomic.Bool
 	stop := make(chan struct{})
-	renewed := make(chan struct{})
+	watched := make(chan struct{})
 	go func() {
-		defer close(renewed)
+		defer close(watched)
 		t := time.NewTicker(ttl / 3)
 		defer t.Stop()
 		for {
 			select {
 			case <-stop:
+				return
+			case <-sigs:
+				interrupted.Store(true)
+				kill()
 				return
 			case <-t.C:
 				ctx, cancel := cmdCtx()
@@ -154,7 +177,7 @@ func (a *app) leaseRun(slot string, argv []string, ttl time.Duration) error {
 	}()
 	runErr := cmd.Run()
 	close(stop)
-	<-renewed
+	<-watched
 	if lost.Load() {
 		return fail(exitError, "lease lost")
 	}
@@ -162,6 +185,9 @@ func (a *app) leaseRun(slot string, argv []string, ttl time.Duration) error {
 	defer cancel()
 	if err := mesh.ReleaseLease(ctx, a.client, key, holder); err != nil {
 		return leaseErr(err, key)
+	}
+	if interrupted.Load() {
+		return fail(exitError, "interrupted")
 	}
 	var ee *exec.ExitError
 	if errors.As(runErr, &ee) {

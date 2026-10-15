@@ -35,8 +35,12 @@ func ResultKey(kind, tree string, args []string) string {
 	return key + "." + hex.EncodeToString(sum[:])[:8]
 }
 
-// PutResult stores r under its key, filling At when empty.
+// PutResult stores r under its key, filling At when empty; nil Args are
+// stored as [].
 func PutResult(ctx context.Context, c *Client, r Result) error {
+	if r.Args == nil {
+		r.Args = []string{}
+	}
 	if r.At == "" {
 		r.At = time.Now().UTC().Format(time.RFC3339)
 	}

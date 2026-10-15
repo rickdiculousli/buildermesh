@@ -26,7 +26,8 @@ const (
 	configFile = ".bmesh/config.toml"
 )
 
-var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+// NameRE is the grammar of kind and slot names.
+var NameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
 // Kind is a parsed kind file; Name is the file name without .toml.
 type Kind struct {
@@ -88,7 +89,7 @@ type kindFile struct {
 
 // Parse decodes a kind file's text over the defaults and validates it.
 func Parse(name string, data []byte) (Kind, error) {
-	if !nameRE.MatchString(name) {
+	if !NameRE.MatchString(name) {
 		return Kind{}, fmt.Errorf("kind name %q: want lowercase letters, digits and hyphens", name)
 	}
 	f := kindFile{
@@ -209,7 +210,7 @@ func LoadDir(repoPath string) ([]Kind, error) {
 // LoadAt reads kind name as committed at commit, never from the working copy.
 // A kind file absent at the commit yields an error wrapping ErrNotFound.
 func LoadAt(repoPath, commit, name string) (Kind, error) {
-	if !nameRE.MatchString(name) {
+	if !NameRE.MatchString(name) {
 		return Kind{}, fmt.Errorf("kind name %q: want lowercase letters, digits and hyphens", name)
 	}
 	sha, err := resolveCommit(repoPath, commit)

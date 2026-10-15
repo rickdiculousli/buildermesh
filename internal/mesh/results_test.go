@@ -3,6 +3,7 @@ package mesh_test
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"strings"
 	"testing"
 
 	. "github.com/rickdiculousli/buildermesh/internal/mesh"
@@ -35,6 +36,13 @@ func TestResultKeyWithAndWithoutArgs(t *testing.T) {
 	got, ok, err := GetResult(ctx, c, "verify.t1")
 	if err != nil || !ok || !got.OK || got.Output != "fine" || got.At == "" {
 		t.Fatalf("get: %+v %v %v", got, ok, err)
+	}
+	kv, err := c.JS.KeyValue(ctx, BucketResults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e, err := kv.Get(ctx, "verify.t1"); err != nil || !strings.Contains(string(e.Value()), `"args":[]`) {
+		t.Fatalf("args not stored as []: %v", err)
 	}
 	if _, ok, err := GetResult(ctx, c, "verify.none"); ok || err != nil {
 		t.Fatalf("absent: %v %v", ok, err)

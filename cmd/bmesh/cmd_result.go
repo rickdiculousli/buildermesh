@@ -7,14 +7,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 
+	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
-
-// nameRE is the grammar of kind and slot names.
-var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
 // maxOutput bounds a recorded output; longer output is cut and marked.
 const maxOutput = 64 << 10
@@ -49,7 +46,7 @@ func gitRev(args ...string) (string, error) {
 
 // kindArg checks the kind positional; the rest are the job args.
 func kindArg(pos []string) (string, []string, error) {
-	if len(pos) == 0 || !nameRE.MatchString(pos[0]) {
+	if len(pos) == 0 || !kind.NameRE.MatchString(pos[0]) {
 		return "", nil, fail(exitUsage, resultUsage)
 	}
 	return pos[0], pos[1:], nil
@@ -63,11 +60,11 @@ func (a *app) cmdResultFind(args []string) error {
 	if err != nil {
 		return err
 	}
-	kind, jobArgs, err := kindArg(pos)
+	name, jobArgs, err := kindArg(pos)
 	if err != nil {
 		return err
 	}
-	tree, err := gitRev(*commit + "^{tree}")
+	tree, err := gitRev("--verify", "--end-of-options", *commit+"^{tree}")
 	if err != nil {
 		return err
 	}
@@ -76,7 +73,7 @@ func (a *app) cmdResultFind(args []string) error {
 	if err := a.connect(ctx, "result"); err != nil {
 		return err
 	}
-	key := mesh.ResultKey(kind, tree, jobArgs)
+	key := mesh.ResultKey(name, tree, jobArgs)
 	r, ok, err := mesh.GetResult(ctx, a.client, key)
 	if err != nil {
 		return err
@@ -112,7 +109,7 @@ func (a *app) cmdResultRecord(args []string) error {
 	if err != nil {
 		return err
 	}
-	kind, jobArgs, err := kindArg(pos)
+	name, jobArgs, err := kindArg(pos)
 	if err != nil {
 		return err
 	}
@@ -137,11 +134,11 @@ func (a *app) cmdResultRecord(args []string) error {
 	if err != nil {
 		return err
 	}
-	r := mesh.Result{Kind: kind, Tree: tree, Commit: sha, Args: jobArgs, OK: *ok, Output: output, By: by}
+	r := mesh.Result{Kind: name, Tree: tree, Commit: sha, Args: jobArgs, OK: *ok, Output: output, By: by}
 	if err := mesh.PutResult(ctx, a.client, r); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.stdout, "recorded %s\n", mesh.ResultKey(kind, tree, jobArgs))
+	fmt.Fprintf(a.stdout, "recorded %s\n", mesh.ResultKey(name, tree, jobArgs))
 	return nil
 }
 
