@@ -4,10 +4,12 @@ title: Asks, blocks and silences carry their words onto the map
 kind: ux
 size: S
 judge: fable
-status: accepted
+status: building
 lens: ux
 proposed_by: f3d2851e-4460-4cd8-87b7-359407c1c774
 proposed_on: 2026-10-15
+built_by: 85a01f4d-31ad-4f8a-9fbe-77ea3b884567
+host: k16
 ---
 
 ## Opportunity
