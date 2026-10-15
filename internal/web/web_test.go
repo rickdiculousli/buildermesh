@@ -577,3 +577,102 @@ func TestRoutinesEndpointListsLeases(t *testing.T) {
 		t.Fatalf("lint's instances not []: %s", body)
 	}
 }
+
+func ledgerSpec(id, title, status, by string) string {
+	return "---\nid: " + id + "\ntitle: " + title + "\nstatus: " + status + "\nproposed_by: " + by + "\n---\n\n## Opportunity\n" + title + " body\n"
+}
+
+func TestLeadPageChildrenAndRoundSpecs(t *testing.T) {
+	ctx, c := connect(t)
+	repo := filepath.Join(t.TempDir(), "app")
+	git(t, filepath.Dir(repo), "init", "-q", "-b", "main", "app")
+	commit(t, repo, map[string]string{
+		"docs/proposals/README.md":      "# the lifecycle\n",
+		"docs/proposals/003-other.md":   ledgerSpec("003", "Other round", "done", "th-old"),
+		"docs/proposals/004-broken.md":  "no frontmatter\n",
+		"docs/proposals/005-pending.md": ledgerSpec("005", "Not landed", "proposed", "th-eng"),
+	})
+	// Only main as it stands counts: 005 left it, 006 is on a branch. A
+	// malformed file is left out.
+	git(t, repo, "checkout", "-q", "-b", "side")
+	commit(t, repo, map[string]string{"docs/proposals/006-side.md": ledgerSpec("006", "Side", "proposed", "th-ux")})
+	git(t, repo, "checkout", "-q", "main")
+	git(t, repo, "rm", "-q", "docs/proposals/005-pending.md")
+	git(t, repo, "commit", "-q", "-m", "drop 005")
+	cfg := &config.Config{Repos: map[string]config.Repo{"app": {Path: repo}}, Spec: config.SpecConfig{Glob: "docs/proposals/{id}-*.md"}}
+	for _, n := range []mesh.Node{
+		{Path: "a", Role: "lead", Repo: "app"},
+		{Path: "a.x", Role: "executor", Parent: "a", Branch: "a-x"},
+		{Path: "a.y", Role: "executor", Parent: "a", Branch: "a-y"},
+		{Path: "a.x.z", Role: "executor", Parent: "a.x", Branch: "a-x-z"},
+		{Path: "b", Role: "lead", Repo: "app"},
+		{Path: "app-round-1", Role: "round", Repo: "app"},
+		{Path: "app-round-1.eng", Role: "engineer", Parent: "app-round-1", Runner: mesh.NodeRunner{Thread: "th-eng"}},
+		{Path: "app-round-1.ux", Role: "engineer", Parent: "app-round-1", Runner: mesh.NodeRunner{Thread: "th-ux"}},
+	} {
+		if err := mesh.PutNode(ctx, c, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := mesh.WriteState(ctx, c, "a.x", mesh.State{State: "working"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"one", "two"} {
+		if _, err := mesh.Send(ctx, c, mesh.Message{From: "a", To: "a.x", Text: text}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now()
+	srv := httptest.NewServer(Handler(c, time.Hour, Options{Cfg: cfg, Host: "box", Now: func() time.Time { return now }}))
+	defer srv.Close()
+
+	type page struct {
+		Children []Child     `json:"children"`
+		Specs    []RoundSpec `json:"specs"`
+	}
+	// A lead's children are its direct ones, sorted by path, with their
+	// states and unread counts; a lead has no specs.
+	var p page
+	body := getJSON(t, srv, "/api/lead/a", 200, &p)
+	if len(p.Children) != 2 || p.Children[0].Node.Path != "a.x" || p.Children[0].State.State != "working" ||
+		p.Children[0].Unread != 2 || p.Children[0].Node.Branch != "a-x" ||
+		p.Children[1].Node.Path != "a.y" || p.Children[1].State.State != "idle" || p.Children[1].Unread != 0 {
+		t.Fatalf("children of a: %s", body)
+	}
+	if !strings.Contains(body, `"specs":null`) {
+		t.Fatalf("a lead's specs: %s", body)
+	}
+	// An executor's page has its own children; a node without any has [].
+	getJSON(t, srv, "/api/lead/a.x", 200, &p)
+	if len(p.Children) != 1 || p.Children[0].Node.Path != "a.x.z" {
+		t.Fatalf("children of a.x %+v", p.Children)
+	}
+	if body := getJSON(t, srv, "/api/lead/b", 200, nil); !strings.Contains(body, `"children":[]`) {
+		t.Fatalf("b: %s", body)
+	}
+
+	// Before its engineers land anything, a round's specs are [].
+	body = getJSON(t, srv, "/api/lead/app-round-1", 200, &p)
+	if len(p.Children) != 2 || p.Children[0].Node.Path != "app-round-1.eng" || p.Children[1].Node.Path != "app-round-1.ux" ||
+		!strings.Contains(body, `"specs":[]`) {
+		t.Fatalf("round before landing: %s", body)
+	}
+
+	// Once they land, the round shows its children's specs by id, read
+	// from main's ledger: cached for a minute, then read again.
+	commit(t, repo, map[string]string{
+		"docs/proposals/007-eng.md": ledgerSpec("007", "Faster tests", "proposed", "th-eng"),
+		"docs/proposals/012-ux.md":  ledgerSpec("012", "Clearer map", "accepted", "th-ux"),
+	})
+	getJSON(t, srv, "/api/lead/app-round-1", 200, &p)
+	if len(p.Specs) != 0 {
+		t.Fatalf("specs within the cache minute %+v", p.Specs)
+	}
+	now = now.Add(61 * time.Second)
+	getJSON(t, srv, "/api/lead/app-round-1", 200, &p)
+	if len(p.Specs) != 2 || p.Specs[0] != (RoundSpec{ID: "007", Title: "Faster tests", Status: "proposed",
+		Text: ledgerSpec("007", "Faster tests", "proposed", "th-eng")}) ||
+		p.Specs[1].ID != "012" || p.Specs[1].Title != "Clearer map" || p.Specs[1].Status != "accepted" {
+		t.Fatalf("round specs %+v", p.Specs)
+	}
+}

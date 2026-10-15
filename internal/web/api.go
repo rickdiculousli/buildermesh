@@ -37,7 +37,8 @@ type server struct {
 	log   *slog.Logger
 
 	mu      sync.Mutex
-	specs   map[string]specEntry // by lead path
+	specs   map[string]specEntry   // by lead path
+	ledgers map[string]ledgerEntry // by repo path
 	kinds   kindEntry
 	fetched map[string]time.Time // when each repo's last background fetch started
 }
@@ -46,6 +47,11 @@ type specEntry struct {
 	key string // repo and spec id the entry was read for
 	at  time.Time
 	sp  *Spec
+}
+
+type ledgerEntry struct {
+	at    time.Time
+	specs []*spec.Spec
 }
 
 type kindEntry struct {
@@ -77,7 +83,7 @@ func newServer(c *mesh.Client, o Options) *server {
 		log = slog.New(slog.DiscardHandler)
 	}
 	return &server{c: c, cfg: cfg, host: o.Host, now: now, quota: &Quota{Command: cfg.Quota.Command}, log: log,
-		specs: map[string]specEntry{}, fetched: map[string]time.Time{}}
+		specs: map[string]specEntry{}, ledgers: map[string]ledgerEntry{}, fetched: map[string]time.Time{}}
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
@@ -194,14 +200,32 @@ func (s *server) tree(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, Tree(nodes, states, x))
 }
 
-// leadPage is /api/lead/{path}.
+// leadPage is /api/lead/{path}. Specs is null except for a round.
 type leadPage struct {
 	Node       mesh.Node      `json:"node"`
 	State      mesh.State     `json:"state"`
 	Spec       *Spec          `json:"spec"`
+	Children   []Child        `json:"children"`
+	Specs      []RoundSpec    `json:"specs"`
 	ConsoleURL string         `json:"console_url"`
 	Inbox      []mesh.Message `json:"inbox"`
 	Timeline   []frame        `json:"timeline"`
+}
+
+// Child is one of a node's direct children in the tree /api/tree draws.
+type Child struct {
+	Node   mesh.Node  `json:"node"`
+	State  mesh.State `json:"state"`
+	Unread int        `json:"unread"`
+}
+
+// RoundSpec is a spec one of a round's engineers proposed, as it stands on
+// the repo's main.
+type RoundSpec struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Status string `json:"status"`
+	Text   string `json:"text"`
 }
 
 func (s *server) lead(w http.ResponseWriter, r *http.Request) {
@@ -231,6 +255,13 @@ func (s *server) lead(w http.ResponseWriter, r *http.Request) {
 	since := s.now().Add(-window)
 	pg := leadPage{Node: n, State: st, Spec: s.spec(ctx, n), ConsoleURL: ConsoleURL(s.cfg.Console, s.host, n),
 		Inbox: []mesh.Message{}, Timeline: []frame{}}
+	if pg.Children, err = s.children(ctx, path); err != nil {
+		fail(w, err)
+		return
+	}
+	if n.Role == "round" {
+		pg.Specs = s.roundSpecs(ctx, n, pg.Children)
+	}
 
 	// The inbox has no time limit: the newest inboxShow messages the stream keeps.
 	msgs, err := mesh.History(ctx, s.c, "bm.inbox."+path, time.Time{})
@@ -254,6 +285,105 @@ func (s *server) lead(w http.ResponseWriter, r *http.Request) {
 		pg.Timeline = append(pg.Timeline, frameOf(m))
 	}
 	writeJSON(w, pg)
+}
+
+// children is path's direct children in the tree /api/tree builds, with
+// their states and unread counts.
+func (s *server) children(ctx context.Context, path string) ([]Child, error) {
+	nodes, err := mesh.ListNodes(ctx, s.c)
+	if err != nil {
+		return nil, err
+	}
+	states, err := mesh.ReadAllStates(ctx, s.c)
+	if err != nil {
+		return nil, err
+	}
+	// Only a node whose parent is path can be drawn under it, so only those
+	// need an unread count.
+	unread := map[string]int{}
+	for _, n := range nodes {
+		if n.Parent != path || n.Role == "routine" {
+			continue
+		}
+		p, err := mesh.ParsePath(n.Path)
+		if err != nil {
+			continue
+		}
+		if unread[n.Path], err = mesh.Unread(ctx, s.c, p); err != nil {
+			return nil, err
+		}
+	}
+	v := Tree(nodes, states, Extras{Unread: unread})
+	out := []Child{}
+	if t := findTree(append(v.Leads, v.Orphans...), path); t != nil {
+		for _, c := range t.Children {
+			out = append(out, Child{Node: c.Node, State: c.State, Unread: c.Unread})
+		}
+	}
+	return out, nil
+}
+
+func findTree(ts []TreeNode, path string) *TreeNode {
+	for i := range ts {
+		if ts[i].Node.Path == path {
+			return &ts[i]
+		}
+		if t := findTree(ts[i].Children, path); t != nil {
+			return t
+		}
+	}
+	return nil
+}
+
+// roundSpecs is the specs on the round's repo's main whose proposed_by is
+// one of its children's threads, by id; [] when there are none or the
+// ledger can't be read.
+func (s *server) roundSpecs(ctx context.Context, n mesh.Node, children []Child) []RoundSpec {
+	out := []RoundSpec{}
+	threads := map[string]bool{}
+	for _, c := range children {
+		if c.Node.Runner.Thread != "" {
+			threads[c.Node.Runner.Thread] = true
+		}
+	}
+	if len(threads) == 0 {
+		return out
+	}
+	for _, sp := range s.ledger(ctx, n.Repo) {
+		if threads[sp.Fields["proposed_by"]] {
+			out = append(out, RoundSpec{ID: sp.IDString(), Title: sp.Title(), Status: sp.Status(), Text: sp.Text})
+		}
+	}
+	return out
+}
+
+// ledger reads repo's ledger from its local origin/main (main without an
+// origin) as spec does: never fetching, cached for a minute per repo, nil
+// when the repo is not configured here or the read failed (not cached).
+func (s *server) ledger(ctx context.Context, repo string) []*spec.Spec {
+	if repo == "" {
+		return nil
+	}
+	_, repoPath, err := s.cfg.RepoPath(repo)
+	if err != nil {
+		return nil
+	}
+	now := s.now()
+	s.mu.Lock()
+	e, ok := s.ledgers[repoPath]
+	s.mu.Unlock()
+	if ok && now.Sub(e.at) < cacheFor {
+		return e.specs
+	}
+	specs, err := spec.ScanMainLocal(ctx, repoPath, s.cfg.Spec.Glob)
+	s.fetchSoon(repoPath)
+	if err != nil {
+		return nil
+	}
+	s.mu.Lock()
+	s.ledgers[repoPath] = ledgerEntry{at: now, specs: specs}
+	s.mu.Unlock()
+	return specs
 }
 
 // spec reads n's spec from its repo's local origin/main (main without an

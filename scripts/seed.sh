@@ -36,6 +36,26 @@ curl -s http://127.0.0.1:3775/api/tree | jq .
 
 The map works at 390x844 and 1280x800.
 MD
+# A spec app-round-1's engineer landed (the seed's thread-round-1-eng).
+cat >"$dir/app/docs/proposals/043-faster-tests.md" <<'MD'
+---
+id: 043
+title: Tests share one hub
+kind: test-speed
+size: S
+judge: sonnet
+status: proposed
+lens: eng
+proposed_by: thread-round-1-eng
+proposed_on: 2026-10-15
+---
+
+## Opportunity
+Each test starts its own hub.
+
+## Proposal
+One hub per package.
+MD
 cat >"$dir/app/.bmesh/routines/review.toml" <<'TOML'
 mode = "pooled"
 model = "claude-opus-5-5"

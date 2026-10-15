@@ -186,11 +186,25 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
 .rows .ev-ask .e { color: var(--asking); }
 .rows .ev-started .e, .rows .ev-progress .e { color: var(--working); }
 .rows li.fold { display: block; padding: 0; }
-.spent summary { display: flex; align-items: center; min-height: 40px; cursor: pointer; color: var(--muted); list-style: none; }
-.spent summary::before { content: "▸"; margin-right: 6px; }
-.spent[open] summary::before { content: "▾"; }
-.spent summary::-webkit-details-marker { display: none; }
+.fold-open summary { display: flex; align-items: center; min-height: 40px; cursor: pointer; list-style: none; overflow-wrap: anywhere; }
+.fold-open summary::before { content: "▸"; margin-right: 6px; }
+.fold-open[open] summary::before { content: "▾"; }
+.fold-open summary::-webkit-details-marker { display: none; }
+.fold-open > .spec-body { margin-bottom: 8px; }
+.spent summary { color: var(--muted); }
 .spent .rows { padding-left: 14px; }
+.rows .child { display: flex; flex: 1 1 100%; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-height: 40px; min-width: 0; color: inherit; text-decoration: none; }
+.rows .child .branch { font-size: 12px; overflow-wrap: anywhere; min-width: 0; }
+.rows .child .unread { color: var(--msg); font-weight: 600; }
+.rows .child .muted, .rows .child .unread { margin-left: auto; }
+/* A card with nothing to show is one muted line; in the lead page's one
+   column the cards with content come first. */
+.card.bare { padding: 6px var(--pad); color: var(--muted); font-size: 13px; }
+.card.bare .k { font-weight: 600; }
+@media (max-width: 999px) {
+  #lead-panel .stack { display: contents; }
+  #lead-panel .bare { order: 1; }
+}
 .clock.lease { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
 .clock.past { color: var(--blocked); }
 

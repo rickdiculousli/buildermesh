@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path"
+	"sort"
 	"strings"
 	"time"
 )
@@ -94,14 +95,8 @@ func FetchMain(ctx context.Context, repoPath string) error {
 // findOnMain is FindOnMain (FindOnMainLocal when fetch is false) also
 // naming the ref it read.
 func findOnMain(ctx context.Context, repoPath, glob, id string, fetch bool) (p, text, ref string, err error) {
-	ref = "main"
-	if _, err := gitCtx(ctx, repoPath, "remote", "get-url", "origin"); err == nil {
-		if fetch {
-			if _, err := gitCtx(ctx, repoPath, "fetch", "--quiet", "origin", "main"); err != nil {
-				return "", "", ref, err
-			}
-		}
-		ref = "origin/main"
+	if ref, err = mainRef(ctx, repoPath, fetch); err != nil {
+		return "", "", ref, err
 	}
 	pattern := strings.ReplaceAll(glob, "{id}", id)
 	dir := path.Dir(glob)
@@ -133,6 +128,50 @@ func findOnMain(ctx context.Context, repoPath, glob, id string, fetch bool) (p, 
 		return "", "", ref, err
 	}
 	return hits[0], text, ref, nil
+}
+
+// mainRef is origin/main when the repo has an origin (fetched first when
+// fetch is set), else main.
+func mainRef(ctx context.Context, repoPath string, fetch bool) (string, error) {
+	if _, err := gitCtx(ctx, repoPath, "remote", "get-url", "origin"); err != nil {
+		return "main", nil
+	}
+	if fetch {
+		if _, err := gitCtx(ctx, repoPath, "fetch", "--quiet", "origin", "main"); err != nil {
+			return "main", err
+		}
+	}
+	return "origin/main", nil
+}
+
+// ScanMainLocal reads the ledger as it stands on the local origin/main
+// (main without an origin), without a fetch, under ctx, sorted by id. A
+// file that does not parse is left out rather than failing the read.
+func ScanMainLocal(ctx context.Context, repoPath, glob string) ([]*Spec, error) {
+	ref, err := mainRef(ctx, repoPath, false)
+	if err != nil {
+		return nil, err
+	}
+	dir := path.Dir(glob)
+	out, err := gitCtx(ctx, repoPath, "ls-tree", "--name-only", ref, "--", dir+"/")
+	if err != nil {
+		return nil, err
+	}
+	var specs []*Spec
+	for _, p := range strings.Split(out, "\n") {
+		if p == "" || !strings.HasSuffix(p, ".md") || path.Base(p) == "README.md" {
+			continue
+		}
+		text, err := gitCtx(ctx, repoPath, "show", ref+":"+p)
+		if err != nil {
+			return nil, err
+		}
+		if s, err := Parse(text, p); err == nil {
+			specs = append(specs, s)
+		}
+	}
+	sort.SliceStable(specs, func(i, j int) bool { return specs[i].ID < specs[j].ID })
+	return specs, nil
 }
 
 // Done is the verdict of CheckDone. Verified is the spec's verified line,

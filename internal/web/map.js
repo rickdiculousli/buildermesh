@@ -720,7 +720,30 @@ function specBody(text) {
 }
 
 function card(title, ...children) {
-  return el("section", "card", null, el("h3", null, title), ...children);
+  const c = el("section", "card", null, el("h3", null, title), ...children);
+  c.dataset.card = title;
+  return c;
+}
+
+// bare is a card with nothing to show: one muted line. In the lead page's
+// one-column layout it sorts after the cards with content.
+function bare(title, text) {
+  const c = el("section", "card bare", null, el("span", "k", title), " · " + text);
+  c.dataset.card = title;
+  return c;
+}
+
+// foldOpen holds the keys of the folds left open, so a redraw keeps them
+// open: "<kind> <repo>" for a spent fold, "<round> <id>" for a round's spec.
+const foldOpen = new Set();
+
+function keepOpen(det, key) {
+  if (foldOpen.has(key)) det.open = true;
+  det.addEventListener("toggle", () => {
+    if (det.open) foldOpen.add(key);
+    else foldOpen.delete(key);
+  });
+  return det;
 }
 
 function field(name, value) {
@@ -759,15 +782,21 @@ function renderLead(path, v) {
   }
   head.replaceChildren(...parts);
 
-  let spec;
-  if (sp) {
+  const main = [];
+  const kids = v.children || [];
+  if (kids.length) main.push(card("tree", el("ol", "rows", null, ...kids.map(childRow))));
+  if (n.role === "round") {
+    const specs = v.specs || [];
+    main.push(specs.length ? card("specs", el("ol", "rows", null, ...specs.map((s) => roundSpec(path, s))))
+      : bare("specs", "no specs landed yet"));
+  } else if (sp) {
     const merged = sp.merged ? String(sp.merged).slice(0, 8) : "";
-    spec = card("spec " + (sp.id || n.spec || ""), el("p", "spec-title", sp.title || "(untitled)"),
+    main.push(card("spec " + (sp.id || n.spec || ""), el("p", "spec-title", sp.title || "(untitled)"),
       el("div", "fields", null, field("status", sp.status), field("merged", merged),
         field("verified", sp.verified || "not verified")),
-      specBody(sp.text));
+      specBody(sp.text)));
   } else {
-    spec = card("spec", el("p", "empty", n.spec ? "spec " + n.spec + " is not on main of a repo configured here" : "no spec"));
+    main.push(bare("spec", n.spec ? "spec " + n.spec + " is not on main of a repo configured here" : "no spec"));
   }
 
   const inbox = (v.inbox || []).map((m) => el("li", null, null,
@@ -779,9 +808,29 @@ function renderLead(path, v) {
     return el("li", "ev-" + d.event, null, el("span", "t", stamp((f.payload && f.payload.at) || f.at)),
       el("span", "p", d.path), el("span", "e", d.event), el("span", "x", d.text));
   });
-  panel.replaceChildren(spec, el("div", "stack", null,
-    card("inbox", inbox.length ? el("ol", "rows", null, ...inbox) : el("p", "empty", "no messages")),
-    card("timeline", tl.length ? el("ol", "rows", null, ...tl) : el("p", "empty", "no events in the last day"))));
+  panel.replaceChildren(el("div", "stack", null, ...main), el("div", "stack", null,
+    inbox.length ? card("inbox", el("ol", "rows", null, ...inbox)) : bare("inbox", "no messages"),
+    tl.length ? card("timeline", el("ol", "rows", null, ...tl)) : bare("timeline", "no events in the last day")));
+}
+
+// childRow is one of the node's children in the tree card: a link to its
+// own page.
+function childRow(c) {
+  const n = c.node || {}, path = String(n.path || "?");
+  const a = el("a", "child tap", null, badge(c.state && c.state.state), el("span", "p", lastToken(path)));
+  if (n.branch) a.append(el("code", "branch", n.branch));
+  a.append(el("span", c.unread > 0 ? "unread" : "muted", (c.unread || 0) + " unread"));
+  a.setAttribute("href", "#/lead/" + encodeURIComponent(path));
+  a.title = path;
+  return el("li", null, null, a);
+}
+
+// roundSpec is one of a round's specs, "NNN title · status", opening its
+// body in place.
+function roundSpec(round, s) {
+  const det = el("details", "fold-open", null,
+    el("summary", "tap", (s.id || "?") + " " + (s.title || "(untitled)") + " · " + (s.status || "?")), specBody(s.text));
+  return el("li", "fold", null, keepOpen(det, round + " " + s.id));
 }
 
 const lead = loader(async () => {
@@ -824,10 +873,6 @@ function leaseRow(l) {
   return el("li", null, null, el("span", "p", l.key), el("span", "muted", l.holder), clock("lease", l.expires_at, true));
 }
 
-// spentOpen holds the "<kind> <repo>" keys of the spent folds left open, so
-// a redraw keeps them open.
-const spentOpen = new Set();
-
 // RANK orders a repo's instances: working, then any other live state, idle,
 // then spent.
 const RANK = { working: 0, idle: 2, done: 3 };
@@ -862,15 +907,9 @@ function instanceRows(k) {
     const live = list.filter((i) => rankOf(i) < RANK.done), spent = list.filter((i) => rankOf(i) === RANK.done);
     const rows = live.map((i) => instanceRow(k, i));
     if (spent.length) {
-      const key = k.kind + " " + repo;
-      const det = el("details", "spent", null, el("summary", "tap", "spent (" + spent.length + ")"),
+      const det = el("details", "fold-open spent", null, el("summary", "tap", "spent (" + spent.length + ")"),
         el("ol", "rows", null, ...spent.map((i) => instanceRow(k, i))));
-      if (spentOpen.has(key)) det.open = true;
-      det.addEventListener("toggle", () => {
-        if (det.open) spentOpen.add(key);
-        else spentOpen.delete(key);
-      });
-      rows.push(el("li", "fold", null, det));
+      rows.push(el("li", "fold", null, keepOpen(det, k.kind + " " + repo)));
     }
     out.push(el("h4", null, repo || "no repo"), el("ol", "rows", null, ...rows));
   }
@@ -1059,9 +1098,26 @@ function selfCheck() {
   const c = check;
   document.title = `bmesh ${sw <= iw ? "ok" : "SCROLLS"} view=${pages.view} scrollWidth=${sw} innerWidth=${iw} minTap=${Math.round(tap)}` +
     ` workingTop=${workingTop}` +
+    (pages.view === "lead" ? ` firstCard=${firstCard()}` : "") +
     ` svgWidth=${mesh.width} mapWidth=${$("map").clientWidth}` +
     ` vertical=${mesh.vertical} leads=${c.leads} trees=${c.trees} conn=${c.conn.join(">")}` +
     ` replay=${c.replay} live=${c.live} flashes=${c.flashes} strip=${$("strip").hidden ? "hidden" : $("strip").children.length}`;
+}
+
+// firstCard names the lead page's card drawn highest (leftmost on a tie),
+// spaces as "_": CSS order, not the DOM, decides it in one column.
+function firstCard() {
+  let best = null, top = Infinity, left = Infinity;
+  for (const e of document.querySelectorAll("#lead-panel .card")) {
+    const r = e.getBoundingClientRect();
+    if (!r.height) continue;
+    if (r.top < top - 0.5 || Math.abs(r.top - top) <= 0.5 && r.left < left) {
+      best = e;
+      top = r.top;
+      left = r.left;
+    }
+  }
+  return best ? String(best.dataset.card).replace(/\s+/g, "_") : "none";
 }
 
 // route shows the view the hash names: #/ the map, #/lead/<path> a lead,
