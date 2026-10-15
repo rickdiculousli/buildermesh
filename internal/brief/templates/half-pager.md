@@ -17,7 +17,7 @@ proposed_on: {{date}}
 # lens: eng | ux
 # Set later, never by the proposer:
 # built_by: <thread id>       set by dispatch
-# branch: <branch>            set by dispatch
+# branch: <branch>            set by dispatch, corrected by the build thread if the runner renamed it
 # host: <box>                 set by dispatch
 # merged: <sha>               set by the build thread
 # verified: <entries>         set by the build thread (bmesh spec verified --write)

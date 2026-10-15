@@ -116,7 +116,7 @@ const (
 func Closing(verify []string) string {
 	return "> When it works, finish it: run the repo's verify commands (" + VerifyText(verify) +
 		") until they pass; when the change carries risk verify can't catch (" + riskText + "), have a model that didn't write it review it once and fix what it finds, while a rote change (" + roteText + ") lands on verify alone; " +
-		"rebase onto `main` and re-run verify; merge fast-forward to `main`; and push where the repo has a remote. " +
+		"rebase onto `main` and re-run verify; merge fast-forward to `main`, landing the branch your worktree is on (`git branch --show-current`), never the name in your brief; and push where the repo has a remote. " +
 		"It isn't done while it sits on a branch. End with one line: what's on `main` (the commit) and what, if anything, waits on the operator."
 }
 

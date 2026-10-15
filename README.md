@@ -42,6 +42,8 @@ Runner tests drive shell fakes instead of T3 and tmux. `BMESH_T3_COMMAND`, when 
 
 `lead start` refuses with exit 3 `bmesh: N leads already working on this host` when `[runner] max_leads` is set and that many leads registered on this host are not `done` or `blocked`. It counts working leads, not resident sessions: a finished lead's session (a tmux window, a T3 thread) keeps its memory until the operator closes it, and a lead is counted only once its runner has started it. `scripts/memcap.sh N` measures what a box can carry: it runs N leads on the tmux runner against a mesh of its own, each spawning three executors, and prints the peak memory.
 
+A runner may rename a lead's branch while it works (T3 does). Once a minute the daemon reads the current branch of the worktree of every local lead and engineer that is not `done` (`git rev-parse --abbrev-ref HEAD` in the node's `worktree`, when it exists on this host) and, when it is a branch that differs from the node's `branch`, rewrites the node and logs `branch: <path> <old> -> <new>`; a detached or missing worktree leaves the node as it is. `bmesh mesh-status`, the map and `bm-nodes` follow within the minute. The lead lands the branch its worktree is on (`git branch --show-current`), never the name in its brief.
+
 ## Proposal rounds
 
 ```
@@ -89,6 +91,8 @@ bmesh spec set --id NNN --status S [--repo R] [--from A,B] [--field K=V]...
 bmesh spec template [--repo R]
 bmesh choose-ideas <repo> "<reply>"
 ```
+
+A spec's `branch` is set by dispatch and corrected by the build thread when the runner renamed it: the `spec set` that writes `done` and `merged` adds `--field branch=<the branch landed>` when it differs, so the ledger names the branch that was merged.
 
 `--repo` is a registry name or a path (default the current directory; a path that is a row's path counts as that row, as it does for every command taking a repo). `list` prints one row per spec, `NNN  status  size  kind  lens  title` (`?` for a missing field), sorted by id; `--json` prints each spec's frontmatter plus `path` as an array. `next-id` is one past the highest id (`001` for an empty ledger). `set` rewrites the spec's status and the given fields in place (an existing key keeps its line, a new one is added last, every other byte stays) and prints its row; `--from` refuses, changing nothing, a spec whose status is not one of the listed ones (exit 1, naming its status), as does a write the ledger would read back otherwise (a duplicated `status:` key) and a value with a line break. `template` prints the half-pager (the repo's `.bmesh/briefs/half-pager.md` when it has one, else the embedded one).
 
