@@ -1,0 +1,246 @@
+package main
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/rickdiculousli/buildermesh/internal/mesh"
+)
+
+// marker points $MARK at a file outside the repo, so a command can show it
+// ran without dirtying the worktree.
+func marker(t *testing.T) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "mark")
+	t.Setenv("MARK", p)
+	return p
+}
+
+func exists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
+func TestInlineRunsAndRecords(t *testing.T) {
+	c, ctx := setup(t)
+	kindRepo(t, map[string]string{
+		"verify": "mode = \"inline\"\ndeterministic = true\ncommand = \"echo ran $BMESH_TREE $BMESH_FROM\"\n",
+		"broken": "mode = \"inline\"\ndeterministic = true\ncommand = \"echo nope; exit 3\"\n",
+		"notes":  "mode = \"inline\"\ncommand = \"echo hi\"\n",
+	})
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
+	head := gitOut(t, "rev-parse", "HEAD")
+	key := mesh.ResultKey("verify", tree, []string{"a", "b"})
+
+	out, errs, code := runCLI(t, nil, "routine", "run", "verify", "--", "a", "b")
+	if code != 0 || out != "ran "+tree+" "+testHost+" a b\n" || errs != "recorded "+key+"\n" {
+		t.Fatalf("run: %d %q %q", code, out, errs)
+	}
+	r, ok, err := mesh.GetResult(ctx, c, key)
+	if err != nil || !ok || !r.OK || r.Output != out || r.By != testHost || r.Commit != head ||
+		r.Tree != tree || !slices.Equal(r.Args, []string{"a", "b"}) {
+		t.Fatalf("result %+v %v %v", r, ok, err)
+	}
+	if out, errs, code := runCLI(t, nil, "result", "find", "verify", "--", "a", "b"); code != 0 || !strings.HasPrefix(out, "ok "+tree) {
+		t.Fatalf("find: %d %q %q", code, out, errs)
+	}
+
+	out, errs, code = runCLI(t, nil, "routine", "run", "broken")
+	if code != 1 || out != "nope\n" || errs != "recorded broken."+tree+"\n" {
+		t.Fatalf("broken: %d %q %q", code, out, errs)
+	}
+	if r, ok, err := mesh.GetResult(ctx, c, "broken."+tree); err != nil || !ok || r.OK || r.Output != "nope\n" {
+		t.Fatalf("broken result %+v %v %v", r, ok, err)
+	}
+
+	// A non-deterministic kind records nothing.
+	out, errs, code = runCLI(t, nil, "routine", "run", "notes")
+	if code != 0 || out != "hi\n" || errs != "" {
+		t.Fatalf("notes: %d %q %q", code, out, errs)
+	}
+	if rs, err := mesh.ListResults(ctx, c, "notes"); err != nil || len(rs) != 0 {
+		t.Fatalf("notes recorded %+v %v", rs, err)
+	}
+}
+
+func TestInlineRefusesDirtyTree(t *testing.T) {
+	c, ctx := setup(t)
+	repo := kindRepo(t, map[string]string{
+		"verify": "mode = \"inline\"\ndeterministic = true\ncommand = \"touch \\\"$MARK\\\"\"\n",
+	})
+	mark := marker(t)
+	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, errs, code := runCLI(t, nil, "routine", "run", "verify")
+	if code != 3 || errs != "bmesh: worktree is dirty; commit first\n" {
+		t.Fatalf("dirty: %d %q", code, errs)
+	}
+	if exists(mark) {
+		t.Fatal("the command ran on a dirty tree")
+	}
+	if rs, err := mesh.ListResults(ctx, c, "verify"); err != nil || len(rs) != 0 {
+		t.Fatalf("recorded %+v %v", rs, err)
+	}
+
+	// An inline run runs HEAD; any other commit is refused.
+	runGit(t, repo, "checkout", "a.txt")
+	_, errs, code = runCLI(t, nil, "routine", "run", "verify", "--commit", "HEAD~1")
+	if code != 3 || errs != "bmesh: inline runs run HEAD; check out HEAD~1 or queue the job\n" || exists(mark) {
+		t.Fatalf("other commit: %d %q", code, errs)
+	}
+	if _, errs, code := runCLI(t, nil, "routine", "run", "verify", "--commit", "HEAD"); code != 0 || !exists(mark) {
+		t.Fatalf("clean: %d %q", code, errs)
+	}
+}
+
+func TestInlineAnswersFromRecord(t *testing.T) {
+	c, ctx := setup(t)
+	kindRepo(t, map[string]string{
+		"verify": "mode = \"inline\"\ndeterministic = true\ncommand = \"touch \\\"$MARK\\\"; echo fixed\"\n",
+	})
+	mark := marker(t)
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
+	if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "verify", Tree: tree, OK: false, Output: "broke\n", By: "elsewhere"}); err != nil {
+		t.Fatal(err)
+	}
+	out, errs, code := runCLI(t, nil, "routine", "run", "verify")
+	if code != 1 || out != "broke\n" || errs != "answered from result verify."+tree+"\n" || exists(mark) {
+		t.Fatalf("answered: %d %q %q ran=%v", code, out, errs, exists(mark))
+	}
+	out, errs, code = runCLI(t, nil, "routine", "run", "verify", "--rerun")
+	if code != 0 || out != "fixed\n" || errs != "recorded verify."+tree+"\n" || !exists(mark) {
+		t.Fatalf("rerun: %d %q %q", code, out, errs)
+	}
+	if r, ok, err := mesh.GetResult(ctx, c, "verify."+tree); err != nil || !ok || !r.OK || r.By != testHost {
+		t.Fatalf("record not replaced: %+v %v %v", r, ok, err)
+	}
+}
+
+func TestInlineRefusesNonInlineWithoutHere(t *testing.T) {
+	setup(t)
+	kindRepo(t, map[string]string{"verify": "command = \"touch \\\"$MARK\\\"\"\n"})
+	mark := marker(t)
+	_, errs, code := runCLI(t, nil, "routine", "run", "verify")
+	if code != 3 || errs != "bmesh: kind verify is pooled; queue it, or pass --here to run it in this worktree\n" || exists(mark) {
+		t.Fatalf("pooled: %d %q", code, errs)
+	}
+	if _, errs, code := runCLI(t, nil, "routine", "run", "verify", "--here"); code != 0 || !exists(mark) {
+		t.Fatalf("--here: %d %q", code, errs)
+	}
+	if _, errs, code := runCLI(t, nil, "routine", "run", "lint"); code != 3 || !strings.HasPrefix(errs, "bmesh: no kind lint in ") {
+		t.Fatalf("unknown kind: %d %q", code, errs)
+	}
+	if _, errs, code := runCLI(t, nil, "routine", "run", "verify", "--here", "--model", "m1"); code != 2 {
+		t.Fatalf("model on a command kind: %d %q", code, errs)
+	}
+}
+
+func TestInlineHoldsSlotLease(t *testing.T) {
+	c, ctx := setup(t)
+	repo := kindRepo(t, map[string]string{
+		"game": "mode = \"inline\"\nslots = [\"game\"]\n" +
+			"command = \"touch \\\"$MARK\\\"; while [ ! -e \\\"$GO\\\" ]; do sleep 0.05; done; echo played\"\n",
+	})
+	if err := os.WriteFile(filepath.Join(repo, ".bmesh", "config.toml"), []byte("[slots]\ngame = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", "-A")
+	runGit(t, repo, "commit", "-m", "slots")
+	mark := marker(t)
+	goFile := filepath.Join(t.TempDir(), "go")
+	t.Setenv("GO", goFile)
+
+	key, err := mesh.AcquireLease(ctx, c, "game", "someone", time.Minute, 1, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, errs, code := runCLI(t, nil, "routine", "run", "game")
+	if code != 3 || errs != "bmesh: slot game is busy\n" || exists(mark) {
+		t.Fatalf("busy: %d %q", code, errs)
+	}
+	if err := mesh.ReleaseLease(ctx, c, key, "someone"); err != nil {
+		t.Fatal(err)
+	}
+
+	res := make(chan [3]any, 1)
+	go func() {
+		var out, errb bytes.Buffer
+		code := run([]string{"routine", "run", "game"}, strings.NewReader(""), &out, &errb)
+		res <- [3]any{code, out.String(), errb.String()}
+	}()
+	deadline := time.Now().Add(10 * time.Second)
+	for !exists(mark) {
+		if time.Now().After(deadline) {
+			t.Fatal("the command never started")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	leases, err := mesh.ListLeases(ctx, c)
+	if err != nil || len(leases) != 1 || leases[0].Key != "game.0" || leases[0].Holder != testHost {
+		t.Fatalf("lease during the run: %+v %v", leases, err)
+	}
+	if err := os.WriteFile(goFile, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case r := <-res:
+		if r[0] != 0 || r[1] != "played\n" || r[2] != "" {
+			t.Fatalf("run: %v", r)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("run never finished")
+	}
+	assertNoLeases(t, c, ctx)
+}
+
+func TestInlineModelKindThroughFake(t *testing.T) {
+	c, ctx := setup(t)
+	fake, err := filepath.Abs("../../testdata/fake-claude.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(t.TempDir(), "claude.log")
+	t.Setenv("BMESH_CLAUDE_COMMAND", "sh "+fake)
+	t.Setenv("FAKE_LOG", log)
+	t.Setenv("FAKE_RESULT", "looks fine\nVERDICT: ok")
+	kindRepo(t, map[string]string{
+		"review": "mode = \"inline\"\ndeterministic = true\nmodels = [\"m1\", \"m2\"]\nprompt = \"check\"\n",
+	})
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
+
+	out, errs, code := runCLI(t, nil, "routine", "run", "review", "--model", "m2", "--text", "look at it")
+	if code != 0 || out != "looks fine\nVERDICT: ok\n" || errs != "recorded review."+tree+"\n" {
+		t.Fatalf("run: %d %q %q", code, out, errs)
+	}
+	if r, ok, err := mesh.GetResult(ctx, c, "review."+tree); err != nil || !ok || !r.OK {
+		t.Fatalf("result %+v %v %v", r, ok, err)
+	}
+	b, err := os.ReadFile(log)
+	if err != nil || !strings.Contains(string(b), "--model m2 ") {
+		t.Fatalf("claude argv %q %v", b, err)
+	}
+	if stdin, err := os.ReadFile(log + ".stdin"); err != nil || !strings.Contains(string(stdin), "look at it") {
+		t.Fatalf("claude stdin %q %v", stdin, err)
+	}
+
+	// Default model is the first; a rerun replaces the record.
+	t.Setenv("FAKE_RESULT", "VERDICT: fail")
+	if _, errs, code := runCLI(t, nil, "routine", "run", "review", "--rerun"); code != 1 {
+		t.Fatalf("rerun: %d %q", code, errs)
+	}
+	if b, _ := os.ReadFile(log); !strings.Contains(string(b), "--model m1 ") {
+		t.Fatalf("default model: %q", b)
+	}
+	if r, _, _ := mesh.GetResult(ctx, c, "review."+tree); r.OK {
+		t.Fatal("record not replaced")
+	}
+	if _, errs, code := runCLI(t, nil, "routine", "run", "review", "--model", "m3"); code != 2 {
+		t.Fatalf("unknown model: %d %q", code, errs)
+	}
+}

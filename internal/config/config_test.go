@@ -19,7 +19,8 @@ func TestLoadMissingFileIsDefaults(t *testing.T) {
 	if c.Mesh.Listen != "127.0.0.1:4222" || c.Liveness.PollEvery != 60*time.Second ||
 		c.Liveness.WakeEvery != 10*time.Minute || c.Notify.DigestEvery != time.Hour ||
 		c.Spec.Glob != "docs/proposals/{id}-*.md" || c.Models.Lead != "claude-fable-5-1" ||
-		c.Runner.TmuxSession != "bmesh" || c.Runner.T3Dispatch != "t3_dispatch.py" {
+		c.Runner.TmuxSession != "bmesh" || c.Runner.T3Dispatch != "t3_dispatch.py" ||
+		c.Runner.Checkouts != "~/.bmesh/checkouts" || c.Runner.Claude != "claude" {
 		t.Fatalf("defaults wrong: %+v", c)
 	}
 }
@@ -41,6 +42,8 @@ func TestLoadFixture(t *testing.T) {
 		"t3":          {c.Runner.T3Dispatch, "~/bin/t3_dispatch.py"},
 		"tmux":        {c.Runner.TmuxSession, "mesh"},
 		"worktrees":   {c.Runner.Worktrees, "~/wt"},
+		"checkouts":   {c.Runner.Checkouts, "~/co"},
+		"claude":      {c.Runner.Claude, "claude --debug"},
 		"ntfy":        {c.Notify.Ntfy, "http://ntfy.example/bm"},
 		"command":     {c.Notify.Command, "cat"},
 		"glob":        {c.Spec.Glob, "specs/{id}.md"},

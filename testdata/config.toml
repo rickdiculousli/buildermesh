@@ -13,6 +13,8 @@ kind = "tmux"
 t3_dispatch = "~/bin/t3_dispatch.py"
 tmux_session = "mesh"
 worktrees = "~/wt"
+checkouts = "~/co"
+claude = "claude --debug"
 [notify]
 ntfy = "http://ntfy.example/bm"
 command = "cat"

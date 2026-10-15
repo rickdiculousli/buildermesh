@@ -28,6 +28,8 @@ type RunnerConfig struct {
 	T3Dispatch  string `toml:"t3_dispatch"`
 	TmuxSession string `toml:"tmux_session"`
 	Worktrees   string
+	Checkouts   string // routine instances' checkouts
+	Claude      string // the claude command, split on spaces when run
 }
 
 type NotifyConfig struct {
@@ -100,7 +102,7 @@ func defaults() *Config {
 		Mesh:  MeshConfig{Domain: "hub", Store: "~/.local/state/bmesh/jetstream", Listen: "127.0.0.1:4222"},
 		Serve: ServeConfig{Listen: "127.0.0.1:3774"},
 		Runner: RunnerConfig{Kind: "t3", T3Dispatch: "t3_dispatch.py", TmuxSession: "bmesh",
-			Worktrees: "~/.bmesh/worktrees"},
+			Worktrees: "~/.bmesh/worktrees", Checkouts: "~/.bmesh/checkouts", Claude: "claude"},
 		Notify:   NotifyConfig{DigestEvery: time.Hour},
 		Liveness: LivenessConfig{Grace: 20 * time.Minute, PollEvery: 60 * time.Second, WakeEvery: 10 * time.Minute},
 		Repos:    map[string]string{},

@@ -103,11 +103,17 @@ func (a *app) acquire(ctx context.Context, slot string, ttl time.Duration) (stri
 	if err != nil {
 		return "", "", err
 	}
+	key, err := a.acquireAs(ctx, slot, holder, ttl, capacity)
+	return key, holder, err
+}
+
+// acquireAs takes a place in slot for holder; a full slot is refused (exit 3).
+func (a *app) acquireAs(ctx context.Context, slot, holder string, ttl time.Duration, capacity int) (string, error) {
 	key, err := mesh.AcquireLease(ctx, a.client, slot, holder, ttl, capacity, time.Now())
 	if errors.Is(err, mesh.ErrBusy) {
-		return "", "", fail(exitRefused, "slot %s is busy", slot)
+		return "", fail(exitRefused, "slot %s is busy", slot)
 	}
-	return key, holder, err
+	return key, err
 }
 
 // slotCapacity reads the slot's capacity from the cwd's repo config; 1 when
@@ -127,27 +133,75 @@ func slotCapacity(slot string) (int, error) {
 	return 1, nil
 }
 
-// leaseRun holds a lease on slot while argv runs, renewing every ttl/3. The
-// command runs in its own process group so the whole group can be killed. A
-// failed renew kills the group and exits 1 "lease lost"; SIGINT or SIGTERM
-// kills it, releases the lease and exits 1 "interrupted"; otherwise the lease
-// is released and the command's exit code is returned.
+// leaseRun holds a lease on slot while argv runs. The command runs in its
+// own process group so the whole group can be killed when the lease is lost
+// or the run interrupted; otherwise the command's exit code is returned.
 func (a *app) leaseRun(slot string, argv []string, ttl time.Duration) error {
 	ctx, cancel := cmdCtx()
-	key, holder, err := a.acquire(ctx, slot, ttl)
+	holder, err := a.identityOrHost(ctx, "lease")
 	cancel()
 	if err != nil {
 		return err
 	}
+	return a.withLeases([]string{slot}, holder, ttl, slotCapacity, func(ctx context.Context) error {
+		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = a.stdin, a.stdout, a.stderr
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+		cmd.WaitDelay = time.Second // a killed command's children may hold its output open
+		err := cmd.Run()
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			code := ee.ExitCode()
+			if code < 0 {
+				code = exitError
+			}
+			return &exitErr{code: code}
+		}
+		return err
+	})
+}
+
+// withLeases takes a place in each slot for holder (capacity per slot from
+// capacity), then runs body, renewing every lease each ttl/3. A busy slot
+// releases the places already taken and is refused (exit 3). A failed renew
+// cancels body's context and exits 1 "lease lost"; SIGINT or SIGTERM cancels
+// it, releases the leases and exits 1 "interrupted"; otherwise the leases
+// are released and body's error is returned.
+func (a *app) withLeases(slots []string, holder string, ttl time.Duration, capacity func(slot string) (int, error),
+	body func(ctx context.Context) error) error {
+	var keys []string
+	release := func() error {
+		ctx, cancel := cmdCtx()
+		defer cancel()
+		var first error
+		for _, key := range keys {
+			if err := mesh.ReleaseLease(ctx, a.client, key, holder); err != nil && first == nil {
+				first = leaseErr(err, key)
+			}
+		}
+		return first
+	}
+	ctx, cancel := cmdCtx()
+	for _, slot := range slots {
+		n, err := capacity(slot)
+		if err == nil {
+			var key string
+			if key, err = a.acquireAs(ctx, slot, holder, ttl, n); err == nil {
+				keys = append(keys, key)
+				continue
+			}
+		}
+		cancel()
+		release()
+		return err
+	}
+	cancel()
+
 	sigs, stopSigs := leaseSignals()
 	defer stopSigs()
 	runCtx, kill := context.WithCancel(context.Background())
 	defer kill()
-	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = a.stdin, a.stdout, a.stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-	cmd.WaitDelay = time.Second // a killed command's children may hold its output open
 	var lost, interrupted atomic.Bool
 	stop := make(chan struct{})
 	watched := make(chan struct{})
@@ -165,37 +219,32 @@ func (a *app) leaseRun(slot string, argv []string, ttl time.Duration) error {
 				return
 			case <-t.C:
 				ctx, cancel := cmdCtx()
-				err := mesh.RenewLease(ctx, a.client, key, holder, ttl, time.Now())
+				for _, key := range keys {
+					if err := mesh.RenewLease(ctx, a.client, key, holder, ttl, time.Now()); err != nil {
+						lost.Store(true)
+						break
+					}
+				}
 				cancel()
-				if err != nil {
-					lost.Store(true)
+				if lost.Load() {
 					kill()
 					return
 				}
 			}
 		}
 	}()
-	runErr := cmd.Run()
+	runErr := body(runCtx)
 	close(stop)
 	<-watched
 	if lost.Load() {
+		release() // the places still held; the lost one is someone else's now
 		return fail(exitError, "lease lost")
 	}
-	ctx, cancel = cmdCtx()
-	defer cancel()
-	if err := mesh.ReleaseLease(ctx, a.client, key, holder); err != nil {
-		return leaseErr(err, key)
+	if err := release(); err != nil {
+		return err
 	}
 	if interrupted.Load() {
 		return fail(exitError, "interrupted")
-	}
-	var ee *exec.ExitError
-	if errors.As(runErr, &ee) {
-		code := ee.ExitCode()
-		if code < 0 {
-			code = exitError
-		}
-		return &exitErr{code: code}
 	}
 	return runErr
 }

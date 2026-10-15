@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -10,12 +12,14 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/instance"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
 
 const routineUsage = "usage: bmesh routine list [--json] | status [<kind>] [--json] | " +
-	"queue <kind> [--commit C] [--model M] [--go] [--rerun] [--text T] [-- args...] | go <kind> | wait <job id> [--timeout D]"
+	"queue <kind> [--commit C] [--model M] [--go] [--rerun] [--text T] [-- args...] | go <kind> | wait <job id> [--timeout D] | " +
+	"run <kind> [--commit HEAD] [--model M] [--here] [--rerun] [--text T] [-- args...]"
 
 func (a *app) cmdRoutine(args []string) error {
 	if len(args) > 0 {
@@ -30,6 +34,8 @@ func (a *app) cmdRoutine(args []string) error {
 			return a.cmdRoutineGo(args[1:])
 		case "wait":
 			return a.cmdRoutineWait(args[1:])
+		case "run":
+			return a.cmdRoutineRun(args[1:])
 		}
 	}
 	return fail(exitUsage, routineUsage)
@@ -397,15 +403,7 @@ func (a *app) cmdRoutineWait(args []string) error {
 			return timedOut(err)
 		}
 		if ok {
-			out := m.Reply.Output
-			if out != "" && !strings.HasSuffix(out, "\n") {
-				out += "\n"
-			}
-			fmt.Fprint(a.stdout, out)
-			if !m.Reply.OK {
-				return fail(exitError, "")
-			}
-			return nil
+			return a.printVerdict(m.Reply.OK, m.Reply.Output)
 		}
 		select {
 		case <-ctx.Done():
@@ -413,4 +411,131 @@ func (a *app) cmdRoutineWait(args []string) error {
 		case <-time.After(time.Second):
 		}
 	}
+}
+
+// cmdRoutineRun runs a kind in this worktree: the requester's own run of
+// HEAD, holding the kind's slots. A deterministic kind needs a clean tree,
+// answers from a recorded result unless --rerun, and records its result.
+func (a *app) cmdRoutineRun(args []string) error {
+	fs := a.flags("routine run")
+	commit := fs.String("commit", "HEAD", "commit to run (must be HEAD)")
+	model := fs.String("model", "", "one of the kind's models (default the first)")
+	here := fs.Bool("here", false, "run a fresh or pooled kind in this worktree")
+	rerun := fs.Bool("rerun", false, "run even when a result is recorded")
+	text := fs.String("text", "", "text for a model kind")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) == 0 || !kind.NameRE.MatchString(pos[0]) {
+		return fail(exitUsage, routineUsage)
+	}
+	name, jobArgs := pos[0], pos[1:]
+	top, kinds, err := cwdKinds()
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(kinds, func(k kind.Kind) bool { return k.Name == name })
+	if i < 0 {
+		return fail(exitRefused, "no kind %s in %s", name, top)
+	}
+	k := kinds[i]
+	if k.Mode != "inline" && !*here {
+		return fail(exitRefused, "kind %s is %s; queue it, or pass --here to run it in this worktree", name, k.Mode)
+	}
+	if *model != "" && !slices.Contains(k.ModelsList(), *model) {
+		return fail(exitUsage, "kind %s has no model %q", name, *model)
+	}
+	if *model == "" && k.IsModel() {
+		*model = k.ModelsList()[0]
+	}
+	if k.Deterministic {
+		st, err := exec.Command("git", "status", "--porcelain").Output()
+		if err != nil {
+			return fmt.Errorf("git status: %w", err)
+		}
+		if len(strings.TrimSpace(string(st))) > 0 {
+			return fail(exitRefused, "worktree is dirty; commit first")
+		}
+	}
+	head, err := gitRev("--verify", "--end-of-options", "HEAD^{commit}")
+	if err != nil {
+		return err
+	}
+	sha, err := gitRev("--verify", "--end-of-options", *commit+"^{commit}")
+	if err != nil {
+		return err
+	}
+	if sha != head {
+		return fail(exitRefused, "inline runs run HEAD; check out %s or queue the job", *commit)
+	}
+	tree, err := gitRev("--verify", "--end-of-options", "HEAD^{tree}")
+	if err != nil {
+		return err
+	}
+	ctx, cancel := cmdCtx()
+	defer cancel()
+	self, err := a.identityOrHost(ctx, "routine")
+	if err != nil {
+		return err
+	}
+	key := mesh.ResultKey(name, tree, jobArgs)
+	if k.Deterministic && !*rerun {
+		r, ok, err := mesh.GetResult(ctx, a.client, key)
+		if err != nil {
+			return err
+		}
+		if ok {
+			fmt.Fprintf(a.stderr, "answered from result %s\n", key)
+			return a.printVerdict(r.OK, r.Output)
+		}
+	}
+
+	var inst instance.Instance = instance.NewCommand(k)
+	if k.IsModel() {
+		claude := os.Getenv("BMESH_CLAUDE_COMMAND")
+		if strings.TrimSpace(claude) == "" {
+			claude = a.cfg.Runner.Claude
+		}
+		inst = instance.NewModel(k, *model, claude)
+	}
+	rc, err := kind.LoadRepoConfig(top)
+	if err != nil {
+		return err
+	}
+	capacity := func(slot string) (int, error) { return max(rc.Slots[slot], 1), nil }
+	j := instance.Job{ID: newID(), Kind: name, Commit: head, Tree: tree, From: self, Reply: self,
+		Args: jobArgs, Text: *text, Dir: top}
+	var reply instance.Reply
+	err = a.withLeases(k.Slots, self, k.Timeout+time.Minute, capacity, func(ctx context.Context) error {
+		reply = inst.Run(ctx, j)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if k.Deterministic {
+		putCtx, cancel := cmdCtx() // the run may have outlasted ctx
+		defer cancel()
+		r := mesh.Result{Kind: name, Tree: tree, Commit: head, Args: jobArgs, OK: reply.OK,
+			Output: mesh.Truncate(reply.Output), By: self}
+		if err := mesh.PutResult(putCtx, a.client, r); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.stderr, "recorded %s\n", key)
+	}
+	return a.printVerdict(reply.OK, reply.Output)
+}
+
+// printVerdict prints a run's output, ending in a newline, and exits 1 when
+// the run failed.
+func (a *app) printVerdict(ok bool, out string) error {
+	if out != "" && !strings.HasSuffix(out, "\n") {
+		out += "\n"
+	}
+	fmt.Fprint(a.stdout, out)
+	if !ok {
+		return fail(exitError, "")
+	}
+	return nil
 }

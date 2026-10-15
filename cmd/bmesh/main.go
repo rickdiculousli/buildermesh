@@ -57,6 +57,9 @@ commands:
                                            queue a job (a deterministic kind answers from a recorded result)
   routine go <kind>                        tell the kind's instances to start on waiting jobs
   routine wait <job id> [--timeout D]      wait for a job's reply; print its output, exit 0 ok / 1 fail / 5 timeout
+  routine run <kind> [--commit HEAD] [--model M] [--here] [--rerun] [--text T] [-- args...]
+                                           run a kind in this worktree; a deterministic kind needs a clean
+                                           tree, answers from a recorded result and records one; exit 0 ok / 1 fail
 `
 
 // exitErr carries an exit code and the message printed as "bmesh: <msg>".

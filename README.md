@@ -13,7 +13,7 @@ Tests never use `/tmp`: `meshtest.Start` fails when `TMPDIR` is `/tmp`.
 
 ### Testing
 
-Runner tests drive shell fakes instead of T3 and tmux. `BMESH_T3_COMMAND`, when set, is split on spaces and replaces `uv run <t3_dispatch>` (tests set it to `sh <repo>/testdata/fake-t3.sh`); `BMESH_TMUX_COMMAND` replaces the tmux binary the same way (`sh <repo>/testdata/fake-tmux.sh`). `BMESH_T3_TIMEOUT` (a Go duration) replaces the t3 runner's 120 s per-call timeout. Leave all three unset outside tests.
+Runner tests drive shell fakes instead of T3 and tmux. `BMESH_T3_COMMAND`, when set, is split on spaces and replaces `uv run <t3_dispatch>` (tests set it to `sh <repo>/testdata/fake-t3.sh`); `BMESH_TMUX_COMMAND` replaces the tmux binary the same way (`sh <repo>/testdata/fake-tmux.sh`). `BMESH_T3_TIMEOUT` (a Go duration) replaces the t3 runner's 120 s per-call timeout. `BMESH_CLAUDE_COMMAND` replaces `[runner] claude` the same way (`sh <repo>/testdata/fake-claude.sh`). Leave all four unset outside tests.
 
 ## Runners
 
@@ -59,6 +59,8 @@ kind = "t3"                                 # t3 | tmux
 t3_dispatch = "t3_dispatch.py"              # path; run as `uv run <path>`
 tmux_session = "bmesh"
 worktrees = "~/.bmesh/worktrees"            # tmux runner's worktree root
+checkouts = "~/.bmesh/checkouts"            # routine instances' checkouts
+claude = "claude"                           # claude command for model routines, split on spaces
 [notify]
 ntfy = ""                                   # "" = no digest; else "http://k16:2586/bmesh"
 command = ""                                # test hook: receives the POST body on stdin instead of HTTP
