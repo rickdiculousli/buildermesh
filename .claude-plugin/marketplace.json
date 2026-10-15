@@ -7,8 +7,8 @@
   "plugins": [
     {
       "name": "buildermesh",
-      "version": "0.5.0",
-      "description": "The lead, executor, propose-engineer and propose-ux skills for nodes on a buildermesh mesh: delegation shape, checkpoints, branch hand-back, the verified line and the proposal round, over the bmesh CLI.",
+      "version": "0.6.0",
+      "description": "The operator skills (propose, review, build, align, status: the chat entry points to the build lifecycle) and the lead, executor, propose-engineer and propose-ux skills for nodes on a buildermesh mesh: delegation shape, checkpoints, branch hand-back, the verified line and the proposal round, over the bmesh CLI.",
       "author": {
         "name": "Rick Li"
       },
