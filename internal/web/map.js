@@ -29,11 +29,13 @@ const $ = (id) => document.getElementById(id);
 
 const mesh = {
   tree: null, // the last /api/tree
-  drawn: new Map(), // path -> {g, sub, box, extra, kind, state}
+  drawn: new Map(), // path -> {g, sub, box, extra, text, kind, state}
   layer: null, // where message edges go, above the nodes
   vertical: false, // blocks top to bottom instead of left to right
   width: 0, // the drawn SVG's width
-  live: new Map(), // path -> {state, at}: states set by live events
+  // path -> {state, text, since, at}: states set by live events, with the
+  // event's words and time (since) and when the page saw it (at).
+  live: new Map(),
   recent: [], // newest first
 };
 
@@ -179,7 +181,8 @@ function layout(tree, vertical, width) {
     const walk = (t, depth, parent) => {
       const role = t.node.role === "lead" ? "lead" : "executor";
       const label = depth === 0 || !parent || parent.kind === "root" ? t.node.path : lastToken(t.node.path);
-      const b = place({ key: t.node.path, kind: role, label, title: t.node.path, state: t.state.state, extra: treeSub(t) }, depth);
+      const b = place({ key: t.node.path, kind: role, label, title: t.node.path, state: t.state.state,
+        text: t.state.text || "", extra: treeSub(t) }, depth);
       if (parent) elbow(parent, b);
       for (const c of t.children || []) walk(c, depth + 1, b);
     };
@@ -278,9 +281,12 @@ function classOf(kind, state) {
   return "node " + kind + link + (state ? " st-" + state : "");
 }
 
-// subText is a box's second line, cut to n characters.
-function subText(state, extra, n) {
-  return fit([state, ...extra].filter(Boolean).join(" · "), n);
+// subText is a box's second line, cut to n characters: for an asking or
+// blocked node the state and its words (the ask or the block), else the
+// state and the extras.
+function subText(state, text, extra, n) {
+  const parts = state === "asking" || state === "blocked" ? [state, text] : [state, ...extra];
+  return fit(parts.filter(Boolean).join(" · "), n);
 }
 
 // room is how many characters of px average width fit a box w wide less
@@ -325,7 +331,8 @@ function drawBox(parent, b) {
   svg("rect", { class: "ring", x: -4, y: -4, width: b.w + 8, height: b.h + 8, rx: 10 }, g);
   svg("rect", { class: "box", width: b.w, height: b.h, rx: 7 }, g);
   svgText({ class: "label", x: 10, y: 17 }, fit(b.label, room(b.w, LABEL_PX, 32)), g);
-  const sub = svgText({ class: "sub", x: 10, y: 32 }, subText(b.kind === "group" ? "" : b.state, b.extra, room(b.w, SUB_PX, 16)), g);
+  const sub = svgText({ class: "sub", x: 10, y: 32 },
+    subText(b.kind === "group" ? "" : b.state, b.text || "", b.extra, room(b.w, SUB_PX, 16)), g);
   svgText({ class: "check", x: b.w - 22, y: 26 }, "✓", g);
   link(g, b);
   return { g, sub };
@@ -347,7 +354,7 @@ function render() {
   const drawn = new Map();
   for (const b of L.boxes) {
     const { g, sub } = drawBox(nodes, b);
-    if (b.key) drawn.set(b.key, { g, sub, box: b, extra: b.extra, kind: b.kind, state: b.state });
+    if (b.key) drawn.set(b.key, { g, sub, box: b, extra: b.extra, text: b.text || "", kind: b.kind, state: b.state });
   }
   // Edges still in flight move to the new drawing rather than vanish.
   if (mesh.layer) root.append(mesh.layer);
@@ -370,13 +377,14 @@ function onShelf(path) {
   return !!d && d.kind === "chip";
 }
 
-// setState restyles a drawn node.
-function setState(path, state) {
+// setState restyles a drawn node; text is the state's words.
+function setState(path, state, text) {
   const d = mesh.drawn.get(path);
   if (!d || d.kind === "group" || d.kind === "chip") return;
   d.state = state;
+  d.text = text || "";
   d.g.setAttribute("class", classOf(d.kind, state));
-  d.sub.textContent = subText(state, d.extra, room(d.box.w, SUB_PX, 16));
+  d.sub.textContent = subText(state, d.text, d.extra, room(d.box.w, SUB_PX, 16));
 }
 
 // curve is a path from box a to box b, leaving and entering on the facing
@@ -457,9 +465,10 @@ async function loadTree() {
     render();
     // A live event newer than this read wins over the state it returned.
     for (const [path, s] of mesh.live) {
-      if (s.at >= began) setState(path, s.state);
+      if (s.at >= began) setState(path, s.state, s.text);
       else mesh.live.delete(path);
     }
+    renderBand();
   } catch (e) {
     // The next event or poll tries again.
   } finally {
@@ -482,14 +491,16 @@ function refetchSoon() {
   refetchTimer = setTimeout(() => { refetchTimer = 0; loadTree(); }, wait);
 }
 
-// liveState restyles a node at once; a lead whose need changed is also
-// reloaded, so the blocks keep their order.
-function liveState(path, state) {
+// liveState restyles a node at once with the event's words (text) and time
+// (since), and redraws the band; a lead whose need changed is also reloaded,
+// so the blocks keep their order.
+function liveState(path, state, text, since) {
   const d = mesh.drawn.get(path);
   const moved = !!d && d.kind === "lead" && needRank(d.state) !== needRank(state);
-  mesh.live.set(path, { state, at: Date.now() });
-  setState(path, state);
+  mesh.live.set(path, { state, text: text || "", since: since || "", at: Date.now() });
+  setState(path, state, text);
   if (moved) refetchSoon();
+  renderBand();
 }
 
 // apply acts on a live frame: node and daemon events restyle nodes, inbox
@@ -507,11 +518,12 @@ function apply(f) {
   const i = rest.lastIndexOf(".");
   if (i <= 0) return;
   const path = rest.slice(0, i), ev = rest.slice(i + 1);
+  const text = String(p.text || ""), at = String(p.at || f.at || "");
   if (path.startsWith("daemon.")) {
-    if (ev === "silent" && p.to) liveState(String(p.to), "silent");
+    if (ev === "silent" && p.to) liveState(String(p.to), "silent", text, at);
     return;
   }
-  if (EVENT_STATE[ev]) liveState(path, EVENT_STATE[ev]);
+  if (EVENT_STATE[ev]) liveState(path, EVENT_STATE[ev], text, at);
   // A shelved lead's executors are not drawn and a reload would not draw them.
   if (!mesh.drawn.has(path) && onShelf(path.split(".")[0])) return;
   if (ev === "started" || ev === "done" || !mesh.drawn.has(path) || onShelf(path)) refetchSoon();
@@ -556,6 +568,11 @@ function remember(f) {
   if (!recentTimer) recentTimer = setTimeout(drawRecent, 50);
 }
 
+// frameKey names a frame for openRows.
+function frameKey(f) {
+  return f.subject + "@" + ((f.payload && f.payload.at) || f.at || "");
+}
+
 function drawRecent() {
   recentTimer = 0;
   const items = mesh.recent.map((f) => {
@@ -563,10 +580,38 @@ function drawRecent() {
     const li = document.createElement("li");
     li.className = "ev-" + d.event;
     li.append(span("t", stamp((f.payload && f.payload.at) || f.at)), span("p", d.path), span("e", d.event), span("x", d.text));
+    clampRow(li, frameKey(f));
     return li;
   });
   $("recent").replaceChildren(...items);
   $("drawer-count").textContent = items.length ? "(" + items.length + ")" : "";
+}
+
+// --- clamped rows -----------------------------------------------------------
+
+// openRows holds the keys of the clamped rows tapped open (a band row's
+// path, a drawer or timeline frame's frameKey, an inbox message's id), so
+// a redraw keeps them open.
+const openRows = new Set();
+
+// clampRow marks a row clamped to three lines until tapped; key names it in
+// openRows.
+function clampRow(e, key) {
+  e.classList.add("clamp");
+  e.dataset.key = key;
+  if (openRows.has(key)) e.classList.add("open");
+}
+
+// toggleRows opens or closes the clamped row a tap lands on (a band row's
+// words from anywhere in the row), unless the tap is a link or a fold.
+function toggleRows(ev) {
+  if (ev.target.closest("a, summary")) return;
+  const row = ev.target.closest(".clamp, .need");
+  const e = row && row.classList.contains("need") ? row.querySelector(".clamp") : row;
+  if (!e || !this.contains(e)) return;
+  const open = e.classList.toggle("open");
+  if (open) openRows.add(e.dataset.key);
+  else openRows.delete(e.dataset.key);
 }
 
 // --- pages: the lead, the routines, the strip -------------------------------
@@ -613,6 +658,7 @@ const CLOCK = {
   reset: (ms) => ms > 0 ? "resets in " + dur(ms) : "reset due",
   read: (ms) => ms > STALE_MS ? "· read " + dur(ms) + " ago" : "",
   digest: (ms) => "digest " + (ms < 60000 ? "just now" : dur(ms) + " ago"),
+  since: (ms) => ms < 60000 ? "just now" : dur(ms) + " ago",
 };
 
 function clock(kind, at, until) {
@@ -681,6 +727,47 @@ function loader(load) {
 }
 
 const pages = { view: "map", lead: "", leadShown: "" };
+
+// --- the needs-you band
+
+// NEEDS are the states the band shows: waiting on the operator, or quiet.
+const NEEDS = new Set(["blocked", "asking", "silent"]);
+
+// needRows lists the leads, rounds and engineers (a round's children) in a
+// NEEDS state, in need order: a live event's state and words win over the
+// tree's, as on the boxes.
+function needRows() {
+  const rows = [];
+  const consider = (t) => {
+    const live = mesh.live.get(t.node.path);
+    const st = live ? { state: live.state, text: live.text, at: live.since } : t.state;
+    if (NEEDS.has(st.state)) rows.push({ t, path: t.node.path, state: st.state, text: st.text || "", at: st.at || "" });
+  };
+  for (const t of mesh.tree ? mesh.tree.leads : []) {
+    consider(t);
+    if (t.node.role === "round") for (const c of t.children || []) consider(c);
+  }
+  return rows.sort((a, b) => needRank(a.state) - needRank(b.state) || byStart(a.t, b.t));
+}
+
+// renderBand draws the band between the strip and the map: one row per
+// needRows entry, its badge and path a link to the lead page, its words (for
+// silent, the daemon's verdict and its age) clamped to three lines until
+// tapped. Hidden when nothing needs the operator.
+function renderBand() {
+  const band = $("needs");
+  const rows = needRows();
+  band.replaceChildren(...rows.map((r) => {
+    const who = el("a", "who tap", null, badge(r.state), el("span", "p", r.path));
+    who.setAttribute("href", "#/lead/" + r.path);
+    const say = el("div", "say", r.text);
+    if (r.state === "silent" && r.at) say.append(r.text ? " · " : "", clock("since", r.at, false));
+    clampRow(say, r.path);
+    return el("div", "need tap st-" + r.state, null, who, say);
+  }));
+  band.hidden = rows.length === 0;
+  if (check) checkSoon();
+}
 
 // --- the lead page
 
@@ -762,6 +849,12 @@ function safeURL(u) {
   return /^https?:\/\//i.test(String(u || "")) ? String(u) : "";
 }
 
+// shortPath drops the lead's own prefix from the paths in s (one, or a
+// message's "from → to"): "eng", not "buildermesh-round-1.eng".
+function shortPath(s, lead) {
+  return String(s).split(" → ").map((p) => p.startsWith(lead + ".") ? p.slice(lead.length + 1) : p).join(" → ");
+}
+
 function renderLead(path, v) {
   const head = $("lead-head"), panel = $("lead-panel");
   if (!v) {
@@ -800,14 +893,22 @@ function renderLead(path, v) {
     main.push(bare("spec", n.spec ? "spec " + n.spec + " is not on main of a repo configured here" : "no spec"));
   }
 
-  const inbox = (v.inbox || []).map((m) => el("li", null, null,
-    el("span", "t", stamp(m.at)),
-    el("span", "p", (m.from || "?") + " → " + (m.kind || "message") + ":"),
-    el("span", "x", msgText(m))));
+  const inbox = (v.inbox || []).map((m) => {
+    const li = el("li", null, null,
+      el("span", "t", stamp(m.at)),
+      el("span", "p", (m.from || "?") + " → " + (m.kind || "message") + ":"),
+      el("span", "x", msgText(m)));
+    clampRow(li, "inbox " + (m.id || (m.from || "") + "@" + (m.at || "")));
+    return li;
+  });
   const tl = (v.timeline || []).slice(-TIMELINE_MAX).reverse().map((f) => {
     const d = describe(f);
-    return el("li", "ev-" + d.event, null, el("span", "t", stamp((f.payload && f.payload.at) || f.at)),
-      el("span", "p", d.path), el("span", "e", d.event), el("span", "x", d.text));
+    const who = el("span", "p", shortPath(d.path, path));
+    who.title = d.path;
+    const li = el("li", "ev-" + d.event, null, el("span", "t", stamp((f.payload && f.payload.at) || f.at)),
+      who, el("span", "e", d.event), el("span", "x", d.text));
+    clampRow(li, frameKey(f));
+    return li;
   });
   panel.replaceChildren(el("div", "stack", null, ...main), el("div", "stack", null,
     inbox.length ? card("inbox", el("ol", "rows", null, ...inbox)) : bare("inbox", "no messages"),
@@ -1102,7 +1203,8 @@ function selfCheck() {
     (pages.view === "lead" ? ` firstCard=${firstCard()}` : "") +
     ` svgWidth=${mesh.width} mapWidth=${$("map").clientWidth}` +
     ` vertical=${mesh.vertical} leads=${c.leads} trees=${c.trees} conn=${c.conn.join(">")}` +
-    ` replay=${c.replay} live=${c.live} flashes=${c.flashes} strip=${$("strip").hidden ? "hidden" : $("strip").children.length}`;
+    ` replay=${c.replay} live=${c.live} flashes=${c.flashes} strip=${$("strip").hidden ? "hidden" : $("strip").children.length}` +
+    ` band=${$("needs").hidden ? "hidden" : $("needs").children.length}`;
 }
 
 // firstCard names the lead page's card drawn highest (leftmost on a tie),
@@ -1166,6 +1268,7 @@ window.addEventListener("resize", () => {
   resizeTimer = setTimeout(render, 100);
 });
 
+for (const id of ["needs", "recent", "lead-panel"]) $(id).addEventListener("click", toggleRows);
 window.addEventListener("hashchange", route);
 route();
 loadTree();
