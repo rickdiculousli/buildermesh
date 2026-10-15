@@ -1,0 +1,5 @@
+mode = "fresh"
+deterministic = true
+slots = ["browser"]
+timeout = "5m"
+command = "echo shot \"$1\""

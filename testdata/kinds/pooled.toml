@@ -1,0 +1,9 @@
+mode = "pooled"
+models = ["model-a", "model-b"]
+prompt = "Review the change."
+allow = ["Bash(npm test:*)"]
+pool = 2
+batch_idle = "10s"
+recycle_uses = 5
+recycle_context = 50000
+recycle_idle = "30m"

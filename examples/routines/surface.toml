@@ -1,0 +1,5 @@
+mode = "fresh"
+deterministic = true
+slots = ["browser"]
+# $1 is the URL to capture.
+command = "npx playwright screenshot \"$1\" surface.png"
