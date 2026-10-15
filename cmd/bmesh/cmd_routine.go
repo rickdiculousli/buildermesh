@@ -417,8 +417,14 @@ func (a *app) cmdRoutineWait(args []string) error {
 	id := pos[0]
 	if *timeout <= 0 {
 		lookup, cancelLookup := cmdCtx()
-		*timeout = waitTimeout(lookup, a.client, id)
+		err := a.connect(lookup, "routine")
+		if err == nil {
+			*timeout = waitTimeout(lookup, a.client, id)
+		}
 		cancelLookup()
+		if err != nil {
+			return err
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()

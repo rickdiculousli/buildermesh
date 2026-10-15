@@ -311,4 +311,12 @@ func TestWaitTimeoutFromKind(t *testing.T) {
 	if d := waitTimeout(ctx, c, "no-such-job"); d != 20*time.Minute {
 		t.Fatalf("unknown job: %v", d)
 	}
+	// Without --timeout the CLI looks the kind up before it has waited on anything.
+	me, _ := mesh.ParsePath("app-001")
+	if err := mesh.SendReply(ctx, c, mesh.RoutinePath("slow"), me, mesh.Reply{Job: id, Kind: "slow", OK: true, Output: "done\n"}); err != nil {
+		t.Fatal(err)
+	}
+	if out, errs, code := runCLI(t, as("app-001"), "routine", "wait", id); code != 0 || out != "done\n" {
+		t.Fatalf("wait: %d %q %q", code, out, errs)
+	}
 }
