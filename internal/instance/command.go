@@ -8,19 +8,20 @@ import (
 	"strings"
 
 	"github.com/rickdiculousli/buildermesh/internal/kind"
+	"github.com/rickdiculousli/buildermesh/internal/shell"
 )
 
 type command struct{ k kind.Kind }
 
-// NewCommand returns an instance that runs k.Command with `sh -c`, the job's
-// args as "$@".
+// NewCommand returns an instance that runs k.Command through the platform
+// shell with the job's args appended.
 func NewCommand(k kind.Kind) Instance {
 	k.Command = strings.TrimRight(k.Command, " \t\r\n;")
 	return command{k}
 }
 
 func (c command) Run(ctx context.Context, j Job) Reply {
-	argv := append([]string{"sh", "-c", c.k.Command + ` "$@"`, "sh"}, j.Args...)
+	argv := shell.Argv(c.k.Command, j.Args...)
 	var out bytes.Buffer
 	note, err := run(ctx, c.k.Timeout, j, argv, nil, &out, &out)
 	if note != "" {

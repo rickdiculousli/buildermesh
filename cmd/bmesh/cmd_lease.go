@@ -14,6 +14,7 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/proc"
 )
 
 const leaseUsage = "usage: bmesh lease acquire <slot> [--ttl D] | lease renew <key> [--ttl D] | " +
@@ -146,8 +147,8 @@ func (a *app) leaseRun(slot string, argv []string, ttl time.Duration) error {
 	return a.withLeases([]string{slot}, holder, ttl, slotCapacity, func(ctx context.Context) error {
 		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = a.stdin, a.stdout, a.stderr
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-		cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+		proc.Group(cmd)
+		cmd.Cancel = func() error { return proc.KillGroup(cmd) }
 		cmd.WaitDelay = time.Second // a killed command's children may hold its output open
 		err := cmd.Run()
 		var ee *exec.ExitError

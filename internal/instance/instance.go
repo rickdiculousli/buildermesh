@@ -7,11 +7,11 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"github.com/rickdiculousli/buildermesh/internal/proc"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -55,20 +55,18 @@ func run(ctx context.Context, timeout time.Duration, j Job, argv []string, stdin
 	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
 	cmd.Dir, cmd.Env = j.Dir, j.env()
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	proc.Group(cmd)
 	var note string // written by Cancel, which runs before Wait returns
 	cmd.Cancel = func() error {
 		note = fmt.Sprintf("[timeout after %s]\n", timeout)
 		if ctx.Err() != nil {
 			note = "[cancelled]\n"
 		}
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		return proc.KillGroup(cmd)
 	}
 	cmd.WaitDelay = time.Second // a leftover child may hold the output open
 	err := cmd.Run()
-	if cmd.Process != nil {
-		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) // ESRCH when the group is already gone
-	}
+	proc.KillGroup(cmd) // nothing left when the group is already gone
 	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState.Success() {
 		err = nil
 	}

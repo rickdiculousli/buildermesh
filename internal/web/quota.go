@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"github.com/rickdiculousli/buildermesh/internal/shell"
 	"os/exec"
 	"sync"
 	"time"
@@ -24,7 +25,7 @@ type Reading struct {
 	ReadAt    string  `json:"read_at"`
 }
 
-// Quota runs Command (with sh -c) at most once per five minutes and keeps
+// Quota runs Command (through the platform shell) at most once per five minutes and keeps
 // the readings of its last good run; a failed run (non-zero exit, bad JSON,
 // timeout) leaves them as they were.
 type Quota struct {
@@ -61,7 +62,7 @@ func (q *Quota) Get(ctx context.Context, now time.Time) []Reading {
 func (q *Quota) run(ctx context.Context, now time.Time) ([]Reading, bool) {
 	ctx, cancel := context.WithTimeout(ctx, quotaTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sh", "-c", q.Command)
+	cmd := exec.CommandContext(ctx, shell.Argv(q.Command)[0], shell.Argv(q.Command)[1:]...)
 	cmd.WaitDelay = 2 * time.Second // a child holding stdout can't block Wait past the timeout
 	out, err := cmd.Output()
 	if err != nil {
