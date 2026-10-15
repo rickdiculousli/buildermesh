@@ -117,7 +117,7 @@ func Closing(verify []string) string {
 	return "> When it works, finish it: run the repo's verify commands (" + VerifyText(verify) +
 		") until they pass; when the change carries risk verify can't catch (" + riskText + "), have a model that didn't write it review it once and fix what it finds, while a rote change (" + roteText + ") lands on verify alone; " +
 		"rebase onto `main` and re-run verify; merge fast-forward to `main`, landing the branch your worktree is on (`git branch --show-current`), never the name in your brief; and push where the repo has a remote. " +
-		"It isn't done while it sits on a branch. End with one line: what's on `main` (the commit) and what, if anything, waits on the operator."
+		"It isn't done while it sits on a branch. End with one line: what's on `main` (the commit), its push state from a fresh fetch (pushed, with the commit `origin/main` is at and that it contains yours; not pushed and why; or local only, for a repo with no remote), and what, if anything, waits on the operator."
 }
 
 // DoneRule is the repo's definition of done, from its row: what must hold

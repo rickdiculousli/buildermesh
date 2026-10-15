@@ -47,7 +47,16 @@ func Done(r config.Repo) string {
 		" If the rebase conflicts, resolve it: read your spec and the specs that landed since you branched, make every intent hold, " +
 		"widen your spec if a landed one changes what yours must look like, re-validate, then merge. " +
 		"Stop only when the widened scope can't be met from the specs alone; then mark your spec `blocked` with the reason, push, and report. " +
-		"End with one line: what's done (commit on main) and what, if anything, waits on the operator."
+		"End with one line: what's done (the commit on `main`), " + pushState(r) + ", and what, if anything, waits on the operator."
+}
+
+// pushState is what the done line says of the push, so the operator knows
+// whether they can sync: fetched and checked, never assumed.
+func pushState(r config.Repo) string {
+	if r.Remote == "" {
+		return "that it is local only (the repo has no remote)"
+	}
+	return "its push state from a fresh fetch (pushed, with the commit `origin/main` is at and that it contains yours, or not pushed and why)"
 }
 
 // Proposals is the "Proposals" section, the same for every repo.

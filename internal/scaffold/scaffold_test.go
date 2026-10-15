@@ -65,11 +65,12 @@ func TestApplyToAFileWithoutTrailingNewlineIsIdempotent(t *testing.T) {
 func TestDoneNamesVerifyAndRemote(t *testing.T) {
 	done := Done(pb)
 	if !strings.HasPrefix(done, "## Definition of done\nA change is done when all of these hold: the repo's verify commands pass (`npm test`)") ||
-		!strings.Contains(done, "pushed to `x/pb`") || !strings.Contains(done, "waits on the operator") || strings.Contains(done, "Rick") {
+		!strings.Contains(done, "pushed to `x/pb`") || !strings.Contains(done, "waits on the operator") || strings.Contains(done, "Rick") ||
+		!strings.Contains(done, "its push state from a fresh fetch") {
 		t.Fatal(done)
 	}
 	none := Done(config.Repo{Name: "cc", Verify: []string{"t"}})
-	if strings.Contains(none, "pushed to") || !strings.Contains(none, "merged fast-forward to `main`.") {
+	if strings.Contains(none, "pushed to") || !strings.Contains(none, "merged fast-forward to `main`.") || !strings.Contains(none, "local only") {
 		t.Fatal(none)
 	}
 	props := Proposals()
