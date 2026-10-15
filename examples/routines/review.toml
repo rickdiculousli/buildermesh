@@ -1,3 +1,6 @@
+# One reviewer per change, of another family than the builder: the sized policy
+# (eight single reviewers of either family each caught a six-defect fixture whole).
+# The list is the order to pick from; a job's --model chooses.
 mode = "pooled"
 models = ["claude-opus-5-5", "claude-fable-5-1"]
 allow = ["Bash(git diff:*)", "Bash(git log:*)"]
