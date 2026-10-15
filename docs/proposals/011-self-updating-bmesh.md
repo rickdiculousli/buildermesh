@@ -4,13 +4,15 @@ title: bmesh installs itself when main moves
 kind: time-cost
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: fd21a373-851c-4e68-beb6-831cb4be0fa9
 proposed_on: 2026-10-15
 built_by: 0fb120c6-9c16-4e06-ad17-e82204b16d55
 host: k16
-branch: t3code/a05c4d42
+branch: t3code/self-updating-bmesh-daemon
+verified: verify ok t:3b0ad1a3
+merged: 9ff5d75a21c780aa78c7a4ec9d3baa6493a76fa5
 ---
 
 ## Opportunity
