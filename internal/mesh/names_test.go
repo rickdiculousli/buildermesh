@@ -12,7 +12,7 @@ func TestParsePath(t *testing.T) {
 			t.Fatalf("round trip %q -> %q", s, p.String())
 		}
 	}
-	for _, s := range []string{"inbox.x", "routine", "daemon.h", "A.b", "a..b", "", "a.", ".a", "-a", "a b"} {
+	for _, s := range []string{"inbox.x", "routine", "daemon.h", "A.b", "a..b", "", "a.", ".a", "-a", "a b", "a--b", "a.b--c"} {
 		if _, err := ParsePath(s); err == nil {
 			t.Fatalf("%q: want error", s)
 		}

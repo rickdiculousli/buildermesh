@@ -13,7 +13,7 @@ Tests never use `/tmp`: `meshtest.Start` fails when `TMPDIR` is `/tmp`.
 
 ## Names
 
-Paths match `^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*$`; the first token is never `inbox`, `routine` or `daemon`.
+Paths match `^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*$`; the first token is never `inbox`, `routine` or `daemon`, and no token contains `--` (the inbox consumer name maps `.` to `--`, so `a--b` and `a.b` would collide).
 
 | Kind | Name | Subjects / keys |
 |---|---|---|

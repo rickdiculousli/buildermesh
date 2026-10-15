@@ -26,6 +26,9 @@ func ParsePath(s string) (Path, error) {
 	if !pathRE.MatchString(s) {
 		return nil, fmt.Errorf("invalid path %q: want lowercase tokens [a-z0-9-] joined by dots", s)
 	}
+	if strings.Contains(s, "--") {
+		return nil, fmt.Errorf("invalid path %q: %q is not allowed (inbox consumer names map \".\" to \"--\")", s, "--")
+	}
 	p := Path(strings.Split(s, "."))
 	if reserved[p[0]] {
 		return nil, fmt.Errorf("invalid path %q: %q is a reserved first token", s, p[0])
