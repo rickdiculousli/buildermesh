@@ -99,15 +99,18 @@ func FindOnMain(repoPath, glob, id string) (string, string, error) {
 	return hits[0], text, nil
 }
 
-// Done is the verdict of CheckDone.
+// Done is the verdict of CheckDone. Verified is the spec's verified line,
+// parsed; OK and Why do not depend on it.
 type Done struct {
 	Path, Status, Merged string
 	OK                   bool
 	Why                  string
+	Verified             []Entry
 }
 
 // CheckDone reports whether spec id has landed as done with a merged value.
-// A missing spec is a verdict (OK false), a malformed one an error.
+// A missing spec is a verdict (OK false), a malformed one (frontmatter or
+// verified line) an error.
 func CheckDone(repoPath, glob, id string) (Done, error) {
 	p, text, err := FindOnMain(repoPath, glob, id)
 	var nf *notFoundError
@@ -121,7 +124,11 @@ func CheckDone(repoPath, glob, id string) (Done, error) {
 	if err != nil {
 		return Done{Path: p}, fmt.Errorf("%s: %w", p, err)
 	}
-	d := Done{Path: p, Status: fm["status"], Merged: fm["merged"]}
+	verified, err := ParseVerified(fm["verified"])
+	if err != nil {
+		return Done{Path: p}, fmt.Errorf("%s: %w", p, err)
+	}
+	d := Done{Path: p, Status: fm["status"], Merged: fm["merged"], Verified: verified}
 	switch {
 	case d.Status != "done":
 		d.Why = "status is " + d.Status

@@ -33,7 +33,7 @@ const usage = `usage: bmesh [--config FILE] [--node PATH] [--json] <command> [ar
 commands:
   whoami                                   print this node's path
   started|progress|blocked|ask [--text T]  report an event
-  done --commit SHA [--text T]             report done (the spec must have landed)
+  done --commit SHA [--text T]             report done (a lead's spec must have landed, verified by results)
   send <path> <text|->                     message a node (- reads stdin)
   inbox [--peek] [--json]                  read (and ack) this node's messages
   state [<path>] [--json]                  print a node's state
@@ -60,6 +60,8 @@ commands:
   routine run <kind> [--commit HEAD] [--model M] [--here] [--rerun] [--text T] [-- args...]
                                            run a kind in this worktree and record its result; a deterministic
                                            kind needs a clean tree and answers from a recorded result; exit 0 ok / 1 fail
+  spec verified [--spec NNN] [--write]     print the verified line from the results for HEAD's tree (exit 3 when
+                                           none); --write sets it in the spec's file in this worktree
 `
 
 // exitErr carries an exit code and the message printed as "bmesh: <msg>".
@@ -149,6 +151,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdLease(rest)
 	case "routine":
 		return a.cmdRoutine(rest)
+	case "spec":
+		return a.cmdSpec(rest)
 	case "help":
 		fmt.Fprint(a.stdout, usage)
 		return nil

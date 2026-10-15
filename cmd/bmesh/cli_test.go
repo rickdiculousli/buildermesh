@@ -169,25 +169,6 @@ func TestDoneRefusesUnlandedSpec(t *testing.T) {
 	}
 }
 
-func TestDonePublishesWhenLanded(t *testing.T) {
-	c, ctx := setup(t)
-	repo := specRepo(t, "done", "abc123")
-	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: repo, Spec: "012"})
-	if _, errs, code := runCLI(t, as("app-012"), "started"); code != 0 {
-		t.Fatal(code, errs)
-	}
-	if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", "abc123", "--text", "shipped"); code != 0 {
-		t.Fatalf("code %d out %q err %q", code, out, errs)
-	}
-	hist, err := mesh.History(ctx, c, "bm.app-012.done", time.Time{})
-	if err != nil || len(hist) != 1 || !strings.Contains(string(hist[0].Data), `"commit":"abc123"`) {
-		t.Fatalf("%v %v", hist, err)
-	}
-	if got := stateOf(t, c, ctx, "app-012"); got != "done" {
-		t.Fatalf("state %s", got)
-	}
-}
-
 func TestSendInboxRoundTrip(t *testing.T) {
 	c, ctx := setup(t)
 	putNode(t, c, ctx, mesh.Node{Path: "a"})

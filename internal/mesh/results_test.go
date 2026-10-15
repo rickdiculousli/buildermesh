@@ -80,4 +80,7 @@ func TestResultKeyWithAndWithoutArgs(t *testing.T) {
 	if list, err := ListResults(ctx, c, "lint"); err != nil || len(list) != 0 {
 		t.Fatalf("empty list: %+v %v", list, err)
 	}
+	if all, err := ListAllResults(ctx, c); err != nil || len(all) != 4 || all[0].Kind != "review" || all[3].Kind != "verify" {
+		t.Fatalf("all: %+v %v", all, err)
+	}
 }

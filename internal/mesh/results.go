@@ -61,6 +61,15 @@ func GetResult(ctx context.Context, c *Client, key string) (Result, bool, error)
 
 // ListResults returns every result of kind, sorted by key.
 func ListResults(ctx context.Context, c *Client, kind string) ([]Result, error) {
+	return listResults(ctx, c, kind+".")
+}
+
+// ListAllResults returns every result of every kind, sorted by key.
+func ListAllResults(ctx context.Context, c *Client) ([]Result, error) {
+	return listResults(ctx, c, "")
+}
+
+func listResults(ctx context.Context, c *Client, prefix string) ([]Result, error) {
 	kv, err := bucket(ctx, c, BucketResults)
 	if err != nil {
 		return nil, err
@@ -75,7 +84,7 @@ func ListResults(ctx context.Context, c *Client, kind string) ([]Result, error) 
 	sort.Strings(keys)
 	var out []Result
 	for _, k := range keys {
-		if !strings.HasPrefix(k, kind+".") {
+		if !strings.HasPrefix(k, prefix) {
 			continue
 		}
 		r, ok, err := GetResult(ctx, c, k)
