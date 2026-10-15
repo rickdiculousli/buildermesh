@@ -4,13 +4,15 @@ title: The map leads with what's live and folds what's done
 kind: ux
 size: S
 judge: fable
-status: building
+status: done
 lens: ux
 proposed_by: f3d2851e-4460-4cd8-87b7-359407c1c774
 proposed_on: 2026-10-15
 built_by: dae18ff1-f366-4e29-830d-bb40c1fd6144
 host: k16
-branch: t3code/c56d6ce2
+branch: t3code/map-live-leads-first
+verified: verify ok t:08d45f99
+merged: 01987c14bb3c26b3795084195e50f7a7bc6b8bac
 ---
 
 ## Opportunity
