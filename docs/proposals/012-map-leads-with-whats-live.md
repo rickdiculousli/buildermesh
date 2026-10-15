@@ -28,7 +28,7 @@ Order and fold; no new data.
 
 In:
 - Blocks run in need order: `blocked`, `asking`, `silent`, then `working`, then `idle` (no state yet), then `done`; ties keep `started_at` order so a running round's layout stays stable. The orphans block keeps its place after the leads.
-- When at least one lead is live and at least one is `done`, the done leads leave the tree and fold into a shelf under the live blocks: a row of chips (`buildermesh-001 ✓`, newest first), each a link to its lead page, headed `done (7)`. With no live lead, done leads draw as trees, as now. A lead's state is its own: a live lead whose children are all done still draws as a tree.
+- When at least one lead is live (any state but `done`) and at least one is `done`, the done leads leave the tree and fold into a shelf under the live blocks: a row of chips (`buildermesh-001 ✓`, newest first), each a link to its lead page, headed `done (7)`. With no live lead, done leads draw as trees, as now. A lead's state is its own: a live lead whose children are all done still draws as a tree.
 - A `done` event moves the lead to the shelf on the redraw the map already does for `done`.
 - Routines keep their column (last on the phone); 014 is about them.
 
@@ -42,7 +42,7 @@ On the phone the working round and its two engineers fill the first screen, the 
 ![phone mock](assets/012-mock-phone.png)
 
 ## Verification
-The verify commands pass (`web_test.go` covers the served assets and API, not the browser). The browser check is the `surface` kind against `http://127.0.0.1:3774/?check=1` at 390x844 and 1280x800: the title reads `ok` (no sideways scroll) for this mesh, and the first `.st-working` box's top is inside the viewport on first paint. README gains a Map paragraph under `config.toml`'s `[serve]` (there is none today) that states the ordering and the shelf.
+The verify commands pass (`web_test.go` covers the served assets and API, not the browser). The browser check runs against the branch's own binary (`go run ./cmd/bmesh serve` with a test config on another port, since the daemon on 3774 is the installed `main`) with a headless Chromium script that loads the page at the viewport and prints `document.title` for `?check=1` at 390x844 and 1280x800: the title reads `ok` (no sideways scroll) for this mesh, and the first `.st-working` box's top is inside the viewport on first paint. README gains a `### Map` section after `### Pushes` (there is none today) that states the ordering and the shelf.
 
 ## Risks and the alternative considered
 Other ways to carry the job: (a) sort only, keeping done leads as full blocks: the phone still scrolls through seven done blocks before routines; (b) hide done leads behind a toggle: loses the click-through to a finished lead's spec and timeline, used after a push; (c) a history page: a second place to look. The shelf keeps every lead reachable on one screen.

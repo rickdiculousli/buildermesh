@@ -25,7 +25,7 @@ So the operator on the phone opens the map and still taps into each lead to lear
 
 ## Proposal
 In:
-- A "needs you" band between the strip (015's summary row, when built) and the map, shown only when a lead, round or engineer is `asking`, `blocked` or `silent`: one row per node with its state badge, path and `state.text` (the ask or block text; for silent the daemon already writes "quiet for 25m"), clamped to three lines with the rest on tap. The row links to the lead page. The band drops the row on the node's next `progress`, `started` or `done`.
+- A "needs you" band between the strip (015's summary row, when built) and the map, shown only when a lead, round or engineer is `asking`, `blocked` or `silent`: one row per node with its state badge, path and `state.text` (the ask or block text; for silent the daemon writes "quiet for 20m" once at the grace and the band adds the age of `state.at`), clamped to three lines with the rest on tap. The row links to the lead page. The band drops the row on the node's next `progress`, `started` or `done`.
 - On the map an `asking` or `blocked` box's second line is the state followed by as much of `state.text` as `room()` leaves, instead of the unread count. `silent` boxes draw at full opacity with a dashed stroke in the `blocked` colour.
 - Drawer rows and the lead page's inbox and timeline rows clamp to three lines, expanding on tap. The lead page's timeline rows drop the lead's own path prefix from child paths (`eng`, not `buildermesh-round-1.eng`).
 
@@ -37,7 +37,7 @@ Judge: fable, because the band must be loud enough to stop a thumb and quiet eno
 A lead asks; the push opens the map and the top of the page reads, in one row, who asks and what. A quiet node is outlined, not faded. The phone drawer shows about ten events per screen instead of two.
 
 ## Verification
-The verify commands pass. The browser check is the `surface` kind against `?check=1` at 390x844 with a node set `asking` (by `bmesh ask` on a test node, or by script as in the screenshot above): the band is present, holds the text, and the self-check's `minTap` stays at 40 or more with the band's rows counted as tap targets. README's Map paragraph (added by 012, or here) names the band and the silent styling.
+The verify commands pass. The browser check runs against the branch's own binary (`go run ./cmd/bmesh serve` with a test config on another port, since the daemon on 3774 is the installed `main`) with a headless Chromium script that loads the page at the viewport and prints `document.title` for `?check=1` at 390x844 with a node set `asking` (by `bmesh ask` on a test node, or by script as in the screenshot above): the band is present, holds the text, and the self-check's `minTap` stays at 40 or more with the band's rows counted as tap targets. README's `### Map` section (added by 012, or here) names the band and the silent styling.
 
 ## Risks and the alternative considered
 Alternatives: (a) text on the node box only: a 184 px box fits about nineteen characters after the state, a teaser, not the ask; (b) a count badge on the nav: tells you something waits, not what; (c) rely on the push body: gone once dismissed, and a second ask overwrites it in the eye.

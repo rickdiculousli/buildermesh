@@ -36,7 +36,7 @@ Judge: opus, because the API additions and the ledger read are named here and th
 A round's page during a round: the two engineers with their states and unread counts, then the specs as they land, then inbox and timeline. A lead's page during a build: its executors, then its spec.
 
 ## Verification
-The verify commands pass, with `web_test.go` cases for `children` and for a round's `specs` against a fixture ledger. The browser check is the `surface` kind against `?check=1#/lead/<round>` at 390x844: the tree card is the first card. README's lead-page paragraph describes both cards.
+The verify commands pass, with `web_test.go` cases for `children` and for a round's `specs` against a fixture ledger. The browser check runs against the branch's own binary (`go run ./cmd/bmesh serve` with a test config on another port, since the daemon on 3774 is the installed `main`) with a headless Chromium script that loads the page at the viewport and prints `document.title` for `?check=1#/lead/<round>` at 390x844: the tree card is the first card. README's lead-page paragraph describes both cards.
 
 ## Risks and the alternative considered
 Alternatives: (a) a separate round page: a third page type to keep in step; (b) children on the map only: the map already draws them, but the push's `Click` is `<map_url>#/lead/<path>`, the lead page, not the map. The tree card keeps one page type.

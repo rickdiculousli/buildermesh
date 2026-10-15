@@ -19,7 +19,7 @@ The digest is right for its hour (`[notify] digest_every = "1h"`) and wrong for 
 
 ## Proposal
 In:
-- A summary row at the top of the strip, computed from the loaded tree on every render over leads, rounds and their children (not routines, as the digest's title counts): `N working · N asking · N blocked · N silent · N done`, zero counts dropped, words coloured as the badges are. It updates with the live events that restyle nodes. The strip shows whenever the tree has nodes, not only when there is a quota or digest (`renderStrip()` hides it otherwise today).
+- A summary row at the top of the strip, computed from the loaded tree on every render over leads, rounds and their children (not routines): `N working · N asking · N blocked · N silent · N done`, zero counts dropped, words coloured as the badges are. It updates with the live events that restyle nodes. The strip shows whenever the tree has nodes, not only when there is a quota or digest (`renderStrip()` hides it otherwise today).
 - The digest keeps its fold below (`▸ digest 50m ago: <title>`), opening to the body as now, so the daemon's hourly wording stays reachable but no longer reads as the present. 013's band, when built, sits under the strip.
 
 Out: changing what the daemon digests or pushes.
@@ -30,7 +30,7 @@ Judge: sonnet, because the counts come from data the page holds and the row's la
 The top of every page says what the mesh is doing now; when a lead asks, `1 asking` appears there within a second, before you find the box.
 
 ## Verification
-The verify commands pass. The browser check is the `surface` kind against `?check=1` at 1280x800: the title's `strip=` count includes the summary row for a non-empty tree. README's Map paragraph (012) names the summary row.
+The verify commands pass. The browser check runs against the branch's own binary (`go run ./cmd/bmesh serve` with a test config on another port, since the daemon on 3774 is the installed `main`) with a headless Chromium script that loads the page at the viewport and prints `document.title` for `?check=1` at 1280x800: the title's `strip=` count includes the summary row for a non-empty tree. README's `### Map` section (012) names the summary row.
 
 ## Risks and the alternative considered
 Alternatives: (a) a shorter digest interval: still stale between runs and a push each time; (b) drop the digest from the strip: loses the hourly body, the one place the daemon's own wording is read. Keeping both, present above past, costs one row.
