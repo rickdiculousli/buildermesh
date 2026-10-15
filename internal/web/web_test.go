@@ -148,8 +148,32 @@ func TestNodesAndPage(t *testing.T) {
 		rows[1].Node.Path != "b" || rows[1].Runner != nil || rows[1].State.State != "idle" {
 		t.Fatalf("%+v", rows)
 	}
-	if page := get("/"); !strings.Contains(page, `EventSource("/events")`) {
+	if page := get("/"); !strings.Contains(page, `src="/map.js"`) || !strings.Contains(page, `href="/map.css"`) {
 		t.Fatalf("page %q", page)
+	}
+	if js := get("/map.js"); !strings.Contains(js, `EventSource("/events")`) {
+		t.Fatalf("map.js %q", js)
+	}
+}
+
+func TestAssets(t *testing.T) {
+	_, c := connect(t)
+	srv := httptest.NewServer(Handler(c, time.Hour, Options{}))
+	defer srv.Close()
+	for path, want := range map[string]string{
+		"/":        "text/html; charset=utf-8",
+		"/map.js":  "text/javascript; charset=utf-8",
+		"/map.css": "text/css; charset=utf-8",
+	} {
+		resp, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != want || len(b) == 0 {
+			t.Fatalf("%s: %d %q, %d bytes; want 200 %q", path, resp.StatusCode, resp.Header.Get("Content-Type"), len(b), want)
+		}
 	}
 }
 

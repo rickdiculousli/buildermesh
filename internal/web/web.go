@@ -17,6 +17,12 @@ import (
 //go:embed index.html
 var page []byte
 
+//go:embed map.js
+var mapJS []byte
+
+//go:embed map.css
+var mapCSS []byte
+
 const pingEvery = 15 * time.Second
 
 // row is one node as /api/nodes returns it.
@@ -41,16 +47,23 @@ type Options struct {
 	Now  func() time.Time
 }
 
-// Handler serves / (the page), /api/nodes, /api/tree, /api/lead/{path},
+// asset serves an embedded file with its content type.
+func asset(body []byte, contentType string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", contentType)
+		_, _ = w.Write(body)
+	}
+}
+
+// Handler serves / (the page, with /map.js and /map.css), /api/nodes, /api/tree, /api/lead/{path},
 // /api/routines, /api/strip and /events, whose replay starts hist before the
 // request unless ?since=RFC3339 says otherwise.
 func Handler(c *mesh.Client, hist time.Duration, opts Options) http.Handler {
 	s := newServer(c, opts)
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write(page)
-	})
+	mux.HandleFunc("GET /{$}", asset(page, "text/html; charset=utf-8"))
+	mux.HandleFunc("GET /map.js", asset(mapJS, "text/javascript; charset=utf-8"))
+	mux.HandleFunc("GET /map.css", asset(mapCSS, "text/css; charset=utf-8"))
 	mux.HandleFunc("GET /api/nodes", func(w http.ResponseWriter, r *http.Request) { nodes(w, r, c) })
 	mux.HandleFunc("GET /api/tree", s.tree)
 	mux.HandleFunc("GET /api/lead/{path}", s.lead)

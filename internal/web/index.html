@@ -3,100 +3,38 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>bmesh</title>
-<style>
-  :root { color-scheme: dark; }
-  body { margin: 0; background: #111418; color: #d8dde3;
-         font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  header { position: sticky; top: 0; background: #181c22; border-bottom: 1px solid #2a3039; padding: 8px 12px; }
-  h1 { margin: 0 0 6px; font-size: 16px; }
-  #conn { font-size: 12px; color: #8a939e; font-weight: normal; margin-left: 6px; }
-  #nodes { display: flex; flex-wrap: wrap; gap: 6px; }
-  .node { background: #222831; border-radius: 4px; padding: 2px 8px; font-size: 12px; white-space: nowrap; }
-  ul { list-style: none; margin: 0; padding: 0; }
-  li { padding: 6px 12px; border-bottom: 1px solid #1f242b; border-left: 3px solid #555; word-break: break-word; }
-  .t { color: #8a939e; font-size: 12px; margin-right: 6px; }
-  .p { font-weight: 600; margin-right: 6px; }
-  .e { margin-right: 6px; }
-  .started { border-left-color: #3fb950; } .started .e { color: #3fb950; }
-  .progress { border-left-color: #6e7681; } .progress .e { color: #8b949e; }
-  .blocked { border-left-color: #f85149; } .blocked .e { color: #f85149; }
-  .ask { border-left-color: #d29922; } .ask .e { color: #d29922; }
-  .done { border-left-color: #58a6ff; } .done .e { color: #58a6ff; }
-  .wake, .silent, .digest { border-left-color: #a371f7; }
-  .wake .e, .silent .e, .digest .e { color: #a371f7; }
-  .inbox { border-left-color: #39c5bb; } .inbox .e { color: #39c5bb; }
-</style>
+<link rel="stylesheet" href="/map.css">
+<script src="/map.js" defer></script>
 </head>
 <body>
-<header>
-  <h1>bmesh<span id="conn">connecting</span></h1>
-  <div id="nodes"></div>
+<header id="top">
+  <h1><a href="#/">bmesh</a></h1>
+  <span id="conn" class="conn">connecting</span>
+  <nav>
+    <a href="#/" data-route="map">map</a>
+    <a href="#/routines" data-route="routines">routines</a>
+  </nav>
+  <div id="strip" class="strip" hidden></div>
 </header>
-<ul id="list"></ul>
-<script>
-"use strict";
-const MAX = 500;
-const list = document.getElementById("list");
-const conn = document.getElementById("conn");
-
-// describe turns a frame into {path, event, text} from its subject and payload.
-function describe(f) {
-  const p = f.payload && typeof f.payload === "object" ? f.payload : { text: String(f.payload) };
-  const rest = f.subject.replace(/^bm\./, "");
-  if (rest.startsWith("inbox.")) {
-    return { path: (p.from || "?") + " → " + rest.slice(6), event: "inbox", text: p.text || "" };
-  }
-  const i = rest.lastIndexOf(".");
-  const path = i > 0 ? rest.slice(0, i) : rest;
-  const event = i > 0 ? rest.slice(i + 1) : "";
-  let text = p.text || "";
-  if (rest.startsWith("daemon.") && p.to) text = p.to + (text ? " " + text : "");
-  if (p.commit) text += (text ? " " : "") + "@" + p.commit;
-  return { path, event, text };
-}
-
-function span(cls, text) {
-  const s = document.createElement("span");
-  s.className = cls;
-  s.textContent = text;
-  return s;
-}
-
-function stamp(at) {
-  const d = new Date(at);
-  return isNaN(d) ? at : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
-
-function add(data) {
-  let f;
-  try { f = JSON.parse(data); } catch (e) { return; }
-  const d = describe(f);
-  const li = document.createElement("li");
-  li.className = d.event;
-  li.append(span("t", stamp((f.payload && f.payload.at) || f.at)), span("p", d.path), span("e", d.event), span("x", d.text));
-  list.prepend(li);
-  while (list.children.length > MAX) list.lastChild.remove();
-}
-
-const es = new EventSource("/events");
-es.addEventListener("replay", (e) => add(e.data));
-es.addEventListener("live", (e) => add(e.data));
-es.onopen = () => { list.replaceChildren(); conn.textContent = "live"; }; // each connection replays
-es.onerror = () => { conn.textContent = "reconnecting"; };
-
-async function refreshNodes() {
-  try {
-    const rows = await (await fetch("/api/nodes")).json();
-    const box = document.getElementById("nodes");
-    box.replaceChildren(...rows.map((r) => {
-      const run = !r.runner || !r.runner.known ? "?" : r.runner.running ? "running" : "idle";
-      return span("node", r.node.path + " · " + r.state.state + " · " + run);
-    }));
-  } catch (e) { /* the next refresh tries again */ }
-}
-refreshNodes();
-setInterval(refreshNodes, 10000);
-</script>
+<main>
+  <section id="view-map" class="view">
+    <div id="map" class="map"></div>
+    <p id="map-empty" class="empty" hidden>No nodes on the mesh yet.</p>
+  </section>
+  <section id="view-lead" class="view" hidden>
+    <h2 id="lead-title"></h2>
+    <div id="lead-panel" class="panel"></div>
+  </section>
+  <section id="view-routines" class="view" hidden>
+    <h2>routines</h2>
+    <div id="routines-panel" class="panel"></div>
+  </section>
+</main>
+<details id="drawer" class="drawer">
+  <summary>recent events <span id="drawer-count" class="count"></span></summary>
+  <ol id="recent"></ol>
+</details>
 </body>
 </html>
