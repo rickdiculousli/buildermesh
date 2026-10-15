@@ -89,10 +89,11 @@ func (a *app) cmdNodeForget(args []string) error {
 	return nil
 }
 
-// removeNodeWorktree removes n's worktree and branch: refused (exit 3,
-// nothing touched) when they are on another host, the worktree is dirty or
-// the branch is not merged into main (an executor's: into its parent's
-// branch). A worktree already gone from disk is pruned.
+// removeNodeWorktree removes n's worktree and the branch checked out there
+// (else the node's): refused (exit 3, nothing touched) when they are on
+// another host, the worktree is dirty or the branch has not landed in main
+// (an executor's: or in its parent's branch). A worktree already gone from
+// disk is pruned.
 func (a *app) removeNodeWorktree(ctx context.Context, n mesh.Node, nodes []mesh.Node) error {
 	if n.Worktree == "" {
 		fmt.Fprintf(a.stdout, "%s has no worktree\n", n.Path)
@@ -123,24 +124,27 @@ func (a *app) removeNodeWorktree(ctx context.Context, n mesh.Node, nodes []mesh.
 		}
 	}
 	branch := n.Branch
-	if branch != "" {
-		if _, err := gitIn(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
-			branch = "" // already deleted
+	if present { // the branch checked out there: a runner may have renamed it
+		if b, err := gitIn(ctx, n.Worktree, "symbolic-ref", "--quiet", "--short", "HEAD"); err == nil {
+			branch = b
 		}
 	}
+	if branch != "" && !hasBranch(ctx, repo, branch) {
+		branch = "" // already deleted
+	}
 	if branch != "" {
-		into := "main"
+		into := []string{"main"}
 		for _, p := range nodes {
-			if p.Path == n.Parent && p.Branch != "" && n.Role == "executor" {
-				into = p.Branch
+			if p.Path == n.Parent && p.Branch != "" && n.Role == "executor" && hasBranch(ctx, repo, p.Branch) {
+				into = append([]string{p.Branch}, into...)
 			}
 		}
-		merged, err := gitIn(ctx, repo, "branch", "--list", "--merged", into, branch)
+		ok, err := landedIn(ctx, repo, branch, into)
 		if err != nil {
 			return err
 		}
-		if merged == "" {
-			return fail(exitRefused, "refused: branch %s is not merged into %s", branch, into)
+		if !ok {
+			return fail(exitRefused, "refused: branch %s is not merged into %s", branch, strings.Join(into, " or "))
 		}
 	}
 	if present {
@@ -160,4 +164,32 @@ func (a *app) removeNodeWorktree(ctx context.Context, n mesh.Node, nodes []mesh.
 		fmt.Fprintf(a.stdout, "deleted branch %s\n", branch)
 	}
 	return nil
+}
+
+func hasBranch(ctx context.Context, repo, branch string) bool {
+	_, err := gitIn(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
+	return err == nil
+}
+
+// landedIn reports whether branch's work is in one of into: its tip is an
+// ancestor, or each of its commits has an equivalent there (git cherry), as
+// after a rebase replayed them under new SHAs.
+func landedIn(ctx context.Context, repo, branch string, into []string) (bool, error) {
+	for _, target := range into {
+		merged, err := gitIn(ctx, repo, "branch", "--list", "--merged", target, branch)
+		if err != nil {
+			return false, err
+		}
+		if merged != "" {
+			return true, nil
+		}
+		cherry, err := gitIn(ctx, repo, "cherry", target, branch)
+		if err != nil {
+			return false, err
+		}
+		if !strings.Contains("\n"+cherry, "\n+") {
+			return true, nil
+		}
+	}
+	return false, nil
 }

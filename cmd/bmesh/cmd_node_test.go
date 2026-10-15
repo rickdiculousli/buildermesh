@@ -148,7 +148,8 @@ func TestNodeForgetWorktree(t *testing.T) {
 	}
 	wt := filepath.Join(t.TempDir(), "app-001")
 	runGit(t, real, "worktree", "add", "-q", "-b", "t3code/lead", wt)
-	putNode(t, c, ctx, mesh.Node{Path: "app-001", RepoPath: real, Worktree: wt, Branch: "t3code/lead"})
+	// The node names the branch dispatch chose; the runner renamed it since.
+	putNode(t, c, ctx, mesh.Node{Path: "app-001", RepoPath: real, Worktree: wt, Branch: "t3code/c4422981"})
 	stateAt(t, c, ctx, "app-001", "done", time.Now())
 
 	// Dirty: refused, nothing touched.
@@ -184,5 +185,42 @@ func TestNodeForgetWorktree(t *testing.T) {
 	}
 	if _, ok, _ := mesh.GetNode(ctx, c, "app-001"); ok {
 		t.Fatal("node kept")
+	}
+}
+
+// An executor whose commits reached main through its lead's rebase (new
+// SHAs) has landed; its parent's branch, gone since, is not asked about.
+func TestNodeForgetWorktreeRebasedExecutor(t *testing.T) {
+	c, ctx := setup(t)
+	repo := gitRepo(t)
+	real, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(t.TempDir(), "app-001.x")
+	runGit(t, real, "worktree", "add", "-q", "-b", "t3code/lead-x", wt)
+	if err := os.WriteFile(filepath.Join(wt, "x.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, wt, "add", "-A")
+	runGit(t, wt, "commit", "-q", "-m", "x")
+	putNode(t, c, ctx, mesh.Node{Path: "app-001", Branch: "t3code/lead"}) // its branch is gone
+	putNode(t, c, ctx, mesh.Node{Path: "app-001.x", Role: "executor", Parent: "app-001", RepoPath: real, Worktree: wt, Branch: "t3code/lead-x"})
+	stateAt(t, c, ctx, "app-001.x", "done", time.Now())
+
+	_, errs, code := runCLI(t, nil, "node", "forget", "app-001.x", "--worktree")
+	if code != 3 || errs != "bmesh: refused: branch t3code/lead-x is not merged into main\n" {
+		t.Fatalf("unmerged: %d %q", code, errs)
+	}
+	// main moves, then the work lands replayed on top of it.
+	if err := os.WriteFile(filepath.Join(real, "m.txt"), []byte("m\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, real, "add", "-A")
+	runGit(t, real, "commit", "-q", "-m", "m")
+	runGit(t, real, "cherry-pick", "t3code/lead-x")
+	out, errs, code := runCLI(t, nil, "node", "forget", "app-001.x", "--worktree")
+	if code != 0 || out != "removed worktree "+wt+"\ndeleted branch t3code/lead-x\nforgot app-001.x\n" {
+		t.Fatalf("forget: %d %q %q", code, out, errs)
 	}
 }
