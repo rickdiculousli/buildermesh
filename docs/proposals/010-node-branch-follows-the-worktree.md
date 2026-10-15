@@ -4,10 +4,12 @@ title: A lead's branch follows its worktree, not its dispatch
 kind: refinement
 size: S
 judge: sonnet
-status: accepted
+status: building
 lens: eng
 proposed_by: fd21a373-851c-4e68-beb6-831cb4be0fa9
 proposed_on: 2026-10-15
+built_by: e34c542c-a26d-4974-b935-8bccc17d4a83
+host: k16
 ---
 
 ## Opportunity
