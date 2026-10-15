@@ -87,14 +87,24 @@ func TestRemoveForgetsWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := func() bool {
+		return strings.Contains(tgit(t, repo, "worktree", "list", "--porcelain"), "worktree "+real+"\n")
+	}
+	if !listed() {
+		t.Fatal("worktree not listed before Remove")
+	}
 	if err := Remove(repo, dir); err != nil {
 		t.Fatal(err)
 	}
 	if exists(dir) {
 		t.Error("dir still exists")
 	}
-	if list := tgit(t, repo, "worktree", "list", "--porcelain"); strings.Contains(list, "worktree "+dir) {
-		t.Errorf("worktree still listed:\n%s", list)
+	if listed() {
+		t.Error("worktree still listed after Remove")
 	}
 }
 
@@ -105,12 +115,18 @@ func TestEnsureIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(d1, "marker"), []byte("m"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	d2, err := Ensure(repo, root, "main")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if d1 != d2 {
 		t.Errorf("%s != %s", d1, d2)
+	}
+	if !exists(filepath.Join(d2, "marker")) {
+		t.Error("second Ensure recreated the checkout")
 	}
 }
 
@@ -121,13 +137,66 @@ func TestEnsureReplacesNonWorktreeDir(t *testing.T) {
 	if err := os.MkdirAll(stale, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(stale, "stale"), nil, 0o644)
+	if err := os.WriteFile(filepath.Join(stale, "stale"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	dir, err := Ensure(repo, root, "main")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if exists(filepath.Join(dir, "stale")) || !exists(filepath.Join(dir, ".git")) {
 		t.Error("stale dir not replaced by a worktree")
+	}
+}
+
+func TestEnsureReplacesStaleWorktree(t *testing.T) {
+	repo, _, c2 := newRepo(t)
+	root := t.TempDir()
+	dir, err := Ensure(repo, root, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(repo, ".git", "worktrees")); err != nil {
+		t.Fatal(err)
+	}
+	dir, err = Ensure(repo, root, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := MoveTo(dir, "HEAD"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Repo deleted and recreated at the same path.
+	if err := os.RemoveAll(repo); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tgit(t, repo, "init", "-q")
+	commitFile(t, repo, "z.txt", "z\n")
+	dir, err = Ensure(repo, root, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := MoveTo(dir, "HEAD"); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(filepath.Join(dir, "z.txt")) || exists(filepath.Join(dir, "b.txt")) {
+		t.Errorf("checkout not from the recreated repo (old head %s)", c2)
+	}
+}
+
+func TestEnsureRejectsBadArguments(t *testing.T) {
+	repo, _, _ := newRepo(t)
+	if _, err := Ensure(repo, "", "main"); err == nil {
+		t.Error("empty root accepted")
+	}
+	for _, r := range []string{".", "..", "/"} {
+		if _, err := Ensure(r, t.TempDir(), "main"); err == nil {
+			t.Errorf("repo %q accepted", r)
+		}
 	}
 }
 

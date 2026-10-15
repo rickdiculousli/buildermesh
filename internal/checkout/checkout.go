@@ -38,14 +38,24 @@ func Ensure(repoPath, root, instance string) (string, error) {
 	if !instanceRE.MatchString(instance) {
 		return "", fmt.Errorf("checkout instance %q: want lowercase letters, digits, dots and hyphens", instance)
 	}
-	dir := filepath.Join(root, filepath.Base(repoPath), instance)
+	if root == "" {
+		return "", fmt.Errorf("checkout root is empty")
+	}
+	name := filepath.Base(repoPath)
+	if name == "." || name == ".." || name == string(filepath.Separator) {
+		return "", fmt.Errorf("checkout repo %q has no usable name", repoPath)
+	}
+	dir := filepath.Join(root, name, instance)
 	if _, err := git(repoPath, "worktree", "prune"); err != nil {
 		return "", err
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil && belongsTo(repoPath, dir) {
 		return dir, nil
 	}
 	if err := os.RemoveAll(dir); err != nil {
+		return "", err
+	}
+	if _, err := git(repoPath, "worktree", "prune"); err != nil {
 		return "", err
 	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
@@ -55,6 +65,23 @@ func Ensure(repoPath, root, instance string) (string, error) {
 		return "", err
 	}
 	return dir, nil
+}
+
+// belongsTo reports whether dir is a working worktree of repoPath, so a stale
+// one (repo deleted or recreated, or a same-named repo) is replaced.
+func belongsTo(repoPath, dir string) bool {
+	a, ok := commonDir(repoPath)
+	b, ok2 := commonDir(dir)
+	return ok && ok2 && a == b
+}
+
+func commonDir(dir string) (string, bool) {
+	out, err := git(dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return "", false
+	}
+	p, err := filepath.EvalSymlinks(out)
+	return p, err == nil
 }
 
 // MoveTo leaves dir detached at commit with no tracked changes or untracked
