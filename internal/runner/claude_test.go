@@ -227,3 +227,25 @@ func TestClaudeSendKeepsOrderBehindQueue(t *testing.T) {
 		t.Fatalf("stdin %q", in)
 	}
 }
+
+// A turn that exits without a result reads as idle with the failure, not
+// as the previous reply.
+func TestClaudeFailedTurnShowsInStatus(t *testing.T) {
+	useFake(t, "BMESH_CLAUDE_COMMAND", "fake-claude.sh", "FAKE_LOG")
+	t.Setenv("FAKE_RESULT", "first")
+	r, repo, brief := claudeRepo(t)
+	if _, err := r.Start(context.Background(), StartSpec{RepoPath: repo, BriefPath: brief, ThreadID: "th-1"}); err != nil {
+		t.Fatal(err)
+	}
+	until(t, "turn 1 to end", idle(t, r, "th-1"))
+	t.Setenv("FAKE_NOJSON", "1")
+	t.Setenv("FAKE_EXIT", "1")
+	if err := r.Send(context.Background(), "th-1", "again"); err != nil {
+		t.Fatal(err)
+	}
+	until(t, "turn 2 to end", idle(t, r, "th-1"))
+	st, err := r.Status(context.Background(), "th-1")
+	if err != nil || st.Running || !strings.HasPrefix(st.LastReply, "[turn 2 failed]") {
+		t.Fatalf("%+v %v", st, err)
+	}
+}

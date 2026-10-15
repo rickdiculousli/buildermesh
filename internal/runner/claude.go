@@ -295,11 +295,13 @@ func (r Claude) Status(ctx context.Context, thread string) (Status, error) {
 	}
 	n := readInt(filepath.Join(d, "turn"))
 	st := Status{Known: true, Running: running(d, n)}
-	for i := n; i > 0; i-- {
-		if reply, ok := turnResult(d, i); ok {
-			st.LastReply = reply
-			break
-		}
+	if reply, ok := turnResult(d, n); ok {
+		st.LastReply = reply
+	} else if !st.Running && n > 0 {
+		// The turn ended without a result (a failed --resume, an auth
+		// error): say so with its stderr rather than show an older reply.
+		errb, _ := os.ReadFile(filepath.Join(d, "turn-"+strconv.Itoa(n)+".err"))
+		st.LastReply = fmt.Sprintf("[turn %d failed] %s", n, strings.TrimSpace(string(errb)))
 	}
 	if st.Running {
 		return st, nil

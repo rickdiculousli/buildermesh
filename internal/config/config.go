@@ -153,16 +153,27 @@ func Dir() string {
 	return filepath.Join(d, "bmesh")
 }
 
-// DefaultStore is the embedded server's store, under the user's cache dir
-// (os.UserCacheDir: ~/.cache on Linux, ~/Library/Caches on macOS,
-// %LocalAppData% on Windows).
+// DefaultStore is the embedded server's store: the store an earlier bmesh
+// made at ~/.local/state/bmesh/jetstream when it exists (so an upgrade keeps
+// its buckets), else under the user's cache dir (os.UserCacheDir: ~/.cache
+// on Linux, ~/Library/Caches on macOS, %LocalAppData% on Windows).
 func DefaultStore() string {
+	if home, err := os.UserHomeDir(); err == nil {
+		if old := filepath.Join(home, ".local", "state", "bmesh", "jetstream"); dirExists(old) {
+			return old
+		}
+	}
 	d, err := os.UserCacheDir()
 	if err != nil {
 		d, _ = os.UserHomeDir()
 		d = filepath.Join(d, ".cache")
 	}
 	return filepath.Join(d, "bmesh", "jetstream")
+}
+
+func dirExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && st.IsDir()
 }
 
 // Path is $BMESH_CONFIG, else <Dir>/config.toml.
