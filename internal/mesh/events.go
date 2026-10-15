@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -81,7 +83,7 @@ func History(ctx context.Context, c *Client, filter string, since time.Time) ([]
 	for _, n := range info.State.Subjects {
 		total += int(n)
 	}
-	if total == 0 {
+	if total == 0 || (!since.IsZero() && since.After(info.State.LastTime)) {
 		return nil, nil
 	}
 	cfg := jetstream.OrderedConsumerConfig{FilterSubjects: []string{filter}, DeliverPolicy: jetstream.DeliverAllPolicy}
@@ -100,7 +102,7 @@ func History(ctx context.Context, c *Client, filter string, since time.Time) ([]
 			if ctx.Err() != nil {
 				return out, ctx.Err()
 			}
-			if errors.Is(err, jetstream.ErrNoMessages) || errors.Is(err, context.DeadlineExceeded) {
+			if errors.Is(err, jetstream.ErrNoMessages) || errors.Is(err, nats.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
 				return out, nil
 			}
 			return out, err
@@ -128,12 +130,19 @@ func Follow(ctx context.Context, c *Client, filter string) (<-chan Stored, error
 		return nil, err
 	}
 	ch := make(chan Stored)
+	var mu sync.RWMutex // held by a callback while it sends, so close waits for it
+	closed := false
 	cc, err := cons.Consume(func(m jetstream.Msg) {
 		meta, err := m.Metadata()
 		if err != nil {
 			return
 		}
 		s := Stored{Subject: m.Subject(), Seq: meta.Sequence.Stream, At: meta.Timestamp, Data: m.Data()}
+		mu.RLock()
+		defer mu.RUnlock()
+		if closed {
+			return
+		}
 		select {
 		case ch <- s:
 		case <-ctx.Done():
@@ -145,7 +154,10 @@ func Follow(ctx context.Context, c *Client, filter string) (<-chan Stored, error
 	go func() {
 		<-ctx.Done()
 		cc.Stop()
+		mu.Lock()
+		closed = true
 		close(ch)
+		mu.Unlock()
 	}()
 	return ch, nil
 }

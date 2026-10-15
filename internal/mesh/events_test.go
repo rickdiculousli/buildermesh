@@ -1,6 +1,7 @@
 package mesh_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -34,6 +35,12 @@ func TestPublishAndHistory(t *testing.T) {
 	if got, err := History(ctx, c, "bm.nobody.>", time.Time{}); err != nil || len(got) != 0 {
 		t.Fatal(got, err)
 	}
+	if got, err := History(ctx, c, "bm.a.>", time.Now().Add(time.Hour)); err != nil || len(got) != 0 {
+		t.Fatal(got, err)
+	}
+	if got, err := History(ctx, c, "bm.b.>", got0At(t, c, ctx).Add(-time.Millisecond)); err != nil || len(got) != 1 {
+		t.Fatal(got, err)
+	}
 	if err := PublishEvent(ctx, c, Event{From: "a", Event: "bad.token"}); err == nil {
 		t.Fatal("dotted event accepted")
 	}
@@ -62,4 +69,14 @@ func TestFollowDeliversLive(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("no event")
 	}
+}
+
+// got0At returns the time of the first stored message.
+func got0At(t *testing.T, c *Client, ctx context.Context) time.Time {
+	t.Helper()
+	all, err := History(ctx, c, "bm.>", time.Time{})
+	if err != nil || len(all) == 0 {
+		t.Fatal(all, err)
+	}
+	return all[0].At
 }
