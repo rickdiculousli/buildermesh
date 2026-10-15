@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -58,7 +59,9 @@ func spokenAt(tokens []string, i int) bool {
 // order. A number of three or more digits (012, as ids are written) is a
 // spec id; one of one or two digits is a position in the pitch when there
 // is one (so "1 and 3 yes" to a pitch of 012 to 016 means its first and
-// third items), and a spec id when there is none. A clause is its leading numbers
+// third items), and a spec id when there is none. A short number that is
+// both a pitched id and a different position (6 to a pitch of 001-003 and
+// 006-010) is reported as ambiguous, not guessed. A clause is its leading numbers
 // (joined by "and" or the like) and the phrase after them, whose first
 // word decides: yes/accept to accepted, no/reject to rejected with the rest
 // as the reason, later to later, "on <judge>" alone to a judge note, and
@@ -70,6 +73,10 @@ func spokenAt(tokens []string, i int) bool {
 // not guessed at.
 func ParseReply(reply string, ids map[int]bool, ranks []int) Review {
 	var r Review
+	pitched := map[int]bool{}
+	for _, id := range ranks {
+		pitched[id] = true
+	}
 	for _, clause := range clauses(reply) {
 		tokens := strings.Fields(clause)
 		var nums []string
@@ -88,7 +95,7 @@ func ParseReply(reply string, ids map[int]bool, ranks []int) Review {
 			continue
 		}
 		var targets []int
-		var noSpec, noPosition []string
+		var noSpec, noPosition, ambiguous []string
 		for _, digits := range nums {
 			n, _ := strconv.Atoi(digits)
 			switch {
@@ -98,6 +105,12 @@ func ParseReply(reply string, ids map[int]bool, ranks []int) Review {
 				} else {
 					noSpec = append(noSpec, digits)
 				}
+			case pitched[n] && n <= len(ranks) && ranks[n-1] != n:
+				// "6" to a pitch of 001-003 and 006-010: spec 006, or the
+				// sixth item (009)? Neither is guessed.
+				ambiguous = append(ambiguous, fmt.Sprintf("%s (spec %03d or item %s, %03d)", digits, n, digits, ranks[n-1]))
+			case pitched[n]:
+				targets = append(targets, n)
 			case n >= 1 && n <= len(ranks):
 				targets = append(targets, ranks[n-1])
 			default:
@@ -109,6 +122,9 @@ func ParseReply(reply string, ids map[int]bool, ranks []int) Review {
 		}
 		if len(noPosition) > 0 {
 			r.Unmatched = append(r.Unmatched, "no position "+strings.Join(noPosition, ", ")+" in the pitch; a spec id has three digits ("+clause+")")
+		}
+		if len(ambiguous) > 0 {
+			r.Unmatched = append(r.Unmatched, "ambiguous "+strings.Join(ambiguous, ", ")+"; write the id with three digits ("+clause+")")
 		}
 		if len(targets) == 0 {
 			continue
@@ -232,12 +248,12 @@ func IsReviewable(status string) bool {
 // (lineItem: one item per line, the shape the skills ask for). A line that
 // holds a whole list typed in one go is told by its items' shape, `NNN
 // title (kind, size, judge):` after a sentence end (shapedItem: the title
-// may hold brackets but no sentence end, the three fields are anything but
-// brackets); an id cited inside a why ("; 004 did it by hand") has no such
-// shape.
+// may hold brackets and a dot inside a word, v1.2, but no sentence end, a
+// `.;!?` before a space; the three fields are anything but brackets); an
+// id cited inside a why ("; 004 did it by hand") has no such shape.
 var (
 	lineItem   = regexp.MustCompile(`^\s*#?(\d{3})\b`)
-	shapedItem = regexp.MustCompile(`(?:^|[.;!?]\s+)\s*#?(\d{3})\s[^\n.;!?]*?\(([^(),\n]+),\s*([^(),\n]+),\s*([^(),\n]+)\):`)
+	shapedItem = regexp.MustCompile(`(?:^|[.;!?]\s+)\s*#?(\d{3})\s(?:[^\n.;!?]|[.;!?][^\s\n])*?\(([^(),\n]+),\s*([^(),\n]+),\s*([^(),\n]+)\):`)
 )
 
 // PitchRanks reads the ranked list the operator saw, the pitch (the

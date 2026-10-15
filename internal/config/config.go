@@ -290,18 +290,12 @@ func (c *Config) Expand(p string) string {
 // RepoPath resolves a [repos] key, else an existing directory, to (name, abs path).
 // A relative [repos] path resolves against the directory of the config file
 // (the current directory when no file was read); a relative nameOrPath
-// resolves against the current directory.
+// resolves against the current directory. A directory that is a row's path
+// (symlinks resolved) gets that row's name, else its base name.
 func (c *Config) RepoPath(nameOrPath string) (name, path string, err error) {
-	if r, ok := c.Repos[nameOrPath]; ok {
-		p := c.Expand(r.Path)
-		if !filepath.IsAbs(p) && c.dir != "" {
-			p = filepath.Join(c.dir, p)
-		}
-		abs, err := filepath.Abs(p)
-		if err != nil {
-			return "", "", err
-		}
-		return nameOrPath, abs, nil
+	if _, ok := c.Repos[nameOrPath]; ok {
+		abs, err := c.rowPath(nameOrPath)
+		return nameOrPath, abs, err
 	}
 	p := c.Expand(nameOrPath)
 	if st, serr := os.Stat(p); serr == nil && st.IsDir() {
@@ -309,7 +303,30 @@ func (c *Config) RepoPath(nameOrPath string) (name, path string, err error) {
 		if err != nil {
 			return "", "", err
 		}
+		want := resolved(abs)
+		for _, n := range c.RepoNames() {
+			if rp, err := c.rowPath(n); err == nil && resolved(rp) == want {
+				return n, abs, nil
+			}
+		}
 		return filepath.Base(abs), abs, nil
 	}
 	return "", "", fmt.Errorf("unknown repo %q: not a [repos] name or an existing directory", nameOrPath)
+}
+
+// rowPath is a row's path, expanded and absolute.
+func (c *Config) rowPath(name string) (string, error) {
+	p := c.Expand(c.Repos[name].Path)
+	if !filepath.IsAbs(p) && c.dir != "" {
+		p = filepath.Join(c.dir, p)
+	}
+	return filepath.Abs(p)
+}
+
+// resolved is p with symlinks resolved, or p when that fails.
+func resolved(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return p
 }

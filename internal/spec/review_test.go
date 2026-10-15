@@ -41,12 +41,15 @@ func TestParseReplyThreeDigitsAreIDsShortNumbersArePositions(t *testing.T) {
 	if !reflect.DeepEqual(r.Verdicts, want) || !reflect.DeepEqual(r.Unmatched, []string{"no position 9 in the pitch; a spec id has three digits (9 later)", "no spec 099 (099 yes)"}) {
 		t.Fatalf("%+v", r)
 	}
-	// A first round numbers from 001: positions and ids agree by design.
-	first := map[int]bool{1: true, 2: true, 3: true, 6: true, 7: true}
-	r = ParseReply("5 yes, 6 no", first, []int{1, 2, 3, 6, 7})
-	want = []Verdict{{ID: 6, Move: "accepted"}, {ID: 7, Move: "rejected"}}
-	if !reflect.DeepEqual(r.Verdicts, want) {
-		t.Fatalf("%+v", r.Verdicts)
+	// A first round numbers from 001 with the gap: a short number that is
+	// a pitched id and a different position is ambiguous; one that is the
+	// same spec either way, or an id past the pitch's length, is that spec.
+	first := map[int]bool{1: true, 2: true, 3: true, 6: true, 7: true, 8: true}
+	r = ParseReply("1 yes, 5 yes, 6 no, 8 later, 006 no", first, []int{1, 2, 3, 6, 7, 8})
+	want = []Verdict{{ID: 1, Move: "accepted"}, {ID: 7, Move: "accepted"}, {ID: 8, Move: "later"}, {ID: 6, Move: "rejected"}}
+	if !reflect.DeepEqual(r.Verdicts, want) ||
+		!reflect.DeepEqual(r.Unmatched, []string{"ambiguous 6 (spec 006 or item 6, 008); write the id with three digits (6 no)"}) {
+		t.Fatalf("%+v", r)
 	}
 }
 
@@ -155,7 +158,7 @@ func TestRanksAndAdjustNote(t *testing.T) {
 	// The round joins two one-line pitches with a line break: each line is
 	// a list of its own; a blocked round's text puts the pitch after a note.
 	four := append(many, &Spec{ID: 4, Fields: map[string]string{"status": "proposed"}})
-	merged := "001 A (f, S, opus): x. 002 Retry (again) uploads (fix, S, opus): y.\n003 C (ux, S, opus): z (see 001). 004 D (ux, S, opus): w."
+	merged := "001 A (f, S, opus): x. 002 Retry (again) v1.2 uploads (fix, S, opus): y.\n003 C (ux, S, opus): z (see 001). 004 D (ux, S, opus): w."
 	if got := PitchRanks(merged, four); !reflect.DeepEqual(got, []int{1, 2, 3, 4}) {
 		t.Fatal(got)
 	}
