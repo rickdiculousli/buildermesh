@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
@@ -68,7 +70,11 @@ func (a *app) cmdEvent(name string, args []string) error {
 		if parent == "" {
 			return fail(exitError, "executor %s has no parent to ask", path)
 		}
-		m := mesh.Message{ID: newID(), From: path, To: parent, Kind: "message", Text: "ask from " + path + ": " + *text}
+		// The id is the ask itself, so a retry after a failure further
+		// down (publish, state) is one message in the lead's inbox.
+		sum := sha256.Sum256([]byte(path + "\x00" + *text))
+		m := mesh.Message{ID: "ask-" + path + "-" + hex.EncodeToString(sum[:8]), From: path, To: parent, Kind: "message",
+			Text: "ask from " + path + ": " + *text}
 		if _, err := mesh.Send(ctx, a.client, m); err != nil {
 			return err
 		}

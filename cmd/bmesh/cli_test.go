@@ -382,6 +382,19 @@ func TestExecutorAskGoesToParent(t *testing.T) {
 	if got := stateOf(t, c, ctx, "app-012.alpha"); got != "asking" {
 		t.Fatalf("state %s", got)
 	}
+	// The same ask again (a retry) is one message; a different one is another.
+	if _, errs, code := runCLI(t, as("app-012.alpha"), "ask", "--text", "which db?"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	if _, errs, code := runCLI(t, as("app-012.alpha"), "ask", "--text", "which port?"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	if n, err := mesh.Unread(ctx, c, lead); err != nil || n != 1 {
+		t.Fatalf("lead unread after retry and a new ask: %d %v", n, err)
+	}
+	if msgs, err := mesh.Fetch(ctx, c, lead, true); err != nil || len(msgs) != 1 || msgs[0].Text != "ask from app-012.alpha: which port?" {
+		t.Fatalf("lead inbox %+v %v", msgs, err)
+	}
 	// A lead's ask stays its own: nothing is sent anywhere.
 	if _, errs, code := runCLI(t, as("app-012"), "started"); code != 0 {
 		t.Fatal(code, errs)
@@ -392,8 +405,22 @@ func TestExecutorAskGoesToParent(t *testing.T) {
 	if n, err := mesh.Unread(ctx, c, lead); err != nil || n != 0 {
 		t.Fatalf("lead inbox after its own ask: %d %v", n, err)
 	}
-	if hist, _ := mesh.History(ctx, c, "bm.inbox.>", time.Time{}); len(hist) != 1 {
+	if hist, _ := mesh.History(ctx, c, "bm.inbox.>", time.Time{}); len(hist) != 2 {
 		t.Fatalf("inbox messages: %d", len(hist))
+	}
+}
+
+func TestInboxPrintsReplies(t *testing.T) {
+	c, ctx := setup(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012"})
+	me, _ := mesh.ParsePath("app-012")
+	reply := mesh.Reply{Job: "J1", Kind: "review", Tree: "t", OK: false, Output: "### high: breaks\nVERDICT: fail", By: "routine.review.x-1"}
+	if err := mesh.SendReply(ctx, c, mesh.RoutinePath("review"), me, reply); err != nil {
+		t.Fatal(err)
+	}
+	out, errs, code := runCLI(t, as("app-012"), "inbox")
+	if code != 0 || !strings.Contains(out, " routine.review: reply to job J1: review fail\n### high: breaks\nVERDICT: fail\n") {
+		t.Fatalf("inbox: %d %q %q", code, out, errs)
 	}
 }
 

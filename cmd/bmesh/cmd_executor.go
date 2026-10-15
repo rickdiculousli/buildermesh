@@ -22,9 +22,10 @@ const executorUsage = "usage: bmesh executor new --name N [--base REF] [--model 
 // names the node on every bmesh command rather than exporting BMESH_NODE:
 // the harness's shell keeps no environment between tool calls, and a bmesh
 // run from the lead's worktree would otherwise act as the lead.
-const executorHeader = "You are executor %s in buildermesh. Work only in %s on branch %s; every file path you touch is under it " +
-	"and every command runs from it (cd there first). Every bmesh command carries --node %s. " +
-	"Before anything else run `bmesh --node %s started --text \"<what you will do>\"`. " +
+const executorHeader = "You are executor %s in buildermesh. Work only in %s on branch %s: every file path you touch is under it, " +
+	"and every shell command starts with `cd %s &&` (the working directory and environment do not persist between tool calls). " +
+	"Every bmesh command carries --node %s. " +
+	"Before anything else run `cd %s && bmesh --node %s started --text \"<what you will do>\"`. " +
 	"Read your brief below, then invoke the `buildermesh:executor` skill.\n"
 
 var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
@@ -83,15 +84,15 @@ func (a *app) parentNode(ctx context.Context, cmd string) (mesh.Node, error) {
 		}
 		n.Worktree = top
 	}
-	if n.Branch == "" {
-		b, err := gitIn(ctx, n.Worktree, "rev-parse", "--abbrev-ref", "HEAD")
+	// The worktree's current branch wins over the one recorded at start:
+	// a console may have renamed it since.
+	if b, err := gitIn(ctx, n.Worktree, "rev-parse", "--abbrev-ref", "HEAD"); err == nil && b != "HEAD" {
+		n.Branch = b
+	} else if n.Branch == "" {
 		if err != nil {
 			return mesh.Node{}, err
 		}
-		if b == "HEAD" { // detached: name the branch after the node
-			b = n.Path
-		}
-		n.Branch = b
+		n.Branch = n.Path // detached: name the branch after the node
 	}
 	if n.RepoPath == "" {
 		common, err := gitIn(ctx, n.Worktree, "rev-parse", "--path-format=absolute", "--git-common-dir")
@@ -165,7 +166,9 @@ func (a *app) cmdExecutorNew(args []string) error {
 		return fail(exitRefused, "refused: branch %s already exists; remove it or pick another name", branch)
 	}
 	if out, err := exec.CommandContext(ctx, "git", "-C", parent.Worktree, "worktree", "add", "-b", branch, wt, sha).CombinedOutput(); err != nil {
-		// Nothing is registered; drop whatever git left behind.
+		// Nothing is registered; drop whatever git left behind (a worktree
+		// made before a hook failed holds the branch, so it goes first).
+		_, _ = gitIn(ctx, parent.Worktree, "worktree", "remove", "--force", wt)
 		_, _ = gitIn(ctx, parent.Worktree, "worktree", "prune")
 		_, _ = gitIn(ctx, parent.Worktree, "branch", "-D", branch)
 		return fmt.Errorf("git worktree add: %v: %s", err, strings.TrimSpace(string(out)))
@@ -191,7 +194,7 @@ func (a *app) cmdExecutorNew(args []string) error {
 	}
 	fmt.Fprintf(a.stdout, "%s\n", line)
 	if !a.json {
-		fmt.Fprintf(a.stdout, executorHeader, path, wt, branch, path, path)
+		fmt.Fprintf(a.stdout, executorHeader, path, wt, branch, wt, path, wt, path)
 	}
 	return nil
 }
@@ -323,6 +326,12 @@ func (a *app) cmdExecutorRemove(args []string) error {
 	n.Worktree = ""
 	if err := mesh.PutNode(ctx, a.client, n); err != nil {
 		return err
+	}
+	// Its unread mail would otherwise reach the next executor of this name.
+	if p, err := mesh.ParsePath(path); err == nil {
+		if _, err := mesh.Fetch(ctx, a.client, p, true); err != nil {
+			return err
+		}
 	}
 	if err := markDone(ctx, a.client, path, "removed by "+parent.Path); err != nil {
 		return err

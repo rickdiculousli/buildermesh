@@ -7,7 +7,8 @@
 # line to a file every 30 s for 5 minutes and report. Every 10 s it samples
 # the RSS of every claude process (and of its process tree: MCP servers and
 # the like), then prints the peak total, the per-process median at the peak
-# and the peak tree total, and tears everything down. Linux only (ps -C).
+# and the peak tree total, checks that every lead and executor reached the
+# mesh, and tears everything down. Linux only (procps ps).
 #
 #   scripts/memcap.sh 3            # one run; the summary line is the last line
 #   MEMCAP_SECONDS=300 scripts/memcap.sh 4
@@ -81,14 +82,15 @@ BMESH_CONFIG=$RUN/cli.toml bmesh status >/dev/null
 for i in $(seq 1 "$N"); do
   node=memcap-$i
   brief=$RUN/brief-$i.md
-  printf '%s' "You are lead $node in a buildermesh memory measurement; everything here is throwaway and nobody will answer questions, so never ask one. Your worktree is this directory and bmesh resolves your node from it. Do exactly this, nothing more: run \`bmesh started --text memcap\`; then for each NAME in a, b, c run \`bmesh executor new --name NAME --json\` and read its worktree and branch from the JSON, then spawn an Agent subagent (run_in_background true, subagent_type general-purpose) whose whole prompt is: 'You are executor $node.NAME in a throwaway memory measurement. cd WORKTREE (fill in the worktree). Run \`bmesh --node $node.NAME started --text memcap\`. Then run exactly this command once, with the Bash tool timeout set to 400000: \`for i in \$(seq 1 10); do date >> notes.txt; sleep 30; done\`. Then run \`git add -A && git -c user.name=memcap -c user.email=memcap@example commit -qm notes\`, then \`bmesh --node $node.NAME send $node \"branch BRANCH done\"\` and \`bmesh --node $node.NAME done --commit \$(git rev-parse HEAD)\`. Reply with one word.' Spawn all three before waiting on any. When all three have finished, run \`bmesh inbox\`, then \`bmesh progress --text finished\`, and reply with one line." > "$brief"
+  printf '%s' "You are lead $node in a buildermesh memory measurement; everything here is throwaway and nobody will answer questions, so never ask one. Your worktree is this directory and bmesh resolves your node from it. Do exactly this, nothing more: run \`bmesh started --text memcap\`; then for each NAME in a, b, c run \`bmesh executor new --name NAME --json\` and read its worktree and branch from the JSON, then spawn an Agent subagent (run_in_background true, subagent_type general-purpose) whose whole prompt is: 'You are executor $node.NAME in a throwaway memory measurement. Every shell command you run starts with cd WORKTREE && (fill in the worktree; the working directory does not persist). Run \`cd WORKTREE && bmesh --node $node.NAME started --text memcap\`. Then run exactly this command once, with the Bash tool timeout set to 400000: \`cd WORKTREE && for i in \$(seq 1 10); do date >> notes.txt; sleep 30; done\`. Then run \`cd WORKTREE && git add -A && git -c user.name=memcap -c user.email=memcap@example commit -qm notes\`, then \`cd WORKTREE && bmesh --node $node.NAME send $node \"branch BRANCH done\"\` and \`cd WORKTREE && bmesh --node $node.NAME done --commit \$(git rev-parse HEAD)\`. Reply with one word.' Spawn all three before waiting on any. When all three have finished, run \`bmesh inbox\`, then \`bmesh progress --text finished\`, and reply with one line." > "$brief"
   BMESH_CONFIG=$RUN/cli.toml bmesh lead start --repo scratch --spec "00$i" --brief "$brief" --path "$node" --title "memcap $i" \
     >> "$RUN/leads.log" 2>&1 || { echo "memcap: lead $i failed to start:" >&2; cat "$RUN/leads.log" >&2; exit 1; }
 done
 echo "memcap: $N leads started; sampling for ${SECONDS_TOTAL}s (samples in $SAMPLES)"
 
 # Sample. Each line: elapsed seconds, claude process count, claude RSS total
-# (KB), per-process RSS list, tree RSS total (KB).
+# (KB), per-process RSS list, tree RSS total (KB). Only processes under the
+# memcap session's panes count, so other claude sessions on the box don't.
 echo "elapsed,claude_procs,claude_rss_kb,per_process_kb,tree_rss_kb" > "$SAMPLES"
 start=$(date +%s)
 peak_total=0; peak_procs=0; peak_list=""; peak_tree=0
@@ -96,7 +98,14 @@ while :; do
   now=$(date +%s); elapsed=$((now - start))
   if [ "$elapsed" -ge "$SECONDS_TOTAL" ]; then break; fi
   snapshot=$(ps -eo pid=,ppid=,rss=,comm=)
-  claude_pids=$(echo "$snapshot" | awk '$4=="claude"{print $1}')
+  pane_pids=$(tmux list-panes -s -t "$SESSION" -F '#{pane_pid}' 2>/dev/null | tr '\n' ' ')
+  claude_pids=$(echo "$snapshot" | awk -v roots="$pane_pids" '
+    BEGIN { n = split(roots, r, " "); for (i = 1; i <= n; i++) root[r[i]] = 1 }
+    { ppid[$1] = $2; comm[$1] = $4 }
+    END {
+      for (p in ppid) { if (comm[p] != "claude") continue; q = p
+        while (q in ppid) { if (q in root) { print p; break }; q = ppid[q] } }
+    }' | tr '\n' ' ')
   total=0; procs=0; list=""
   for pid in $claude_pids; do
     rss=$(echo "$snapshot" | awk -v p="$pid" '$1==p{print $3}')
@@ -116,6 +125,21 @@ while :; do
   sleep 10
 done
 
+# The numbers mean something only if every node did its work.
+status=$ROOT/memcap-$N-$STAMP-status.txt
+BMESH_CONFIG=$RUN/cli.toml bmesh status --json > "$status" 2>&1 || true
+reached=$(python3 - "$status" <<'PY'
+import json, sys
+rows = json.load(open(sys.argv[1]))
+leads = sum(1 for r in rows if r["node"]["role"] == "lead" and r["state"]["state"] in ("working", "done"))
+execs = sum(1 for r in rows if r["node"]["role"] == "executor" and r["state"]["state"] in ("working", "done"))
+print(f"{leads} {execs}")
+PY
+) || reached="? ?"
+set -- $reached
+if [ "$1" != "$N" ] || [ "$2" != "$((N * 3))" ]; then
+  echo "memcap N=$N: INVALID: $1 of $N leads and $2 of $((N * 3)) executors reached working/done (see $status)"
+  exit 1
+fi
 median=$(echo "$peak_list" | tr ' ' '\n' | sort -n | awk '{a[NR]=$1} END { if (NR == 0) print 0; else if (NR % 2) print a[(NR+1)/2]; else print int((a[NR/2] + a[NR/2+1]) / 2) }')
-BMESH_CONFIG=$RUN/cli.toml bmesh status > "$ROOT/memcap-$N-$STAMP-status.txt" 2>&1 || true
 echo "memcap N=$N: peak claude total $((peak_total / 1024)) MB over $peak_procs processes, per-process median $((median / 1024)) MB at the peak, peak tree total $((peak_tree / 1024)) MB, ${SECONDS_TOTAL}s"

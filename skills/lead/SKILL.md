@@ -32,7 +32,7 @@ An executor is your subagent in its own worktree on its own branch, with a node 
 
 ## 4. Checkpoints
 
-Run `bmesh inbox` at every checkpoint: after every milestone of your own, after every harness notice that a subagent finished, and before any question to the operator. The harness's notice is not a mesh message; the inbox carries the executor's report (its branch and commit), replies from routines, and messages from the operator. Reading the inbox acks it, so the daemon will not wake you for the same message. Answer an executor's question with SendMessage, not through the mesh.
+Run `bmesh inbox` at every checkpoint: after every milestone of your own, after every harness notice that a subagent finished, and before any question to the operator. The harness's notice is not a mesh message; the inbox carries the executor's report (its branch and commit), its questions, and messages from the operator. Reading the inbox acks it, so the daemon will not wake you for the same message (a wake that crosses a notice is one spare turn: read the inbox and carry on). A routine reply read here is printed whole and is then gone for `routine wait`, so `wait` for a job right after queueing it. Answer an executor's question with SendMessage, not through the mesh.
 
 ## 5. Merge
 
@@ -43,7 +43,7 @@ When an executor reports done: `git merge <its branch>` into your branch in your
 On committed work, in this order, once the code is final:
 
 1. `bmesh routine run verify` (an inline kind runs in your worktree and records the result for HEAD's tree). In a repo without a `verify` kind, run its verify commands yourself and record the outcome: `bmesh result record verify --ok` or `--fail`.
-2. One review by a model of a different family than yours: `bmesh routine queue review --model <m> --go --text "base: $(git merge-base origin/main HEAD)"`, then `bmesh routine wait <job id>`. Fix what it finds; a second pass only when the fixes were large.
+2. One review by a model of a different family than yours: `bmesh routine queue review --model <m> --go --text "base: $(git merge-base origin/main HEAD)"`, then at once `bmesh routine wait <job id>`. Fix what it finds. One pass, not a loop: the review runs again only when a later rebase changed the code.
 3. One `surface` job per touched UI surface when the repo has that kind (`bmesh routine queue surface --go -- <url> <file>`), or the operator's equivalent from your brief.
 4. `bmesh spec verified --write` composes the spec's `verified` line from the results recorded for HEAD's tree. Commit it with the spec's status change.
 
@@ -51,7 +51,7 @@ Results are keyed by tree, so re-run what the final rebase changed.
 
 ## 7. Land
 
-Land per the repo's definition of done, on `main` only, never from an executor's branch. Last of all, `bmesh done --commit <sha> --text "<one line>"` with the commit on `main`: it checks the spec on `origin/main` and refuses until the spec reads done with that commit merged and every `verified` entry has its result. Nothing else counts as finished.
+Land per the repo's definition of done, on `main` only, never from an executor's branch. Last of all, `bmesh done --commit <sha> --text "<one line>"` with the commit on `main`: it checks the spec on `origin/main` and refuses until the spec reads `done` with a `merged` commit that is on `main` and every `verified` entry has its result for that commit's tree. Nothing else counts as finished.
 
 ## 8. Ask and blocked
 

@@ -9,11 +9,11 @@ You are an executor: one node under a lead, building one piece in one worktree o
 
 ## 1. Your worktree and branch only
 
-Every file you touch is under your worktree, and every command runs from it (`cd` there first; the shell does not keep environment between tool calls, so `--node <your path>` goes on every `bmesh` command). Commit early and often on your branch; your lead merges commits, not working copies, and a crash loses what is not committed. Do not touch files your brief gives to another executor; if the piece needs one, ask (section 5).
+Every file you touch is under your worktree, and every shell command starts with `cd <worktree> &&`: the working directory and environment do not persist between tool calls, and a command run from the lead's worktree commits on the lead's branch. `--node <your path>` goes on every `bmesh` command for the same reason. Commit early and often on your branch; your lead merges commits, not working copies, and a crash loses what is not committed. Do not touch files your brief gives to another executor; if the piece needs one, ask (section 5).
 
 ## 2. Checkpoints
 
-Run `bmesh --node <path> inbox` at every milestone and before you ask anything: your lead's corrections and the replies to your routine jobs arrive there. Reading it acks it.
+Run `bmesh --node <path> inbox` at every milestone and before you ask anything: your lead's corrections arrive there. Reading it acks it, and it prints a routine reply it finds whole, after which `routine wait` for that job would wait in vain: so `wait` right after `queue`, before the next inbox.
 
 ## 3. Routines
 
@@ -35,4 +35,4 @@ Then end your turn with the same line as your final message; the harness tells y
 
 ## 6. Never
 
-Never merge, never rebase onto `main`, never push unless your lead's brief says to (for a daemon elsewhere), never edit the spec, never land anything. Your lead owns the branch after you hand it back.
+Never merge your branch into anyone's, never rebase onto `main`, never push unless your lead's brief says to (for a daemon elsewhere), never edit the spec, never land anything. Your lead owns the branch after you hand it back. (If you fan out yourself with `bmesh executor new`, you are that executor's lead: merge its branch into yours and `executor remove` it before you report.)

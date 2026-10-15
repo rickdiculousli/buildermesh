@@ -87,7 +87,24 @@ func (a *app) cmdInbox(args []string) error {
 			fmt.Fprintf(a.stdout, "%s\n", b)
 			continue
 		}
+		if m.Kind == "reply" && m.Reply != nil {
+			// A reply read here is gone for `routine wait`, so show it whole.
+			verdict := "ok"
+			if !m.Reply.OK {
+				verdict = "fail"
+			}
+			fmt.Fprintf(a.stdout, "%s %s: reply to job %s: %s %s\n%s", m.At, m.From, m.Reply.Job, m.Reply.Kind, verdict,
+				withNewline(m.Reply.Output))
+			continue
+		}
 		fmt.Fprintf(a.stdout, "%s %s: %s\n", m.At, m.From, m.Text)
 	}
 	return nil
+}
+
+func withNewline(s string) string {
+	if s == "" || strings.HasSuffix(s, "\n") {
+		return s
+	}
+	return s + "\n"
 }

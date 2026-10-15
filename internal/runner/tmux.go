@@ -123,6 +123,14 @@ func (r Tmux) awaitPrompt(ctx context.Context, thread string) error {
 func dialogKeys(pane string) []string {
 	switch {
 	case strings.Contains(pane, "trust this folder"):
+		// The cursor sits on "No, exit" by default; move it to the yes
+		// line unless it is there already.
+		if yes := strings.Index(pane, "Yes, I trust"); yes >= 0 {
+			line := pane[strings.LastIndex(pane[:yes], "\n")+1 : yes]
+			if strings.Contains(line, "❯") || strings.Contains(line, ">") {
+				return []string{"Enter"}
+			}
+		}
 		return []string{"Down", "Enter"}
 	case strings.Contains(pane, "Try the new"):
 		return []string{"Escape"}

@@ -78,9 +78,9 @@ func TestExecutorNewMakesWorktreeBranchNode(t *testing.T) {
 	if got.Path != "demo-012.alpha" || got.Branch != "t3code/lead-alpha" || got.Worktree != wt {
 		t.Fatalf("output %+v", got)
 	}
-	if !strings.Contains(rest, "You are executor demo-012.alpha in buildermesh. Work only in "+wt+" on branch t3code/lead-alpha;") ||
-		!strings.Contains(rest, "Every bmesh command carries --node demo-012.alpha.") ||
-		!strings.Contains(rest, "`bmesh --node demo-012.alpha started --text") || !strings.Contains(rest, "`buildermesh:executor` skill") {
+	if !strings.Contains(rest, "You are executor demo-012.alpha in buildermesh. Work only in "+wt+" on branch t3code/lead-alpha:") ||
+		!strings.Contains(rest, "Every bmesh command carries --node demo-012.alpha.") || !strings.Contains(rest, "starts with `cd "+wt+" &&`") ||
+		!strings.Contains(rest, "`cd "+wt+" && bmesh --node demo-012.alpha started --text") || !strings.Contains(rest, "`buildermesh:executor` skill") {
 		t.Fatalf("header %q", rest)
 	}
 	if b := gitLines(t, wt, "rev-parse", "--abbrev-ref", "HEAD"); len(b) != 1 || b[0] != "t3code/lead-alpha" {
@@ -172,6 +172,33 @@ func TestExecutorNewRollsBackOnWorktreeFailure(t *testing.T) {
 	if n := worktrees(t, repo); n != 1 {
 		t.Fatalf("worktree registered: %d", n)
 	}
+	// A hook that fails after the worktree is made: the worktree and the
+	// branch are both removed, and the name can be tried again.
+	if err := os.Remove(root); err != nil {
+		t.Fatal(err)
+	}
+	hooks := filepath.Join(t.TempDir(), "hooks")
+	if err := os.Mkdir(hooks, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hooks, "post-checkout"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "config", "core.hooksPath", hooks)
+	out, errs, code = runCLI(t, nil, "executor", "new", "--name", "alpha")
+	if code != 1 || out != "" || !strings.Contains(errs, "git worktree add") {
+		t.Fatalf("hook failure: %d %q %q", code, out, errs)
+	}
+	if b := gitLines(t, repo, "branch", "--list", "t3code/lead-alpha"); len(b) != 0 {
+		t.Fatalf("branch left behind after hook failure: %v", b)
+	}
+	if n := worktrees(t, repo); n != 1 || exists(filepath.Join(root, "demo", "demo-012.alpha")) {
+		t.Fatalf("worktree left behind after hook failure: %d", n)
+	}
+	runGit(t, repo, "config", "--unset", "core.hooksPath")
+	if _, errs, code := runCLI(t, nil, "executor", "new", "--name", "alpha", "--json"); code != 0 {
+		t.Fatalf("retry: %d %q", code, errs)
+	}
 }
 
 func TestExecutorListShowsTree(t *testing.T) {
@@ -253,6 +280,22 @@ func TestExecutorRemoveRefusesUnmerged(t *testing.T) {
 	}
 	if _, errs, code := runCLI(t, nil, "executor", "remove", "alpha"); code != 3 || !strings.Contains(errs, "no executor demo-012.alpha") {
 		t.Fatalf("remove twice: %d %q", code, errs)
+	}
+	// Mail sent to the removed executor does not reach a successor of its name.
+	if _, errs, code := runCLI(t, as("demo-012"), "send", "demo-012.alpha", "late"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	if _, errs, code := runCLI(t, nil, "executor", "new", "--name", "alpha", "--json"); code != 0 {
+		t.Fatalf("new again: %d %q", code, errs)
+	}
+	if _, errs, code := runCLI(t, nil, "executor", "remove", "alpha"); code != 0 {
+		t.Fatalf("remove again: %d %q", code, errs)
+	}
+	if _, errs, code := runCLI(t, nil, "executor", "new", "--name", "alpha", "--json"); code != 0 {
+		t.Fatalf("new a third time: %d %q", code, errs)
+	}
+	if out, _, code := runCLI(t, as("demo-012.alpha"), "inbox"); code != 0 || out != "" {
+		t.Fatalf("successor inherited mail: %d %q", code, out)
 	}
 	// --force removes an unmerged, dirty executor.
 	if _, errs, code := runCLI(t, nil, "executor", "new", "--name", "beta", "--json"); code != 0 {
