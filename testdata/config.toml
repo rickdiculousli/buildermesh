@@ -38,3 +38,5 @@ command = "cat quota.json"
 thread_url = "http://box-one:3773/t/{thread}"
 [console.hosts]
 other = "http://other:3773/t/{thread}"
+[update]
+repo = "demo"

@@ -86,6 +86,10 @@ type ConsoleConfig struct {
 	Hosts     map[string]string
 }
 
+// UpdateConfig is the daemon's self-update: Repo names the registry row
+// whose main it builds itself from ("" = off).
+type UpdateConfig struct{ Repo string }
+
 // Config is the parsed config.toml plus the registry read from repos.toml
 // beside it. Path-valued fields are stored as written; callers pass them
 // through Expand.
@@ -101,6 +105,7 @@ type Config struct {
 	Models   ModelsConfig
 	Quota    QuotaConfig
 	Console  ConsoleConfig
+	Update   UpdateConfig
 
 	dir  string // directory of the config file; "" when none was read
 	path string // the config file's path as given to Load
@@ -142,6 +147,7 @@ type file struct {
 	Models  ModelsConfig
 	Quota   QuotaConfig
 	Console ConsoleConfig
+	Update  UpdateConfig
 }
 
 func defaults() *Config {
@@ -235,7 +241,7 @@ func Load(path string) (*Config, error) {
 	}
 	f := file{
 		Mesh: c.Mesh, Host: c.Host, Serve: c.Serve, Runner: c.Runner, Spec: c.Spec, Models: c.Models,
-		Quota: c.Quota, Console: c.Console,
+		Quota: c.Quota, Console: c.Console, Update: c.Update,
 	}
 	f.Notify.DigestEvery = duration(c.Notify.DigestEvery)
 	f.Notify.CatchUp = duration(c.Notify.CatchUp)
@@ -246,7 +252,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("config %s: %w", path, err)
 	}
 	c.Mesh, c.Host, c.Serve, c.Runner, c.Spec, c.Models = f.Mesh, f.Host, f.Serve, f.Runner, f.Spec, f.Models
-	c.Quota, c.Console = f.Quota, f.Console
+	c.Quota, c.Console, c.Update = f.Quota, f.Console, f.Update
 	for key, e := range map[string]string{"lead_effort": c.Models.LeadEffort, "proposer_effort": c.Models.ProposerEffort} {
 		if err := CheckEffort(e); err != nil {
 			return nil, fmt.Errorf("config %s: [models] %s: %w", path, key, err)

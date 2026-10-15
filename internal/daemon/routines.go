@@ -54,6 +54,10 @@ type routineSet struct {
 	worktreeMu sync.Mutex
 
 	fetchMu sync.Mutex // serializes fetches, which lock a repo's refs
+
+	updateRepo string // [update] repo when the update can run, else ""
+	updateSeen string // the main commit the update last acted on
+	drained    bool   // an update drained the feeds; guarded by mu
 }
 
 // fetch updates repoPath's origin refs (nothing without an origin).
@@ -117,10 +121,13 @@ func routines(ctx context.Context, d Deps) {
 	d.defaults()
 	if d.Checkouts == "" {
 		d.Log.Warn("routines: no checkout root; routines are off")
+		if d.Cfg.Update.Repo != "" {
+			d.Log.Warn("update: no checkout root to build from; off", "repo", d.Cfg.Update.Repo)
+		}
 		return
 	}
 	r := &routineSet{d: d, ctx: ctx, root: d.Checkouts, claude: d.ClaudeBin,
-		feeds: map[string]*feed{}, paths: map[string]chan struct{}{}}
+		feeds: map[string]*feed{}, paths: map[string]chan struct{}{}, updateRepo: updateRepo(d)}
 	if strings.TrimSpace(r.claude) == "" {
 		r.claude = "claude"
 	}
@@ -135,28 +142,35 @@ func routines(ctx context.Context, d Deps) {
 }
 
 // discover returns the kinds on repoPath's main: origin/main after a fetch
-// when the repo has an origin, else the local main (R4).
-func (r *routineSet) discover(repoPath string) ([]kind.Kind, error) {
+// when the repo has an origin, else the local main (R4). dir is the main
+// checkout once it is at that commit, else "".
+func (r *routineSet) discover(repoPath string) (dir string, kinds []kind.Kind, err error) {
 	if err := r.fetch(repoPath); err != nil {
 		r.d.Log.Warn("routines: fetch", "repo", repoPath, "err", err)
 	}
-	dir, err := r.ensureCheckout(repoPath, "main")
+	dir, err = r.ensureCheckout(repoPath, "main")
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 	ref := "main"
 	if exec.Command("git", "-C", repoPath, "remote", "get-url", "origin").Run() == nil {
 		ref = "origin/main"
 	}
 	if err := checkout.MoveTo(dir, ref); err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	return kind.LoadDir(dir)
+	kinds, err = kind.LoadDir(dir)
+	return dir, kinds, err
 }
 
 // rescan reads every repo's kinds and brings the feeds in line. A repo that
-// cannot be read keeps what it had.
+// cannot be read keeps what it had. With [update] on, the update repo's main
+// is then compared with this binary; an update drains the feeds for good.
 func (r *routineSet) rescan() {
+	if r.isDrained() {
+		return
+	}
+	updateDir := ""
 	names := make([]string, 0, len(r.d.Cfg.Repos))
 	for name := range r.d.Cfg.Repos {
 		names = append(names, name)
@@ -175,7 +189,10 @@ func (r *routineSet) rescan() {
 			continue
 		}
 		repoPaths[name] = path
-		kinds, err := r.discover(path)
+		dir, kinds, err := r.discover(path)
+		if name == r.updateRepo {
+			updateDir = dir
+		}
 		if err != nil {
 			r.d.Log.Warn("routines: read kinds", "repo", name, "err", err)
 			failed[name] = true
@@ -189,9 +206,13 @@ func (r *routineSet) rescan() {
 		}
 	}
 
+	if updateDir != "" && r.checkUpdate(updateDir) {
+		return
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.ctx.Err() != nil {
+	if r.ctx.Err() != nil || r.drained {
 		return
 	}
 	for name, f := range r.feeds {
@@ -218,6 +239,12 @@ func (r *routineSet) rescan() {
 	for _, name := range kinds {
 		r.applyKind(name, want[name], repoPaths)
 	}
+}
+
+func (r *routineSet) isDrained() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.drained
 }
 
 // modelsOf is the models a kind's pools run: its models, or "" for a command.

@@ -185,3 +185,20 @@ func Follow(ctx context.Context, c *Client, filter string) (<-chan Stored, error
 	}()
 	return ch, nil
 }
+
+// Last is the newest stream message on subject, which may hold wildcards;
+// ok is false when there is none.
+func Last(ctx context.Context, c *Client, subject string) (s Stored, ok bool, err error) {
+	st, err := c.JS.Stream(ctx, StreamMesh)
+	if err != nil {
+		return Stored{}, false, err
+	}
+	raw, err := st.GetLastMsgForSubject(ctx, subject)
+	if errors.Is(err, jetstream.ErrMsgNotFound) {
+		return Stored{}, false, nil
+	}
+	if err != nil {
+		return Stored{}, false, err
+	}
+	return Stored{Subject: raw.Subject, Seq: raw.Sequence, At: raw.Time, Data: raw.Data}, true, nil
+}
