@@ -84,11 +84,31 @@ function instanceSub(i) {
   return extra;
 }
 
+// kindCounts counts a kind's queue and its instances by state: busy the
+// working ones, idle the idle ones, spent the done ones.
+function kindCounts(g) {
+  const c = { queued: g.depth || 0, busy: 0, idle: 0, spent: 0 };
+  for (const i of g.instances || []) {
+    const s = i.state && i.state.state;
+    if (s === "working") c.busy++;
+    else if (s === "idle") c.idle++;
+    else if (s === "done") c.spent++;
+  }
+  return c;
+}
+
+// kindSub is a kind box's second line: its non-zero counts, else its mode.
+function kindSub(g, c) {
+  const extra = ["queued", "busy", "idle", "spent"].filter((k) => c[k] > 0).map((k) => c[k] + " " + k);
+  return extra.length ? extra : [g.mode || "no kind file"];
+}
+
 // layout places the tree: one block per lead (in started_at order), then
 // the orphans block under its synthetic root, then the routines. Blocks run
 // left to right with the routines as the right column, or, when vertical,
 // top to bottom with the routines last. Each block is a vertical tree with
-// one node per row. Boxes with a key are mesh nodes (or a kind's inbox).
+// one node per row. Boxes with a key are mesh nodes (or a kind's inbox); a
+// routine kind is one box, its instances counted, not drawn.
 // A vertical layout given a width fits it: boxes stretch to its right edge
 // less the gutter, and only a tree nested past the narrowest box overflows.
 function layout(tree, vertical, width) {
@@ -150,20 +170,20 @@ function layout(tree, vertical, width) {
     if (!vertical && x > G.pad) x += G.gap / 2;
     out.headings.push({ x, y: y + 14, text: "routines" });
     let ry = y + G.head;
-    for (const g of tree.routines) {
-      const key = "routine." + g.kind;
-      const head = add({ key: out.boxes.some((b) => b.key === key) ? "" : key, kind: "group", label: g.kind,
-        title: key + (g.repo ? " in " + g.repo : ""), state: "", x, y: ry,
-        extra: [g.repo || "no repo", (g.depth || 0) + " queued"] });
+    const kinds = tree.routines.map((g) => {
+      const c = kindCounts(g);
+      return { g, busy: c.busy > 0, extra: kindSub(g, c) };
+    });
+    // In columns the kind boxes widen together to fit their longest counts.
+    const colW = vertical && width ? 0 : Math.max(G.nodeW,
+      ...kinds.map((k) => Math.ceil(k.extra.join(" · ").length * SUB_PX) + 16));
+    for (const k of kinds) {
+      const key = "routine." + k.g.kind;
+      add({ key, kind: "group", label: k.g.kind, title: key, state: k.busy ? "working" : "", x, y: ry, w: colW,
+        extra: k.extra });
       ry += G.row;
-      for (const i of g.instances || []) {
-        const b = add({ key: i.node.path, kind: "instance", label: lastToken(i.node.path), title: i.node.path,
-          state: i.state.state, extra: instanceSub(i), x: x + G.indent, y: ry });
-        elbow(head, b);
-        ry += G.row;
-      }
     }
-    out.width = Math.max(out.width, x + boxW(x));
+    out.width = Math.max(out.width, x + (colW || boxW(x)));
   }
   out.width += vertical && width ? G.gutter + G.pad : G.pad;
   out.height += G.pad;
@@ -173,7 +193,7 @@ function layout(tree, vertical, width) {
 // --- drawing --------------------------------------------------------------
 
 function classOf(kind, state) {
-  const link = kind === "lead" || kind === "group" || kind === "instance" ? " link" : "";
+  const link = kind === "lead" || kind === "group" ? " link" : "";
   return "node " + kind + link + (state ? " st-" + state : "");
 }
 
@@ -190,7 +210,7 @@ function room(w, px, pad) {
 
 function hrefOf(b) {
   if (b.kind === "lead") return "#/lead/" + b.key;
-  if (b.kind === "group" || b.kind === "instance") return "#/routines";
+  if (b.kind === "group") return "#/routines";
   return "";
 }
 
@@ -200,7 +220,7 @@ function drawBox(parent, b) {
   svg("rect", { class: "ring", x: -4, y: -4, width: b.w + 8, height: b.h + 8, rx: 10 }, g);
   svg("rect", { class: "box", width: b.w, height: b.h, rx: 7 }, g);
   svgText({ class: "label", x: 10, y: 17 }, fit(b.label, room(b.w, LABEL_PX, 32)), g);
-  const sub = svgText({ class: "sub", x: 10, y: 32 }, subText(b.state, b.extra, room(b.w, SUB_PX, 16)), g);
+  const sub = svgText({ class: "sub", x: 10, y: 32 }, subText(b.kind === "group" ? "" : b.state, b.extra, room(b.w, SUB_PX, 16)), g);
   svgText({ class: "check", x: b.w - 22, y: 26 }, "✓", g);
   const href = hrefOf(b);
   if (href) {
@@ -279,12 +299,18 @@ function entry(b) {
   return `M${x + 40},0 Q${x + 40},${b.y / 2} ${x},${b.y}`;
 }
 
+// kindKey is the kind box of a routine instance's path, else "".
+function kindKey(path) {
+  const m = /^routine\.[^.]+/.exec(path);
+  return m ? m[0] : "";
+}
+
 // flash draws a message edge from -> to for EDGE_MS with a dot travelling
 // along it.
 function flash(from, to, kind) {
   const b = mesh.drawn.get(to);
   if (!b || !mesh.layer) return;
-  const a = mesh.drawn.get(from);
+  const a = mesh.drawn.get(from) || mesh.drawn.get(kindKey(from));
   const g = svg("g", { class: "msg k-" + (MSG_KINDS.has(kind) ? kind : "message") }, mesh.layer);
   const p = svg("path", { class: "msg-edge", d: a ? curve(a.box, b.box) : entry(b.box) }, g);
   const dot = svg("circle", { class: "msg-dot", r: 5 }, g);
@@ -688,18 +714,69 @@ function leaseRow(l) {
   return el("li", null, null, el("span", "p", l.key), el("span", "muted", l.holder), clock("lease", l.expires_at, true));
 }
 
+// spentOpen holds the "<kind> <repo>" keys of the spent folds left open, so
+// a redraw keeps them open.
+const spentOpen = new Set();
+
+// RANK orders a repo's instances: working, then any other live state, idle,
+// then spent.
+const RANK = { working: 0, idle: 2, done: 3 };
+
+function rankOf(i) {
+  const s = i.state && i.state.state;
+  return s in RANK ? RANK[s] : 1;
+}
+
+function instanceRow(k, i) {
+  const path = (i.node && i.node.path) || "?";
+  const prefix = "routine." + k.kind + ".";
+  const li = el("li", null, null, el("span", "p", path.startsWith(prefix) ? path.slice(prefix.length) : path),
+    badge(i.state && i.state.state), el("span", "muted", instanceSub(i).join(" · ")));
+  li.title = path;
+  return li;
+}
+
+// instanceRows is a kind's instances under an h4 per repo, its done ones
+// folded into one "spent (N)" row per repo.
+function instanceRows(k) {
+  const byRepo = new Map();
+  for (const i of k.instances || []) {
+    const repo = (i.node && i.node.repo) || "";
+    if (!byRepo.has(repo)) byRepo.set(repo, []);
+    byRepo.get(repo).push(i);
+  }
+  const out = [];
+  for (const repo of [...byRepo.keys()].sort()) {
+    const list = byRepo.get(repo).slice().sort((a, b) =>
+      rankOf(a) - rankOf(b) || String(a.node && a.node.path).localeCompare(String(b.node && b.node.path)));
+    const live = list.filter((i) => rankOf(i) < RANK.done), spent = list.filter((i) => rankOf(i) === RANK.done);
+    const rows = live.map((i) => instanceRow(k, i));
+    if (spent.length) {
+      const key = k.kind + " " + repo;
+      const det = el("details", "spent", null, el("summary", "tap", "spent (" + spent.length + ")"),
+        el("ol", "rows", null, ...spent.map((i) => instanceRow(k, i))));
+      if (spentOpen.has(key)) det.open = true;
+      det.addEventListener("toggle", () => {
+        if (det.open) spentOpen.add(key);
+        else spentOpen.delete(key);
+      });
+      rows.push(el("li", "fold", null, det));
+    }
+    out.push(el("h4", null, repo || "no repo"), el("ol", "rows", null, ...rows));
+  }
+  return out;
+}
+
 function renderRoutines(v) {
   const cards = (v.routines || []).map((k) => {
     const tags = el("div", "tags", null, el("span", "tag", k.mode || "no kind file"));
     if (k.deterministic) tags.append(el("span", "tag det", "deterministic"));
     tags.append(el("span", "tag", (k.depth || 0) + " queued"),
       el("span", "tag", (k.results === 1 ? "1 result" : (k.results || 0) + " results")));
-    const inst = (k.instances || []).map((i) => el("li", null, null,
-      el("span", "p", (i.node && i.node.path) || "?"), badge(i.state && i.state.state),
-      el("span", "muted", instanceSub(i).join(" · "))));
+    const inst = instanceRows(k);
     const leases = (k.leases || []).map(leaseRow);
     return card(k.kind, tags,
-      inst.length ? el("ol", "rows", null, ...inst) : el("p", "empty", "no instances"),
+      ...(inst.length ? inst : [el("p", "empty", "no instances")]),
       ...(leases.length ? [el("h4", null, "leases"), el("ol", "rows", null, ...leases)] : []));
   });
   const free = (v.leases || []).map(leaseRow);

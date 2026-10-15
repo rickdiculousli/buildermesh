@@ -65,22 +65,22 @@ func TestTreeGroupsExecutorsUnderLeads(t *testing.T) {
 		t.Fatalf("orphans %v", paths(v.Orphans))
 	}
 	type group struct {
-		kind, repo string
-		insts      []string
-		depth      int
+		kind  string
+		insts []string
+		depth int
 	}
 	var got []group
 	for _, g := range v.Routines {
 		var ps []string
 		for _, in := range g.Instances {
-			ps = append(ps, in.Node.Path)
+			ps = append(ps, in.Node.Path+"@"+in.Node.Repo)
 		}
-		got = append(got, group{g.Kind, g.Repo, ps, g.Depth})
+		got = append(got, group{g.Kind, ps, g.Depth})
 	}
+	// One group per kind, its instances across repos.
 	want := []group{
-		{"review", "app", []string{"routine.review.m-1", "routine.review.m-2"}, 4},
-		{"review", "other", []string{"routine.review.m-1"}, 4},
-		{"verify", "app", []string{"routine.verify.cmd-1"}, 0},
+		{"review", []string{"routine.review.m-1@app", "routine.review.m-1@other", "routine.review.m-2@app"}, 4},
+		{"verify", []string{"routine.verify.cmd-1@app"}, 0},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("routines %+v, want %+v", got, want)
@@ -88,13 +88,46 @@ func TestTreeGroupsExecutorsUnderLeads(t *testing.T) {
 	if in := v.Routines[0].Instances[0]; in.Uses != 2 || in.Context != 5000 || in.State.State != "working" {
 		t.Fatalf("instance %+v", in)
 	}
-	if in := v.Routines[0].Instances[1]; in.Uses != 0 || in.State.State != "idle" {
+	if in := v.Routines[0].Instances[2]; in.Uses != 0 || in.State.State != "idle" {
 		t.Fatalf("instance %+v", in)
 	}
 	// Empty lists encode as [], not null.
 	data, _ := json.Marshal(Tree(nil, nil, Extras{}))
 	if string(data) != `{"leads":[],"routines":[],"orphans":[]}` {
 		t.Fatalf("empty tree %s", data)
+	}
+}
+
+func TestTreeListsEveryDefinedKind(t *testing.T) {
+	nodes := []mesh.Node{
+		{Path: "routine.review.opus-1", Role: "routine", Repo: "app"},
+		{Path: "routine.review.fabc12345", Role: "routine", Repo: "other"},
+		{Path: "routine.lint.cmd-1", Role: "routine", Repo: "app"}, // no kind file here
+	}
+	x := Extras{
+		Modes: map[string]string{"review": "pooled", "surface": "fresh", "verify": "inline"},
+		Depth: map[string]int{"review": 2, "surface": 1},
+	}
+	v := Tree(nodes, map[string]mesh.State{"routine.review.fabc12345": {State: "done"}}, x)
+	type group struct {
+		kind, mode   string
+		insts, depth int
+	}
+	var got []group
+	for _, g := range v.Routines {
+		got = append(got, group{g.Kind, g.Mode, len(g.Instances), g.Depth})
+	}
+	want := []group{
+		{"lint", "", 1, 0},
+		{"review", "pooled", 2, 2}, // depth once per kind, not per repo
+		{"surface", "fresh", 0, 1}, // defined, no instances, a job waiting
+		{"verify", "inline", 0, 0}, // defined, never an instance
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("routines %+v, want %+v", got, want)
+	}
+	if data, _ := json.Marshal(v.Routines[3]); string(data) != `{"kind":"verify","mode":"inline","instances":[],"depth":0}` {
+		t.Fatalf("verify %s", data)
 	}
 }
 

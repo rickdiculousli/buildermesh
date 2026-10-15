@@ -98,17 +98,26 @@ func (s *server) usage(ctx context.Context) (map[string]Usage, error) {
 	return InstanceUsage(hist), nil
 }
 
-// routineKinds returns the kinds of the routine nodes, sorted.
-func routineKinds(nodes []mesh.Node) []string {
+// routineKinds returns the defined kinds and the kinds of the routine
+// nodes, sorted.
+func routineKinds(nodes []mesh.Node, defs map[string]kind.Kind) []string {
 	seen := map[string]bool{}
 	var out []string
+	add := func(k string) {
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, k)
+		}
+	}
+	for name := range defs {
+		add(name)
+	}
 	for _, n := range nodes {
 		if n.Role != "routine" {
 			continue
 		}
-		if k, ok := kindOf(n.Path); ok && !seen[k] {
-			seen[k] = true
-			out = append(out, k)
+		if k, ok := kindOf(n.Path); ok {
+			add(k)
 		}
 	}
 	sort.Strings(out)
@@ -173,7 +182,12 @@ func (s *server) tree(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	if x.Depth, err = s.depths(ctx, routineKinds(nodes)); err != nil {
+	defs := s.kindDefs()
+	x.Modes = map[string]string{}
+	for name, d := range defs {
+		x.Modes[name] = d.Mode
+	}
+	if x.Depth, err = s.depths(ctx, routineKinds(nodes, defs)); err != nil {
 		fail(w, err)
 		return
 	}

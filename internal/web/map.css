@@ -185,6 +185,12 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
 .rows .ev-blocked .e { color: var(--blocked); }
 .rows .ev-ask .e { color: var(--asking); }
 .rows .ev-started .e, .rows .ev-progress .e { color: var(--working); }
+.rows li.fold { display: block; padding: 0; }
+.spent summary { display: flex; align-items: center; min-height: 40px; cursor: pointer; color: var(--muted); list-style: none; }
+.spent summary::before { content: "▸"; margin-right: 6px; }
+.spent[open] summary::before { content: "▾"; }
+.spent summary::-webkit-details-marker { display: none; }
+.spent .rows { padding-left: 14px; }
 .clock.lease { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
 .clock.past { color: var(--blocked); }
 

@@ -46,6 +46,11 @@ mode = "inline"
 deterministic = true
 command = "go test ./..."
 TOML
+cat >"$dir/app/.bmesh/routines/surface.toml" <<'TOML'
+mode = "fresh"
+model = "claude-opus-5-5"
+prompt = "Screenshot the surface."
+TOML
 git -C "$dir/app" init -q -b main
 git -C "$dir/app" add -A
 git -C "$dir/app" -c user.name=seed -c user.email=seed@localhost commit -q -m seed

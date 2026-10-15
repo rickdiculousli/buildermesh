@@ -1,6 +1,7 @@
 // Command seed fills a scratch mesh (scripts/seed.sh runs it against a
 // throwaway bmesh serve) with two leads, their executors, an orphan, a pooled
-// routine kind with two instances, a few events and messages, two leases, a
+// routine kind with instances in two repos and three spent fresh runs, a
+// queued job, a few events and messages, two leases, a
 // result and a daemon digest, and writes the quota fixture the seeded
 // config's quota command reads (-quota). -leads N
 // adds leads up to N in all, each with one working executor, to look at a
@@ -56,6 +57,10 @@ func seed(ctx context.Context, url string, leads int) error {
 		{Path: "old-0001.fix", Role: "executor", Repo: "app", Parent: "old-0001", StartedAt: ago(90)},
 		{Path: "routine.review.opus-5-5-1", Role: "routine", Repo: "app", Model: "claude-opus-5-5"},
 		{Path: "routine.review.opus-5-5-2", Role: "routine", Repo: "app", Model: "claude-opus-5-5"},
+		{Path: "routine.review.opus-5-5-3", Role: "routine", Repo: "docs", Model: "claude-opus-5-5"},
+		{Path: "routine.review.f1a2b3c4d", Role: "routine", Repo: "app", Model: "claude-opus-5-5"},
+		{Path: "routine.review.f5e6f7a8b", Role: "routine", Repo: "app", Model: "claude-opus-5-5"},
+		{Path: "routine.review.f9c0d1e2f", Role: "routine", Repo: "app", Model: "claude-opus-5-5"},
 	} {
 		n.Host = "seed"
 		if err := mesh.PutNode(ctx, c, n); err != nil {
@@ -76,6 +81,12 @@ func seed(ctx context.Context, url string, leads int) error {
 		{"old-0001.fix", "started", "", "working"},
 		{"routine.review.opus-5-5-1", "started", "", "working"},
 		{"routine.review.opus-5-5-1", "progress", "job seed-j1 ok 4200 ctx 51000", "working"},
+		{"routine.review.f1a2b3c4d", "started", "", "working"},
+		{"routine.review.f1a2b3c4d", "done", "", "done"},
+		{"routine.review.f5e6f7a8b", "started", "", "working"},
+		{"routine.review.f5e6f7a8b", "done", "", "done"},
+		{"routine.review.f9c0d1e2f", "started", "", "working"},
+		{"routine.review.f9c0d1e2f", "done", "", "done"},
 	} {
 		ev, path := mesh.Event{From: s[0], Event: s[1], Text: s[2]}, s[0]
 		if s[1] == "silent" {
@@ -90,6 +101,10 @@ func seed(ctx context.Context, url string, leads int) error {
 		if _, err := mesh.WriteState(ctx, c, path, mesh.State{State: s[3], Text: s[2], By: "seed"}); err != nil {
 			return fmt.Errorf("%s %s: %w", path, s[3], err)
 		}
+	}
+	// The kind's inbox consumer, so the job below counts as queued.
+	if _, err := mesh.KindConsumer(ctx, c, "review", 1, time.Hour); err != nil {
+		return err
 	}
 	for _, m := range []mesh.Message{
 		{From: "app-0042", To: "app-0042.api", Text: "keep the handlers small"},

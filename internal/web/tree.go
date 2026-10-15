@@ -29,11 +29,11 @@ type Instance struct {
 	Context int        `json:"context"`
 }
 
-// RoutineGroup is the instances of one kind in one repo; Depth is the kind's
-// queue depth.
+// RoutineGroup is one kind: its mode ("" without a kind file), its
+// instances across repos and its queue depth.
 type RoutineGroup struct {
 	Kind      string     `json:"kind"`
-	Repo      string     `json:"repo"`
+	Mode      string     `json:"mode"`
 	Instances []Instance `json:"instances"`
 	Depth     int        `json:"depth"`
 }
@@ -50,12 +50,14 @@ type TreeView struct {
 // the context tokens of the newest of them.
 type Usage struct{ Uses, Context int }
 
-// Extras is what Tree adds to nodes and states, keyed by path (Depth by kind).
+// Extras is what Tree adds to nodes and states, keyed by path (Depth and
+// Modes by kind; Modes holds every defined kind).
 type Extras struct {
 	Runners map[string]mesh.RunnerSample
 	Unread  map[string]int
 	Usage   map[string]Usage
 	Depth   map[string]int
+	Modes   map[string]string
 }
 
 func stateOf(states map[string]mesh.State, path string) mesh.State {
@@ -67,7 +69,8 @@ func stateOf(states map[string]mesh.State, path string) mesh.State {
 
 // Tree groups nodes into leads with their executors (nested by Parent; a
 // round with its engineers is drawn the same way), routine instances by
-// kind and repo, and orphans; every list is sorted by path.
+// kind (every defined kind, with or without instances), and orphans; every
+// list is sorted by path, the routines by kind.
 func Tree(nodes []mesh.Node, states map[string]mesh.State, x Extras) TreeView {
 	v := TreeView{Leads: []TreeNode{}, Routines: []RoutineGroup{}, Orphans: []TreeNode{}}
 	sorted := append([]mesh.Node(nil), nodes...)
@@ -123,35 +126,34 @@ func Tree(nodes []mesh.Node, states map[string]mesh.State, x Extras) TreeView {
 	}
 	sort.SliceStable(v.Orphans, func(i, j int) bool { return v.Orphans[i].Node.Path < v.Orphans[j].Node.Path })
 
-	groups := map[[2]string]*RoutineGroup{}
+	groups := map[string]*RoutineGroup{}
+	at := func(kind string) *RoutineGroup {
+		g, ok := groups[kind]
+		if !ok {
+			g = &RoutineGroup{Kind: kind, Mode: x.Modes[kind], Instances: []Instance{}, Depth: x.Depth[kind]}
+			groups[kind] = g
+		}
+		return g
+	}
+	for kind := range x.Modes {
+		at(kind)
+	}
 	for _, n := range sorted {
 		if n.Role != "routine" {
 			continue
 		}
-		p, err := mesh.ParsePath(n.Path)
-		if err != nil {
-			continue
-		}
-		kind, ok := mesh.KindFromPath(p)
+		kind, ok := kindOf(n.Path)
 		if !ok {
 			continue
-		}
-		key := [2]string{kind, n.Repo}
-		g, ok := groups[key]
-		if !ok {
-			g = &RoutineGroup{Kind: kind, Repo: n.Repo, Instances: []Instance{}, Depth: x.Depth[kind]}
-			groups[key] = g
 		}
 		u := x.Usage[n.Path]
+		g := at(kind)
 		g.Instances = append(g.Instances, Instance{Node: n, State: stateOf(states, n.Path), Uses: u.Uses, Context: u.Context})
 	}
 	for _, g := range groups {
 		v.Routines = append(v.Routines, *g)
 	}
-	sort.Slice(v.Routines, func(i, j int) bool {
-		a, b := v.Routines[i], v.Routines[j]
-		return a.Kind < b.Kind || a.Kind == b.Kind && a.Repo < b.Repo
-	})
+	sort.Slice(v.Routines, func(i, j int) bool { return v.Routines[i].Kind < v.Routines[j].Kind })
 	return v
 }
 

@@ -243,15 +243,35 @@ func commit(t *testing.T, repo string, files map[string]string) {
 
 func TestTreeEndpoint(t *testing.T) {
 	ctx, c := connect(t)
+	repo := filepath.Join(t.TempDir(), "app")
+	git(t, filepath.Dir(repo), "init", "-q", "-b", "main", "app")
+	commit(t, repo, map[string]string{
+		".bmesh/routines/review.toml": "model = \"m\"\nprompt = \"P\"\n",
+		".bmesh/routines/verify.toml": "mode = \"inline\"\ndeterministic = true\ncommand = \"echo ok\"\n",
+	})
+	cfg := &config.Config{Repos: map[string]config.Repo{"app": {Path: repo}}}
 	for _, n := range []mesh.Node{
 		{Path: "a", Role: "lead"},
 		{Path: "a.x", Role: "executor", Parent: "a"},
 		{Path: "b.x", Role: "executor", Parent: "b"},
 		{Path: "routine.review.m-1", Role: "routine", Repo: "app"},
+		{Path: "routine.review.m-2", Role: "routine", Repo: "other"},
+		{Path: "routine.review.fabc12345", Role: "routine", Repo: "app"},
 	} {
 		if err := mesh.PutNode(ctx, c, n); err != nil {
 			t.Fatal(err)
 		}
+	}
+	for _, st := range []string{"working", "done"} {
+		if _, err := mesh.WriteState(ctx, c, "routine.review.fabc12345", mesh.State{State: st}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := mesh.KindConsumer(ctx, c, "review", 1, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mesh.Send(ctx, c, mesh.Message{From: "a", To: "routine.review", Kind: "job", Text: "review"}); err != nil {
+		t.Fatal(err)
 	}
 	if err := mesh.PutRunner(ctx, c, "a", mesh.RunnerSample{Running: true, Known: true}); err != nil {
 		t.Fatal(err)
@@ -264,10 +284,10 @@ func TestTreeEndpoint(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	srv := httptest.NewServer(Handler(c, time.Hour, Options{}))
+	srv := httptest.NewServer(Handler(c, time.Hour, Options{Cfg: cfg}))
 	defer srv.Close()
 	var v TreeView
-	getJSON(t, srv, "/api/tree", 200, &v)
+	body := getJSON(t, srv, "/api/tree", 200, &v)
 	if len(v.Leads) != 1 || v.Leads[0].Runner == nil || len(v.Leads[0].Children) != 1 ||
 		v.Leads[0].Children[0].Unread != 1 || v.Leads[0].Children[0].State.State != "idle" {
 		t.Fatalf("leads %+v", v.Leads)
@@ -275,9 +295,33 @@ func TestTreeEndpoint(t *testing.T) {
 	if len(v.Orphans) != 1 || v.Orphans[0].Node.Path != "b.x" {
 		t.Fatalf("orphans %+v", v.Orphans)
 	}
-	if len(v.Routines) != 1 || v.Routines[0].Kind != "review" || v.Routines[0].Repo != "app" ||
-		v.Routines[0].Instances[0].Uses != 2 || v.Routines[0].Instances[0].Context != 800 {
-		t.Fatalf("routines %+v", v.Routines)
+	// One group per defined kind, each with its depth once and its
+	// instances across repos; verify, inline, has none.
+	if len(v.Routines) != 2 {
+		t.Fatalf("routines %s", body)
+	}
+	rev, ver := v.Routines[0], v.Routines[1]
+	if rev.Kind != "review" || rev.Mode != "pooled" || rev.Depth != 1 || len(rev.Instances) != 3 {
+		t.Fatalf("review %+v", rev)
+	}
+	byKey := map[string]Instance{}
+	for _, in := range rev.Instances {
+		byKey[in.Node.Path+"@"+in.Node.Repo] = in
+	}
+	if in := byKey["routine.review.m-1@app"]; in.Uses != 2 || in.Context != 800 {
+		t.Fatalf("review instances %+v", rev.Instances)
+	}
+	if in := byKey["routine.review.fabc12345@app"]; in.State.State != "done" {
+		t.Fatalf("review instances %+v", rev.Instances)
+	}
+	if _, ok := byKey["routine.review.m-2@other"]; !ok {
+		t.Fatalf("review instances %+v", rev.Instances)
+	}
+	if ver.Kind != "verify" || ver.Mode != "inline" || ver.Depth != 0 || len(ver.Instances) != 0 {
+		t.Fatalf("verify %+v", ver)
+	}
+	if !strings.Contains(body, `{"kind":"verify","mode":"inline","instances":[],"depth":0}`) {
+		t.Fatalf("verify's shape: %s", body)
 	}
 	if page := getJSON(t, srv, "/", 200, nil); !strings.Contains(page, "<title>bmesh</title>") {
 		t.Fatalf("page %q", page)
