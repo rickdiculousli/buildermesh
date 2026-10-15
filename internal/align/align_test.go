@@ -120,7 +120,7 @@ func TestExampleKinds(t *testing.T) {
 		t.Fatalf("%v\n%s", err, v)
 	}
 	r, err := Example("review", pb)
-	if err != nil || !strings.Contains(r, "models = [\"claude-opus-5-5\", \"claude-fable-5-1\"]") {
+	if err != nil || !strings.Contains(r, "models = [\"claude-opus-5-5\"]") {
 		t.Fatalf("%v\n%s", err, r)
 	}
 	if _, err := Example("lint", pb); err == nil || !strings.Contains(err.Error(), ".bmesh/routines/lint.toml") {

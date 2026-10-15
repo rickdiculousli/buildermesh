@@ -152,7 +152,7 @@ A command runs with `BMESH_JOB`, `BMESH_KIND`, `BMESH_COMMIT`, `BMESH_TREE`, `BM
 `examples/routines/`:
 
 - `verify.toml`: `mode = "inline"`, `deterministic = true`, `command = "npm test"`.
-- `review.toml`: `mode = "pooled"`, `models = ["claude-opus-5-5", "claude-fable-5-1"]`, `allow = ["Bash(git diff:*)", "Bash(git log:*)"]` and a prompt that reviews `git diff <base>..HEAD` (the job text carries `base: <sha>`, e.g. `--text "base: $(git merge-base origin/main HEAD)"`) and asks for findings as `### <severity>: <what breaks>` sections ending in `VERDICT: ok` or `VERDICT: fail`.
+- `review.toml`: `mode = "pooled"`, `models = ["claude-opus-5-5"]` (every change is reviewed on Opus, in a session that never saw it), `allow = ["Bash(git diff:*)", "Bash(git log:*)"]` and a prompt that reviews `git diff <base>..HEAD` (the job text carries `base: <sha>`, e.g. `--text "base: $(git merge-base origin/main HEAD)"`) and asks for findings as `### <severity>: <what breaks>` sections ending in `VERDICT: ok` or `VERDICT: fail`.
 - `surface.toml`: `mode = "fresh"`, `deterministic = true`, `slots = ["browser"]`, `command = "npx playwright screenshot"`; the job args `<url> <file>` are appended as `"$@"`.
 
 ### Modes
