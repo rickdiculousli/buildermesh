@@ -30,6 +30,7 @@ type RunnerConfig struct {
 	Worktrees   string
 	Checkouts   string // routine instances' checkouts
 	Claude      string // the claude command, split on spaces when run
+	MaxLeads    int    `toml:"max_leads"` // leads at once on this host; 0 = no cap
 }
 
 type NotifyConfig struct {

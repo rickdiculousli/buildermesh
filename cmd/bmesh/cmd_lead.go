@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -80,6 +81,21 @@ func (a *app) cmdLeadStart(args []string) error {
 			return fail(exitRefused, "refused: path %s is taken (state %s); use --path %s-2", p, st.State, p)
 		}
 	}
+	if max := a.cfg.Runner.MaxLeads; max > 0 {
+		n, err := a.liveLeads(ctx)
+		if err != nil {
+			return err
+		}
+		if n >= max {
+			return fail(exitRefused, "%d leads already working on this host", n)
+		}
+	}
+	if a.configPath != "" {
+		// The runner's session must report to the mesh this CLI was told about.
+		if abs, err := filepath.Abs(a.configPath); err == nil {
+			os.Setenv("BMESH_CONFIG", abs)
+		}
+	}
 	if *model == "" {
 		*model = a.cfg.Models.Lead
 	}
@@ -115,6 +131,30 @@ func (a *app) cmdLeadStart(args []string) error {
 	}
 	fmt.Fprintf(a.stdout, "%s\n", line)
 	return nil
+}
+
+// liveLeads counts the leads registered on this host that are not done or
+// blocked: the ones [runner] max_leads bounds.
+func (a *app) liveLeads(ctx context.Context) (int, error) {
+	nodes, err := mesh.ListNodes(ctx, a.client)
+	if err != nil {
+		return 0, err
+	}
+	states, err := mesh.ReadAllStates(ctx, a.client)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, node := range nodes {
+		if node.Role != "lead" || node.Host != a.cfg.HostName() {
+			continue
+		}
+		if s := states[node.Path].State; s == "done" || s == "blocked" {
+			continue
+		}
+		n++
+	}
+	return n, nil
 }
 
 // register records the started session in n and puts it. A fresh path

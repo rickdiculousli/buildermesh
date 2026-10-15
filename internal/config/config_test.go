@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -44,6 +45,7 @@ func TestLoadFixture(t *testing.T) {
 		"worktrees":   {c.Runner.Worktrees, "~/wt"},
 		"checkouts":   {c.Runner.Checkouts, "~/co"},
 		"claude":      {c.Runner.Claude, "claude --debug"},
+		"max_leads":   {fmt.Sprint(c.Runner.MaxLeads), "4"},
 		"ntfy":        {c.Notify.Ntfy, "http://ntfy.example/bm"},
 		"command":     {c.Notify.Command, "cat"},
 		"glob":        {c.Spec.Glob, "specs/{id}.md"},

@@ -15,6 +15,7 @@ tmux_session = "mesh"
 worktrees = "~/wt"
 checkouts = "~/co"
 claude = "claude --debug"
+max_leads = 4
 [notify]
 ntfy = "http://ntfy.example/bm"
 command = "cat"

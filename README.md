@@ -20,7 +20,9 @@ Runner tests drive shell fakes instead of T3 and tmux. `BMESH_T3_COMMAND`, when 
 `bmesh lead start --repo R --spec NNN --brief FILE [--model M] [--title T] [--path P]` starts a lead through `[runner] kind` and registers it as node `<repo>-<NNN>` (state `idle`), printing `{"path","thread","branch","worktree"}`. A path whose node is not `done` or `blocked` is refused (exit 3); a `done` or `blocked` path is reused and its state reset to `idle`. The runner's start runs under the runner's own timeout, not the CLI's one-minute deadline; if it times out, or registration fails after it, the error names the thread id (and branch and worktree when known) so the session can be found.
 
 - `t3`: `uv run <t3_dispatch> start|status|send|stop`, 120 s per call. `send` runs `status` first and never sends to a running thread; no `--force`, `--queue` or `wait-idle`.
-- `tmux`: `git worktree add -b <thread> <worktrees>/<repo>/<thread>`, then `claude` in window `<thread>` of session `<tmux_session>` (created when missing), with the brief typed in. It can't tell whether claude is mid-turn.
+- `tmux`: `git worktree add -b <thread> <worktrees>/<repo>/<thread>`, then `claude` in window `<thread>` of session `<tmux_session>` (created when missing; the window gets `BMESH_CONFIG` when the CLI has it, so the lead reports to the same mesh). It watches the window until claude's prompt is up, answering the dialogs a fresh worktree raises (the folder-trust question with yes, the first-run screens with Enter, an offer to try something with Escape), then types the brief in; after 90 s it types anyway. It can't tell whether claude is mid-turn.
+
+`lead start` refuses with exit 3 `bmesh: N leads already working on this host` when `[runner] max_leads` is set and that many leads registered on this host are not `done` or `blocked`. `scripts/memcap.sh N` measures what a box can carry: it runs N leads on the tmux runner against a mesh of its own, each spawning three executors, and prints the peak memory.
 
 ## Executors
 
@@ -226,6 +228,7 @@ tmux_session = "bmesh"
 worktrees = "~/.bmesh/worktrees"            # executors' worktrees, and the tmux runner's
 checkouts = "~/.bmesh/checkouts"            # routine instances' checkouts; "" = routines off
 claude = "claude"                           # claude command for model routines, split on spaces
+max_leads = 0                               # leads at once on this host (lead start refuses past it); 0 = no cap
 [notify]
 ntfy = ""                                   # "" = no digest; else "http://k16:2586/bmesh"
 command = ""                                # test hook: receives the POST body on stdin instead of HTTP

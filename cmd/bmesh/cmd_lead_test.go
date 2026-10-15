@@ -128,3 +128,49 @@ func TestLeadStartTimeoutNamesThread(t *testing.T) {
 		t.Fatalf("node registered after timeout: %v %v", ok, err)
 	}
 }
+
+func TestLeadStartRefusesOverMax(t *testing.T) {
+	c, log := leadSetup(t)
+	ctx := t.Context()
+	cfg := os.Getenv("BMESH_CONFIG")
+	b, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg, []byte(strings.Replace(string(b), "[runner]\n", "[runner]\nmax_leads = 2\n", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Another host's lead and a done lead here don't count.
+	putNode(t, c, ctx, mesh.Node{Path: "elsewhere-001", Host: "otherbox"})
+	putNode(t, c, ctx, mesh.Node{Path: "old-001"})
+	for _, s := range []string{"working", "done"} {
+		if _, err := mesh.WriteState(ctx, c, "old-001", mesh.State{State: s, By: "node"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{"001", "002"} {
+		if out, errs, code := runCLI(t, nil, "lead", "start", "--repo", "demo", "--spec", id, "--brief", "/dev/null"); code != 0 {
+			t.Fatalf("start %s: %d %q %q", id, code, out, errs)
+		}
+	}
+	before, _ := os.ReadFile(log)
+	out, errs, code := runCLI(t, nil, "lead", "start", "--repo", "demo", "--spec", "003", "--brief", "/dev/null")
+	if code != 3 || out != "" || errs != "bmesh: 2 leads already working on this host\n" {
+		t.Fatalf("third: %d %q %q", code, out, errs)
+	}
+	if after, _ := os.ReadFile(log); string(after) != string(before) {
+		t.Fatalf("runner called on refusal: %q", after)
+	}
+	if _, ok, _ := mesh.GetNode(ctx, c, "demo-003"); ok {
+		t.Fatal("refused lead registered")
+	}
+	// One finishing frees a place.
+	for _, s := range []string{"working", "done"} {
+		if _, err := mesh.WriteState(ctx, c, "demo-001", mesh.State{State: s, By: "node"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, errs, code := runCLI(t, nil, "lead", "start", "--repo", "demo", "--spec", "003", "--brief", "/dev/null"); code != 0 {
+		t.Fatalf("after done: %d %q", code, errs)
+	}
+}
