@@ -227,18 +227,22 @@ func IsReviewable(status string) bool {
 	return false
 }
 
-var pitchLine = regexp.MustCompile(`(?m)^\s*#?(\d{1,4})\b`)
+// pitchItem is where a pitch item starts: at a line start or after a
+// sentence end, with the spec's three-digit id ("001 Title (kind, size,
+// judge): why. 002 ..." on one line reads the same as one per line; "200
+// lines" inside a why does not start one).
+var pitchItem = regexp.MustCompile(`(?m)(?:^|[.;!?]\s+)\s*#?(\d{3})\b`)
 
 // PitchRanks reads the ranked list the operator saw, the pitch (the
-// engineer's lines, then the UI/UX engineer's, each `NNN title ...`), into
-// the ids it names in order: every line whose number is a spec, a repeat
+// engineer's items, then the UI/UX engineer's, each `NNN title ...`), into
+// the ids it names in order: every item whose number is a spec, a repeat
 // kept once. The list never shrinks as specs are reviewed, so a position
 // means the same spec in every reply to that pitch.
 func PitchRanks(pitch string, specs []*Spec) []int {
 	ids := IDSet(specs)
 	var out []int
 	seen := map[int]bool{}
-	for _, m := range pitchLine.FindAllStringSubmatch(pitch, -1) {
+	for _, m := range pitchItem.FindAllStringSubmatch(pitch, -1) {
 		n, _ := strconv.Atoi(m[1])
 		if ids[n] && !seen[n] {
 			seen[n] = true

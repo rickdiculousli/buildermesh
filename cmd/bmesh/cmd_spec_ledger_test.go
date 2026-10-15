@@ -52,8 +52,9 @@ func ledgerRepoSetup(t *testing.T) (*mesh.Client, context.Context, string) {
 }
 
 // pitchRound registers a settled round for demo whose pitch was 013, 012,
-// 014 (so rank 2 is 012), and a newer round still open whose engineer
-// pitched the other way round, which is not a pitch yet.
+// 014 (so rank 2 is 012), a newer round still open whose engineer pitched
+// the other way round, which is not a pitch yet, and a newer one still
+// that blocked with no pitch.
 func pitchRound(t *testing.T, c *mesh.Client, ctx context.Context) {
 	t.Helper()
 	putNode(t, c, ctx, mesh.Node{Path: "demo-round-1", Role: "round", Repo: "demo"})
@@ -73,6 +74,14 @@ func pitchRound(t *testing.T, c *mesh.Client, ctx context.Context) {
 		t.Fatal(err)
 	}
 	if _, err := mesh.WriteState(ctx, c, "demo-round-2.eng", mesh.State{State: "done", By: "node", Text: "012 first\n013 second"}); err != nil {
+		t.Fatal(err)
+	}
+	// A newer round that blocked before any pitch is passed over.
+	putNode(t, c, ctx, mesh.Node{Path: "demo-round-3", Role: "round", Repo: "demo"})
+	if _, err := mesh.WriteState(ctx, c, "demo-round-3", mesh.State{State: "working", By: "node"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mesh.WriteState(ctx, c, "demo-round-3", mesh.State{State: "blocked", By: "node", Text: "eng blocked: did not start: no route"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -236,7 +245,7 @@ func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
 func TestSpecReviewOnMainCheckoutMergesFastForward(t *testing.T) {
 	_, _, repo := ledgerRepoSetup(t)
 	out, errs, code := runCLI(t, nil, "spec", "review", "demo", "012 reject: dup, 1 yes")
-	if code != 0 || !strings.Contains(out, "012 Thing 012: proposed -> rejected (dup)\n") || !strings.HasPrefix(out, "note: no settled round, so numbers are spec ids only\n") ||
+	if code != 0 || !strings.Contains(out, "012 Thing 012: proposed -> rejected (dup)\n") || !strings.HasPrefix(out, "note: no settled round with a pitch, so numbers are spec ids only\n") ||
 		!strings.Contains(out, "unmatched: no spec 1 (1 yes)\n") {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
 	}

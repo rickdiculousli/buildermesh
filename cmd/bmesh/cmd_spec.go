@@ -313,13 +313,11 @@ func (a *app) applyReview(ctx context.Context, wt, repo, reply string) (lines, c
 	if err != nil {
 		return nil, nil, ledgerFail(err)
 	}
-	var ranks []int
-	if pitch, err := a.latestPitch(ctx, repo); err != nil {
+	ranks, err := a.latestRanks(ctx, repo, specs)
+	if err != nil {
 		lines = append(lines, "note: the mesh is unreachable, so numbers are spec ids only ("+err.Error()+")")
-	} else if pitch == "" {
-		lines = append(lines, "note: no settled round, so numbers are spec ids only")
-	} else {
-		ranks = spec.PitchRanks(pitch, specs)
+	} else if len(ranks) == 0 {
+		lines = append(lines, "note: no settled round with a pitch, so numbers are spec ids only")
 	}
 	r := spec.ParseReply(reply, spec.IDSet(specs), ranks)
 	// One outcome per spec: the last clause with a move wins, any clause
@@ -391,28 +389,33 @@ func (a *app) applyReview(ctx context.Context, wt, repo, reply string) (lines, c
 	return lines, changed, nil
 }
 
-// latestPitch is the pitch the operator saw last: the text of the repo's
-// newest settled round (state done or blocked, which is what was pushed).
-// An open round's children, even a finished one, are not a pitch yet; ""
-// when no round has settled.
-func (a *app) latestPitch(ctx context.Context, repo string) (string, error) {
+// latestRanks is the pitch the operator saw last, as ranks: the text of
+// the repo's newest settled round (state done or blocked, which is what was
+// pushed) that names any spec; a settled round whose text names none (one
+// blocked before a pitch) is passed over for an older one. An open round's
+// children, even a finished one, are not a pitch yet; nil when no settled
+// round has one.
+func (a *app) latestRanks(ctx context.Context, repo string, specs []*spec.Spec) ([]int, error) {
 	if err := a.connect(ctx, "spec review"); err != nil {
-		return "", err
+		return nil, err
 	}
 	n, err := nextRound(ctx, a.client, repo)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	for k := n - 1; k >= 1; k-- {
 		st, _, err := mesh.ReadState(ctx, a.client, fmt.Sprintf("%s-round-%d", repo, k))
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		if st.State == "done" || st.State == "blocked" {
-			return st.Text, nil
+		if st.State != "done" && st.State != "blocked" {
+			continue
+		}
+		if ranks := spec.PitchRanks(st.Text, specs); len(ranks) > 0 {
+			return ranks, nil
 		}
 	}
-	return "", nil
+	return nil, nil
 }
 
 // cmdSpecVerified prints the verified line composed from the results for
