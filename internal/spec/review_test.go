@@ -144,6 +144,21 @@ func TestRanksAndAdjustNote(t *testing.T) {
 	if got := PitchRanks(cited2, many); !reflect.DeepEqual(got, []int{1, 3}) {
 		t.Fatal(got)
 	}
+	// The round joins two one-line pitches with a line break: each line is
+	// a list of its own; a blocked round's text puts the pitch after a note.
+	four := append(many, &Spec{ID: 4, Fields: map[string]string{"status": "proposed"}})
+	merged := "001 A (f, S, opus): x. 002 B (f, S, opus): y.\n003 C (ux, S, opus): z. 004 D (ux, S, opus): w."
+	if got := PitchRanks(merged, four); !reflect.DeepEqual(got, []int{1, 2, 3, 4}) {
+		t.Fatal(got)
+	}
+	mixed := "001 A (f, S, opus): x. 002 B (f, S, opus): y.\n003 C"
+	if got := PitchRanks(mixed, four); !reflect.DeepEqual(got, []int{1, 2, 3}) {
+		t.Fatal(got)
+	}
+	blocked := "ux blocked: no display\n\n001 A (f, S, opus): x. 002 B (f, S, opus): y."
+	if got := PitchRanks(blocked, four); !reflect.DeepEqual(got, []int{1, 2}) {
+		t.Fatal(got)
+	}
 	body := "## Opportunity\nslow\n\n## Proposal\nThe change.\n"
 	got := AdjustNote(body, "2026-10-15", "smaller")
 	if got != "## Opportunity\nslow\n\n## Proposal\nAdjust (2026-10-15): smaller\nThe change.\n" {
