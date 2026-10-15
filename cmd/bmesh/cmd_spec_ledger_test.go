@@ -152,7 +152,7 @@ func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
 	// The main checkout is on another branch, so the landing fast-forwards
 	// main through `fetch . <branch>:main`.
 	runGit(t, repo, "checkout", "-q", "-b", "side")
-	out, errs, code := runCLI(t, nil, "spec", "review", "demo", "12 yes on opus, 13 smaller, 14 no, 2 later, 99 yes, hmm")
+	out, errs, code := runCLI(t, nil, "spec", "review", "demo", "012 yes on opus, 013 smaller, 014 no, 2 later, 99 yes, hmm")
 	if code != 0 {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
 	}
@@ -161,7 +161,7 @@ func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
 		"012 Thing 012: proposed -> accepted on opus",
 		"013 Thing 013: proposed -> adjusting (smaller)",
 		"014 Thing 014: building, left unchanged (not proposed, later or adjusting)",
-		"unmatched: no spec 99 (99 yes)",
+		"unmatched: no position 99 in the pitch; a spec id has three digits (99 yes)",
 		"unmatched: hmm",
 	}
 	// "2 later": rank 2 of the latest round's pitch (013 then 012) is 012,
@@ -201,12 +201,12 @@ func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
 	}
 	// A second review: a rejection carries its reason; a second instruction
 	// adds a second note; a number beyond the pitch and the ledger is reported.
-	out, errs, code = runCLI(t, nil, "spec", "review", repo, "13 only the CLI part; 12 no too broad, 4 yes")
+	out, errs, code = runCLI(t, nil, "spec", "review", repo, "013 only the CLI part; 012 no too broad, 4 yes")
 	if code != 0 {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
 	}
 	if !strings.Contains(out, "013 Thing 013: adjusting -> adjusting (only the CLI part)\n") || !strings.Contains(out, "012 Thing 012: later -> rejected (too broad)\n") ||
-		!strings.Contains(out, "unmatched: no spec 4 (4 yes)\n") {
+		!strings.Contains(out, "unmatched: no position 4 in the pitch; a spec id has three digits (4 yes)\n") {
 		t.Fatalf("%q", out)
 	}
 	spec13 = gitOut(t, "-C", repo, "show", "main:docs/proposals/013-thing.md")
@@ -223,7 +223,7 @@ func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
 		t.Fatalf("%d %q", code, out)
 	}
 	// A judge note alone on an adjusting spec sets the judge and adds no note.
-	out, _, code = runCLI(t, nil, "spec", "review", "demo", "13 on fable")
+	out, _, code = runCLI(t, nil, "spec", "review", "demo", "013 on fable")
 	if code != 0 || !strings.Contains(out, "013 Thing 013: adjusting -> adjusting on fable\n") {
 		t.Fatalf("%d %q", code, out)
 	}

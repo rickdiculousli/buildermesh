@@ -21,9 +21,10 @@ func TestParseReplyTodaysGrammar(t *testing.T) {
 	}
 }
 
-func TestParseReplyPitchedIDsThenRanksThenOtherIDs(t *testing.T) {
+func TestParseReplyThreeDigitsAreIDsShortNumbersArePositions(t *testing.T) {
+	// No pitch: every number is a spec id.
 	ids := map[int]bool{1: true, 2: true, 7: true}
-	r := ParseReply("1 yes; 7 no, too big; 2 later", ids, []int{7, 2, 1})
+	r := ParseReply("1 yes; 7 no, too big; 2 later", ids, nil)
 	want := []Verdict{{ID: 1, Move: "accepted"}, {ID: 7, Move: "rejected"}, {ID: 2, Move: "later"}}
 	if !reflect.DeepEqual(r.Verdicts, want) {
 		t.Fatalf("%+v", r.Verdicts)
@@ -32,13 +33,20 @@ func TestParseReplyPitchedIDsThenRanksThenOtherIDs(t *testing.T) {
 	if !reflect.DeepEqual(r.Unmatched, []string{"too big"}) {
 		t.Fatalf("%q", r.Unmatched)
 	}
-	// A repo with history: 001 and 003 exist but were not pitched, so "1
-	// and 3" count lines of the pitch; 7 is an older spec outside it.
+	// A pitch: short numbers count its items, three digits name specs,
+	// pitched or not; a position past the pitch is reported.
 	old := map[int]bool{1: true, 3: true, 7: true, 12: true, 13: true, 14: true}
-	r = ParseReply("1 and 3 yes, 7 on opus, 9 later", old, []int{12, 13, 14})
-	want = []Verdict{{ID: 12, Move: "accepted"}, {ID: 14, Move: "accepted"}, {ID: 7, Judge: "opus"}}
-	if !reflect.DeepEqual(r.Verdicts, want) || !reflect.DeepEqual(r.Unmatched, []string{"no spec 9 (9 later)"}) {
+	r = ParseReply("1 and 3 yes, 007 on opus, 9 later, 012 no, 099 yes", old, []int{12, 13, 14})
+	want = []Verdict{{ID: 12, Move: "accepted"}, {ID: 14, Move: "accepted"}, {ID: 7, Judge: "opus"}, {ID: 12, Move: "rejected"}}
+	if !reflect.DeepEqual(r.Verdicts, want) || !reflect.DeepEqual(r.Unmatched, []string{"no position 9 in the pitch; a spec id has three digits (9 later)", "no spec 099 (099 yes)"}) {
 		t.Fatalf("%+v", r)
+	}
+	// A first round numbers from 001: positions and ids agree by design.
+	first := map[int]bool{1: true, 2: true, 3: true, 6: true, 7: true}
+	r = ParseReply("5 yes, 6 no", first, []int{1, 2, 3, 6, 7})
+	want = []Verdict{{ID: 6, Move: "accepted"}, {ID: 7, Move: "rejected"}}
+	if !reflect.DeepEqual(r.Verdicts, want) {
+		t.Fatalf("%+v", r.Verdicts)
 	}
 }
 
@@ -147,7 +155,7 @@ func TestRanksAndAdjustNote(t *testing.T) {
 	// The round joins two one-line pitches with a line break: each line is
 	// a list of its own; a blocked round's text puts the pitch after a note.
 	four := append(many, &Spec{ID: 4, Fields: map[string]string{"status": "proposed"}})
-	merged := "001 A (f, S, opus): x. 002 B (f, S, opus): y.\n003 C (ux, S, opus): z. 004 D (ux, S, opus): w."
+	merged := "001 A (f, S, opus): x. 002 Retry (again) uploads (fix, S, opus): y.\n003 C (ux, S, opus): z (see 001). 004 D (ux, S, opus): w."
 	if got := PitchRanks(merged, four); !reflect.DeepEqual(got, []int{1, 2, 3, 4}) {
 		t.Fatal(got)
 	}
