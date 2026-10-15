@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -103,5 +104,22 @@ func TestLeadStartRefusesTakenPath(t *testing.T) {
 	}
 	if _, errs, code := runCLI(t, nil, "lead", "start", "--repo", "demo", "--spec", "012"); code != 2 {
 		t.Fatalf("no --brief: %d %q", code, errs)
+	}
+}
+
+func TestLeadStartTimeoutNamesThread(t *testing.T) {
+	c, log := leadSetup(t)
+	t.Setenv("BMESH_T3_TIMEOUT", "300ms")
+	t.Setenv("FAKE_T3_START_SLEEP", "3")
+	out, errs, code := runCLI(t, nil, "lead", "start", "--repo", "demo", "--spec", "012", "--brief", "/dev/null")
+	m := regexp.MustCompile(`^bmesh: start timed out; thread id ([0-9a-f-]{36}) may exist\n$`).FindStringSubmatch(errs)
+	if code != 1 || out != "" || m == nil {
+		t.Fatalf("%d %q %q", code, out, errs)
+	}
+	if l, _ := os.ReadFile(log); !strings.Contains(string(l), "--thread-id "+m[1]) {
+		t.Fatalf("thread id not the one passed: %q", l)
+	}
+	if _, ok, err := mesh.GetNode(t.Context(), c, "demo-012"); ok || err != nil {
+		t.Fatalf("node registered after timeout: %v %v", ok, err)
 	}
 }

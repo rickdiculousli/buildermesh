@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
 )
@@ -47,7 +48,15 @@ type Runner interface {
 func New(cfg *config.Config) (Runner, error) {
 	switch cfg.Runner.Kind {
 	case "t3":
-		return T3{Dispatch: cfg.Expand(cfg.Runner.T3Dispatch)}, nil
+		r := T3{Dispatch: cfg.Expand(cfg.Runner.T3Dispatch)}
+		if v := os.Getenv("BMESH_T3_TIMEOUT"); v != "" { // test hook
+			d, err := time.ParseDuration(v)
+			if err != nil {
+				return nil, fmt.Errorf("BMESH_T3_TIMEOUT: %w", err)
+			}
+			r.Timeout = d
+		}
+		return r, nil
 	case "tmux":
 		return Tmux{Session: cfg.Runner.TmuxSession, Worktrees: cfg.Expand(cfg.Runner.Worktrees)}, nil
 	}

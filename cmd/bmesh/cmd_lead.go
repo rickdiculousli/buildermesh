@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -84,24 +86,23 @@ func (a *app) cmdLeadStart(args []string) error {
 	if err != nil {
 		return err
 	}
-	started, err := r.Start(ctx, runner.StartSpec{RepoPath: repoPath, Model: *model, Title: *title,
+	// The runner bounds its own calls (T3: 120 s), so the start doesn't share
+	// the CLI's one-minute deadline, and registration gets a fresh one.
+	cancel()
+	started, err := r.Start(context.Background(), runner.StartSpec{RepoPath: repoPath, Model: *model, Title: *title,
 		BriefPath: briefPath, ThreadID: thread})
+	if errors.Is(err, runner.ErrTimeout) {
+		return fmt.Errorf("start timed out; thread id %s may exist", thread)
+	}
 	if err != nil {
-		return fmt.Errorf("runner start: %w", err)
+		return fmt.Errorf("runner start (thread id %s): %w", thread, err)
 	}
-	n := mesh.Node{Path: p, Role: "lead", Repo: name, RepoPath: repoPath, Spec: *spec, Branch: started.Branch,
-		Worktree: started.Worktree, Host: a.cfg.HostName(),
-		Runner: mesh.NodeRunner{Kind: a.cfg.Runner.Kind, Thread: started.Thread},
-		Model:  *model, StartedAt: time.Now().UTC().Format(time.RFC3339)}
-	if err := mesh.PutNode(ctx, a.client, n); err != nil {
-		return err
-	}
-	// A fresh path already reads idle; a reused done or blocked one is reset
-	// to idle. (idle -> idle is not a transition, so nothing is written.)
-	if st.State != "idle" {
-		if err := mesh.ResetState(ctx, a.client, p); err != nil {
-			return err
-		}
+	ctx, cancel = cmdCtx()
+	defer cancel()
+	if err := a.register(ctx, started, mesh.Node{Path: p, Role: "lead", Repo: name, RepoPath: repoPath, Spec: *spec,
+		Host: a.cfg.HostName(), Model: *model}, st.State); err != nil {
+		return fmt.Errorf("thread %s started (branch %s, worktree %s) but registering the node failed: %w",
+			started.Thread, started.Branch, started.Worktree, err)
 	}
 	line, err := json.Marshal(map[string]string{"path": p, "thread": started.Thread, "branch": started.Branch,
 		"worktree": started.Worktree})
@@ -109,6 +110,22 @@ func (a *app) cmdLeadStart(args []string) error {
 		return err
 	}
 	fmt.Fprintf(a.stdout, "%s\n", line)
+	return nil
+}
+
+// register records the started session in n and puts it. A fresh path
+// already reads idle; a reused done or blocked one (prev) is reset to idle.
+// (idle -> idle is not a transition, so nothing is written for it.)
+func (a *app) register(ctx context.Context, started runner.Started, n mesh.Node, prev string) error {
+	n.Branch, n.Worktree = started.Branch, started.Worktree
+	n.Runner = mesh.NodeRunner{Kind: a.cfg.Runner.Kind, Thread: started.Thread}
+	n.StartedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := mesh.PutNode(ctx, a.client, n); err != nil {
+		return err
+	}
+	if prev != "idle" {
+		return mesh.ResetState(ctx, a.client, n.Path)
+	}
 	return nil
 }
 

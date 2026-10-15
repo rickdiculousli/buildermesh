@@ -27,6 +27,7 @@ start)
     prev="$a"
   done
   if [ -n "$FAKE_T3_LOG" ]; then echo "start $(cat "$file" 2>/dev/null | head -c 2000)" >> "$FAKE_T3_LOG"; fi
+  if [ -n "$FAKE_T3_START_SLEEP" ]; then sleep "$FAKE_T3_START_SLEEP"; fi
   if [ "${FAKE_T3_START_EXIT:-0}" != 0 ]; then echo "start failed" >&2; exit "$FAKE_T3_START_EXIT"; fi
   echo "{\"threadId\":\"$tid\",\"title\":\"x\",\"branch\":\"t3code/$tid\",\"worktreePath\":\"${FAKE_T3_WORKTREE:-/wt}/$tid\"}"
   ;;
