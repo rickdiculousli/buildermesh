@@ -30,7 +30,7 @@ var (
 	clauseSep = regexp.MustCompile(`\s*[,;\n]+\s*`)
 	numberRE  = regexp.MustCompile(`^#?(\d+)[.:)]?$`)
 	yesWords  = map[string]bool{"yes": true, "accept": true, "accepted": true, "ok": true, "go": true, "build": true, "approve": true, "approved": true}
-	noWords   = map[string]bool{"no": true, "reject": true, "rejected": true, "nope": true, "drop": true, "kill": true}
+	noWords   = map[string]bool{"no": true, "reject": true, "rejected": true, "nope": true}
 	fillers   = map[string]bool{"and": true, "&": true, "+": true, "please": true, "spec": true, "specs": true}
 )
 
@@ -45,11 +45,7 @@ var (
 // verdict, or numbers that match nothing is reported, not guessed at.
 func ParseReply(reply string, ids map[int]bool, ranks []int) Review {
 	var r Review
-	for _, clause := range clauseSep.Split(strings.TrimSpace(reply), -1) {
-		clause = strings.TrimSpace(clause)
-		if clause == "" {
-			continue
-		}
+	for _, clause := range clauses(reply) {
 		// The numbers lead the clause ("1 and 3 yes"); once a verdict or
 		// instruction word is read, a later number is part of the words
 		// ("13 split into 14 parts" names only 013).
@@ -101,7 +97,57 @@ func ParseReply(reply string, ids map[int]bool, ranks []int) Review {
 	return r
 }
 
-// verdictOf reads a clause's words (its numbers removed).
+// clauses splits a reply at commas, semicolons and line breaks, and inside
+// one of those at a number that follows a spoken verdict ("3 yes and 4 no"
+// is two clauses; "13 split into 14 parts" is one, since "split into" is an
+// instruction, not a verdict). A filler left dangling before the cut
+// ("and") is dropped.
+func clauses(reply string) []string {
+	var out []string
+	for _, clause := range clauseSep.Split(strings.TrimSpace(reply), -1) {
+		var cur []string
+		leading, spoken := true, false
+		flush := func() {
+			for len(cur) > 0 && fillers[strings.ToLower(cur[len(cur)-1])] {
+				cur = cur[:len(cur)-1]
+			}
+			if len(cur) > 0 {
+				out = append(out, strings.Join(cur, " "))
+			}
+			cur, leading, spoken = nil, true, false
+		}
+		for _, w := range strings.Fields(clause) {
+			isNum := numberRE.MatchString(w)
+			if isNum && !leading && spoken {
+				flush()
+			}
+			if !isNum && !fillers[strings.ToLower(w)] {
+				leading = false
+				if spokenVerdict(w) {
+					spoken = true
+				}
+			}
+			cur = append(cur, w)
+		}
+		flush()
+	}
+	return out
+}
+
+// spokenVerdict reports whether w is a verdict word (yes, no, later, a
+// judge name) rather than part of an instruction.
+func spokenVerdict(w string) bool {
+	w = strings.ToLower(strings.Trim(w, ".!:\"'()"))
+	if yesWords[w] || noWords[w] || w == "later" {
+		return true
+	}
+	_, judge := Judges[w]
+	return judge
+}
+
+// verdictOf reads a clause's words (its numbers removed). Words that are
+// not verdicts stay as written: they are the note the next thread works
+// from.
 func verdictOf(words []string) (Verdict, bool) {
 	var v Verdict
 	var rest []string
@@ -123,7 +169,6 @@ func verdictOf(words []string) (Verdict, bool) {
 			v.Move = "rejected"
 		case w == "later" && v.Move == "":
 			v.Move = "later"
-		case fillers[w]:
 		default:
 			rest = append(rest, words[i])
 		}

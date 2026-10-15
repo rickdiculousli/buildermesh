@@ -57,7 +57,11 @@ func Pitch(eng, ux string) string {
 }
 
 // roundsOnce settles every open round. The state write is a compare-and-set
-// from working (or silent), so of two daemons only one publishes.
+// from working (or silent), so of two daemons only one publishes. A blocked
+// round is looked at again: both children done moves it to done (a blocked
+// child that was unblocked and finished), and a changed blocked text (the
+// other child's pitch arrived) is published again, through working, so the
+// operator gets that pitch too.
 func roundsOnce(ctx context.Context, d Deps) {
 	nodes, err := mesh.ListNodes(ctx, d.Client)
 	if err != nil {
@@ -73,15 +77,21 @@ func roundsOnce(ctx context.Context, d Deps) {
 		if n.Role != "round" || ctx.Err() != nil {
 			continue
 		}
-		cur := states[n.Path].State
-		if cur != "working" && cur != "silent" {
+		cur := states[n.Path]
+		if cur.State != "working" && cur.State != "silent" && cur.State != "blocked" {
 			continue
 		}
 		state, text, ok := SettleRound(states[n.Path+".eng"], states[n.Path+".ux"])
-		if !ok {
+		if !ok || (cur.State == "blocked" && state == "blocked" && text == cur.Text) {
 			continue
 		}
 		now := d.Now().UTC().Format(time.RFC3339)
+		if cur.State == "blocked" && state == "blocked" {
+			if _, err := mesh.WriteState(ctx, d.Client, n.Path, mesh.State{State: "working", Text: cur.Text, By: "daemon", At: now}); err != nil {
+				d.Log.Info("rounds: not resettled here", "path", n.Path, "err", err)
+				continue
+			}
+		}
 		if _, err := mesh.WriteState(ctx, d.Client, n.Path, mesh.State{State: state, Text: text, By: "daemon", At: now}); err != nil {
 			d.Log.Info("rounds: not settled here", "path", n.Path, "err", err)
 			continue

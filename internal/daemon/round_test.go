@@ -99,6 +99,43 @@ func TestRoundsOnceBlocksWhenAChildBlocks(t *testing.T) {
 	if hist, _ := mesh.History(f.ctx, f.c, "bm.demo-round-2.blocked", time.Time{}); len(hist) != 1 {
 		t.Fatalf("blocked events %d", len(hist))
 	}
+	// Nothing new: no second publication.
+	roundsOnce(f.ctx, f.d)
+	if hist, _ := mesh.History(f.ctx, f.c, "bm.demo-round-2.blocked", time.Time{}); len(hist) != 1 {
+		t.Fatalf("blocked events %d", len(hist))
+	}
+	// The engineer finishes: the round stays blocked but says so again with the pitch.
+	f.setState(t, "demo-round-2.eng", "working")
+	if _, err := mesh.WriteState(f.ctx, f.c, "demo-round-2.eng", mesh.State{State: "done", Text: "013 A: why", By: "node"}); err != nil {
+		t.Fatal(err)
+	}
+	roundsOnce(f.ctx, f.d)
+	st, _, _ = mesh.ReadState(f.ctx, f.c, "demo-round-2")
+	if st.State != "blocked" || st.Text != "ux blocked: the app will not run\n\n013 A: why" {
+		t.Fatalf("%+v", st)
+	}
+	hist, _ := mesh.History(f.ctx, f.c, "bm.demo-round-2.blocked", time.Time{})
+	if len(hist) != 2 {
+		t.Fatalf("blocked events %d", len(hist))
+	}
+	if ev, _ := decodeEvent(hist[1].Data); ev.Text != st.Text {
+		t.Fatalf("%+v", ev)
+	}
+	// The UI/UX engineer is unblocked and finishes: the round is done after all.
+	if _, err := mesh.WriteState(f.ctx, f.c, "demo-round-2.ux", mesh.State{State: "working", By: "node"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mesh.WriteState(f.ctx, f.c, "demo-round-2.ux", mesh.State{State: "done", Text: "018 B: look", By: "node"}); err != nil {
+		t.Fatal(err)
+	}
+	roundsOnce(f.ctx, f.d)
+	st, _, _ = mesh.ReadState(f.ctx, f.c, "demo-round-2")
+	if st.State != "done" || st.Text != "013 A: why\n018 B: look" {
+		t.Fatalf("%+v", st)
+	}
+	if hist, _ := mesh.History(f.ctx, f.c, "bm.demo-round-2.done", time.Time{}); len(hist) != 1 {
+		t.Fatalf("done events %d", len(hist))
+	}
 }
 
 func TestPushRoundProposed(t *testing.T) {

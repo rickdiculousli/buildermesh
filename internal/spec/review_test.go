@@ -73,6 +73,21 @@ func TestParseReplyNumbersInsideAnInstructionAreWords(t *testing.T) {
 	}
 }
 
+func TestParseReplyANumberAfterASpokenVerdictStartsAClause(t *testing.T) {
+	ids := map[int]bool{2: true, 3: true, 4: true, 5: true}
+	r := ParseReply("3 yes and 4 no too big and vague; 2 merge with spec 3 and drop the cache; 5 later 2 on opus", ids, nil)
+	want := []Verdict{
+		{ID: 3, Move: "accepted"},
+		{ID: 4, Move: "rejected", Note: "too big and vague"},
+		{ID: 2, Move: "adjusting", Note: "merge with spec 3 and drop the cache"},
+		{ID: 5, Move: "later"},
+		{ID: 2, Judge: "opus"},
+	}
+	if !reflect.DeepEqual(r.Verdicts, want) || len(r.Unmatched) != 0 {
+		t.Fatalf("%+v", r)
+	}
+}
+
 func TestRanksAndAdjustNote(t *testing.T) {
 	specs := []*Spec{
 		{ID: 3, Fields: map[string]string{"status": "done"}},
