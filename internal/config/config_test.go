@@ -129,6 +129,11 @@ func TestRepoPathByNameAndByPath(t *testing.T) {
 	if _, _, err := c.RepoPath(filepath.Join(abs, "nope")); err == nil {
 		t.Fatal("missing dir accepted")
 	}
+	// A directory that is no row's path gets its base name.
+	other := t.TempDir()
+	if name, path, err := c.RepoPath(other); err != nil || name != filepath.Base(other) || path != other {
+		t.Fatalf("other dir: %q %q %v", name, path, err)
+	}
 }
 
 func TestExpandAndToken(t *testing.T) {

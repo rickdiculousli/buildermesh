@@ -193,8 +193,12 @@ func TestProposeRefusesFiveProposedAndNonShip(t *testing.T) {
 	if _, _, code := runCLI(t, nil, "propose", "nope"); code != 2 {
 		t.Fatalf("unknown repo: code %d", code)
 	}
-	if _, errs, code := runCLI(t, nil, "propose", repo); code != 2 || !strings.Contains(errs, "repos.toml") {
+	if _, errs, code := runCLI(t, nil, "propose", t.TempDir()); code != 2 || !strings.Contains(errs, "repos.toml") {
 		t.Fatalf("a path without a row: %d %q", code, errs)
+	}
+	// A row's path is that row.
+	if _, errs, code := runCLI(t, nil, "propose", repo); code != 3 || !strings.Contains(errs, "demo is companion") {
+		t.Fatalf("a row's path: %d %q", code, errs)
 	}
 }
 
