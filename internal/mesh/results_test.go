@@ -29,9 +29,12 @@ func TestResultKeyWithAndWithoutArgs(t *testing.T) {
 		t.Fatalf("args and model: %q, want %q", got, want)
 	}
 	for in, want := range map[string]string{
-		"claude-Sonnet_5.5[1m]": "sonnet-5-5-1m-",
+		"claude-Sonnet_5.5[1m]": "sonnet-5-5-1m",
+		"claude-opus-5-5[1m]":   "opus-5-5-1m",
 		"Claude-Opus-5-5":       "opus-5-5",
+		"-a--b__c-":             "a-b-c",
 		"claude-":               "",
+		"claude-[]":             "",
 	} {
 		if got := ModelShort(in); got != want {
 			t.Fatalf("ModelShort(%q) = %q, want %q", in, got, want)

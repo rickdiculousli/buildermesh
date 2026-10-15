@@ -83,14 +83,19 @@ func TreeFilter(lead string) string { return "bm." + lead + ".>" }
 
 func InboxConsumer(p Path) string { return "inbox-" + strings.ReplaceAll(p.String(), ".", "--") }
 
-// ModelShort is a model id lowercased, with a leading "claude-" stripped and
-// every character outside [a-z0-9-] replaced by "-": Claude-Opus-5-5 is
-// opus-5-5.
+// ModelShort is a model id lowercased, with a leading "claude-" stripped,
+// every character outside [a-z0-9-] replaced by "-", runs of "-" collapsed
+// to one and leading and trailing "-" trimmed: Claude-Opus-5-5 is opus-5-5,
+// claude-opus-5-5[1m] is opus-5-5-1m.
 func ModelShort(model string) string {
-	return strings.Map(func(r rune) rune {
-		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' {
+	s := strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
 			return r
 		}
 		return '-'
 	}, strings.TrimPrefix(strings.ToLower(model), "claude-"))
+	for strings.Contains(s, "--") {
+		s = strings.ReplaceAll(s, "--", "-")
+	}
+	return strings.Trim(s, "-")
 }
