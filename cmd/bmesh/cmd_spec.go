@@ -356,7 +356,7 @@ func (a *app) applyReview(wt, reply string) (lines, changed []string, err error)
 		if err != nil {
 			return nil, nil, ledgerFail(err)
 		}
-		if to == "adjusting" {
+		if o.move == "adjusting" && o.note != "" {
 			if n, err = spec.WriteBody(n, spec.AdjustNote(n.Body, date, o.note)); err != nil {
 				return nil, nil, ledgerFail(err)
 			}

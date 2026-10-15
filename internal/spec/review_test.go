@@ -57,6 +57,22 @@ func TestParseReplyReportsUnmatched(t *testing.T) {
 	}
 }
 
+func TestParseReplyNumbersInsideAnInstructionAreWords(t *testing.T) {
+	ids := map[int]bool{2: true, 13: true, 14: true}
+	r := ParseReply("13 split into 14 parts; 14 smaller, cap at 2 files; 13 and 14 yes", ids, nil)
+	want := []Verdict{
+		{ID: 13, Move: "adjusting", Note: "split into 14 parts"},
+		{ID: 14, Move: "adjusting", Note: "smaller"},
+		{ID: 13, Move: "accepted"}, {ID: 14, Move: "accepted"},
+	}
+	if !reflect.DeepEqual(r.Verdicts, want) {
+		t.Fatalf("%+v", r.Verdicts)
+	}
+	if !reflect.DeepEqual(r.Unmatched, []string{"cap at 2 files"}) {
+		t.Fatalf("%q", r.Unmatched)
+	}
+}
+
 func TestRanksAndAdjustNote(t *testing.T) {
 	specs := []*Spec{
 		{ID: 3, Fields: map[string]string{"status": "done"}},

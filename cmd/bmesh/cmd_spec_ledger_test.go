@@ -176,6 +176,15 @@ func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
 	if !strings.Contains(out, "012 Thing 012: accepted, left unchanged") || !strings.Contains(out, "unmatched: too broad") {
 		t.Fatalf("%q", out)
 	}
+	// A judge note alone on an adjusting spec sets the judge and adds no note.
+	out, _, code = runCLI(t, nil, "spec", "review", "demo", "13 on fable")
+	if code != 0 || !strings.Contains(out, "013 Thing 013: adjusting -> adjusting on fable\n") {
+		t.Fatalf("%d %q", code, out)
+	}
+	spec13 = gitOut(t, "-C", repo, "show", "main:docs/proposals/013-thing.md")
+	if !strings.Contains(spec13, "judge: fable\n") || strings.Count(spec13, "Adjust (") != 1 {
+		t.Fatalf("013:\n%s", spec13)
+	}
 	// Nothing matched: nothing to land, no commit.
 	before := gitOut(t, "-C", repo, "rev-parse", "main")
 	out, _, code = runCLI(t, nil, "spec", "review", "demo", "99 yes")

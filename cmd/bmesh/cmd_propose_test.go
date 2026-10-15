@@ -230,6 +230,46 @@ func TestProposeRemoteChildGoesThroughSSH(t *testing.T) {
 	_ = repo
 }
 
+func TestProposeBlocksTheRoundWhenAChildDoesNotStart(t *testing.T) {
+	c, _, _ := proposeSetup(t, "ux_host = \"other\"\n")
+	ctx := t.Context()
+	t.Setenv("FAKE_SSH_OUTPUT", "not json")
+	_, errs, code := runCLI(t, nil, "propose", "demo")
+	if code != 1 || !strings.Contains(errs, "round demo-round-1: the ux thread did not start: on other: bmesh propose printed") {
+		t.Fatalf("code %d err %q", code, errs)
+	}
+	st, _, _ := mesh.ReadState(ctx, c, "demo-round-1")
+	if st.State != "blocked" || !strings.HasPrefix(st.Text, "the ux thread did not start") {
+		t.Fatalf("%+v", st)
+	}
+	if hist, _ := mesh.History(ctx, c, "bm.demo-round-1.blocked", time.Time{}); len(hist) != 1 {
+		t.Fatalf("blocked events: %d", len(hist))
+	}
+	if _, ok, _ := mesh.GetNode(ctx, c, "demo-round-1.eng"); !ok {
+		t.Fatal("the eng thread that started lost its node")
+	}
+}
+
+func TestProposeRefusesAnExistingWorktreePathUntouched(t *testing.T) {
+	proposeSetup(t, "")
+	cfgB, _ := os.ReadFile(os.Getenv("BMESH_CONFIG"))
+	root := strings.TrimSuffix(strings.TrimPrefix(regexp.MustCompile(`worktrees = "[^"]*"`).FindString(string(cfgB)), `worktrees = "`), `"`)
+	wt := filepath.Join(root, "demo", "demo-round-1-eng")
+	if err := os.MkdirAll(wt, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, "keep.txt"), []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, errs, code := runCLI(t, nil, "propose", "demo", "--child", "eng", "--round", "1", "--next-id", "1", "--thread-id", "5d0c7a1e-0000-4000-8000-000000000002")
+	if code != 3 || !strings.Contains(errs, wt+" already exists") {
+		t.Fatalf("code %d err %q", code, errs)
+	}
+	if b, err := os.ReadFile(filepath.Join(wt, "keep.txt")); err != nil || string(b) != "mine" {
+		t.Fatalf("the existing path was touched: %v %q", err, b)
+	}
+}
+
 func TestProposeRefusesAnUnreachableHostBeforeStartingAnything(t *testing.T) {
 	c, repo, log := proposeSetup(t, "host = \"far\"\n")
 	t.Setenv("FAKE_SSH_EXIT", "255")

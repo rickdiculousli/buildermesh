@@ -37,8 +37,8 @@ var (
 // ParseReply reads reply against the ledger. ids are the spec ids that
 // exist; ranks are the ids of the specs the operator is reviewing, in pitch
 // order, so a number that is no spec id but a position in that list names
-// the spec at it (ids win over ranks). Each clause's numbers get its
-// verdict: yes/accept to accepted, no/reject to rejected (the clause's other
+// the spec at it (ids win over ranks). A clause's leading numbers (joined
+// by "and" or the like) name its specs; what follows is its verdict: yes/accept to accepted, no/reject to rejected (the clause's other
 // words as the reason), later to later, "on <judge>" sets the judge (alone
 // it moves nothing), and any other words are an instruction, so the spec
 // becomes adjusting with them as its note. A clause with no number, no
@@ -50,12 +50,18 @@ func ParseReply(reply string, ids map[int]bool, ranks []int) Review {
 		if clause == "" {
 			continue
 		}
+		// The numbers lead the clause ("1 and 3 yes"); once a verdict or
+		// instruction word is read, a later number is part of the words
+		// ("13 split into 14 parts" names only 013).
 		var nums []int
 		var words []string
 		for _, w := range strings.Fields(clause) {
-			if m := numberRE.FindStringSubmatch(w); m != nil {
+			if m := numberRE.FindStringSubmatch(w); m != nil && len(words) == 0 {
 				n, _ := strconv.Atoi(m[1])
 				nums = append(nums, n)
+				continue
+			}
+			if len(words) == 0 && fillers[strings.ToLower(w)] {
 				continue
 			}
 			words = append(words, w)
