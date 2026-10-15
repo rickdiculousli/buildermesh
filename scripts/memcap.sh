@@ -74,10 +74,10 @@ sed -e "s|^nats = \"\"|nats = \"nats://127.0.0.1:$PORT\"|" "$RUN/serve.toml" > "
 BMESH_CONFIG=$RUN/serve.toml bmesh serve > "$RUN/serve.log" 2>&1 &
 SERVE_PID=$!
 for _ in $(seq 1 50); do
-  if BMESH_CONFIG=$RUN/cli.toml bmesh status >/dev/null 2>&1; then break; fi
+  if BMESH_CONFIG=$RUN/cli.toml bmesh mesh-status >/dev/null 2>&1; then break; fi
   sleep 0.2
 done
-BMESH_CONFIG=$RUN/cli.toml bmesh status >/dev/null
+BMESH_CONFIG=$RUN/cli.toml bmesh mesh-status >/dev/null
 
 # One lead per N. The brief is one line: the tmux runner types it in, and a
 # newline would submit it early. 10 x 30 s keeps each executor busy 5 min.
@@ -129,7 +129,7 @@ done
 
 # The numbers mean something only if every node did its work.
 status=$ROOT/memcap-$N-$STAMP-status.txt
-BMESH_CONFIG=$RUN/cli.toml bmesh status --json > "$status" 2>&1 || true
+BMESH_CONFIG=$RUN/cli.toml bmesh mesh-status --json > "$status" 2>&1 || true
 reached=$(python3 - "$status" <<'PY'
 import json, sys
 rows = json.load(open(sys.argv[1]))

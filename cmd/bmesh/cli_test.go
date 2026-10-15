@@ -112,7 +112,7 @@ func TestEventsMoveState(t *testing.T) {
 	if hist, _ := mesh.History(ctx, c, "bm.>", time.Time{}); len(hist) != 3 {
 		t.Fatalf("refused event published: %v", hist)
 	}
-	out, _, code := runCLI(t, as("app-001"), "state")
+	out, _, code := runCLI(t, as("app-001"), "thread-status")
 	if code != 0 || !strings.HasPrefix(out, "blocked since ") || !strings.HasSuffix(out, ": t-blocked\n") {
 		t.Fatalf("state: %d %q", code, out)
 	}
@@ -341,7 +341,7 @@ func TestStatusAndUnreachable(t *testing.T) {
 	if _, errs, code := runCLI(t, as("a"), "send", "b", "hi"); code != 0 {
 		t.Fatal(code, errs)
 	}
-	out, errs, code := runCLI(t, nil, "status")
+	out, errs, code := runCLI(t, nil, "mesh-status")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	if code != 0 || len(lines) != 3 || strings.Join(strings.Fields(lines[0]), " ") != "PATH ROLE STATE SINCE RUNNER UNREAD" {
 		t.Fatalf("%d %q %q", code, out, errs)
@@ -351,7 +351,7 @@ func TestStatusAndUnreachable(t *testing.T) {
 		fb[0] != "b" || fb[1] != "executor" || fb[2] != "idle" || fb[4] != "?" || fb[5] != "1" {
 		t.Fatalf("%q", out)
 	}
-	out, _, code = runCLI(t, nil, "status", "--json")
+	out, _, code = runCLI(t, nil, "mesh-status", "--json")
 	if code != 0 || !strings.HasPrefix(out, "[") || !strings.Contains(out, `"unread":1`) {
 		t.Fatalf("%d %q", code, out)
 	}
@@ -360,7 +360,7 @@ func TestStatusAndUnreachable(t *testing.T) {
 	if err := os.WriteFile(cfg, []byte("[mesh]\nnats = \"nats://127.0.0.1:1\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, errs, code = runCLI(t, map[string]string{"BMESH_CONFIG": cfg}, "status")
+	_, errs, code = runCLI(t, map[string]string{"BMESH_CONFIG": cfg}, "mesh-status")
 	if code != 1 || !strings.HasPrefix(errs, "bmesh: can't reach NATS at nats://127.0.0.1:1: ") {
 		t.Fatalf("%d %q", code, errs)
 	}

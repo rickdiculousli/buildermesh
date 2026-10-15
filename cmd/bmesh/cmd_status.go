@@ -30,14 +30,14 @@ func (a *app) cmdWhoami(args []string) error {
 	return nil
 }
 
-// cmdState prints a node's state: bmesh state [<path>].
-func (a *app) cmdState(args []string) error {
-	pos, err := parse(a.flags("state"), args)
+// cmdThreadStatus prints a node's state: bmesh thread-status [<path>].
+func (a *app) cmdThreadStatus(args []string) error {
+	pos, err := parse(a.flags("thread-status"), args)
 	if err != nil {
 		return err
 	}
 	if len(pos) > 1 {
-		return fail(exitUsage, "usage: bmesh state [<path>]")
+		return fail(exitUsage, "usage: bmesh thread-status [<path>]")
 	}
 	ctx, cancel := cmdCtx()
 	defer cancel()
@@ -46,10 +46,10 @@ func (a *app) cmdState(args []string) error {
 		if p, err = mesh.ParsePath(pos[0]); err != nil {
 			return fail(exitUsage, "%v", err)
 		}
-		if err := a.connect(ctx, "state"); err != nil {
+		if err := a.connect(ctx, "thread-status"); err != nil {
 			return err
 		}
-	} else if p, err = a.identity(ctx, "state"); err != nil {
+	} else if p, err = a.identity(ctx, "thread-status"); err != nil {
 		return err
 	}
 	s, _, err := mesh.ReadState(ctx, a.client, p.String())
@@ -77,9 +77,9 @@ type statusRow struct {
 	Unread int                `json:"unread"`
 }
 
-// cmdStatus prints every registered node with its state, runner and unread count.
-func (a *app) cmdStatus(args []string) error {
-	pos, err := parse(a.flags("status"), args)
+// cmdMeshStatus prints every registered node with its state, runner and unread count.
+func (a *app) cmdMeshStatus(args []string) error {
+	pos, err := parse(a.flags("mesh-status"), args)
 	if err != nil {
 		return err
 	}
@@ -88,7 +88,7 @@ func (a *app) cmdStatus(args []string) error {
 	}
 	ctx, cancel := cmdCtx()
 	defer cancel()
-	if err := a.connect(ctx, "status"); err != nil {
+	if err := a.connect(ctx, "mesh-status"); err != nil {
 		return err
 	}
 	nodes, err := mesh.ListNodes(ctx, a.client)

@@ -152,7 +152,7 @@ func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
 	// The main checkout is on another branch, so the landing fast-forwards
 	// main through `fetch . <branch>:main`.
 	runGit(t, repo, "checkout", "-q", "-b", "side")
-	out, errs, code := runCLI(t, nil, "spec", "review", "demo", "012 yes on opus, 013 smaller, 014 no, 2 later, 99 yes, hmm")
+	out, errs, code := runCLI(t, nil, "choose-ideas", "demo", "012 yes on opus, 013 smaller, 014 no, 2 later, 99 yes, hmm")
 	if code != 0 {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
 	}
@@ -201,7 +201,7 @@ func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
 	}
 	// A second review: a rejection carries its reason; a second instruction
 	// adds a second note; a number beyond the pitch and the ledger is reported.
-	out, errs, code = runCLI(t, nil, "spec", "review", repo, "013 only the CLI part; 012 no too broad, 4 yes")
+	out, errs, code = runCLI(t, nil, "choose-ideas", repo, "013 only the CLI part; 012 no too broad, 4 yes")
 	if code != 0 {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
 	}
@@ -218,12 +218,12 @@ func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
 		t.Fatalf("012:\n%s", spec12)
 	}
 	// Positions stay what the pitch said after specs move: 1 is still 013.
-	out, _, code = runCLI(t, nil, "spec", "review", "demo", "1 on opus, 3 yes")
+	out, _, code = runCLI(t, nil, "choose-ideas", "demo", "1 on opus, 3 yes")
 	if code != 0 || !strings.Contains(out, "013 Thing 013: adjusting -> adjusting on opus\n") || !strings.Contains(out, "014 Thing 014: building, left unchanged") {
 		t.Fatalf("%d %q", code, out)
 	}
 	// A judge note alone on an adjusting spec sets the judge and adds no note.
-	out, _, code = runCLI(t, nil, "spec", "review", "demo", "013 on fable")
+	out, _, code = runCLI(t, nil, "choose-ideas", "demo", "013 on fable")
 	if code != 0 || !strings.Contains(out, "013 Thing 013: adjusting -> adjusting on fable\n") {
 		t.Fatalf("%d %q", code, out)
 	}
@@ -233,18 +233,18 @@ func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
 	}
 	// Nothing matched: nothing to land, no commit.
 	before := gitOut(t, "-C", repo, "rev-parse", "main")
-	out, _, code = runCLI(t, nil, "spec", "review", "demo", "99 yes")
+	out, _, code = runCLI(t, nil, "choose-ideas", "demo", "99 yes")
 	if code != 0 || !strings.HasSuffix(out, "nothing to land\n") || gitOut(t, "-C", repo, "rev-parse", "main") != before {
 		t.Fatalf("%d %q", code, out)
 	}
-	if _, _, code := runCLI(t, nil, "spec", "review", "demo"); code != 2 {
+	if _, _, code := runCLI(t, nil, "choose-ideas", "demo"); code != 2 {
 		t.Fatalf("usage: %d", code)
 	}
 }
 
 func TestSpecReviewOnMainCheckoutMergesFastForward(t *testing.T) {
 	_, _, repo := ledgerRepoSetup(t)
-	out, errs, code := runCLI(t, nil, "spec", "review", "demo", "012 reject: dup, 1 yes")
+	out, errs, code := runCLI(t, nil, "choose-ideas", "demo", "012 reject: dup, 1 yes")
 	if code != 0 || !strings.Contains(out, "012 Thing 012: proposed -> rejected (dup)\n") || !strings.HasPrefix(out, "note: no settled round with a pitch, so numbers are spec ids only\n") ||
 		!strings.Contains(out, "unmatched: no spec 1 (1 yes)\n") {
 		t.Fatalf("code %d out %q err %q", code, out, errs)

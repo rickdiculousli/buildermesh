@@ -17,15 +17,15 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/proc"
 )
 
-const leaseUsage = "usage: bmesh lease acquire <slot> [--ttl D] | lease renew <key> [--ttl D] | " +
-	"lease release <key> | lease run <slot> [--ttl D] -- <cmd...>"
+const leaseUsage = "usage: bmesh lock-lease acquire <slot> [--ttl D] | lock-lease renew <key> [--ttl D] | " +
+	"lock-lease release <key> | lock-lease run <slot> [--ttl D] -- <cmd...>"
 
 const (
 	defaultTTL = 10 * time.Minute
 	minTTL     = 3 * time.Second // renewals run every ttl/3
 )
 
-// leaseSignals delivers the signals that interrupt `lease run`; tests replace it.
+// leaseSignals delivers the signals that interrupt `lock-lease run`; tests replace it.
 var leaseSignals = func() (<-chan os.Signal, func()) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
@@ -69,13 +69,13 @@ func (a *app) cmdLease(args []string) error {
 		fmt.Fprintln(a.stdout, key)
 		return nil
 	case "renew":
-		holder, err := a.identityOrHost(ctx, "lease")
+		holder, err := a.identityOrHost(ctx, "lock-lease")
 		if err != nil {
 			return err
 		}
 		return leaseErr(mesh.RenewLease(ctx, a.client, pos[0], holder, *ttl, time.Now()), pos[0])
 	default:
-		holder, err := a.identityOrHost(ctx, "lease")
+		holder, err := a.identityOrHost(ctx, "lock-lease")
 		if err != nil {
 			return err
 		}
@@ -100,7 +100,7 @@ func (a *app) acquire(ctx context.Context, slot string, ttl time.Duration) (stri
 	if err != nil {
 		return "", "", err
 	}
-	holder, err := a.identityOrHost(ctx, "lease")
+	holder, err := a.identityOrHost(ctx, "lock-lease")
 	if err != nil {
 		return "", "", err
 	}
@@ -139,7 +139,7 @@ func slotCapacity(slot string) (int, error) {
 // or the run interrupted; otherwise the command's exit code is returned.
 func (a *app) leaseRun(slot string, argv []string, ttl time.Duration) error {
 	ctx, cancel := cmdCtx()
-	holder, err := a.identityOrHost(ctx, "lease")
+	holder, err := a.identityOrHost(ctx, "lock-lease")
 	cancel()
 	if err != nil {
 		return err

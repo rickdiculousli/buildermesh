@@ -44,16 +44,17 @@ commands:
   done --commit SHA [--text T]             report done (a lead's spec must have landed, verified by results)
   send <path> <text|->                     message a node (- reads stdin)
   inbox [--peek] [--json]                  read (and ack) this node's messages
-  state [<path>] [--json]                  print a node's state
-  status [--json]                          every node's state, runner and unread count
+  thread-status [<path>] [--json]          print a node's state
+  mesh-status [--json]                     every node's state, runner and unread count
   watch --nodes a,b [--since T] [--timeout D]
                                            follow nodes until all are done, blocked or silent
   lead start --repo R --spec NNN --brief FILE [--model M] [--effort E] [--title T] [--path P]
                                            start a lead through the runner and register it
-  propose <repo> [--model M] [--effort E] [--context <text|->]
+  ideate <repo> [--model M] [--effort E] [--context <text|->]
                                            run a proposal round: an engineer and a UI/UX engineer thread, each in a
                                            bmesh worktree from main, as nodes <repo>-round-<N>.eng|ux; --context
                                            puts the operator's words in both briefs
+  choose-ideas <repo> "<reply>"            apply the operator's review to the proposed specs and land it on main
   build <repo> <NNN> [--model M] [--effort E] [--path P]
                                            dispatch an accepted spec: record building on main, render the build
                                            brief and start the lead (as lead start)
@@ -72,10 +73,11 @@ commands:
                                            print the result of kind at the commit's tree (exit 3 when none)
   result record <kind> --ok|--fail [--commit C] [--model M] [--output FILE|-] [-- args...]
                                            record a result of kind at the commit's tree
-  lease acquire <slot> [--ttl D]           take a place in a slot and print its key (exit 3 when busy)
-  lease renew <key> [--ttl D]              extend a held lease
-  lease release <key>                      give back a held lease
-  lease run <slot> [--ttl D] -- <cmd...>   hold a lease while a command runs; exit with its code
+  lock-lease acquire <slot> [--ttl D]      take a place in a slot and print its key (exit 3 when busy)
+  lock-lease renew <key> [--ttl D]         extend a held lease
+  lock-lease release <key>                 give back a held lease
+  lock-lease run <slot> [--ttl D] -- <cmd...>
+                                           hold a lease while a command runs; exit with its code
   routine list [--json]                    the repo's kinds with their instances and queue depth
   routine status [<kind>] [--json]         a kind's (or every kind's) instances with state and model
   routine queue <kind> [--commit C] [--model M] [--go] [--rerun] [--again] [--text T] [-- args...]
@@ -92,7 +94,6 @@ commands:
   spec set --id NNN --status S [--repo R] [--from A,B] [--field K=V]...
                                            set a spec's status and fields (--from refuses another status)
   spec template [--repo R]                 print the half-pager (the repo's .bmesh/briefs/half-pager.md, else embedded)
-  spec review <repo> "<reply>"             apply the operator's review to the proposed specs and land it on main
   spec verified [--spec NNN] [--write]     print the verified line from the results for HEAD's tree (exit 3 when
                                            none); --write sets it in the spec's file in this worktree
 `
@@ -177,16 +178,18 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdSend(rest)
 	case "inbox":
 		return a.cmdInbox(rest)
-	case "state":
-		return a.cmdState(rest)
-	case "status":
-		return a.cmdStatus(rest)
+	case "thread-status":
+		return a.cmdThreadStatus(rest)
+	case "mesh-status":
+		return a.cmdMeshStatus(rest)
 	case "watch":
 		return a.cmdWatch(rest)
 	case "lead":
 		return a.cmdLead(rest)
-	case "propose":
-		return a.cmdPropose(rest)
+	case "ideate":
+		return a.cmdIdeate(rest)
+	case "choose-ideas":
+		return a.cmdChooseIdeas(rest)
 	case "build":
 		return a.cmdBuild(rest)
 	case "scaffold":
@@ -195,7 +198,7 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdServe(rest)
 	case "result":
 		return a.cmdResult(rest)
-	case "lease":
+	case "lock-lease":
 		return a.cmdLease(rest)
 	case "routine":
 		return a.cmdRoutine(rest)

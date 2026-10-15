@@ -23,7 +23,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
-const proposeUsage = "usage: bmesh propose <repo> [--model M] [--effort E] [--context <text|->]"
+const ideateUsage = "usage: bmesh ideate <repo> [--model M] [--effort E] [--context <text|->]"
 
 // proposedCap is how many proposed specs a repo may hold before a round is
 // refused: they are waiting on the operator's review.
@@ -44,7 +44,7 @@ type childStarted struct {
 	Host     string `json:"host"`
 }
 
-// cmdPropose runs a proposal round on a ship repo: bmesh propose <repo>
+// cmdIdeate runs a proposal round on a ship repo: bmesh ideate <repo>
 // [--model M] [--effort E] [--context <text|->]. It refuses five or more proposed specs, levels main, picks
 // the next round number from the nodes bucket, registers the round node
 // and starts the two children through the runner on the row's host and
@@ -52,8 +52,8 @@ type childStarted struct {
 // child form, --child eng|ux with --round, --next-id and --thread-id, makes
 // one child's worktree from main, renders its brief, starts it and
 // registers its node; the full form calls it for a child on another box.
-func (a *app) cmdPropose(args []string) error {
-	fs := a.flags("propose")
+func (a *app) cmdIdeate(args []string) error {
+	fs := a.flags("ideate")
 	model := fs.String("model", "", "model the threads run on (default [models] proposer)")
 	effort := fs.String("effort", "", "the threads' effort (default [models] proposer_effort)")
 	child := fs.String("child", "", "start one child only: eng or ux (the child form)")
@@ -66,7 +66,7 @@ func (a *app) cmdPropose(args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fail(exitUsage, proposeUsage)
+		return fail(exitUsage, ideateUsage)
 	}
 	if err := checkModel(*model); err != nil {
 		return err
@@ -159,7 +159,7 @@ func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string) e
 			row.Name, len(proposed), strings.Join(proposed, ", "))
 	}
 	next := spec.NextID(specs)
-	if err := a.connect(ctx, "propose"); err != nil {
+	if err := a.connect(ctx, "ideate"); err != nil {
 		return err
 	}
 	n, err := nextRound(ctx, a.client, row.Name)
@@ -259,7 +259,7 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 	if _, err := mesh.ParsePath(path); err != nil {
 		return childStarted{}, fail(exitUsage, "%v", err)
 	}
-	if err := a.connect(ctx, "propose"); err != nil {
+	if err := a.connect(ctx, "ideate"); err != nil {
 		return childStarted{}, err
 	}
 	_, exists, err := mesh.GetNode(ctx, a.client, path)
@@ -324,7 +324,7 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 		}
 	}
 	started, err := r.Start(context.WithoutCancel(ctx), runner.StartSpec{RepoPath: repoPath, Model: model, Effort: effort,
-		Title: fmt.Sprintf("[propose] %s round %d: %s", row.Name, round, title), BriefPath: briefPath, ThreadID: thread,
+		Title: fmt.Sprintf("[ideate] %s round %d: %s", row.Name, round, title), BriefPath: briefPath, ThreadID: thread,
 		Branch: branch, Worktree: wt, Project: project})
 	if errors.Is(err, runner.ErrTimeout) {
 		return childStarted{}, fmt.Errorf("start timed out; thread id %s may exist (worktree %s)", thread, wt)
@@ -407,7 +407,7 @@ func reachable(ctx context.Context, host string) error {
 // startRemoteChild runs the child form on host and reads what it printed.
 func (a *app) startRemoteChild(ctx context.Context, host, repo string, round int, child string, nextID int,
 	thread, model, effort, focus string) (childStarted, error) {
-	parts := []string{"bmesh", "propose", repo, "--child", child, "--round", strconv.Itoa(round),
+	parts := []string{"bmesh", "ideate", repo, "--child", child, "--round", strconv.Itoa(round),
 		"--next-id", strconv.Itoa(nextID), "--thread-id", thread, "--model", model}
 	if effort != "" {
 		parts = append(parts, "--effort", effort)
@@ -425,7 +425,7 @@ func (a *app) startRemoteChild(ctx context.Context, host, repo string, round int
 	var started childStarted
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &started); err != nil {
-		return childStarted{}, fmt.Errorf("on %s: bmesh propose printed %q", host, strings.TrimSpace(string(out)))
+		return childStarted{}, fmt.Errorf("on %s: bmesh ideate printed %q", host, strings.TrimSpace(string(out)))
 	}
 	if started.Host == "" {
 		started.Host = host

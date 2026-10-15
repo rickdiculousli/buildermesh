@@ -35,7 +35,7 @@ func TestEngineerBriefCarriesTheRepoFacts(t *testing.T) {
 	}
 	for _, s := range []string{"`npm test`", "number yours from 007", "/home/x/repos/pb", "> When it works, finish it: run the repo's verify commands (`npm test`)",
 		"`proposed_by`: `5d0c7a1e-0000-4000-8000-000000000001`", "--node pb-round-1.eng started", "cd /home/x/.bmesh/worktrees/pb/pb-round-1-eng &&",
-		"`buildermesh:propose-engineer`", "bmesh spec template", "waits on the operator"} {
+		"`buildermesh:ideate-engineer`", "bmesh spec template", "waits on the operator"} {
 		if !strings.Contains(out, s) {
 			t.Errorf("missing %q", s)
 		}
@@ -50,7 +50,7 @@ func TestUXBriefNamesSurfacesAndSkill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range []string{"phone / at 390x844", "`buildermesh:propose-ux`", "number yours from 012", "`lens: ux`", "screenshot"} {
+	for _, s := range []string{"phone / at 390x844", "`buildermesh:ideate-ux`", "number yours from 012", "`lens: ux`", "screenshot"} {
 		if !strings.Contains(out, s) {
 			t.Errorf("missing %q", s)
 		}

@@ -24,46 +24,46 @@ func TestLeaseRunReleasesOnExit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, errs, code := runCLI(t, nil, "lease", "run", "game", "--ttl", "1m", "--", "sh", "-c", "echo in; exit 7")
+	out, errs, code := runCLI(t, nil, "lock-lease", "run", "game", "--ttl", "1m", "--", "sh", "-c", "echo in; exit 7")
 	if code != 7 || out != "in\n" || errs != "" {
 		t.Fatalf("run: %d %q %q", code, out, errs)
 	}
 	assertNoLeases(t, c, ctx)
 
 	// Capacity 2 from the repo config: two acquires, then busy.
-	k0, _, code := runCLI(t, nil, "lease", "acquire", "game")
-	k1, _, code1 := runCLI(t, as("app-001"), "lease", "acquire", "game")
+	k0, _, code := runCLI(t, nil, "lock-lease", "acquire", "game")
+	k1, _, code1 := runCLI(t, as("app-001"), "lock-lease", "acquire", "game")
 	if code != 0 || code1 != 0 || k0 != "game.0\n" || k1 != "game.1\n" {
 		t.Fatalf("acquire: %d %q %d %q", code, k0, code1, k1)
 	}
-	if _, errs, code := runCLI(t, nil, "lease", "acquire", "game"); code != 3 || errs != "bmesh: slot game is busy\n" {
+	if _, errs, code := runCLI(t, nil, "lock-lease", "acquire", "game"); code != 3 || errs != "bmesh: slot game is busy\n" {
 		t.Fatalf("busy: %d %q", code, errs)
 	}
-	if _, errs, code := runCLI(t, nil, "lease", "renew", "game.1"); code != 3 {
+	if _, errs, code := runCLI(t, nil, "lock-lease", "renew", "game.1"); code != 3 {
 		t.Fatalf("renew by non-holder: %d %q", code, errs)
 	}
-	if _, errs, code := runCLI(t, as("app-001"), "lease", "renew", "game.1"); code != 0 {
+	if _, errs, code := runCLI(t, as("app-001"), "lock-lease", "renew", "game.1"); code != 0 {
 		t.Fatalf("renew: %d %q", code, errs)
 	}
 	for _, r := range []struct {
 		env map[string]string
 		key string
 	}{{nil, "game.0"}, {as("app-001"), "game.1"}} {
-		if _, errs, code := runCLI(t, r.env, "lease", "release", r.key); code != 0 {
+		if _, errs, code := runCLI(t, r.env, "lock-lease", "release", r.key); code != 0 {
 			t.Fatalf("release %s: %d %q", r.key, code, errs)
 		}
 	}
-	if _, errs, code := runCLI(t, nil, "lease", "release", "game.0"); code != 3 {
+	if _, errs, code := runCLI(t, nil, "lock-lease", "release", "game.0"); code != 3 {
 		t.Fatalf("release twice: %d %q", code, errs)
 	}
 	assertNoLeases(t, c, ctx)
 
 	// Outside a repo the capacity is 1.
 	t.Chdir(t.TempDir())
-	if _, _, code := runCLI(t, nil, "lease", "acquire", "solo"); code != 0 {
+	if _, _, code := runCLI(t, nil, "lock-lease", "acquire", "solo"); code != 0 {
 		t.Fatal(code)
 	}
-	if _, errs, code := runCLI(t, nil, "lease", "acquire", "solo"); code != 3 || !strings.Contains(errs, "busy") {
+	if _, errs, code := runCLI(t, nil, "lock-lease", "acquire", "solo"); code != 3 || !strings.Contains(errs, "busy") {
 		t.Fatalf("solo busy: %d %q", code, errs)
 	}
 }
@@ -76,7 +76,7 @@ func assertNoLeases(t *testing.T, c *mesh.Client, ctx context.Context) {
 	}
 }
 
-// startLeaseRun runs `lease run solo --ttl 3s` on a shell that starts a
+// startLeaseRun runs `lock-lease run solo --ttl 3s` on a shell that starts a
 // background sleep and waits for it; it returns the sleep's pid once the
 // lease is held, and a channel with the exit code and stderr.
 func startLeaseRun(t *testing.T, c *mesh.Client, ctx context.Context) (int, <-chan [2]any) {
@@ -87,7 +87,7 @@ func startLeaseRun(t *testing.T, c *mesh.Client, ctx context.Context) (int, <-ch
 	res := make(chan [2]any, 1)
 	go func() {
 		var out, errb bytes.Buffer
-		code := run([]string{"lease", "run", "solo", "--ttl", "3s", "--", "sh", "-c", `sleep 20 & echo $! > "$0"; wait`, pidFile},
+		code := run([]string{"lock-lease", "run", "solo", "--ttl", "3s", "--", "sh", "-c", `sleep 20 & echo $! > "$0"; wait`, pidFile},
 			strings.NewReader(""), &out, &errb)
 		res <- [2]any{code, errb.String()}
 	}()
@@ -150,7 +150,7 @@ func TestLeaseRunReleasesOnSignal(t *testing.T) {
 	sigs <- syscall.SIGTERM
 	assertExit(t, res, pid, "bmesh: interrupted\n")
 	assertNoLeases(t, c, ctx)
-	if _, errs, code := runCLI(t, nil, "lease", "run", "solo", "--ttl", "2s", "--", "true"); code != 2 {
+	if _, errs, code := runCLI(t, nil, "lock-lease", "run", "solo", "--ttl", "2s", "--", "true"); code != 2 {
 		t.Fatalf("short ttl: %d %q", code, errs)
 	}
 }

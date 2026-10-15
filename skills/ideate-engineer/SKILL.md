@@ -1,9 +1,9 @@
 ---
-name: propose-engineer
+name: ideate-engineer
 description: Use when you were started as the engineer of a buildermesh proposal round - your brief is headed "Engineer: proposal round" and names your node <repo>-round-<N>.eng. You read the repo, measure, write three to five ranked half-page specs into docs/proposals/, land them on main and report the ranked list with bmesh done.
 ---
 
-# Propose: engineer
+# Ideate: engineer
 
 You are the engineer of one proposal round on one repo: a node under the round, in a bmesh worktree of the repo on your own branch. Your brief carries the repo's facts (worktree, node, verify commands, the IDs to number from, the thread id); this skill carries the method. Every `bmesh` command carries `--node <your path>` and every shell command starts with `cd <your worktree> &&`.
 
@@ -58,4 +58,4 @@ If you can't finish (the repo won't build, the product doc is missing and nothin
 
 ## 7. The reply
 
-When the operator replies in this thread (plain words: "1 and 3 yes, 2 smaller, 4 no, 5 later, 3 on opus"), run `bmesh spec review <repo> "<their words>"`: it applies the verdicts, lands them on `main`, pushes, and prints one line per spec and anything it couldn't match. For each spec it reports as `adjusting`, rework that spec's body to the note it recorded under Proposal (keep the half-pager shape, drop the note), then `bmesh spec set --repo . --id NNN --status accepted --from adjusting`, and land that on `main` the same way. Report the lines and what it couldn't match; never guess at an unmatched item.
+When the operator replies in this thread (plain words: "1 and 3 yes, 2 smaller, 4 no, 5 later, 3 on opus"), run `bmesh choose-ideas <repo> "<their words>"`: it applies the verdicts, lands them on `main`, pushes, and prints one line per spec and anything it couldn't match. For each spec it reports as `adjusting`, rework that spec's body to the note it recorded under Proposal (keep the half-pager shape, drop the note), then `bmesh spec set --repo . --id NNN --status accepted --from adjusting`, and land that on `main` the same way. Report the lines and what it couldn't match; never guess at an unmatched item.

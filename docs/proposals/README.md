@@ -1,6 +1,6 @@
 # Proposals
 
-Half-page specs for this repo, one per file: `NNN-slug.md`, `NNN` a three-digit ID numbered in order. Screenshots and mocks they reference live in `assets/` as `NNN-<surface>.png`. Engineer and UI/UX engineer threads write them in proposal rounds (`bmesh propose <repo>`); the operator reviews them (`bmesh spec review <repo> "<reply>"`), and accepted ones are built by dispatched leads.
+Half-page specs for this repo, one per file: `NNN-slug.md`, `NNN` a three-digit ID numbered in order. Screenshots and mocks they reference live in `assets/` as `NNN-<surface>.png`. Engineer and UI/UX engineer threads write them in proposal rounds (`bmesh ideate <repo>`); the operator reviews them (`bmesh choose-ideas <repo> "<reply>"`), and accepted ones are built by dispatched leads.
 
 Each spec's frontmatter is the ledger: its status, who proposed and built it, the branch, the host and the merge commit. There is no other record.
 

@@ -121,7 +121,7 @@ func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s 
 	if model == "" {
 		m, err := spec.ModelFor(s)
 		if err != nil {
-			return buildStarted{}, fail(exitRefused, "refused: %v; pass --model, or `%s on <judge>` to bmesh spec review", err, s.IDString())
+			return buildStarted{}, fail(exitRefused, "refused: %v; pass --model, or `%s on <judge>` to bmesh choose-ideas", err, s.IDString())
 		}
 		model = m
 	}
@@ -181,7 +181,7 @@ func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s 
 
 // recordOnMain sets spec id's status and fields on main: in a bmesh
 // worktree made from main, committed as msg, fast-forwarded onto main and
-// pushed, as spec review lands. It returns the commit's sha. A main that
+// pushed, as choose-ideas lands. It returns the commit's sha. A main that
 // will not fast-forward is refused (exit 3) with the commit kept on its
 // branch.
 func (a *app) recordOnMain(ctx context.Context, name, repoPath, msg string, id int, status string, from []string, fields ...spec.Field) (string, error) {

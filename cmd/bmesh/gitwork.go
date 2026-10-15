@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-// Git steps shared by propose, spec review and the landing of a bmesh
+// Git steps shared by ideate, choose-ideas and the landing of a bmesh
 // worktree on main: the same moves the briefs ask a thread to make, so a
 // checkout someone else is working in is never switched, reset or stashed.
 

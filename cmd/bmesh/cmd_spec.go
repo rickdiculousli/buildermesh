@@ -17,7 +17,7 @@ import (
 
 const specUsage = "usage: bmesh spec list [--repo R] [--status S] [--json] | next-id [--repo R] | " +
 	"set --id NNN --status S [--repo R] [--from A,B] [--field K=V]... | template [--repo R] | " +
-	"review <repo> \"<reply>\" | verified [--spec NNN] [--write]"
+	"verified [--spec NNN] [--write]"
 
 func (a *app) cmdSpec(args []string) error {
 	if len(args) > 0 {
@@ -32,8 +32,6 @@ func (a *app) cmdSpec(args []string) error {
 			return a.cmdSpecSet(args[1:])
 		case "template":
 			return a.cmdSpecTemplate(args[1:])
-		case "review":
-			return a.cmdSpecReview(args[1:])
 		}
 	}
 	return fail(exitUsage, specUsage)
@@ -225,19 +223,19 @@ func (a *app) cmdSpecTemplate(args []string) error {
 	return nil
 }
 
-// cmdSpecReview applies the operator's reply to a repo's proposed specs:
-// bmesh spec review <repo> "<reply>". It levels main, makes a bmesh
+// cmdChooseIdeas applies the operator's reply to a repo's proposed specs:
+// bmesh choose-ideas <repo> "<reply>". It levels main, makes a bmesh
 // worktree from it, applies each verdict with the ledger's refusals,
 // commits `Review: ...`, fast-forwards main, pushes, removes the worktree
 // and prints one line per spec and the unmatched items.
-func (a *app) cmdSpecReview(args []string) error {
-	fs := a.flags("spec review")
+func (a *app) cmdChooseIdeas(args []string) error {
+	fs := a.flags("choose-ideas")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
 	if len(pos) != 2 {
-		return fail(exitUsage, "usage: bmesh spec review <repo> \"<reply>\"")
+		return fail(exitUsage, "usage: bmesh choose-ideas <repo> \"<reply>\"")
 	}
 	if err := a.loadConfig(); err != nil {
 		return err
@@ -396,7 +394,7 @@ func (a *app) applyReview(ctx context.Context, wt, repo, reply string) (lines, c
 // children, even a finished one, are not a pitch yet; nil when no settled
 // round has one.
 func (a *app) latestRanks(ctx context.Context, repo string, specs []*spec.Spec) ([]int, error) {
-	if err := a.connect(ctx, "spec review"); err != nil {
+	if err := a.connect(ctx, "choose-ideas"); err != nil {
 		return nil, err
 	}
 	n, err := nextRound(ctx, a.client, repo)

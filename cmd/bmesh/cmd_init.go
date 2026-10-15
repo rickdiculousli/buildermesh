@@ -139,7 +139,7 @@ func (a *app) cmdInit(args []string) error {
 		fmt.Fprintln(a.stdout, "  bmesh serve        # the daemon and the map (and the hub on a single box); keep it running")
 	}
 	fmt.Fprintln(a.stdout, "  bmesh repos        # the registry")
-	fmt.Fprintln(a.stdout, "  bmesh status       # every node on the mesh")
+	fmt.Fprintln(a.stdout, "  bmesh mesh-status  # every node on the mesh")
 	return nil
 }
 

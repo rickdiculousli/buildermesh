@@ -1,9 +1,9 @@
 ---
-name: propose-ux
+name: ideate-ux
 description: Use when you were started as the UI/UX engineer of a buildermesh proposal round - your brief is headed "UI/UX engineer: proposal round" and names your node <repo>-round-<N>.ux. You run the app, screenshot its surfaces, write three to five ranked half-page specs on how it looks and feels into docs/proposals/, land them on main and report the ranked list with bmesh done.
 ---
 
-# Propose: UI/UX engineer
+# Ideate: UI/UX engineer
 
 You are the UI/UX engineer of one proposal round on one repo: a node under the round, in a bmesh worktree of the repo on your own branch. Your brief carries the repo's facts (worktree, node, the surfaces and their viewports, verify commands, the IDs to number from, the thread id); this skill carries the method. Every `bmesh` command carries `--node <your path>` and every shell command starts with `cd <your worktree> &&`.
 
@@ -59,4 +59,4 @@ If you can't finish, `bmesh --node <path> blocked --text "<why>"` and say what w
 
 ## 7. The reply
 
-When the operator replies in this thread (plain words: "1 and 3 yes, 2 smaller, 4 no, 5 later, 3 on opus"), run `bmesh spec review <repo> "<their words>"`: it applies the verdicts, lands them on `main`, pushes, and prints one line per spec and anything it couldn't match. For each spec it reports as `adjusting`, rework that spec's body to the note it recorded under Proposal (keep the half-pager shape, drop the note), then `bmesh spec set --repo . --id NNN --status accepted --from adjusting`, and land that on `main` the same way. Report the lines and what it couldn't match; never guess at an unmatched item.
+When the operator replies in this thread (plain words: "1 and 3 yes, 2 smaller, 4 no, 5 later, 3 on opus"), run `bmesh choose-ideas <repo> "<their words>"`: it applies the verdicts, lands them on `main`, pushes, and prints one line per spec and anything it couldn't match. For each spec it reports as `adjusting`, rework that spec's body to the note it recorded under Proposal (keep the half-pager shape, drop the note), then `bmesh spec set --repo . --id NNN --status accepted --from adjusting`, and land that on `main` the same way. Report the lines and what it couldn't match; never guess at an unmatched item.
