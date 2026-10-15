@@ -78,15 +78,14 @@ func Mesh(r config.Repo, snippet string) (string, error) {
 		return "", fmt.Errorf("%w: no quoted paragraph", ErrSnippet)
 	}
 	body = strings.TrimSpace(strings.TrimPrefix(body, "**buildermesh.**"))
+	if i := strings.Index(strings.ReplaceAll(body, VerifyPlaceholder, ""), "["); i >= 0 {
+		return "", fmt.Errorf("%w: a placeholder is left: %s", ErrSnippet, body[i:min(len(body), i+40)])
+	}
 	verify := brief.VerifyText(r.Verify)
 	if len(r.Verify) == 0 {
 		verify = "nothing yet (the registry row lists no verify commands)"
 	}
-	body = strings.ReplaceAll(body, VerifyPlaceholder, verify)
-	if i := strings.Index(body, "["); i >= 0 {
-		return "", fmt.Errorf("%w: a placeholder is left: %s", ErrSnippet, body[i:min(len(body), i+40)])
-	}
-	return "## Buildermesh\n" + body, nil
+	return "## Buildermesh\n" + strings.ReplaceAll(body, VerifyPlaceholder, verify), nil
 }
 
 func block(name, body string) string {

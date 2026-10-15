@@ -99,6 +99,11 @@ func TestMeshFillsTheVerifyCommandsFromTheSnippet(t *testing.T) {
 	if _, err := Mesh(pb, "> keeps [a placeholder]\n"); err == nil {
 		t.Fatal("a leftover placeholder accepted")
 	}
+	// A bracket in the row's own verify commands is not a placeholder.
+	bracket := config.Repo{Name: "b", Verify: []string{`[ -z "$(gofmt -l .)" ]`, "go test -run 'Test[A-Z]' ./..."}}
+	if m, err := Mesh(bracket, snippet); err != nil || !strings.Contains(m, "`[ -z \"$(gofmt -l .)\" ]`, `go test -run 'Test[A-Z]' ./...`") {
+		t.Fatal(m, err)
+	}
 	// The embedded snippet renders for a row with and without verify commands.
 	if m, err := Mesh(pb, buildermesh.AgentsSnippet); err != nil || !strings.Contains(m, "`verify` runs `npm test`; `review` asks") {
 		t.Fatal(m, err)

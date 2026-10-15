@@ -284,8 +284,10 @@ func (a *app) buildAccepted(ctx context.Context, row config.Repo, repoPath strin
 }
 
 // waitsOn lists the lower ids s's body names (singly, or as `NNN to MMM`)
-// whose specs are not done, as "NNN (status)". A spec depends on the ones
-// before it that it names; an id above its own is a forward pointer.
+// whose specs are still to be built, as "NNN (status)". A spec depends on
+// the ones before it that it names; an id above its own is a forward
+// pointer, and a spec that is done, rejected or later is not waited on
+// (the last two never reach done).
 func waitsOn(s *spec.Spec, specs []*spec.Spec) []string {
 	ids := map[int]bool{}
 	for _, m := range rangeRE.FindAllStringSubmatch(s.Body, -1) {
@@ -304,12 +306,18 @@ func waitsOn(s *spec.Spec, specs []*spec.Spec) []string {
 		if id >= s.ID {
 			continue
 		}
-		if dep, ok := spec.Find(specs, id); ok && dep.Status() != "done" {
+		if dep, ok := spec.Find(specs, id); ok && !settled(dep.Status()) {
 			waits = append(waits, fmt.Sprintf("%03d (%s)", id, dep.Status()))
 		}
 	}
 	sort.Strings(waits)
 	return waits
+}
+
+// settled reports whether a named spec is nothing to wait for: built, or
+// never to be.
+func settled(status string) bool {
+	return status == "done" || status == "rejected" || status == "later"
 }
 
 // repoLeads counts the leads of repo (on any host) that are not done or

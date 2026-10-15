@@ -21,12 +21,15 @@ func buildSetup(t *testing.T) (*mesh.Client, string, string) {
 		os.Remove(filepath.Join(dir, f))
 	}
 	specs := map[string]string{
-		"001-first":  "status: done\njudge: opus\nmerged: abc\n---\n\n## Proposal\nThe first.\n",
-		"002-second": "status: accepted\njudge: opus\n---\n\n## Proposal\nThe second, after 001.\n",
-		"003-third":  "status: accepted\njudge: fable\n---\n\n## Proposal\nBuilds on 002; deleted in 010.\n",
-		"004-fourth": "status: accepted\njudge: sonnet\n---\n\n## Proposal\nIndependent of 001 to 001; the 120 s timeout stays.\n",
-		"005-fifth":  "status: accepted\n---\n\n## Proposal\nNo judge.\n",
-		"006-sixth":  "status: proposed\njudge: opus\n---\n\n## Proposal\nNot yet.\n",
+		"001-first":   "status: done\njudge: opus\nmerged: abc\n---\n\n## Proposal\nThe first.\n",
+		"002-second":  "status: accepted\njudge: opus\n---\n\n## Proposal\nThe second, after 001.\n",
+		"003-third":   "status: accepted\njudge: fable\n---\n\n## Proposal\nBuilds on 002; deleted in 010.\n",
+		"004-fourth":  "status: accepted\njudge: sonnet\n---\n\n## Proposal\nIndependent of 001 to 001; the 120 s timeout stays; instead of 005 and 007.\n",
+		"007-seventh": "status: rejected\nreason: no\n---\n\n## Proposal\nRejected; 004 replaces it.\n",
+		"008-eighth":  "status: later\n---\n\n## Proposal\nLater.\n",
+		"009-ninth":   "status: accepted\njudge: opus\n---\n\n## Proposal\nAfter 008.\n",
+		"005-fifth":   "status: accepted\n---\n\n## Proposal\nNo judge.\n",
+		"006-sixth":   "status: proposed\njudge: opus\n---\n\n## Proposal\nNot yet.\n",
 	}
 	for name, rest := range specs {
 		id := name[:3]
@@ -141,7 +144,7 @@ func TestBuildRefusals(t *testing.T) {
 	}{
 		{[]string{"build", "demo", "006"}, 3, "spec 006 is proposed, not accepted"},
 		{[]string{"build", "demo", "005"}, 3, "spec 005 names no judge"},
-		{[]string{"build", "demo", "009"}, 1, "no spec 009 on main"},
+		{[]string{"build", "demo", "011"}, 1, "no spec 011 on main"},
 		{[]string{"build", "demo", "x"}, 2, "not a number"},
 		{[]string{"build", "demo"}, 2, "usage"},
 		{[]string{"build", "nope", "001"}, 2, "unknown repo"},
@@ -216,6 +219,7 @@ func TestBuildAcceptedOrdersAndCapsLeads(t *testing.T) {
 		"waits 003 Spec 003: on 002 (accepted)",
 		"waits 004 Spec 004: 3 leads working on demo",
 		"waits 005 Spec 005: 3 leads working on demo",
+		"waits 009 Spec 009: 3 leads working on demo",
 	}
 	if len(lines) != len(want) {
 		t.Fatalf("lines:\n%s", out)
@@ -225,8 +229,9 @@ func TestBuildAcceptedOrdersAndCapsLeads(t *testing.T) {
 			t.Errorf("line %d %q, want prefix %q", i, lines[i], w)
 		}
 	}
-	// 002 and two leads done: 003 starts, 004 starts (001 is done; 120 s is
-	// no id), 005 is refused for its judge, the others go on.
+	// 002 and two leads done: 003 starts, 004 starts (001 is done, 120 s is
+	// no id, 005 is above it, 007 is rejected), 005 is refused for its judge,
+	// 009 starts (008, later, is not waited on).
 	for _, p := range []string{"demo-002", "demo-021", "demo-020"} {
 		if _, err := mesh.WriteState(ctx, c, p, mesh.State{State: "working", By: "node"}); err != nil {
 			t.Fatal(err)
@@ -246,14 +251,16 @@ func TestBuildAcceptedOrdersAndCapsLeads(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("%q: %v", out, err)
 	}
-	if len(got) != 3 || got[0].ID != "003" || got[0].State != "started" || got[0].Path != "demo-003" || got[0].Model != "claude-fable-5-1" ||
+	if len(got) != 4 || got[0].ID != "003" || got[0].State != "started" || got[0].Path != "demo-003" || got[0].Model != "claude-fable-5-1" ||
 		got[1].ID != "004" || got[1].State != "started" || got[1].Model != "claude-sonnet-5-5" ||
-		got[2].ID != "005" || got[2].State != "not started" || !strings.Contains(got[2].Reason, "names no judge") {
+		got[2].ID != "005" || got[2].State != "not started" || !strings.Contains(got[2].Reason, "names no judge") ||
+		got[3].ID != "009" || got[3].State != "started" || got[3].Path != "demo-009" {
 		t.Fatalf("%+v", got)
 	}
-	// Nothing accepted is left but 005.
+	// Nothing accepted is left but 005, which waits for a slot before its
+	// judge is looked at.
 	out, _, _ = runCLI(t, nil, "build", "--accepted", "demo")
-	if !strings.HasPrefix(out, "not started 005") {
+	if out != "waits 005 Spec 005: 3 leads working on demo\n" {
 		t.Fatalf("%q", out)
 	}
 	if _, _, code := runCLI(t, nil, "build", "--accepted", "demo", "002"); code != 2 {
