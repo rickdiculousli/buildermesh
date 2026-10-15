@@ -11,39 +11,37 @@ proposed_on: 2026-10-15
 ---
 
 ## Opportunity
-A lead's `ask` and `blocked` are the two events the daemon pushes to the operator's phone, and the map is where the push's `Click` lands (`<map_url>#/lead/<path>`, README, Pushes). On the map itself, though, an ask is a yellow ring on a box and the word `asking` in 11 px, and the question is nowhere: the node's second line is `state · N unread`, and the text travels only to the lead page's header and timeline.
+A lead's `ask` and `blocked` are the two high-priority pushes to the operator's phone, and the map is where the push's `Click` lands (`<map_url>#/lead/<path>`, README, Pushes). On the map an ask is a yellow ring and the word `asking` in 11 px; the question is nowhere, since a node's second line is `state · N unread`. A `silent` node, the daemon's "may be stuck" verdict, draws at 40 % opacity (`.st-silent { opacity: .4 }`, `map.css`), fainter than `done`. Below, the current styling with the `ux` node set to `asking` and `eng` to `silent` by script:
 
-![map phone](assets/013-map-phone.png)
+![asking and silent today](assets/013-map-phone.png)
 
-A `silent` lead (the daemon's "stalled" verdict, `[liveness] grace`) is drawn at 40 % opacity (`.st-silent { opacity: .4 }` in `map.css`): the one state that means "a node may be stuck" is the faintest thing on the screen, fainter than `done`.
-
-The recent-events drawer is the other place the words go, and there a long inbox message fills the whole phone screen, twice (the operator's round brief, sent to `.eng` and `.ux`):
+The words do reach the recent-events drawer and the lead page, and there a long inbox message fills a phone screen, twice (the operator's round brief, sent to `.eng` and `.ux`):
 
 ![drawer phone](assets/013-drawer-phone.png)
 
-So the operator on the phone opens the map and still has to tap into each lead to learn what it wants; the lead page then shows the question in a `muted` span after the badge.
+So the operator on the phone opens the map and still taps into each lead to learn what it wants; the lead page then shows the question as a `muted` span after the badge.
 
 ![lead page](assets/013-lead-desktop.png)
 
 ## Proposal
 In:
-- A "needs you" band under the strip, shown only when a lead or engineer is `asking`, `blocked` or `silent`: one row per node, its state badge, its path, and the event's text (the ask or block text; for silent, "quiet for 25m" from its last event's time), cut to three lines with the rest on tap. The row links to the lead page. `done` clears it; so does the next `progress` from that node.
-- On the map, an `asking` or `blocked` box's second line is the text's first 16 characters' worth (what `room()` fits) after the state, instead of the unread count; `silent` boxes draw at full opacity with the `blocked` ring colour in a dashed stroke.
-- The drawer and the lead page's inbox and timeline clamp each row's text to three lines; a tap on the row expands it. The row's path drops the repeated prefix when the drawer is on a lead page.
+- A "needs you" band between the strip (015's summary row, when built) and the map, shown only when a lead, round or engineer is `asking`, `blocked` or `silent`: one row per node with its state badge, path and `state.text` (the ask or block text; for silent the daemon already writes "quiet for 25m"), clamped to three lines with the rest on tap. The row links to the lead page. The band drops the row on the node's next `progress`, `started` or `done`.
+- On the map an `asking` or `blocked` box's second line is the state followed by as much of `state.text` as `room()` leaves, instead of the unread count. `silent` boxes draw at full opacity with a dashed stroke in the `blocked` colour.
+- Drawer rows and the lead page's inbox and timeline rows clamp to three lines, expanding on tap. The lead page's timeline rows drop the lead's own path prefix from child paths (`eng`, not `buildermesh-round-1.eng`).
 
-Out: replying from the map (the thread is the place for that; the lead page's `console` link already goes there), sound, any new event.
+Out: replying from the map (the thread is for that; the `console` link goes there), sound, any new event or API field (`state.text` is already in `/api/tree`).
 
-Judge: fable, because the band must be loud enough to stop a thumb and quiet enough to live under the quota strip, and that balance is a taste call.
+Judge: fable, because the band must be loud enough to stop a thumb and quiet enough to live under the strip, and that balance is taste.
 
 ## What you'll see
-A lead asks; the operator's push opens the map and the top of the page reads, in one row, who asks and what. A node that goes quiet is outlined, not faded. The drawer lists thirty events on one phone screen instead of three.
+A lead asks; the push opens the map and the top of the page reads, in one row, who asks and what. A quiet node is outlined, not faded. The phone drawer shows about ten events per screen instead of two.
 
 ## Verification
-The verify commands; a web test that serves a tree with an `asking` lead and checks the band holds the event text; the `?check=1` self-check counts the band as a tap target (min 40 px). README's map paragraph names the band and the silent styling.
+The verify commands pass. The browser check is the `surface` kind against `?check=1` at 390x844 with a node set `asking` (by `bmesh ask` on a test node, or by script as in the screenshot above): the band is present, holds the text, and the self-check's `minTap` stays at 40 or more with the band's rows counted as tap targets. README's Map paragraph (added by 012, or here) names the band and the silent styling.
 
 ## Risks and the alternative considered
-Alternatives: (a) put the text only on the node box: 184 px fits nineteen characters, so it is a teaser, not the ask; (b) badge the header nav with a count: tells you something waits, not what; (c) rely on the push notification body: the push is gone once dismissed and a second ask overwrites it in the eye.
+Alternatives: (a) text on the node box only: a 184 px box fits about nineteen characters after the state, a teaser, not the ask; (b) a count badge on the nav: tells you something waits, not what; (c) rely on the push body: gone once dismissed, and a second ask overwrites it in the eye.
 
-The case that users don't feel it: a mesh with one lead and an operator at a desk sees the ring and clicks. The map's own README says the phone is a first-class viewport (the 699 px breakpoint, the bottom sheet), and spec 006 records that "on the phone the chat is the interface"; the map has to carry the words there.
+The case that users don't feel it: a mesh with one lead and an operator at a desk sees the ring and clicks. `map.css` builds the phone layout on purpose (the 699 px breakpoint, the bottom sheet) and spec 006 records that "on the phone the chat is the interface"; the map has to carry the words there.
 
 ## Needs from the operator

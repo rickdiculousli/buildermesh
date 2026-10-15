@@ -11,42 +11,42 @@ proposed_on: 2026-10-15
 ---
 
 ## Opportunity
-The map answers "what is the mesh doing right now", and today the answer is below the fold on both viewports. Leads are laid out in `started_at` order, so the oldest, finished ones come first and the one live lead comes last.
+The map answers "what is the mesh doing now", and today that answer is off-screen on both viewports. `layout()` in `map.js` places lead blocks in `started_at` order, so the finished ones come first and the one live lead last.
 
-At 1280x800 the page is 2136 px wide (`?check=1` reports `SCROLLS scrollWidth=2136`): the first screen is seven grey `done` blocks, and `buildermesh-round-1`, the only `working` lead, starts at roughly x=1860, off the right edge, with the routines column further right still.
+At 1280x800 the `?check=1` title reads `SCROLLS scrollWidth=2136`: the first screen is five grey `done` blocks and part of a sixth, `buildermesh-round-1` (the only `working` lead) starts at about x=1600, and the routines column at about x=1870, both off the right edge.
 
 ![map desktop](assets/012-map-desktop.png)
 
-At 390x844 the blocks stack. The working round is the eighth block; its top edge sits under the closed drawer, so the first paint shows nothing but done boxes and a check mark per box.
+At 390x844 the blocks stack. The working round is the eighth block, and its top edge sits under the closed drawer, so the first paint is done boxes and check marks only.
 
 ![map phone, full page](assets/012-map-phone-full.png)
 
-The map draws every lead ever registered in `bm-nodes`; a node and its branch "stay in `bm-nodes` for the map" (README, Executors), so the done set only grows and the live set never gets the first screen back.
+The map draws every lead ever registered: a node "stays in `bm-nodes` for the map" (README, Executors), so the done set only grows and the live set never gets the first screen back.
 
 ## Proposal
-Order and fold, no new data.
+Order and fold; no new data.
 
 In:
-- Blocks run in need order, not start order: `blocked`, `asking`, `silent` first, then `working`, then `done`; ties keep `started_at` order so the layout stays stable while a round runs.
-- Done leads leave the tree and fold into one shelf under the live blocks: a row of chips (`buildermesh-001 ✓`), each a link to its lead page, headed `done (7)`. Live leads whose children are all done still draw as a tree (a lead's state is the lead's).
-- A `done` event moves the lead to the shelf on the next redraw (the map already refetches on `done`); a lead with no live sibling still draws as a tree, so a single running build looks exactly as it does now.
-- Routines keep their column (the phone stacks it last) and are the subject of 014.
+- Blocks run in need order: `blocked`, `asking`, `silent`, then `working`, then `idle` (no state yet), then `done`; ties keep `started_at` order so a running round's layout stays stable. The orphans block keeps its place after the leads.
+- When at least one lead is live and at least one is `done`, the done leads leave the tree and fold into a shelf under the live blocks: a row of chips (`buildermesh-001 ✓`, newest first), each a link to its lead page, headed `done (7)`. With no live lead, done leads draw as trees, as now. A lead's state is its own: a live lead whose children are all done still draws as a tree.
+- A `done` event moves the lead to the shelf on the redraw the map already does for `done`.
+- Routines keep their column (last on the phone); 014 is about them.
 
-Out: hiding done leads, a filter UI, any change to `/api/tree` or the daemon.
+Out: hiding done leads, a filter UI, any change to `/api/tree` or the daemon. 013 adds a band for asks above the map; this spec only orders the map itself.
 
-Judge: fable, because what reads as "live" in a glance is a spacing and weight call the spec can't pin.
+Judge: fable, because what reads as "live" at a glance is a weight and spacing call the spec can't pin.
 
 ## What you'll see
-Open the map on the phone: the working round and its two engineers fill the first screen; the seven finished leads are a line of chips beneath; routines follow. On the desktop the live blocks start at the left and the page no longer scrolls sideways for a mesh of this size.
+On the phone the working round and its two engineers fill the first screen, the finished leads are a line of chips beneath, routines follow. On the desktop the live blocks start at the left and a mesh of this size no longer scrolls sideways. The mock below shows the shelf; its routines box is 014's, not this spec's.
 
 ![phone mock](assets/012-mock-phone.png)
 
 ## Verification
-`TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test -count=1 ./...` (the web tests that read `?check=1`); `go vet ./...`; `gofmt`. The self-check title at 390 and 1280 must read `ok` for the tree above with one live lead, and the first `.node.st-working` box must have a `getBoundingClientRect().top` inside the viewport on first paint. README's map paragraph gains the ordering rule.
+The verify commands pass (`web_test.go` covers the served assets and API, not the browser). The browser check is the `surface` kind against `http://127.0.0.1:3774/?check=1` at 390x844 and 1280x800: the title reads `ok` (no sideways scroll) for this mesh, and the first `.st-working` box's top is inside the viewport on first paint. README gains a Map paragraph under `config.toml`'s `[serve]` (there is none today) that states the ordering and the shelf.
 
 ## Risks and the alternative considered
-Other ways to carry the same job: (a) sort only, keep done leads as full blocks: the phone still scrolls through seven done blocks to reach routines, so it halves the problem; (b) hide done leads behind a toggle: loses the click-through to a finished lead's spec and timeline, which the operator uses after a push; (c) a separate "history" page: a second place to look. The shelf keeps every lead reachable in one screen.
+Other ways to carry the job: (a) sort only, keeping done leads as full blocks: the phone still scrolls through seven done blocks before routines; (b) hide done leads behind a toggle: loses the click-through to a finished lead's spec and timeline, used after a push; (c) a history page: a second place to look. The shelf keeps every lead reachable on one screen.
 
-The case that users don't feel it: with one or two leads on the mesh the current order is fine. The screenshots show the mesh after one day of use already at eight leads, and the count only grows.
+The case that users don't feel it: with one or two leads the current order is fine. The screenshots show eight leads after one day, and the count only grows.
 
 ## Needs from the operator
