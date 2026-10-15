@@ -4,13 +4,15 @@ title: Leads leave feedback; the coordinator drains it into fixes and rounds
 kind: feature
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-15
 built_by: 6db8bf14-782d-4931-99f9-d2c7084f66e0
 host: k16
-branch: t3code/9b9a69bc
+branch: t3code/feedback-queue-build-families
+verified: verify ok t:ddbb4f69
+merged: 36b1aa6a7ac23b7f2214b44bff01daa3086c385f
 ---
 
 ## Opportunity
