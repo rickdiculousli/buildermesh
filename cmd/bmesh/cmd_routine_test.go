@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -162,5 +163,49 @@ func TestRoutineListStatusAndGo(t *testing.T) {
 	out, errs, code = runCLI(t, nil, "routine", "status")
 	if code != 0 || !strings.Contains(out, "routine.review.m1-1") || strings.Contains(out, "verify") {
 		t.Fatalf("status all: %d %q %q", code, out, errs)
+	}
+}
+
+// queuedRepo queues verify as app-001 from the cwd and returns the job's repo.
+func queuedRepo(t *testing.T, c *mesh.Client, ctx context.Context) string {
+	t.Helper()
+	out, errs, code := runCLI(t, as("app-001"), "routine", "queue", "verify")
+	if code != 0 || !strings.HasPrefix(out, "queued ") {
+		t.Fatalf("queue: %d %q %q", code, out, errs)
+	}
+	msgs, err := mesh.Fetch(ctx, c, mesh.RoutinePath("verify"), true)
+	if err != nil || len(msgs) != 1 || msgs[0].Job == nil {
+		t.Fatalf("kind inbox %+v %v", msgs, err)
+	}
+	return msgs[0].Job.Repo
+}
+
+// R16: a job queued from a linked worktree (where leads live) names the
+// [repos] entry of its main repo, not the worktree's directory.
+func TestQueueFromLinkedWorktreeNamesConfiguredRepo(t *testing.T) {
+	c, ctx := setup(t)
+	repo := kindRepo(t, map[string]string{"verify": "command = \"true\"\n"})
+	wt := filepath.Join(t.TempDir(), "thread-1")
+	runGit(t, repo, "worktree", "add", "--detach", wt)
+	t.Chdir(wt)
+	// No [repos] entry: the main repo's base name.
+	if got := queuedRepo(t, c, ctx); got != filepath.Base(repo) {
+		t.Fatalf("no [repos]: repo %q, want %q", got, filepath.Base(repo))
+	}
+	f, err := os.OpenFile(os.Getenv("BMESH_CONFIG"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("[repos]\nother = \"" + t.TempDir() + "\"\ndemo = \"" + repo + "\"\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	if got := queuedRepo(t, c, ctx); got != "demo" {
+		t.Fatalf("[repos]: repo %q, want demo", got)
+	}
+	// A registered node naming its repo is believed.
+	putNode(t, c, ctx, mesh.Node{Path: "app-001", Repo: "named"})
+	if got := queuedRepo(t, c, ctx); got != "named" {
+		t.Fatalf("node: repo %q, want named", got)
 	}
 }

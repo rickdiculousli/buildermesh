@@ -12,6 +12,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/checkout"
 	"github.com/rickdiculousli/buildermesh/internal/instance"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
@@ -318,7 +319,11 @@ func (a *app) cmdRoutineQueue(args []string) error {
 			return nil
 		}
 	}
-	j := mesh.Job{ID: newID(), Kind: name, Repo: a.repoName(top), Commit: *commit, Args: jobArgs,
+	repo, err := a.repoName(ctx, self, top)
+	if err != nil {
+		return err
+	}
+	j := mesh.Job{ID: newID(), Kind: name, Repo: repo, Commit: *commit, Args: jobArgs,
 		Model: *model, Text: *text, Go: *goNow, Rerun: *rerun}
 	dup, err := mesh.Queue(ctx, a.client, self, j, top)
 	if err != nil {
@@ -332,27 +337,35 @@ func (a *app) cmdRoutineQueue(args []string) error {
 	return nil
 }
 
-// repoName is the [repos] key naming the checkout at top, else its base name.
-func (a *app) repoName(top string) string {
-	want := evalSymlinks(top)
+// repoName is the name the daemon resolves a job's repo by: the node's repo
+// when self is a registered node naming one; else the [repos] key whose
+// checkout shares the git common dir of top (top may be a linked worktree);
+// else the base name of the main repo holding top.
+func (a *app) repoName(ctx context.Context, self mesh.Path, top string) (string, error) {
+	n, ok, err := mesh.GetNode(ctx, a.client, self.String())
+	if err != nil {
+		return "", err
+	}
+	if ok && n.Repo != "" {
+		return n.Repo, nil
+	}
+	common, ok := checkout.CommonDir(top)
+	if !ok {
+		return filepath.Base(top), nil
+	}
 	keys := make([]string, 0, len(a.cfg.Repos))
 	for key := range a.cfg.Repos {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		if _, p, err := a.cfg.RepoPath(key); err == nil && evalSymlinks(p) == want {
-			return key
+		if _, p, err := a.cfg.RepoPath(key); err == nil {
+			if c, ok := checkout.CommonDir(p); ok && c == common {
+				return key, nil
+			}
 		}
 	}
-	return filepath.Base(top)
-}
-
-func evalSymlinks(p string) string {
-	if r, err := filepath.EvalSymlinks(p); err == nil {
-		return r
-	}
-	return p
+	return filepath.Base(filepath.Dir(common)), nil
 }
 
 // cmdRoutineGo tells a kind's instances to start on the jobs waiting.

@@ -70,12 +70,14 @@ func Ensure(repoPath, root, instance string) (string, error) {
 // belongsTo reports whether dir is a working worktree of repoPath, so a stale
 // one (repo deleted or recreated, or a same-named repo) is replaced.
 func belongsTo(repoPath, dir string) bool {
-	a, ok := commonDir(repoPath)
-	b, ok2 := commonDir(dir)
+	a, ok := CommonDir(repoPath)
+	b, ok2 := CommonDir(dir)
 	return ok && ok2 && a == b
 }
 
-func commonDir(dir string) (string, bool) {
+// CommonDir is the git common dir of the checkout holding dir, absolute with
+// symlinks resolved: the same for a repo and each of its linked worktrees.
+func CommonDir(dir string) (string, bool) {
 	out, err := git(dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return "", false
