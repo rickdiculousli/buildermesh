@@ -88,6 +88,24 @@ func TestParseReplyANumberAfterASpokenVerdictStartsAClause(t *testing.T) {
 	}
 }
 
+func TestParseReplyFirstWordDecides(t *testing.T) {
+	ids := map[int]bool{2: true, 4: true, 5: true, 6: true}
+	r := ParseReply("2 make it work with no network; 4 no because 5 covers it; 5 do not build the cli twice; 6 later on sonnet; 2 on opus but shorter", ids, nil)
+	want := []Verdict{
+		{ID: 2, Move: "adjusting", Note: "make it work with no network"},
+		{ID: 4, Move: "rejected", Note: "because 5 covers it"},
+		{ID: 5, Move: "adjusting", Note: "do not build the cli twice"},
+		{ID: 6, Move: "later", Judge: "sonnet"},
+		{ID: 2, Move: "adjusting", Note: "but shorter", Judge: "opus"},
+	}
+	if !reflect.DeepEqual(r.Verdicts, want) || len(r.Unmatched) != 0 {
+		t.Fatalf("%+v", r)
+	}
+	if c := clauses("3 yes and 4 no, 4 no because 5 covers it and 6 later"); !reflect.DeepEqual(c, []string{"3 yes", "4 no", "4 no because 5 covers it", "6 later"}) {
+		t.Fatalf("%q", c)
+	}
+}
+
 func TestRanksAndAdjustNote(t *testing.T) {
 	specs := []*Spec{
 		{ID: 3, Fields: map[string]string{"status": "done"}},

@@ -16,6 +16,7 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/brief"
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/daemon"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/runner"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
@@ -184,13 +185,22 @@ func (a *app) runRound(row config.Repo, repoPath, model string) error {
 			started, err = a.startRemoteChild(ctx, hosts[c], row.Name, n, c, ids[c], threads[c], model)
 		}
 		if err != nil {
-			// The round cannot settle without both children: block it,
-			// naming the one that failed, so the mesh shows it closed.
-			why := fmt.Sprintf("the %s thread did not start: %v", c, err)
-			if _, werr := mesh.WriteState(ctx, a.client, roundPath, mesh.State{State: "blocked", Text: why, By: "node"}); werr == nil {
-				_ = mesh.PublishEvent(ctx, a.client, mesh.Event{From: roundPath, Event: "blocked", Text: why})
+			// The child that did not start is blocked, so the round reads
+			// blocked naming it and the daemon resettles it with the other
+			// child's pitch when that one finishes.
+			why := fmt.Sprintf("did not start: %v", err)
+			child := roundPath + "." + c
+			_, _ = mesh.WriteState(ctx, a.client, child, mesh.State{State: "working", By: "node"})
+			_, _ = mesh.WriteState(ctx, a.client, child, mesh.State{State: "blocked", Text: why, By: "node"})
+			states, rerr := mesh.ReadAllStates(ctx, a.client)
+			if rerr == nil {
+				if state, text, ok := daemon.SettleRound(states[roundPath+".eng"], states[roundPath+".ux"]); ok {
+					if _, werr := mesh.WriteState(ctx, a.client, roundPath, mesh.State{State: state, Text: text, By: "node"}); werr == nil {
+						_ = mesh.PublishEvent(ctx, a.client, mesh.Event{From: roundPath, Event: state, Text: text})
+					}
+				}
 			}
-			return fmt.Errorf("round %s: %s", roundPath, why)
+			return fmt.Errorf("round %s: the %s thread %s", roundPath, c, why)
 		}
 		out[c] = started
 	}

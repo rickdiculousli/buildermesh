@@ -9,14 +9,14 @@ import (
 
 // The reply grammar: the operator's review of a round, typed in plain
 // words ("1 and 3 yes, 2 smaller, 4 no, 5 later, 3 on opus"). A reply is
-// clauses separated by commas, semicolons or line breaks; a clause names
-// specs by number and says what happens to them.
+// clauses; a clause is the numbers of the specs it is about, then a verdict
+// phrase whose first word decides what happens to them.
 
 // Verdict is one clause's effect on one spec.
 type Verdict struct {
 	ID    int
 	Move  string // accepted, rejected, later, adjusting, or "" for a judge note alone
-	Note  string // rejected: the reason; adjusting: the instruction
+	Note  string // rejected: the reason; adjusting: the instruction; both as written
 	Judge string // set by "on fable|opus|sonnet"
 }
 
@@ -34,33 +34,54 @@ var (
 	fillers   = map[string]bool{"and": true, "&": true, "+": true, "please": true, "spec": true, "specs": true}
 )
 
+// word is a token lowercased with punctuation trimmed, for matching.
+func word(w string) string { return strings.ToLower(strings.Trim(w, ".!:\"'()")) }
+
+func isNumber(w string) bool { return numberRE.MatchString(w) }
+
+func isJudge(w string) bool {
+	_, ok := Judges[word(w)]
+	return ok
+}
+
+// spokenAt reports whether tokens[i] opens a spoken verdict: yes, no,
+// later, or "on <judge>".
+func spokenAt(tokens []string, i int) bool {
+	w := word(tokens[i])
+	if yesWords[w] || noWords[w] || w == "later" {
+		return true
+	}
+	return w == "on" && i+1 < len(tokens) && isJudge(tokens[i+1])
+}
+
 // ParseReply reads reply against the ledger. ids are the spec ids that
 // exist; ranks are the ids of the specs the operator is reviewing, in pitch
 // order, so a number that is no spec id but a position in that list names
-// the spec at it (ids win over ranks). A clause's leading numbers (joined
-// by "and" or the like) name its specs; what follows is its verdict: yes/accept to accepted, no/reject to rejected (the clause's other
-// words as the reason), later to later, "on <judge>" sets the judge (alone
-// it moves nothing), and any other words are an instruction, so the spec
-// becomes adjusting with them as its note. A clause with no number, no
-// verdict, or numbers that match nothing is reported, not guessed at.
+// the spec at it (ids win over ranks). A clause is its leading numbers
+// (joined by "and" or the like) and the phrase after them, whose first
+// word decides: yes/accept to accepted, no/reject to rejected with the rest
+// as the reason, later to later, "on <judge>" alone to a judge note, and
+// any other first word makes the whole phrase an instruction: the spec
+// becomes adjusting with it as its note. Reasons and instructions are kept
+// as written, so a verdict word or a number inside one is just a word.
+// "on <judge>" right after yes or later sets the judge as well. A clause
+// with no number, no phrase, or a number that matches nothing is reported,
+// not guessed at.
 func ParseReply(reply string, ids map[int]bool, ranks []int) Review {
 	var r Review
 	for _, clause := range clauses(reply) {
-		// The numbers lead the clause ("1 and 3 yes"); once a verdict or
-		// instruction word is read, a later number is part of the words
-		// ("13 split into 14 parts" names only 013).
+		tokens := strings.Fields(clause)
 		var nums []int
-		var words []string
-		for _, w := range strings.Fields(clause) {
-			if m := numberRE.FindStringSubmatch(w); m != nil && len(words) == 0 {
+		i := 0
+		for ; i < len(tokens); i++ {
+			if m := numberRE.FindStringSubmatch(tokens[i]); m != nil {
 				n, _ := strconv.Atoi(m[1])
 				nums = append(nums, n)
 				continue
 			}
-			if len(words) == 0 && fillers[strings.ToLower(w)] {
-				continue
+			if !fillers[word(tokens[i])] {
+				break
 			}
-			words = append(words, w)
 		}
 		if len(nums) == 0 {
 			r.Unmatched = append(r.Unmatched, clause)
@@ -84,7 +105,7 @@ func ParseReply(reply string, ids map[int]bool, ranks []int) Review {
 		if len(targets) == 0 {
 			continue
 		}
-		v, ok := verdictOf(words)
+		v, ok := verdictOf(tokens[i:])
 		if !ok {
 			r.Unmatched = append(r.Unmatched, clause)
 			continue
@@ -98,96 +119,94 @@ func ParseReply(reply string, ids map[int]bool, ranks []int) Review {
 }
 
 // clauses splits a reply at commas, semicolons and line breaks, and inside
-// one of those at a number that follows a spoken verdict ("3 yes and 4 no"
-// is two clauses; "13 split into 14 parts" is one, since "split into" is an
-// instruction, not a verdict). A filler left dangling before the cut
-// ("and") is dropped.
+// one of those at a number that follows a spoken verdict and opens another
+// ("3 yes and 4 no" is two clauses, "4 no because 5 covers it" is one). A
+// filler left dangling before the cut ("and") is dropped.
 func clauses(reply string) []string {
 	var out []string
 	for _, clause := range clauseSep.Split(strings.TrimSpace(reply), -1) {
-		var cur []string
-		leading, spoken := true, false
-		flush := func() {
-			for len(cur) > 0 && fillers[strings.ToLower(cur[len(cur)-1])] {
-				cur = cur[:len(cur)-1]
-			}
-			if len(cur) > 0 {
-				out = append(out, strings.Join(cur, " "))
-			}
-			cur, leading, spoken = nil, true, false
-		}
-		for _, w := range strings.Fields(clause) {
-			isNum := numberRE.MatchString(w)
-			if isNum && !leading && spoken {
-				flush()
-			}
-			if !isNum && !fillers[strings.ToLower(w)] {
-				leading = false
-				if spokenVerdict(w) {
-					spoken = true
+		tokens := strings.Fields(clause)
+		start := 0
+		spoken := false // the current clause's phrase opened with a spoken verdict
+		inPhrase := false
+		for i := 0; i < len(tokens); i++ {
+			if isNumber(tokens[i]) {
+				if inPhrase && spoken && opensClause(tokens, i) {
+					out = append(out, strings.Join(trimFillers(tokens[start:i]), " "))
+					start, spoken, inPhrase = i, false, false
 				}
+				continue
 			}
-			cur = append(cur, w)
+			if fillers[word(tokens[i])] {
+				continue
+			}
+			if !inPhrase {
+				inPhrase = true
+				spoken = spokenAt(tokens, i)
+			}
 		}
-		flush()
+		if rest := trimFillers(tokens[start:]); len(rest) > 0 {
+			out = append(out, strings.Join(rest, " "))
+		}
 	}
 	return out
 }
 
-// spokenVerdict reports whether w is a verdict word (yes, no, later, a
-// judge name) rather than part of an instruction.
-func spokenVerdict(w string) bool {
-	w = strings.ToLower(strings.Trim(w, ".!:\"'()"))
-	if yesWords[w] || noWords[w] || w == "later" {
-		return true
+// opensClause reports whether the numbers at tokens[i:] are followed by a
+// spoken verdict, so they open a clause of their own.
+func opensClause(tokens []string, i int) bool {
+	for ; i < len(tokens); i++ {
+		if isNumber(tokens[i]) || fillers[word(tokens[i])] {
+			continue
+		}
+		return spokenAt(tokens, i)
 	}
-	_, judge := Judges[w]
-	return judge
+	return false
 }
 
-// verdictOf reads a clause's words (its numbers removed). Words that are
-// not verdicts stay as written: they are the note the next thread works
-// from.
-func verdictOf(words []string) (Verdict, bool) {
-	var v Verdict
-	var rest []string
-	for i := 0; i < len(words); i++ {
-		w := strings.ToLower(strings.Trim(words[i], ".!:\"'()"))
-		switch {
-		case w == "":
-		case w == "on" && i+1 < len(words):
-			j := strings.ToLower(strings.Trim(words[i+1], ".!:\"'()"))
-			if _, ok := Judges[j]; ok {
-				v.Judge = j
-				i++
-				continue
-			}
-			rest = append(rest, words[i])
-		case yesWords[w] && v.Move == "":
-			v.Move = "accepted"
-		case noWords[w] && v.Move == "":
-			v.Move = "rejected"
-		case w == "later" && v.Move == "":
-			v.Move = "later"
-		default:
-			rest = append(rest, words[i])
-		}
+func trimFillers(tokens []string) []string {
+	for len(tokens) > 0 && fillers[word(tokens[len(tokens)-1])] {
+		tokens = tokens[:len(tokens)-1]
 	}
-	note := strings.TrimSpace(strings.Join(rest, " "))
-	switch v.Move {
-	case "rejected":
-		v.Note = note
-	case "accepted", "later":
-		if note != "" {
-			// "yes but smaller": an instruction rides on the verdict.
-			v.Move, v.Note = "adjusting", note
-		}
-	case "":
-		if note != "" {
-			v.Move, v.Note = "adjusting", note
-		} else if v.Judge == "" {
-			return Verdict{}, false
-		}
+	return tokens
+}
+
+// verdictOf reads a clause's phrase (the tokens after its numbers).
+func verdictOf(tokens []string) (Verdict, bool) {
+	tokens = trimFillers(tokens)
+	if len(tokens) == 0 {
+		return Verdict{}, false
+	}
+	var v Verdict
+	first := word(tokens[0])
+	rest := tokens[1:]
+	switch {
+	case yesWords[first]:
+		v.Move = "accepted"
+	case noWords[first]:
+		v.Move = "rejected"
+	case first == "later":
+		v.Move = "later"
+	case first == "on" && len(tokens) >= 2 && isJudge(tokens[1]):
+		v.Judge = word(tokens[1])
+		rest = tokens[2:]
+	default:
+		v.Move = "adjusting"
+		v.Note = strings.Join(tokens, " ")
+		return v, true
+	}
+	if v.Move == "rejected" {
+		v.Note = strings.Join(rest, " ")
+		return v, true
+	}
+	// "yes on opus", "later on sonnet": the judge rides on the verdict.
+	if len(rest) >= 2 && word(rest[0]) == "on" && isJudge(rest[1]) {
+		v.Judge = word(rest[1])
+		rest = rest[2:]
+	}
+	// "yes but smaller", "on opus but shorter": an instruction rides on it.
+	if note := strings.Join(trimFillers(rest), " "); note != "" {
+		v.Move, v.Note = "adjusting", note
 	}
 	return v, true
 }
