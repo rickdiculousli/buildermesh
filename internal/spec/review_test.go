@@ -128,6 +128,13 @@ func TestRanksAndAdjustNote(t *testing.T) {
 	if got := PitchRanks("", specs); len(got) != 0 {
 		t.Fatal(got)
 	}
+	// A pitch typed as one line, as a thread's --text often is.
+	many := []*Spec{{ID: 1, Fields: map[string]string{"status": "proposed"}}, {ID: 2, Fields: map[string]string{"status": "proposed"}},
+		{ID: 3, Fields: map[string]string{"status": "proposed"}}, {ID: 200, Fields: map[string]string{"status": "proposed"}}}
+	line := "001 Build from committed data (maintenance, M, opus): no .cache anywhere. 002 Optional Whisper group (time-cost, S, sonnet): 5.6 GB venv and 18.6 s per run for 43 tests. 003 Tested drill timer (maintenance, S, opus): 200 lines of guide.js, no test."
+	if got := PitchRanks(line, many); !reflect.DeepEqual(got, []int{1, 2, 3}) {
+		t.Fatal(got)
+	}
 	body := "## Opportunity\nslow\n\n## Proposal\nThe change.\n"
 	got := AdjustNote(body, "2026-10-15", "smaller")
 	if got != "## Opportunity\nslow\n\n## Proposal\nAdjust (2026-10-15): smaller\nThe change.\n" {
