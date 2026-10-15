@@ -4,10 +4,12 @@ title: command-center keeps only ops
 kind: maintenance
 size: M
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: da6488fd-38bd-4c4c-994c-a7de257d9424
 proposed_on: 2026-10-15
+built_by: e301c2c6-470c-4773-b907-8054c9f6ce42
+host: k16
 ---
 
 ## Opportunity
