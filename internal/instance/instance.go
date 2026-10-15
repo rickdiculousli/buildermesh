@@ -5,6 +5,7 @@ package instance
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -41,8 +42,10 @@ func (j Job) env() []string {
 }
 
 // run runs argv in j.Dir with the job's environment, in its own process
-// group, killing the group at timeout (0: none) or when ctx ends. It returns
-// a note for the output when the run was killed, and the run's error.
+// group, killing the group at timeout (0: none) or when ctx ends, and again
+// after the command exits so no descendant outlives the job. It returns a
+// note for the output when the run was killed, and the run's error; a command
+// that exited while a leftover child held its output is not an error.
 func run(ctx context.Context, timeout time.Duration, j Job, argv []string, stdin io.Reader, stdout, stderr io.Writer) (string, error) {
 	runCtx, cancel := ctx, context.CancelFunc(func() {})
 	if timeout > 0 {
@@ -53,16 +56,23 @@ func run(ctx context.Context, timeout time.Duration, j Job, argv []string, stdin
 	cmd.Dir, cmd.Env = j.Dir, j.env()
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-	cmd.WaitDelay = time.Second // a killed command's children may hold its output open
-	err := cmd.Run()
-	switch {
-	case ctx.Err() != nil:
-		return "[cancelled]\n", err
-	case runCtx.Err() != nil:
-		return fmt.Sprintf("[timeout after %s]\n", timeout), err
+	var note string // written by Cancel, which runs before Wait returns
+	cmd.Cancel = func() error {
+		note = fmt.Sprintf("[timeout after %s]\n", timeout)
+		if ctx.Err() != nil {
+			note = "[cancelled]\n"
+		}
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
-	return "", err
+	cmd.WaitDelay = time.Second // a leftover child may hold the output open
+	err := cmd.Run()
+	if cmd.Process != nil {
+		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) // ESRCH when the group is already gone
+	}
+	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState.Success() {
+		err = nil
+	}
+	return note, err
 }
 
 // newline returns "\n" when s is non-empty and does not end in one.

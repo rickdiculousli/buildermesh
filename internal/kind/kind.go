@@ -29,6 +29,9 @@ const (
 // NameRE is the grammar of kind and slot names.
 var NameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
+// trailingComment matches a shell comment: a # starting a word.
+var trailingComment = regexp.MustCompile(`(^|\s)#`)
+
 // Kind is a parsed kind file; Name is the file name without .toml.
 type Kind struct {
 	Name           string
@@ -112,6 +115,10 @@ func Parse(name string, data []byte) (Kind, error) {
 	case "inline", "fresh", "pooled":
 	default:
 		return Kind{}, fmt.Errorf("kind %s: mode %q: want inline, fresh or pooled", name, f.Mode)
+	}
+	f.Command = strings.TrimRight(f.Command, " \t\r\n;")
+	if lines := strings.Split(f.Command, "\n"); trailingComment.MatchString(lines[len(lines)-1]) {
+		return Kind{}, fmt.Errorf(`kind %s: command must not end in a comment: args are appended as "$@"`, name)
 	}
 	hasModel := f.Model != "" || len(f.Models) > 0
 	switch {

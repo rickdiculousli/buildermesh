@@ -142,6 +142,15 @@ func TestModelVerdictParsing(t *testing.T) {
 		})
 	}
 
+	t.Run("is_error", func(t *testing.T) {
+		t.Setenv("FAKE_RESULT", "VERDICT: ok")
+		t.Setenv("FAKE_IS_ERROR", "1")
+		r := NewModel(k, "m-test", fakeClaude(t)).Run(context.Background(), j)
+		if r.OK || r.Output != "VERDICT: ok" {
+			t.Fatalf("reply %+v: want not OK with the result text", r)
+		}
+	})
+
 	t.Run("not json", func(t *testing.T) {
 		r := NewModel(k, "m-test", "echo").Run(context.Background(), j)
 		if r.OK || !strings.HasPrefix(r.Output, "[bad claude output]") {

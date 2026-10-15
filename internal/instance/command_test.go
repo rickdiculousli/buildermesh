@@ -45,6 +45,41 @@ func TestCommandInstanceEnvArgsTimeout(t *testing.T) {
 	if r.OK || !strings.Contains(r.Output, "timeout") {
 		t.Fatalf("background sleep: got %+v", r)
 	}
+	waitGone(t, pidfile)
+
+	k, err := kind.Parse("ml", []byte("command = \"\"\"\necho hi\n\"\"\""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := NewCommand(k).Run(ctx, Job{Args: []string{"there"}, Dir: dir}); !r.OK || r.Output != "hi there\n" {
+		t.Fatalf("multi-line command: got %+v", r)
+	}
+
+	cctx, cancel := context.WithCancel(ctx)
+	time.AfterFunc(200*time.Millisecond, cancel)
+	r = NewCommand(kind.Kind{Command: "sleep 5"}).Run(cctx, j)
+	if r.OK || !strings.Contains(r.Output, "cancelled") {
+		t.Fatalf("cancelled run: got %+v", r)
+	}
+}
+
+func TestCommandInstanceKillsLeftoverChildren(t *testing.T) {
+	dir := t.TempDir()
+	pidfile := filepath.Join(dir, "pid")
+	start := time.Now()
+	r := NewCommand(kind.Kind{Command: `sleep 20 & echo $! > ` + pidfile + `; echo started`}).Run(context.Background(), Job{Dir: dir})
+	if !r.OK || !strings.Contains(r.Output, "started") || strings.Contains(r.Output, "[") {
+		t.Fatalf("got %+v, want OK with started and no note", r)
+	}
+	if d := time.Since(start); d > 2500*time.Millisecond {
+		t.Fatalf("run took %s", d)
+	}
+	waitGone(t, pidfile)
+}
+
+// waitGone fails unless the process whose pid is in pidfile exits within 5s.
+func waitGone(t *testing.T, pidfile string) {
+	t.Helper()
 	b, err := os.ReadFile(pidfile)
 	if err != nil {
 		t.Fatal(err)
@@ -57,15 +92,8 @@ func TestCommandInstanceEnvArgsTimeout(t *testing.T) {
 	for syscall.Kill(pid, 0) == nil {
 		if time.Now().After(deadline) {
 			syscall.Kill(pid, syscall.SIGKILL)
-			t.Fatalf("grandchild %d survived", pid)
+			t.Fatalf("child %d survived", pid)
 		}
 		time.Sleep(20 * time.Millisecond)
-	}
-
-	cctx, cancel := context.WithCancel(ctx)
-	time.AfterFunc(200*time.Millisecond, cancel)
-	r = NewCommand(kind.Kind{Command: "sleep 5"}).Run(cctx, j)
-	if r.OK || !strings.Contains(r.Output, "cancelled") {
-		t.Fatalf("cancelled run: got %+v", r)
 	}
 }

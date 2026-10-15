@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"strings"
 
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 )
@@ -13,7 +14,10 @@ type command struct{ k kind.Kind }
 
 // NewCommand returns an instance that runs k.Command with `sh -c`, the job's
 // args as "$@".
-func NewCommand(k kind.Kind) Instance { return command{k} }
+func NewCommand(k kind.Kind) Instance {
+	k.Command = strings.TrimRight(k.Command, " \t\r\n;")
+	return command{k}
+}
 
 func (c command) Run(ctx context.Context, j Job) Reply {
 	argv := append([]string{"sh", "-c", c.k.Command + ` "$@"`, "sh"}, j.Args...)

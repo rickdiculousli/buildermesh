@@ -124,6 +124,10 @@ func (m *Model) Run(ctx context.Context, j Job) Reply {
 		return Reply{Output: raw}
 	case !parsed:
 		return Reply{Output: "[bad claude output]\n" + raw}
+	case res.IsError && res.Result == "":
+		return Reply{Output: raw}
+	case res.IsError:
+		return Reply{Output: res.Result}
 	}
 	ok := true
 	if v, found := verdict(res.Result); found {
@@ -145,9 +149,10 @@ func jobText(j Job) string {
 }
 
 type result struct {
-	Type   string `json:"type"`
-	Result string `json:"result"`
-	Usage  struct {
+	Type    string `json:"type"`
+	IsError bool   `json:"is_error"`
+	Result  string `json:"result"`
+	Usage   struct {
 		InputTokens          int `json:"input_tokens"`
 		CacheReadInputTokens int `json:"cache_read_input_tokens"`
 	} `json:"usage"`

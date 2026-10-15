@@ -30,6 +30,13 @@ func TestParseDefaultsAndValidation(t *testing.T) {
 	if got := s.ModelsList(); len(got) != 1 || got[0] != "x" {
 		t.Fatalf("ModelsList = %v", got)
 	}
+	ml, err := Parse("r", []byte("command = \"\"\"\necho hi;\n\n\"\"\""))
+	if err != nil || ml.Command != "echo hi" {
+		t.Fatalf("multi-line command: %q %v", ml.Command, err)
+	}
+	if c, err := Parse("r", []byte(`command = "echo a#b"`)); err != nil || c.Command != "echo a#b" {
+		t.Fatalf("# inside a word: %+v %v", c, err)
+	}
 	bad := map[string]struct{ name, body string }{
 		"command and model":  {"r", `command = "x"` + "\n" + `model = "m"`},
 		"model and models":   {"r", `model = "m"` + "\n" + `models = ["n"]`},
@@ -39,6 +46,7 @@ func TestParseDefaultsAndValidation(t *testing.T) {
 		"bad name":           {"Bad_Name", `command = "x"`},
 		"unknown key":        {"r", `command = "x"` + "\n" + `timout = "1m"`},
 		"bad duration":       {"r", `command = "x"` + "\n" + `timeout = "soon"`},
+		"trailing comment":   {"r", "command = \"\"\"\nmake test # note\n\"\"\""},
 	}
 	for what, c := range bad {
 		if _, err := Parse(c.name, []byte(c.body)); err == nil {
