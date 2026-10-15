@@ -4,13 +4,15 @@ title: An executor's done and blocked reach the lead's inbox; the wake says what
 kind: refinement
 size: S
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: fd21a373-851c-4e68-beb6-831cb4be0fa9
 proposed_on: 2026-10-15
 built_by: 40fe2373-82f2-4c78-860b-e63995f7a58c
 host: k16
-branch: t3code/17b9a9d3
+branch: t3code/executor-reports-inbox-wake
+verified: verify ok t:80fbf27f
+merged: 0da4f56851613f95f561384abb74b06cb4dd67b6
 ---
 
 ## Opportunity
