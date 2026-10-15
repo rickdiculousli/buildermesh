@@ -48,7 +48,7 @@ func syncBranch(ctx context.Context, d Deps, n mesh.Node) {
 		return
 	}
 	cur, ok, err := mesh.GetNode(ctx, d.Client, n.Path)
-	if err != nil || !ok || cur.Branch == b {
+	if err != nil || !ok || cur.Branch == b || cur.Worktree != n.Worktree || cur.Runner.Thread != n.Runner.Thread {
 		return
 	}
 	old := cur.Branch

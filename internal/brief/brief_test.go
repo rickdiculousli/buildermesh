@@ -73,7 +73,7 @@ func TestBuildBriefEmbedsSpecAndNode(t *testing.T) {
 		"`bmesh --node pb-012 routine run verify`", "`bmesh --node pb-012 result record review --ok|--fail --model <m>`",
 		"`bmesh --node pb-012 spec verified --write`", "bmesh spec set --repo . --id 012 --status done --from building",
 		"follow the `buildermesh:lead` skill", "## Landing it", "landing the branch your worktree is on (`git branch --show-current`), never the name in your brief",
-		"adding `--field branch=<that name>` when `git branch --show-current` differs", "`git push origin HEAD`", "pushed to `example/pb`",
+		"adding `--field branch=<that name>` when the spec's `branch` field is missing or differs from `git branch --show-current`", "`git push origin HEAD`", "pushed to `example/pb`",
 		"`npm test`"} {
 		if !strings.Contains(out, s) {
 			t.Errorf("missing %q", s)
