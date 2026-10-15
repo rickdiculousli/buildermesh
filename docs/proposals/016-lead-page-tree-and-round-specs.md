@@ -4,10 +4,12 @@ title: The lead page shows its tree, and a round shows its specs
 kind: feature
 size: M
 judge: opus
-status: accepted
+status: building
 lens: ux
 proposed_by: f3d2851e-4460-4cd8-87b7-359407c1c774
 proposed_on: 2026-10-15
+built_by: 2ae3af71-a6f6-41fa-8479-5cc48cdf97d7
+host: k16
 ---
 
 ## Opportunity
