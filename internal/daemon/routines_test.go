@@ -17,8 +17,8 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/nats-io/nuid"
 	"github.com/rickdiculousli/buildermesh/internal/config"
-
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/web"
 )
 
 const requester = "app-001"
@@ -400,6 +400,41 @@ command = "echo $BMESH_FROM; pwd"
 				t.Fatalf("%s progress %d: %+v %v, want %q to %s", path, i, ev, err, want, requester)
 			}
 		}
+	}
+}
+
+// A fresh model run past recycle_context is not recycled: its session ends
+// with the run, and a recycled event would zero its use on the map.
+func TestFreshModelRunNeverRecycles(t *testing.T) {
+	f := routineSetup(t, map[string]string{".bmesh/routines/review.toml": `
+mode = "fresh"
+model = "m-a"
+prompt = "P"
+timeout = "30s"
+recycle_context = 10
+`})
+	t.Setenv("FAKE_RESULT", "VERDICT: ok")
+	t.Setenv("FAKE_CACHE", "5000")
+	f.start(t)
+	id := f.queue(t, mesh.Job{Kind: "review"})
+	r := f.reply(t, id, 20*time.Second)
+	path := "routine.review.f" + strings.ToLower(id[:8])
+	if !r.OK || r.By != path {
+		t.Fatalf("reply %+v", r)
+	}
+	waitFor(t, 10*time.Second, path+" done", func() bool { return f.state(t, path) == "done" })
+	hist, err := mesh.History(f.ctx, f.c, "bm."+path+".>", time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range hist {
+		var ev mesh.Event
+		if json.Unmarshal(m.Data, &ev) == nil && ev.Text == "recycled" {
+			t.Fatalf("fresh run recycled: %+v", ev)
+		}
+	}
+	if u := web.InstanceUsage(hist); u[path].Uses != 1 {
+		t.Fatalf("uses %+v, want 1", u[path])
 	}
 }
 

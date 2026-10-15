@@ -319,7 +319,7 @@ func (w *worker) handle(dl *delivery) {
 	}
 	w.event("progress", text, dl.from.String())
 	w.idle()
-	if w.session != nil && w.session.ShouldRecycle(r.d.Now()) {
+	if w.g.k.Mode != "fresh" && w.session != nil && w.session.ShouldRecycle(r.d.Now()) { // a fresh run's session ends with it
 		w.session.Recycle()
 		w.event("progress", "recycled", "")
 	}
