@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -81,7 +82,6 @@ func TestQuotaKeepsLastReadingOnError(t *testing.T) {
 
 func TestQuotaWithoutCommandOrGoodRun(t *testing.T) {
 	ctx, c := connect(t)
-	_ = ctx
 	srv := httptest.NewServer(Handler(c, time.Hour, Options{}))
 	defer srv.Close()
 	if body := getJSON(t, srv, "/api/strip", 200, nil); strings.TrimSpace(body) != `{"quota":[],"digest":null}` {
@@ -94,5 +94,48 @@ func TestQuotaWithoutCommandOrGoodRun(t *testing.T) {
 	q = &Quota{Command: "echo not json"}
 	if got := q.Get(ctx, time.Now()); len(got) != 0 {
 		t.Fatalf("bad json: %#v", got)
+	}
+}
+
+// A dropped request does not spend the slot, and a caller arriving while the
+// command runs gets the last good readings without starting another run.
+func TestQuotaRunIsDetachedAndUnlocked(t *testing.T) {
+	dir := t.TempDir()
+	counter, gate := filepath.Join(dir, "runs"), filepath.Join(dir, "gate")
+	cmd := `n=$(cat ` + counter + ` 2>/dev/null || echo 0); echo $((n+1)) > ` + counter + `; ` +
+		`while [ ! -e ` + gate + ` ]; do sleep 0.05; done; echo '` + quotaOK + `'`
+	q := &Quota{Command: cmd}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // the request is already gone
+	now := time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC)
+	done := make(chan []Reading, 1)
+	go func() { done <- q.Get(ctx, now) }()
+	for i := 0; ; i++ {
+		if _, err := os.Stat(counter); err == nil {
+			break
+		}
+		if i > 200 {
+			t.Fatal("command did not start")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	got := make(chan []Reading, 1)
+	go func() { got <- q.Get(context.Background(), now.Add(time.Second)) }()
+	select {
+	case rs := <-got:
+		if len(rs) != 0 {
+			t.Fatalf("mid-run caller %+v", rs)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a caller waited on the running command")
+	}
+	if err := os.WriteFile(gate, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rs := <-done; len(rs) != 1 || rs[0].ReadAt != "2026-10-15T09:00:00Z" {
+		t.Fatalf("cancelled request's run %+v", rs)
+	}
+	if b, _ := os.ReadFile(counter); strings.TrimSpace(string(b)) != "1" {
+		t.Fatalf("runs %q", b)
 	}
 }

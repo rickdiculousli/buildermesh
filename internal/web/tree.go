@@ -188,12 +188,12 @@ func InstanceUsage(hist []mesh.Stored) map[string]Usage {
 	return out
 }
 
-// ConsoleURL is a lead's thread link: the [console.hosts] template for its
-// host, else [console] thread_url when it runs on thisHost, with {thread}
+// ConsoleURL is a lead's thread link: [console] thread_url when it runs on
+// thisHost, else the [console.hosts] template for its host, with {thread}
 // replaced by its runner thread; "" without a template or a thread.
 func ConsoleURL(cfg config.ConsoleConfig, thisHost string, n mesh.Node) string {
-	tmpl, ok := cfg.Hosts[n.Host]
-	if !ok && n.Host == thisHost {
+	tmpl := cfg.Hosts[n.Host]
+	if n.Host == thisHost {
 		tmpl = cfg.ThreadURL
 	}
 	if tmpl == "" || n.Runner.Thread == "" {

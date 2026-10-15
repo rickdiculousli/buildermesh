@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	window    = 24 * time.Hour   // how far back the inbox, timeline and instance uses look
+	window    = 24 * time.Hour   // how far back the timeline and instance uses look
 	cacheFor  = 60 * time.Second // spec and kind file reads
 	inboxShow = 50
 )
@@ -200,11 +200,15 @@ func (s *server) lead(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
+	if st.State == "" {
+		st = stateOf(nil, path) // the same default as /api/tree
+	}
 	since := s.now().Add(-window)
 	pg := leadPage{Node: n, State: st, Spec: s.spec(n), ConsoleURL: ConsoleURL(s.cfg.Console, s.host, n),
 		Inbox: []mesh.Message{}, Timeline: []frame{}}
 
-	msgs, err := mesh.History(ctx, s.c, "bm.inbox."+path, since)
+	// The inbox has no time limit: the newest inboxShow messages the stream keeps.
+	msgs, err := mesh.History(ctx, s.c, "bm.inbox."+path, time.Time{})
 	if err != nil {
 		fail(w, err)
 		return
@@ -373,6 +377,12 @@ func (s *server) routines(w http.ResponseWriter, r *http.Request) {
 		}
 		return rk
 	}
+	// Every defined kind is listed, with or without instances (inline kinds
+	// and idle fresh kinds have none).
+	defs := s.kindDefs()
+	for name := range defs {
+		at(name)
+	}
 	for _, n := range nodes {
 		if k, ok := kindOf(n.Path); ok && n.Role == "routine" {
 			u := usage[n.Path]
@@ -393,7 +403,6 @@ func (s *server) routines(w http.ResponseWriter, r *http.Request) {
 			v.Leases = append(v.Leases, row)
 		}
 	}
-	defs := s.kindDefs()
 	for name, rk := range kinds {
 		if d, ok := defs[name]; ok {
 			rk.Mode, rk.Deterministic = d.Mode, d.Deterministic

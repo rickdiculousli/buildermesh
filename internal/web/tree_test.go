@@ -156,7 +156,8 @@ func TestInstanceUsageCountsSinceStartOrRecycle(t *testing.T) {
 }
 
 func TestConsoleURL(t *testing.T) {
-	cfg := config.ConsoleConfig{ThreadURL: "http://here/t/{thread}", Hosts: map[string]string{"k16": "http://k16/t/{thread}"}}
+	cfg := config.ConsoleConfig{ThreadURL: "http://here/t/{thread}",
+		Hosts: map[string]string{"box-b": "http://box-b/t/{thread}", "box-a": "http://unused/t/{thread}"}}
 	lead := func(host, thread string) mesh.Node {
 		return mesh.Node{Path: "a", Role: "lead", Host: host, Runner: mesh.NodeRunner{Thread: thread}}
 	}
@@ -165,13 +166,13 @@ func TestConsoleURL(t *testing.T) {
 		n    mesh.Node
 		want string
 	}{
-		{cfg, lead("box", "th-1"), "http://here/t/th-1"},
-		{cfg, lead("k16", "th-2"), "http://k16/t/th-2"},
-		{cfg, lead("k99", "th-3"), ""}, // another host with no template
-		{cfg, lead("box", ""), ""},     // no thread
-		{config.ConsoleConfig{}, lead("box", "th-1"), ""},
+		{cfg, lead("box-a", "th-1"), "http://here/t/th-1"},
+		{cfg, lead("box-b", "th-2"), "http://box-b/t/th-2"},
+		{cfg, lead("box-c", "th-3"), ""}, // another host with no template
+		{cfg, lead("box-a", ""), ""},     // no thread
+		{config.ConsoleConfig{}, lead("box-a", "th-1"), ""},
 	} {
-		if got := ConsoleURL(c.cfg, "box", c.n); got != c.want {
+		if got := ConsoleURL(c.cfg, "box-a", c.n); got != c.want {
 			t.Errorf("ConsoleURL(%+v, %s/%s) = %q, want %q", c.cfg, c.n.Host, c.n.Runner.Thread, got, c.want)
 		}
 	}

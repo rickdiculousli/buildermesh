@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
-
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
@@ -255,7 +254,7 @@ func TestTreeEndpoint(t *testing.T) {
 		v.Routines[0].Instances[0].Uses != 2 || v.Routines[0].Instances[0].Context != 800 {
 		t.Fatalf("routines %+v", v.Routines)
 	}
-	if page := getJSON(t, srv, "/", 200, nil); !strings.Contains(page, "<html") && !strings.Contains(page, "<!doctype") {
+	if page := getJSON(t, srv, "/", 200, nil); !strings.Contains(page, "<title>bmesh</title>") {
 		t.Fatalf("page %q", page)
 	}
 }
@@ -362,10 +361,19 @@ func TestLeadPageReadsSpecFromOrigin(t *testing.T) {
 	// An unknown repo leaves the spec null and the rest of the page whole.
 	var pb page
 	body := getJSON(t, srv, "/api/lead/b", 200, &pb)
-	if pb.Spec != nil || pb.Node.Path != "b" || pb.ConsoleURL != "" || !strings.Contains(body, `"spec":null`) {
+	if pb.Spec != nil || pb.Node.Path != "b" || pb.ConsoleURL != "" || !strings.Contains(body, `"spec":null`) ||
+		pb.State.State != "idle" {
 		t.Fatalf("page b %s", body)
 	}
 	getJSON(t, srv, "/api/lead/nobody", 404, nil)
+
+	// A day later the timeline is empty but the inbox still holds its
+	// messages: it has no time limit.
+	now = time.Now().Add(25 * time.Hour)
+	getJSON(t, srv, "/api/lead/a", 200, &p)
+	if len(p.Inbox) != 2 || p.Inbox[0].Text != "two" || len(p.Timeline) != 0 {
+		t.Fatalf("a day later: inbox %+v timeline %+v", p.Inbox, p.Timeline)
+	}
 	getJSON(t, srv, "/api/lead/a*b", 404, nil)
 }
 
@@ -376,6 +384,7 @@ func TestRoutinesEndpointListsLeases(t *testing.T) {
 	commit(t, repo, map[string]string{
 		".bmesh/routines/verify.toml": "mode = \"fresh\"\ndeterministic = true\ncommand = \"echo ok\"\n",
 		".bmesh/routines/review.toml": "model = \"m\"\nprompt = \"P\"\n",
+		".bmesh/routines/fmt.toml":    "mode = \"inline\"\ndeterministic = true\ncommand = \"gofmt -l .\"\n",
 	})
 	cfg := &config.Config{Repos: map[string]string{"app": repo, "gone": filepath.Join(repo, "missing")}}
 	for _, n := range []mesh.Node{
@@ -412,7 +421,7 @@ func TestRoutinesEndpointListsLeases(t *testing.T) {
 		byKind[k.Kind] = k
 		kinds = append(kinds, k.Kind)
 	}
-	if strings.Join(kinds, ",") != "lint,review,verify" {
+	if strings.Join(kinds, ",") != "fmt,lint,review,verify" {
 		t.Fatalf("kinds %v: %s", kinds, body)
 	}
 	ver, rev, lint := byKind["verify"], byKind["review"], byKind["lint"]
@@ -426,6 +435,9 @@ func TestRoutinesEndpointListsLeases(t *testing.T) {
 	}
 	if lint.Mode != "" || lint.Deterministic || lint.Results != 1 || len(lint.Instances) != 0 {
 		t.Fatalf("lint %+v", lint)
+	}
+	if f := byKind["fmt"]; f.Mode != "inline" || !f.Deterministic || f.Results != 0 || len(f.Instances) != 0 || len(f.Leases) != 0 {
+		t.Fatalf("fmt (defined, never run) %+v", f)
 	}
 	if len(v.Leases) != 1 || v.Leases[0].Key != "gpu.0" || v.Leases[0].Holder != "a" {
 		t.Fatalf("unowned leases %+v", v.Leases)

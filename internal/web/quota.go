@@ -36,16 +36,25 @@ type Quota struct {
 }
 
 // Get returns the last good readings, running the command first when the
-// last run is five minutes old; [] before any good run.
+// last run is five minutes old; [] before any good run. The run is detached
+// from ctx (a dropped request does not spend the slot) and made without the
+// lock, so a caller arriving mid-run gets the last good readings at once.
 func (q *Quota) Get(ctx context.Context, now time.Time) []Reading {
 	q.mu.Lock()
-	defer q.mu.Unlock()
-	if q.Command != "" && (q.tried.IsZero() || now.Sub(q.tried) >= quotaEvery) {
+	due := q.Command != "" && (q.tried.IsZero() || now.Sub(q.tried) >= quotaEvery)
+	if due {
 		q.tried = now
-		if rs, ok := q.run(ctx, now); ok {
+	}
+	q.mu.Unlock()
+	if due {
+		if rs, ok := q.run(context.WithoutCancel(ctx), now); ok {
+			q.mu.Lock()
 			q.good = rs
+			q.mu.Unlock()
 		}
 	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	return append([]Reading{}, q.good...)
 }
 
