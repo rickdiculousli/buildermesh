@@ -4,13 +4,16 @@ title: The method plugin and retiring superpowers
 kind: maintenance
 size: S
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: da6488fd-38bd-4c4c-994c-a7de257d9424
 proposed_on: 2026-10-15
 built_by: 1e0cd8ca-e09a-440f-bd51-9fc2fdcf6260
 branch: t3code/331e824a
 host: k16
+verified: review ok t:7d426208 m:claude-fable-5-1; verify ok t:7d426208
+merged: fb40ffb9ecb7770d1d7db9eb9587fc4e39c50abc
+landed: rickdiculousli-tools d64ab48, command-center b82fdca
 ---
 
 ## Opportunity
@@ -32,6 +35,8 @@ Judge: opus, because the spec pins every file.
 
 ## Verification
 rickdiculousli-tools' verify (its AGENTS.md); `claude plugin list` on both boxes shows method and not superpowers; a session on each box starts without the superpowers hook; `update.sh --check` exits 0 right after the copy.
+
+Built on k16 (2026-10-15): checked there; the Mac can't be reached from k16. Left for the Mac: `uv run tools/repo_sync.py` in command-center, `claude plugin install method@rickdiculousli-tools` and `codex plugin add method@rickdiculousli-tools`, `rm -rf ~/.claude/skills/grill-me ~/.claude/skills/grilling`, `claude plugin uninstall superpowers --scope user`, `rm -rf ~/repos/superpowers`, and `cp fleet/bmesh/repos.toml ~/.config/bmesh/repos.toml` (superpowers left the registry).
 
 ## Risks and the alternative considered
 A gated port like pstack-claude: rejected, three short skills don't earn a gate.
