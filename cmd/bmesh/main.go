@@ -60,7 +60,7 @@ commands:
   build --accepted <repo> [--model M] [--effort E]
                                            dispatch every accepted spec, lowest id first, a spec naming a lower id
                                            after that one is done, three leads at a time; print what waits
-  align <repo> [--check]                   give a ship repo its AGENTS.md sections, docs/proposals and the routine
+  scaffold <repo> [--check]                give a ship repo its AGENTS.md sections, docs/proposals and the routine
                                            kinds its row names; --check prints the diff and exits 1 when any
   executor new --name N [--base REF] [--model M] [--json]
                                            make a worktree, branch and node for an executor under this node;
@@ -189,8 +189,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdPropose(rest)
 	case "build":
 		return a.cmdBuild(rest)
-	case "align":
-		return a.cmdAlign(rest)
+	case "scaffold":
+		return a.cmdScaffold(rest)
 	case "serve":
 		return a.cmdServe(rest)
 	case "result":

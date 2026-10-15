@@ -1,4 +1,4 @@
-package align
+package scaffold
 
 import (
 	"fmt"

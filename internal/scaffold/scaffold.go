@@ -1,10 +1,10 @@
-// Package align gives a ship repo what a buildermesh build expects of it:
+// Package scaffold gives a ship repo what a buildermesh build expects of it:
 // the "Definition of done", "Proposals" and "Buildermesh" sections of its
 // AGENTS.md between markers, docs/proposals/README.md and assets/.gitkeep,
 // and the routine kinds its registry row names, seeded from the embedded
 // examples. Only the text between the markers is rewritten and an existing
 // kind is left alone, so a second run changes nothing.
-package align
+package scaffold
 
 import (
 	"errors"
@@ -122,7 +122,7 @@ func Apply(text, done, proposals, mesh string) string {
 	return text
 }
 
-// Target is one file align writes: its repo-relative path (slashes), the
+// Target is one file scaffold writes: its repo-relative path (slashes), the
 // text it should hold and the text it holds now (Exists false when it does
 // not).
 type Target struct {
@@ -135,7 +135,7 @@ type Target struct {
 // Changed reports whether writing the target would change the repo.
 func (t Target) Changed() bool { return !t.Exists || t.Current != t.Want }
 
-// Targets is every file align would write for the row in the repo at
+// Targets is every file scaffold would write for the row in the repo at
 // repoPath: AGENTS.md (created when missing), the proposals README and
 // .gitkeep when missing, and a kind file for each of the row's routines
 // that the repo lacks. A routine with no embedded example is an error; a
@@ -233,8 +233,8 @@ func read(repoPath, rel string) (Target, error) {
 	return t, nil
 }
 
-// Plan is the unified diff of what align would change (a new empty file is
-// one line); empty when the repo is aligned.
+// Plan is the unified diff of what scaffold would change (a new empty file is
+// one line); empty when the repo is scaffolded.
 func Plan(targets []Target) string {
 	var b strings.Builder
 	for _, t := range targets {
