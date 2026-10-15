@@ -422,15 +422,27 @@ command = "sleep 30"
 		e, err := kv.Get(f.ctx, "game.0")
 		return err == nil && strings.Contains(string(e.Value()), "routine.play.cmd-1")
 	})
-	if err := kv.Delete(f.ctx, "game.0"); err != nil {
-		t.Fatal(err)
-	}
+	// The lease runs out (as if renewals had stalled) and another holder
+	// takes the place; retried when a renewal lands between the two.
+	expired := []byte(`{"holder":"routine.play.cmd-1","expires_at":"2000-01-01T00:00:00Z"}`)
+	waitFor(t, 10*time.Second, "other to take game.0", func() bool {
+		if _, err := kv.Put(f.ctx, "game.0", expired); err != nil {
+			t.Fatal(err)
+		}
+		key, err := mesh.AcquireLease(f.ctx, f.c, "game", "other", time.Hour, 1, time.Now())
+		if err != nil && !errors.Is(err, mesh.ErrBusy) {
+			t.Fatal(err)
+		}
+		return key == "game.0"
+	})
 	r := f.reply(t, id, 15*time.Second)
 	if r.OK || r.Output != "lease lost" || r.By != "routine.play.cmd-1" {
 		t.Fatalf("reply %+v", r)
 	}
-	if _, err := kv.Get(f.ctx, "game.0"); !errors.Is(err, jetstream.ErrKeyNotFound) {
-		t.Fatalf("game.0 after loss: %v", err)
+	// The instance released nothing of other's.
+	ls, err := mesh.ListLeases(f.ctx, f.c)
+	if err != nil || len(ls) != 1 || ls[0].Key != "game.0" || ls[0].Holder != "other" {
+		t.Fatalf("leases after loss %+v %v", ls, err)
 	}
 	if rs, err := mesh.ListResults(f.ctx, f.c, "play"); err != nil || len(rs) != 0 {
 		t.Fatalf("a lost job recorded %+v %v", rs, err)
