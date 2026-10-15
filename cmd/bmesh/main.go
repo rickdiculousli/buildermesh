@@ -29,8 +29,16 @@ const (
 const usage = `usage: bmesh [--config FILE] [--node PATH] [--json] <command> [args]
 
 --config, --node and --json are accepted before or after the command.
+Every command but init and help needs the box set up (the flag <config dir>/.setup-complete
+or a config.toml): a terminal run runs init first, a non-interactive one is refused (exit 3).
 
 commands:
+  init [--service] [--force] [--hub URL] [--token-file F] [--runner K] [--no-repo]
+                                           set this box up: config.toml, this repo in repos.toml, --service the
+                                           unit for bmesh serve; asks what the flags don't say
+  repos [--json]                           the registry (repos.toml): name, mode, remote, verify, host, ux_host,
+                                           surfaces, pin; --json prints the rows
+  repos show <name> [--json]               one row
   whoami                                   print this node's path
   started|progress|blocked|ask [--text T]  report an event
   done --commit SHA [--text T]             report done (a lead's spec must have landed, verified by results)
@@ -131,7 +139,16 @@ func (a *app) dispatch(args []string) error {
 		return fail(exitUsage, "")
 	}
 	cmd, rest := rest[0], rest[1:]
+	if cmd != "init" && cmd != "help" {
+		if err := a.ensureSetup(rest); err != nil {
+			return err
+		}
+	}
 	switch cmd {
+	case "init":
+		return a.cmdInit(rest)
+	case "repos":
+		return a.cmdRepos(rest)
 	case "whoami":
 		return a.cmdWhoami(rest)
 	case "started", "progress", "blocked", "ask", "done":

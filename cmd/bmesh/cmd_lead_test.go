@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
@@ -173,5 +174,62 @@ func TestLeadStartRefusesOverMax(t *testing.T) {
 	}
 	if _, errs, code := runCLI(t, nil, "lead", "start", "--repo", "demo", "--spec", "003", "--brief", "/dev/null"); code != 0 {
 		t.Fatalf("after done: %d %q", code, errs)
+	}
+}
+
+// A lead started through the claude runner gets a worktree on a branch named
+// for its thread, from the repo's main, and a headless claude turn whose
+// session id is the thread id, with the brief on stdin.
+func TestLeadStartClaudeRunner(t *testing.T) {
+	c, _ := setup(t)
+	fake, err := filepath.Abs(filepath.Join("..", "..", "testdata", "fake-claude.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BMESH_CLAUDE_COMMAND", "sh "+fake)
+	root := t.TempDir()
+	log := filepath.Join(root, "claude.log")
+	t.Setenv("FAKE_LOG", log)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(root, "cache")) // the runner's state dir
+	repo := filepath.Join(root, "demo")
+	runGit(t, root, "init", "-b", "main", repo)
+	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644)
+	runGit(t, repo, "add", "-A")
+	runGit(t, repo, "commit", "-m", "one")
+	brief := filepath.Join(root, "brief.md")
+	os.WriteFile(brief, []byte("build it"), 0o644)
+	f, err := os.OpenFile(os.Getenv("BMESH_CONFIG"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString("[runner]\nkind = \"claude\"\nworktrees = \"" + filepath.Join(root, "wt") + "\"\n[models]\nlead = \"m\"\n")
+	f.Close()
+	writeRepos(t, "[repos.demo]\npath = \""+repo+"\"\n")
+	out, errs, code := runCLI(t, nil, "lead", "start", "--repo", "demo", "--spec", "001", "--brief", brief)
+	if code != 0 {
+		t.Fatalf("code %d out %q err %q", code, out, errs)
+	}
+	var got struct{ Path, Thread, Branch, Worktree string }
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(root, "wt", "demo", got.Thread)
+	if got.Branch != got.Thread || got.Worktree != wt || len(got.Thread) != 36 {
+		t.Fatalf("started %+v", got)
+	}
+	n, ok, err := mesh.GetNode(t.Context(), c, "demo-001")
+	if err != nil || !ok || n.Runner.Kind != "claude" || n.Runner.Thread != got.Thread || n.Worktree != wt {
+		t.Fatalf("node %+v %v %v", n, ok, err)
+	}
+	var l []byte
+	for i := 0; i < 100 && !strings.Contains(string(l), "--session-id"); i++ {
+		time.Sleep(20 * time.Millisecond)
+		l, _ = os.ReadFile(log)
+	}
+	if want := "-p --output-format json --session-id " + got.Thread + " --model m --dangerously-skip-permissions\n"; string(l) != want {
+		t.Fatalf("argv %q, want %q", l, want)
+	}
+	if in, _ := os.ReadFile(log + ".stdin"); string(in) != "build it" {
+		t.Fatalf("stdin %q", in)
 	}
 }
