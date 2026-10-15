@@ -117,7 +117,7 @@ func collect(g *group, p *pool, goCh <-chan struct{}) []*delivery {
 }
 
 // freshRun runs one job of a fresh kind as routine.<kind>.f<id8> in a
-// checkout of its own, removed afterwards.
+// checkout of its own, removed afterwards with the instance's node.
 func (r *routineSet) freshRun(g *group, dl *delivery, model string) {
 	path := "routine." + g.k.Name + ".f" + freshID(dl.job.ID)
 	release := r.claimPath(r.ctx, path)
@@ -142,6 +142,13 @@ func (r *routineSet) freshRun(g *group, dl *delivery, model string) {
 	w.end()
 	if err := r.removeCheckout(g.repoPath, dir); err != nil {
 		r.d.Log.Warn("routines: remove checkout", "path", path, "err", err)
+		return // the node stays done; the rescan forgets it after keep_done
+	}
+	// Its events stay in the stream; the node, state and runner sample go.
+	ctx, cancel := r.settleCtx()
+	defer cancel()
+	if err := mesh.ForgetNode(ctx, r.d.Client, path); err != nil {
+		r.d.Log.Warn("routines: forget node", "path", path, "err", err)
 	}
 }
 

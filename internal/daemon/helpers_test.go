@@ -36,7 +36,7 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(c.Close)
-	if err := mesh.Provision(ctx, c); err != nil {
+	if err := mesh.Provision(ctx, c, 0); err != nil {
 		t.Fatal(err)
 	}
 	fake, err := filepath.Abs(filepath.Join("..", "..", "testdata", "fake-t3.sh"))

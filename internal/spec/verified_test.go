@@ -75,7 +75,7 @@ func TestComposeFromResultsAtHead(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(c.Close)
-	if err := mesh.Provision(ctx, c); err != nil {
+	if err := mesh.Provision(ctx, c, 0); err != nil {
 		t.Fatal(err)
 	}
 	repo := filepath.Join(t.TempDir(), "r")
