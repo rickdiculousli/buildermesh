@@ -4,13 +4,15 @@ title: Build, align and the optional method in the skills
 kind: feature
 size: M
 judge: fable
-status: building
+status: done
 lens: eng
 proposed_by: da6488fd-38bd-4c4c-994c-a7de257d9424
 proposed_on: 2026-10-15
 built_by: 1150064f-6b68-443a-8ffd-a112dacac88c
 branch: t3code/97b72def
 host: k16
+verified: verify ok t:593c188b
+merged: ba3d6aa2f08ed0cc1fd8d33ffdce1b5f7ed44946
 ---
 
 ## Opportunity
