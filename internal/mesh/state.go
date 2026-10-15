@@ -115,6 +115,21 @@ func ReadAllStates(ctx context.Context, c *Client) (map[string]State, error) {
 // WriteState moves path to the new state: read, check Legal, then Create
 // (absent) or Update at the read revision. A failed write re-reads once.
 func WriteState(ctx context.Context, c *Client, path string, to State) (uint64, error) {
+	return writeState(ctx, c, path, to, nil)
+}
+
+// isConflict reports a lost revision race (Create on an existing key, or
+// Update at a stale revision).
+func isConflict(err error) bool {
+	if errors.Is(err, jetstream.ErrKeyExists) {
+		return true
+	}
+	var api *jetstream.APIError
+	return errors.As(err, &api) && api.ErrorCode == jetstream.JSErrCodeStreamWrongLastSequence
+}
+
+// writeState is WriteState with a test hook that runs after each read.
+func writeState(ctx context.Context, c *Client, path string, to State, afterRead func(attempt int)) (uint64, error) {
 	kv, err := bucket(ctx, c, BucketState)
 	if err != nil {
 		return 0, err
@@ -132,6 +147,9 @@ func WriteState(ctx context.Context, c *Client, path string, to State) (uint64, 
 		if err != nil {
 			return 0, err
 		}
+		if afterRead != nil {
+			afterRead(attempt)
+		}
 		if !Legal(cur.State, to.State) {
 			return 0, ErrIllegalTransition{From: cur.State, To: to.State}
 		}
@@ -143,6 +161,9 @@ func WriteState(ctx context.Context, c *Client, path string, to State) (uint64, 
 		}
 		if err == nil {
 			return newRev, nil
+		}
+		if !isConflict(err) {
+			return 0, err
 		}
 		lastErr = err
 	}

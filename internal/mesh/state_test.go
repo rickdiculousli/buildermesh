@@ -1,12 +1,10 @@
 package mesh_test
 
 import (
+	"context"
 	"errors"
 	. "github.com/rickdiculousli/buildermesh/internal/mesh"
-	"sync"
 	"testing"
-
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 func TestStateTransitions(t *testing.T) {
@@ -68,39 +66,64 @@ func TestStateTransitions(t *testing.T) {
 
 func TestWriteStateCAS(t *testing.T) {
 	c, ctx := connect(t)
-	var wg sync.WaitGroup
-	errs := make([]error, 2)
-	texts := []string{"one", "two"}
-	for i := range texts {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, errs[i] = WriteState(ctx, c, "p", State{State: "working", Text: texts[i]})
-		}()
-	}
-	wg.Wait()
-	for _, e := range errs {
-		if e != nil {
-			t.Fatal(e)
+	kv, _ := c.JS.KeyValue(ctx, BucketState)
+
+	// behind swaps the stored value after WriteState's first read, so its
+	// first write uses a stale revision and must conflict.
+	behind := func(path, state, text string) func(int) {
+		return func(attempt int) {
+			if attempt != 0 {
+				return
+			}
+			_, rev, _ := ReadState(ctx, c, path)
+			if _, err := kv.Update(ctx, path, []byte(`{"state":"`+state+`","text":"`+text+`"}`), rev); err != nil {
+				t.Error(err)
+			}
 		}
 	}
-	s, _, _ := ReadState(ctx, c, "p")
-	if s.Text != "one" && s.Text != "two" {
+
+	// Conflict, then the re-read shows done: working is illegal, nothing written.
+	if _, err := WriteState(ctx, c, "p", State{State: "working"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := WriteStateHook(ctx, c, "p", State{State: "working", Text: "mine"}, behind("p", "done", "theirs"))
+	var ill ErrIllegalTransition
+	if !errors.As(err, &ill) || ill.From != "done" || ill.To != "working" {
+		t.Fatalf("want done->working illegal, got %v", err)
+	}
+	s, rev, _ := ReadState(ctx, c, "p")
+	if s.State != "done" || s.Text != "theirs" {
 		t.Fatal(s)
 	}
+	e, _ := kv.Get(ctx, "p")
+	if e.Revision() != rev {
+		t.Fatal("revision moved")
+	}
+	if h, _ := kv.History(ctx, "p"); len(h) != 2 {
+		t.Fatalf("want 2 revisions (ours + theirs), got %d", len(h))
+	}
 
-	rev, err := WriteState(ctx, c, "q", State{State: "working"})
+	// Conflict, then a legal move succeeds exactly once.
+	if _, err := WriteState(ctx, c, "q", State{State: "working"}); err != nil {
+		t.Fatal(err)
+	}
+	newRev, err := WriteStateHook(ctx, c, "q", State{State: "blocked", Text: "mine"}, behind("q", "working", "x"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := WriteState(ctx, c, "q", State{State: "blocked"}); err != nil {
-		t.Fatal(err)
+	s, rev, _ = ReadState(ctx, c, "q")
+	if s.State != "blocked" || s.Text != "mine" || rev != newRev {
+		t.Fatal(s, rev, newRev)
 	}
-	kv, _ := c.JS.KeyValue(ctx, BucketState)
-	if _, err := kv.Update(ctx, "q", []byte(`{"state":"done"}`), rev); err == nil || !errors.Is(err, jetstream.ErrKeyExists) {
-		t.Fatalf("stale update: %v", err)
+	if h, _ := kv.History(ctx, "q"); len(h) != 3 {
+		t.Fatalf("want 3 revisions, got %d", len(h))
 	}
-	if s, _, _ := ReadState(ctx, c, "q"); s.State != "blocked" {
-		t.Fatal(s)
+
+	// A non-conflict error is returned at once, not retried.
+	attempts := 0
+	cctx, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := WriteStateHook(cctx, c, "r", State{State: "working"}, func(int) { attempts++ }); err == nil || attempts > 1 {
+		t.Fatal(err, attempts)
 	}
 }
