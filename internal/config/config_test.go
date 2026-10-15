@@ -192,7 +192,7 @@ func TestLoadReposRefusals(t *testing.T) {
 		"[repos.x]\nmode = \"ship\"\n":                  "[repos.x]: path is required",
 		"[repos.x]\npath = \"p\"\nmode = \"shipped\"\n": `[repos.x]: mode "shipped" is not one of ship, companion, publish, fork, dormant`,
 		"[repos.x]\npath = \"p\"\nhots = \"k\"\n":       "unknown key repos.x.hots",
-		"[repos.\"a/b\"]\npath = \"p\"\n":                 "[repos.a/b]: a name matches",
+		"[repos.\"a/b\"]\npath = \"p\"\n":               "[repos.a/b]: a name matches",
 	} {
 		os.WriteFile(repos, []byte(body), 0o644)
 		_, err := Load(cfg)
