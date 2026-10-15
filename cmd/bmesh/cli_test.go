@@ -222,8 +222,9 @@ func TestGlobalFlagsAfterSubcommand(t *testing.T) {
 	if code != 0 || !strings.HasSuffix(out, " operator: hello\n") {
 		t.Fatalf("inbox: %d %q %q", code, out, errs)
 	}
-	// Without the late --config the missing file's defaults apply.
-	if _, errs, code := runCLI(t, nil, "inbox", "--node", "demo-000"); code == 0 || !strings.Contains(errs, "[mesh] nats is empty") {
+	// Without the late --config the missing file means a box not set up:
+	// refused outside a terminal.
+	if _, errs, code := runCLI(t, nil, "inbox", "--node", "demo-000"); code != exitRefused || !strings.Contains(errs, "run `bmesh init`") {
 		t.Fatalf("no --config: %d %q", code, errs)
 	}
 }
