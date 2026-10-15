@@ -4,7 +4,7 @@ title: The strip counts the mesh live instead of quoting the last digest
 kind: refinement
 size: XS
 judge: sonnet
-status: proposed
+status: accepted
 lens: ux
 proposed_by: f3d2851e-4460-4cd8-87b7-359407c1c774
 proposed_on: 2026-10-15
