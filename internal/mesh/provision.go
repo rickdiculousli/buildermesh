@@ -23,7 +23,7 @@ func Provision(ctx context.Context, c *Client) error {
 	for _, b := range []struct {
 		name    string
 		history uint8
-	}{{BucketNodes, 1}, {BucketState, 16}, {BucketRunner, 1}} {
+	}{{BucketNodes, 1}, {BucketState, 16}, {BucketRunner, 1}, {BucketResults, 1}, {BucketLeases, 1}} {
 		if _, err := c.JS.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{
 			Bucket: b.name, History: b.history, Storage: jetstream.FileStorage,
 		}); err != nil {

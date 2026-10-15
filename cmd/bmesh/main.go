@@ -43,6 +43,14 @@ commands:
   lead start --repo R --spec NNN --brief FILE [--model M] [--title T] [--path P]
                                            start a lead through the runner and register it
   serve [--listen ADDR]                    run the daemon and the map (embedded NATS when [mesh] nats is empty)
+  result find <kind> [--commit C] [--json] [-- args...]
+                                           print the result of kind at the commit's tree (exit 3 when none)
+  result record <kind> --ok|--fail [--commit C] [--output FILE|-] [-- args...]
+                                           record a result of kind at the commit's tree
+  lease acquire <slot> [--ttl D]           take a place in a slot and print its key (exit 3 when busy)
+  lease renew <key> [--ttl D]              extend a held lease
+  lease release <key>                      give back a held lease
+  lease run <slot> [--ttl D] -- <cmd...>   hold a lease while a command runs; exit with its code
 `
 
 // exitErr carries an exit code and the message printed as "bmesh: <msg>".
@@ -126,6 +134,10 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdLead(rest)
 	case "serve":
 		return a.cmdServe(rest)
+	case "result":
+		return a.cmdResult(rest)
+	case "lease":
+		return a.cmdLease(rest)
 	case "help":
 		fmt.Fprint(a.stdout, usage)
 		return nil
@@ -157,7 +169,13 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 			}
 			return nil, fail(exitUsage, "%s: %v", fs.Name(), err)
 		}
-		args = fs.Args()
+		rest := fs.Args()
+		// fs.Parse drops a "--" that ends the flags; what follows it is
+		// positional even when it looks like a flag.
+		if n := len(args) - len(rest); n > 0 && args[n-1] == "--" {
+			return append(pos, rest...), nil
+		}
+		args = rest
 		if len(args) == 0 {
 			return pos, nil
 		}
@@ -208,6 +226,9 @@ func (a *app) connect(ctx context.Context, name string) error {
 	return nil
 }
 
+// errNoNode is identity's error when nothing names this node.
+var errNoNode = fail(exitUsage, "no node for this directory; pass --node or set BMESH_NODE")
+
 // identity resolves this node's path: --node, else BMESH_NODE, else the
 // registered node whose worktree is this checkout on this host. It connects.
 func (a *app) identity(ctx context.Context, cmd string) (mesh.Path, error) {
@@ -225,19 +246,31 @@ func (a *app) identity(ctx context.Context, cmd string) (mesh.Path, error) {
 	if err := a.connect(ctx, cmd); err != nil {
 		return nil, err
 	}
-	noNode := fail(exitUsage, "no node for this directory; pass --node or set BMESH_NODE")
 	top, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
-		return nil, noNode
+		return nil, errNoNode
 	}
 	n, ok, err := mesh.NodeForWorktree(ctx, a.client, strings.TrimSpace(string(top)), a.cfg.HostName())
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
-		return nil, noNode
+		return nil, errNoNode
 	}
 	return mesh.ParsePath(n.Path)
+}
+
+// identityOrHost is identity for commands a person may run outside any node
+// (result, lease): when no node resolves it acts as this host's name.
+func (a *app) identityOrHost(ctx context.Context, cmd string) (string, error) {
+	p, err := a.identity(ctx, cmd)
+	if errors.Is(err, errNoNode) {
+		return a.cfg.HostName(), nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return p.String(), nil
 }
 
 // cmdCtx bounds a one-shot command.

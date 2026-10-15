@@ -8,10 +8,12 @@ import (
 )
 
 const (
-	StreamMesh   = "bm-mesh"
-	BucketNodes  = "bm-nodes"
-	BucketState  = "bm-state"
-	BucketRunner = "bm-runner"
+	StreamMesh    = "bm-mesh"
+	BucketNodes   = "bm-nodes"
+	BucketState   = "bm-state"
+	BucketRunner  = "bm-runner"
+	BucketResults = "bm-results"
+	BucketLeases  = "bm-leases"
 )
 
 var pathRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*$`)
