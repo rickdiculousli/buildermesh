@@ -1,8 +1,9 @@
 mode = "pooled"
 models = ["claude-opus-5-5", "claude-fable-5-1"]
-allow = []
+allow = ["Bash(git diff:*)", "Bash(git log:*)"]
 prompt = """
 Review the change at this commit for correctness bugs.
+The job text carries `base: <sha>`: review `git diff <base>..HEAD`.
 Report each finding as a section headed `### <severity>: <what breaks>`,
 followed by the file, the failing input and the wrong result.
 End your reply with a final line `VERDICT: ok` or `VERDICT: fail`.

@@ -1,5 +1,6 @@
 mode = "fresh"
 deterministic = true
 slots = ["browser"]
-# $1 is the URL to capture.
-command = "npx playwright screenshot \"$1\" surface.png"
+# The job args, <url> <file>, are appended as "$@":
+#   bmesh routine queue surface -- http://localhost:3000 surface.png
+command = "npx playwright screenshot"
