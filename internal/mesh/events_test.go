@@ -98,3 +98,25 @@ func TestPublishEventIDDedupes(t *testing.T) {
 		t.Fatal("empty msg id accepted")
 	}
 }
+
+func TestLastTakesWildcards(t *testing.T) {
+	c, ctx := connect(t)
+	if _, ok, err := Last(ctx, c, "bm.daemon.*.started"); err != nil || ok {
+		t.Fatal(ok, err)
+	}
+	for _, host := range []string{"k16", "mac", "k16"} {
+		if err := PublishEvent(ctx, c, Event{From: "daemon." + host, Event: "started", Text: "rev-" + host}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := PublishEvent(ctx, c, Event{From: "daemon.mac", Event: "digest"}); err != nil {
+		t.Fatal(err)
+	}
+	s, ok, err := Last(ctx, c, "bm.daemon.*.started")
+	if err != nil || !ok || s.Subject != "bm.daemon.k16.started" || s.Seq != 3 {
+		t.Fatal(s, ok, err)
+	}
+	if s, ok, err := Last(ctx, c, "bm.daemon.mac.started"); err != nil || !ok || s.Seq != 2 {
+		t.Fatal(s, ok, err)
+	}
+}

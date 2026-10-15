@@ -6,7 +6,7 @@ The skills in `skills/` are the plugin every node runs on; `docs/agents-snippet.
 
 Design and decisions live in `~/repos/command-center/docs/superpowers/specs/2026-10-14-buildermesh.md` and `2026-10-15-buildermesh-round2.md`; the specs built here are in `docs/proposals/`.
 
-After a change lands on `main`, install it: `GOBIN=~/.local/bin go install ./cmd/bmesh` on both boxes and `systemctl --user restart bmesh` on k16.
+After a change lands on `main`, k16 updates itself (its daemon has `[update] repo = "buildermesh"`: it rebuilds and restarts within a couple of minutes, `journalctl --user -u bmesh` shows `update: <old8> -> <new8>`); on the Mac, run `bmesh update`.
 
 <!-- command-center:done -->
 ## Definition of done

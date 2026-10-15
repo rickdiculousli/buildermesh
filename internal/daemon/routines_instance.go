@@ -49,6 +49,11 @@ func (r *routineSet) pooledInstance(g *group, p *pool, path string, goCh chan st
 			t := time.NewTimer(drainWait)
 			select {
 			case dl := <-p.jobs:
+				if g.ctx.Err() != nil { // stopped meanwhile: the job goes back
+					dl.nak()
+					t.Stop()
+					return
+				}
 				w.handle(dl)
 			case <-t.C:
 				drained = true

@@ -12,12 +12,14 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 )
 
 const deliverTimeout = 10 * time.Second
 
 // Digest summarises the mesh for a notification. It takes host and now in
-// addition to the plan's (states, nodes, since): the title names the host and
+// addition to the plan's (states, nodes, since): the title names the host
+// (the daemon passes "<host> <rev8>", so the title carries its revision) and
 // the ages are measured to now. states is the source of truth (a state with
 // no registered node still counts); nodes is reserved for enrichment.
 //
@@ -165,7 +167,11 @@ func digestOnce(ctx context.Context, d Deps, since *time.Time) {
 		d.Log.Warn("digest: list nodes", "err", err)
 		return
 	}
-	title, body, changed := Digest(d.Host, states, nodes, *since, now)
+	label := d.Host
+	if d.Revision != "" {
+		label += " " + selfupdate.Short(d.Revision)
+	}
+	title, body, changed := Digest(label, states, nodes, *since, now)
 	if !changed {
 		return
 	}

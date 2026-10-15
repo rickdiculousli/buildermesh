@@ -39,6 +39,10 @@ type Deps struct {
 
 	PushRetry []time.Duration // waits before each push retry; nil = 5s, 30s
 	PushGrace time.Duration   // how long a push in flight may finish at shutdown; 0 = 10s
+
+	Revision string // this binary's commit (vcs.revision); "" = unknown
+	Exe      string // the binary's path, which [update] replaces
+	Restart  func() // ends serve so the binary re-execs; called after an update drained
 }
 
 func (d *Deps) defaults() {
@@ -63,7 +67,8 @@ func decodeEvent(data []byte) (mesh.Event, error) {
 	return ev, err
 }
 
-// Run starts the activity follower, the poll+wake+rounds and silence loops, the
+// Run publishes started (after pushing an update that never started), then
+// starts the activity follower, the poll+wake+rounds and silence loops, the
 // digest and push loops when [notify] has somewhere to send, and, when
 // [repos] names any repo, the routine loop; it returns once ctx ends
 // and every loop has stopped.
@@ -72,6 +77,7 @@ func Run(ctx context.Context, d Deps) error {
 		return errors.New("daemon: Client, Cfg, Runner and Host are required")
 	}
 	d.defaults()
+	announce(ctx, d)
 	act := NewActivity()
 	pollEvery := d.Cfg.Liveness.PollEvery
 	if pollEvery <= 0 {

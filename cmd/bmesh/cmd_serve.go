@@ -10,7 +10,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -26,7 +28,12 @@ const (
 	shutdownGrace = 5 * time.Second
 )
 
-// cmdServe runs the daemon and the map until SIGTERM or SIGINT.
+// errReexec is serve's return once an update has drained the daemon and
+// everything has stopped: the caller re-execs the binary.
+var errReexec = errors.New("serve: re-exec for an update")
+
+// cmdServe runs the daemon and the map until SIGTERM or SIGINT, or until an
+// update replaced the binary, which it then re-execs.
 func (a *app) cmdServe(args []string) error {
 	fs := a.flags("serve")
 	listen := fs.String("listen", "", "HTTP address (default [serve] listen)")
@@ -40,16 +47,36 @@ func (a *app) cmdServe(args []string) error {
 	if err := a.loadConfig(); err != nil {
 		return err
 	}
+	// The path is read before an update moves the running file aside.
+	exe, err := executable()
+	if err == nil {
+		exe, err = filepath.EvalSymlinks(exe)
+	}
+	if err != nil {
+		fmt.Fprintf(a.stderr, "bmesh serve: no binary path, so no [update]: %v\n", err)
+		exe = ""
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()
-	return serve(ctx, a.cfg, *listen, a.stderr, nil)
+	err = serve(ctx, a.cfg, *listen, a.stderr, nil, exe)
+	if errors.Is(err, errReexec) {
+		stop()
+		fmt.Fprintf(a.stderr, "bmesh serve: restarting as %s\n", exe)
+		return reexec(exe)
+	}
+	return err
 }
 
 // serve runs the embedded server (when [mesh] nats is empty), the daemon and
 // the HTTP server until ctx ends, then stops them in order: HTTP, daemon,
 // client, embedded server. listen overrides [serve] listen; ready, when not
-// nil, receives the bound HTTP address.
-func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Writer, ready chan<- string) error {
+// nil, receives the bound HTTP address. exe is the binary [update] replaces
+// ("" = none); when an update asks for a restart, serve stops as it would
+// on ctx and returns errReexec.
+func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Writer, ready chan<- string, exe string) error {
+	ctx, restart := context.WithCancel(ctx)
+	defer restart()
+	var restarting atomic.Bool
 	host := cfg.HostName()
 	url, token, domain, mode := cfg.Mesh.NATS, "", cfg.Mesh.Domain, "hub"
 	if url == "" {
@@ -102,6 +129,8 @@ func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Wri
 			Client: c, Cfg: cfg, Runner: r, Host: host,
 			Log:       log,
 			Checkouts: cfg.Expand(cfg.Runner.Checkouts), ClaudeBin: claude,
+			Revision: buildVersion().Revision, Exe: exe,
+			Restart: func() { restarting.Store(true); restart() },
 		})
 	}()
 
@@ -130,6 +159,9 @@ func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Wri
 	derr := <-daemonDone
 	if httpErr != nil && !errors.Is(httpErr, http.ErrServerClosed) {
 		return fmt.Errorf("http: %w", httpErr)
+	}
+	if derr == nil && restarting.Load() {
+		return errReexec // after the deferred stops: client, embedded server
 	}
 	return derr
 }

@@ -29,7 +29,7 @@ const (
 const usage = `usage: bmesh [--config FILE] [--node PATH] [--json] <command> [args]
 
 --config, --node and --json are accepted before or after the command.
-Every command but init and help needs the box set up (the flag <config dir>/.setup-complete
+Every command but init, help and version needs the box set up (the flag <config dir>/.setup-complete
 or a config.toml): a terminal run runs init first, a non-interactive one is refused (exit 3).
 
 commands:
@@ -71,7 +71,12 @@ commands:
                                            print {"path","branch","worktree"} and (without --json) its header
   executor list [--json]                   this lead's tree: path, state, branch, head, unread
   executor remove <name> [--force]         remove a merged executor's worktree and branch (exit 3 unmerged)
-  serve [--listen ADDR]                    run the daemon and the map (embedded NATS when [mesh] nats is empty)
+  serve [--listen ADDR]                    run the daemon and the map (embedded NATS when [mesh] nats is empty);
+                                           with [update] repo, it rebuilds itself when that repo's main moves
+  version                                  print this binary's commit: <rev8> <time> [modified], or unknown
+  update [--repo R]                        build R's main (default [update] repo, else the row this binary's
+                                           module is from) over this binary, keeping it as bmesh.prev; print
+                                           <old8> -> <new8>, or up to date
   result find <kind> [--commit C] [--model M] [--json] [-- args...]
                                            print the result of kind at the commit's tree (exit 3 when none)
   result record <kind> --ok|--fail [--commit C] [--model M] [--output FILE|-] [-- args...]
@@ -163,7 +168,7 @@ func (a *app) dispatch(args []string) error {
 		return fail(exitUsage, "")
 	}
 	cmd, rest := rest[0], rest[1:]
-	if cmd != "init" && cmd != "help" {
+	if cmd != "init" && cmd != "help" && cmd != "version" {
 		if err := a.ensureSetup(rest); err != nil {
 			return err
 		}
@@ -211,6 +216,10 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdExecutor(rest)
 	case "node":
 		return a.cmdNode(rest)
+	case "version":
+		return a.cmdVersion(rest)
+	case "update":
+		return a.cmdUpdate(rest)
 	case "help":
 		fmt.Fprint(a.stdout, usage)
 		return nil
@@ -277,6 +286,8 @@ func (a *app) loadConfig() error {
 }
 
 // connect loads the config and dials the hub; name labels the connection.
+// Once connected it prints the revision hint when the daemon runs another
+// build.
 func (a *app) connect(ctx context.Context, name string) error {
 	if a.client != nil {
 		return nil
@@ -296,6 +307,7 @@ func (a *app) connect(ctx context.Context, name string) error {
 		return err
 	}
 	a.client = c
+	a.versionHint(ctx)
 	return nil
 }
 
