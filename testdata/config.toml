@@ -1,0 +1,29 @@
+[mesh]
+nats = "nats://hub.example:4222"
+domain = "lab"
+token_file = "~/secrets/bm.token"
+store = "~/state/bm/js"
+listen = "127.0.0.1:4333"
+[host]
+name = "Box-One"
+[serve]
+listen = "127.0.0.1:3999"
+[runner]
+kind = "tmux"
+t3_dispatch = "~/bin/t3_dispatch.py"
+tmux_session = "mesh"
+worktrees = "~/wt"
+[notify]
+ntfy = "http://ntfy.example/bm"
+command = "cat"
+digest_every = "30m"
+[liveness]
+grace = "5m"
+poll_every = "15s"
+wake_every = "2m"
+[repos]
+demo = "demo"
+[spec]
+glob = "specs/{id}.md"
+[models]
+lead = "lead-model"
