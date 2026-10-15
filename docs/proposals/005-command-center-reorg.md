@@ -4,13 +4,15 @@ title: command-center keeps only ops
 kind: maintenance
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: da6488fd-38bd-4c4c-994c-a7de257d9424
 proposed_on: 2026-10-15
 built_by: e301c2c6-470c-4773-b907-8054c9f6ce42
 host: k16
 branch: t3code/b0ee2f6d
+verified: review ok t:1d3d3a2a m:claude-fable-5-1; verify ok t:1d3d3a2a
+merged: c4d9137cc9f58163dfd3557c3977ff64534699ca
 ---
 
 ## Opportunity
