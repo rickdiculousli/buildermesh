@@ -422,7 +422,7 @@ func (a *app) cmdRoutineWait(args []string) error {
 
 // cmdRoutineRun runs a kind in this worktree: the requester's own run of
 // HEAD, holding the kind's slots, and records its result (with the model for
-// a model kind). A deterministic kind needs a clean tree and answers from a
+// a model kind). It needs a clean tree; a deterministic kind answers from a
 // recorded result unless --rerun.
 func (a *app) cmdRoutineRun(args []string) error {
 	fs := a.flags("routine run")
@@ -460,14 +460,10 @@ func (a *app) cmdRoutineRun(args []string) error {
 	if *model == "" && k.IsModel() {
 		*model = k.ModelsList()[0]
 	}
-	if k.Deterministic {
-		st, err := exec.Command("git", "status", "--porcelain").Output()
-		if err != nil {
-			return fmt.Errorf("git status: %w", err)
-		}
-		if len(strings.TrimSpace(string(st))) > 0 {
-			return fail(exitRefused, "worktree is dirty; commit first")
-		}
+	// Every inline run records against HEAD's tree, so none may run on
+	// uncommitted changes.
+	if err := refuseDirty(); err != nil {
+		return err
 	}
 	head, err := gitRev("--verify", "--end-of-options", "HEAD^{commit}")
 	if err != nil {
@@ -536,6 +532,20 @@ func (a *app) cmdRoutineRun(args []string) error {
 	}
 	fmt.Fprintf(a.stderr, "recorded %s\n", key)
 	return a.printVerdict(reply.OK, reply.Output)
+}
+
+// refuseDirty refuses (exit 3) when the cwd's worktree has uncommitted
+// changes or untracked files: a result recorded for HEAD's tree must be of
+// HEAD's tree.
+func refuseDirty() error {
+	st, err := exec.Command("git", "status", "--porcelain").Output()
+	if err != nil {
+		return fmt.Errorf("git status: %w", err)
+	}
+	if len(strings.TrimSpace(string(st))) > 0 {
+		return fail(exitRefused, "worktree is dirty; commit first")
+	}
+	return nil
 }
 
 // printVerdict prints a run's output, ending in a newline, and exits 1 when

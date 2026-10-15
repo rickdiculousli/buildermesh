@@ -83,25 +83,29 @@ func TestInlineRefusesDirtyTree(t *testing.T) {
 	c, ctx := setup(t)
 	repo := kindRepo(t, map[string]string{
 		"verify": "mode = \"inline\"\ndeterministic = true\ncommand = \"touch \\\"$MARK\\\"\"\n",
+		"notes":  "mode = \"inline\"\ncommand = \"touch \\\"$MARK\\\"\"\n",
 	})
 	mark := marker(t)
 	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("changed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, errs, code := runCLI(t, nil, "routine", "run", "verify")
-	if code != 3 || errs != "bmesh: worktree is dirty; commit first\n" {
-		t.Fatalf("dirty: %d %q", code, errs)
-	}
-	if exists(mark) {
-		t.Fatal("the command ran on a dirty tree")
-	}
-	if rs, err := mesh.ListResults(ctx, c, "verify"); err != nil || len(rs) != 0 {
-		t.Fatalf("recorded %+v %v", rs, err)
+	// Every inline run records for HEAD's tree, deterministic or not.
+	for _, k := range []string{"verify", "notes"} {
+		_, errs, code := runCLI(t, nil, "routine", "run", k)
+		if code != 3 || errs != "bmesh: worktree is dirty; commit first\n" {
+			t.Fatalf("%s dirty: %d %q", k, code, errs)
+		}
+		if exists(mark) {
+			t.Fatalf("%s ran on a dirty tree", k)
+		}
+		if rs, err := mesh.ListResults(ctx, c, k); err != nil || len(rs) != 0 {
+			t.Fatalf("%s recorded %+v %v", k, rs, err)
+		}
 	}
 
 	// An inline run runs HEAD; any other commit is refused.
 	runGit(t, repo, "checkout", "a.txt")
-	_, errs, code = runCLI(t, nil, "routine", "run", "verify", "--commit", "HEAD~1")
+	_, errs, code := runCLI(t, nil, "routine", "run", "verify", "--commit", "HEAD~1")
 	if code != 3 || errs != "bmesh: inline runs run HEAD; check out HEAD~1 or queue the job\n" || exists(mark) {
 		t.Fatalf("other commit: %d %q", code, errs)
 	}

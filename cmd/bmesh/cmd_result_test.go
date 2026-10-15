@@ -119,3 +119,31 @@ func TestModelIDsValidated(t *testing.T) {
 		t.Fatalf("recorded %+v %v", rs, err)
 	}
 }
+
+// A result for HEAD is refused while the worktree is dirty; another commit's
+// result is not about the files, so it may be recorded.
+func TestResultRecordRefusesDirtyHead(t *testing.T) {
+	c, ctx := setup(t)
+	repo := gitRepo(t)
+	if err := os.WriteFile(filepath.Join(repo, "b.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", "-A")
+	runGit(t, repo, "commit", "-m", "b")
+	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{}, {"--commit", "HEAD"}, {"--commit", gitOut(t, "rev-parse", "HEAD")}} {
+		_, errs, code := runCLI(t, nil, append([]string{"result", "record", "verify", "--ok"}, args...)...)
+		if code != 3 || errs != "bmesh: worktree is dirty; commit first\n" {
+			t.Fatalf("%v: %d %q", args, code, errs)
+		}
+	}
+	if rs, err := mesh.ListAllResults(ctx, c); err != nil || len(rs) != 0 {
+		t.Fatalf("recorded %+v %v", rs, err)
+	}
+	prev := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+	if out, errs, code := runCLI(t, nil, "result", "record", "verify", "--ok", "--commit", "HEAD~1"); code != 0 || out != "recorded verify."+prev+"\n" {
+		t.Fatalf("other commit: %d %q %q", code, out, errs)
+	}
+}

@@ -105,7 +105,8 @@ func (a *app) cmdResultFind(args []string) error {
 }
 
 // cmdResultRecord stores a result of a kind at the commit's tree. The kind
-// file need not exist (R8): any name may be recorded.
+// file need not exist (R8): any name may be recorded. A result for HEAD
+// needs a clean worktree: the run checked the files, which must be HEAD's.
 func (a *app) cmdResultRecord(args []string) error {
 	fs := a.flags("result record")
 	ok := fs.Bool("ok", false, "the run passed")
@@ -134,6 +135,11 @@ func (a *app) cmdResultRecord(args []string) error {
 	tree, err := gitRev(sha + "^{tree}")
 	if err != nil {
 		return err
+	}
+	if head, err := gitRev("--verify", "--end-of-options", "HEAD^{commit}"); err == nil && head == sha {
+		if err := refuseDirty(); err != nil {
+			return err
+		}
 	}
 	output, err := a.readOutput(*outPath)
 	if err != nil {
