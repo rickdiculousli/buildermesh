@@ -1,0 +1,3 @@
+mode = "inline"
+deterministic = true
+command = "TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test -count=1 ./... && go vet ./... && test -z \"$(gofmt -l .)\""
