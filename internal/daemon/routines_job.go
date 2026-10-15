@@ -224,6 +224,20 @@ func (w *worker) handle(dl *delivery) {
 		r.reply(dl, mesh.Reply{Output: text, By: w.path})
 		dl.ack()
 	}
+	// The tree is the daemon's own reading of the commit, not the
+	// requester's. A commit the daemon's clone lacks (queued from another
+	// box, pushed since) is fetched once before the job is refused.
+	tree, err := gitTree(w.g.repoPath, j.Commit)
+	if err != nil {
+		if ferr := r.fetch(w.g.repoPath); ferr != nil {
+			r.d.Log.Warn("routines: fetch", "repo", w.g.repoPath, "err", ferr)
+		}
+		tree, err = gitTree(w.g.repoPath, j.Commit)
+	}
+	if err != nil {
+		fail(err.Error())
+		return
+	}
 	kc, err := kind.LoadAt(w.g.repoPath, j.Commit, w.g.k.Name)
 	switch {
 	case errors.Is(err, kind.ErrNotFound):
@@ -234,12 +248,6 @@ func (w *worker) handle(dl *delivery) {
 	}
 	if kc.IsModel() && !slices.Contains(kc.ModelsList(), w.model) || !kc.IsModel() && w.model != "" {
 		fail("unknown model " + w.model)
-		return
-	}
-	// The tree is the daemon's own reading of the commit, not the requester's.
-	tree, err := gitTree(w.g.repoPath, j.Commit)
-	if err != nil {
-		fail(err.Error())
 		return
 	}
 	key := mesh.ResultKey(kc.Name, tree, j.Args, w.model)

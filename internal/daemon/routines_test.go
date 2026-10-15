@@ -424,6 +424,40 @@ command = "sleep 30"
 	}
 }
 
+// A job at a commit the daemon's clone lacks (pushed to origin from another
+// box) runs after one fetch.
+func TestJobCommitFetchedFromOrigin(t *testing.T) {
+	f := routineSetup(t, map[string]string{".bmesh/routines/verify.toml": "timeout = \"30s\"\ncommand = \"cat b.txt\"\n"})
+	other := filepath.Join(t.TempDir(), "other")
+	tgit(t, filepath.Dir(other), "clone", "-q", f.repo, other)
+	tgit(t, f.repo, "remote", "add", "origin", other)
+	tgit(t, f.repo, "fetch", "-q", "origin")
+	f.start(t)
+	f.waitStarted(t, "routine.verify.cmd-1", 1) // the rescan's fetch is over
+	pushed := commitFiles(t, other, map[string]string{"b.txt": "from origin\n"})
+	if _, err := exec.Command("git", "-C", f.repo, "cat-file", "-e", pushed+"^{commit}").Output(); err == nil {
+		t.Fatal("the daemon's clone already has the commit")
+	}
+	id := nextID()
+	j := mesh.Job{ID: id, Kind: "verify", Repo: "app", Commit: pushed, Go: true}
+	if _, err := mesh.Queue(f.ctx, f.c, mesh.Path{requester}, j, other); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.reply(t, id, 20*time.Second); !r.OK || r.Output != "from origin\n" || r.Tree != tgit(t, other, "rev-parse", pushed+"^{tree}") {
+		t.Fatalf("reply %+v", r)
+	}
+	// A commit no remote has is still refused (sent as is: Queue would
+	// refuse it first).
+	bad := mesh.Job{ID: nextID(), Kind: "verify", Repo: "app", Commit: strings.Repeat("ab", 20), Args: []string{}, Go: true}
+	if _, err := mesh.Send(f.ctx, f.c, mesh.Message{ID: bad.ID, Kind: "job", From: requester, To: "routine.verify", Job: &bad}); err != nil {
+		t.Fatal(err)
+	}
+	r := f.reply(t, bad.ID, 20*time.Second)
+	if r.OK || !strings.Contains(r.Output, "not a commit") {
+		t.Fatalf("unknown commit reply %+v", r)
+	}
+}
+
 func TestDeterministicAnsweredFromRecordInDaemon(t *testing.T) {
 	mark := filepath.Join(t.TempDir(), "mark")
 	f := routineSetup(t, map[string]string{".bmesh/routines/check.toml": `

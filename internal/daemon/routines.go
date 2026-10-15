@@ -52,6 +52,15 @@ type routineSet struct {
 	// worktree add` and `prune` in one repo read each other's half-written
 	// metadata.
 	worktreeMu sync.Mutex
+
+	fetchMu sync.Mutex // serializes fetches, which lock a repo's refs
+}
+
+// fetch updates repoPath's origin refs (nothing without an origin).
+func (r *routineSet) fetch(repoPath string) error {
+	r.fetchMu.Lock()
+	defer r.fetchMu.Unlock()
+	return checkout.Fetch(repoPath)
 }
 
 func (r *routineSet) ensureCheckout(repoPath, instance string) (string, error) {
@@ -128,7 +137,7 @@ func routines(ctx context.Context, d Deps) {
 // discover returns the kinds on repoPath's main: origin/main after a fetch
 // when the repo has an origin, else the local main (R4).
 func (r *routineSet) discover(repoPath string) ([]kind.Kind, error) {
-	if err := checkout.Fetch(repoPath); err != nil {
+	if err := r.fetch(repoPath); err != nil {
 		r.d.Log.Warn("routines: fetch", "repo", repoPath, "err", err)
 	}
 	dir, err := r.ensureCheckout(repoPath, "main")
