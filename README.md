@@ -47,15 +47,15 @@ A kind is `.bmesh/routines/<kind>.toml` in the repo (the directory is `[routines
 | `recycle_context` | `120000` | pooled model: new session when the last reply's context tokens (input + cache read) exceed this |
 | `recycle_idle` | `"55m"` | pooled model: new session after this long idle (the prompt-cache TTL) |
 
-Exactly one of `command`, `model` and `models` is set; an unknown key is an error. A command has trailing spaces, newlines and `;` trimmed, and its last line may not end in a comment (the appended `"$@"` would be commented out). A recycle key of `0` is off.
+Exactly one of `command`, `model` and `models` is set; an unknown key is an error. A command has trailing spaces, newlines and `;` trimmed, and its last line may not end in a comment (the appended `"$@"` would be commented out). A model id may not contain spaces or `;` (it must fit a `verified` entry); `result record`, `routine queue` and `routine run` refuse such a `--model` with exit 2. A recycle key of `0` is off.
 
-A command runs with `BMESH_JOB`, `BMESH_KIND`, `BMESH_COMMIT`, `BMESH_TREE`, `BMESH_FROM` (the path the job runs as: the instance, or the requester for an inline run) and `BMESH_REPLY` (the requester's path) in its environment. A model kind gets the job on stdin as a header line (`job: <id> commit: <sha> tree: <tree>`), the job's `--text` and its args, and runs `claude -p --model M --output-format json --session-id|--resume <uuid> --allowedTools <list> --max-turns 40`. Its run is ok unless the reply's last `VERDICT:` line says otherwise (`VERDICT: ok` or `VERDICT: fail`), or claude errs. A run's output is stdout and stderr (a command) or the reply text (a model).
+A command runs with `BMESH_JOB`, `BMESH_KIND`, `BMESH_COMMIT`, `BMESH_TREE`, `BMESH_FROM` (the path the job runs as: the instance, or the requester for an inline run) and `BMESH_REPLY` (the requester's path) in its environment. A model kind gets the job on stdin as a header line (`job: <id> commit: <sha> tree: <tree>`), the job's `--text` and its args, and runs `claude -p --model M --output-format json --session-id|--resume <uuid> --allowedTools <list> --max-turns 40`. Its run is ok unless the reply's last `VERDICT:` line says otherwise (`VERDICT: ok` or `VERDICT: fail`), or claude errs. Markdown around the line is ignored: leading `*`, `_`, `#`, `` ` ``, `>` and spaces, and the same around the value, so `**VERDICT: fail**`, `**VERDICT:** fail` and `VERDICT: **ok**` all read. When the kind's prompt contains `VERDICT:` (it asks for one), a reply with no verdict line fails; otherwise it passes by claude's exit code. A run's output is stdout and stderr (a command) or the reply text (a model).
 
 `examples/routines/`:
 
 - `verify.toml`: `mode = "inline"`, `deterministic = true`, `command = "npm test"`.
-- `review.toml`: `mode = "pooled"`, `models = ["claude-opus-5-5", "claude-fable-5-1"]` and a prompt asking for findings as `### <severity>: <what breaks>` sections ending in `VERDICT: ok` or `VERDICT: fail`.
-- `surface.toml`: `mode = "fresh"`, `deterministic = true`, `slots = ["browser"]`, a playwright screenshot of `$1`.
+- `review.toml`: `mode = "pooled"`, `models = ["claude-opus-5-5", "claude-fable-5-1"]`, `allow = ["Bash(git diff:*)", "Bash(git log:*)"]` and a prompt that reviews `git diff <base>..HEAD` (the job text carries `base: <sha>`, e.g. `--text "base: $(git merge-base origin/main HEAD)"`) and asks for findings as `### <severity>: <what breaks>` sections ending in `VERDICT: ok` or `VERDICT: fail`.
+- `surface.toml`: `mode = "fresh"`, `deterministic = true`, `slots = ["browser"]`, `command = "npx playwright screenshot"`; the job args `<url> <file>` are appended as `"$@"`.
 
 ### Modes
 
@@ -65,11 +65,11 @@ A command runs with `BMESH_JOB`, `BMESH_KIND`, `BMESH_COMMIT`, `BMESH_TREE`, `BM
 | `fresh` | the daemon starts a new instance per job, `routine.<kind>.f<id8>`, and removes its checkout afterwards | a checkout of its own |
 | `pooled` | the daemon keeps `pool` instances per model, `routine.<kind>.<model-short>-<n>` (`cmd-<n>` for a command), that drain the kind's inbox in batches | one checkout per instance, kept |
 
-`id8` is the job id's first 8 characters, lowercased. `model-short` is the model id lowercased with a leading `claude-` stripped and every character outside `[a-z0-9-]` made `-` (`claude-opus-5-5` is `opus-5-5`). Pooled instances are numbered from 1 per model across every repo that defines the kind.
+`id8` is the job id's first 8 characters, lowercased. `model-short` is the model id lowercased with a leading `claude-` stripped, every character outside `[a-z0-9]` made `-`, runs of `-` collapsed to one and leading and trailing `-` trimmed (`claude-opus-5-5` is `opus-5-5`, `claude-opus-5-5[1m]` is `opus-5-5-1m`). Pooled instances are numbered from 1 per model across every repo that defines the kind.
 
-A pooled instance holds the jobs it takes until `batch_idle` passes with nothing new, or a go arrives (`bmesh routine go <kind>`, or a job queued with `--go`), then runs them in order and runs any job queued meanwhile at once. A model instance keeps one session across jobs (`--session-id` on its first job, `--resume` after) and starts a new one when `recycle_uses`, `recycle_context` or `recycle_idle` is reached, or when the kind's definition at a job's commit differs from the one its session started with.
+A pooled instance holds the jobs it takes until `batch_idle` passes with nothing new, or a go arrives (`bmesh routine go <kind>`, or a job queued with `--go`), then runs them in order and runs any job queued meanwhile at once. A model instance keeps one session across jobs (`--session-id` on its first job, `--resume` after) and starts a new one when `recycle_uses`, `recycle_context` or `recycle_idle` is reached, or when the kind's definition at a job's commit differs from the one its session started with. A run whose output does not parse as claude's JSON result (including a non-zero exit with no JSON), first or resumed, drops its session whatever the recycle settings: the next job starts a new one with the prompt.
 
-Instances are nodes (`role: routine`, with repo, host and model). The daemon writes their state (`working` during a job, `idle` between, `done` when it stops: a fresh run after its job, a pooled one when its pool is stopped or restarted) and publishes `started`, `progress` (`job <id> ok|fail <ms>`, or `recycled`) and `done` for them on `bm.<instance path>.<event>`.
+Instances are nodes (`role: routine`, with repo, host and model). The daemon writes their state (`working` during a job, `idle` between, `done` when it stops: a fresh run after its job, a pooled one when its pool is stopped or restarted) and publishes `started`, `progress` (`job <id> started` before a run and `job <id> ok|fail <ms>` after it, both with `to` = the requester's path; or `recycled`) and `done` for them on `bm.<instance path>.<event>`. A node event with a `to` counts as activity of that path too, so a lead waiting on a routine is not marked silent.
 
 The daemon reads each `[repos]` repo's kinds every minute from its main (`origin/main` after a fetch when the repo has an `origin`, else `main`) and starts, restarts or stops pools to match. Routines are off when `[runner] checkouts` is empty.
 
@@ -86,9 +86,9 @@ bmesh routine run <kind> [--commit HEAD] [--model M] [--here] [--rerun] [--text 
 
 `list` prints the cwd repo's kinds with their instances and queue depth (waiting plus in-flight jobs); `status` prints a kind's (or every kind's) instances with state and model.
 
-A job is an inbox message (`kind: "job"`) to `routine.<kind>`, with the job id as its `Nats-Msg-Id`, so a job queued twice is stored once (`queue` prints `duplicate <id>`). It names a commit (`--commit`, default `HEAD`, resolved in the cwd repo to a full SHA with its tree) and a repo: the `[repos]` name whose path is the cwd repo, else the repo directory's base name; the daemon resolves it through its own `[repos]`. The kind's inbox consumer is `inbox-routine--<kind>`, with `MaxAckPending` = the kind's instance count (`pool` per model per repo for pooled, `pool` for fresh) and `AckWait` = the kind's `timeout` + 1m. The daemon keeps a running job in progress, so a job is redelivered only when its daemon dies.
+A job is an inbox message (`kind: "job"`) to `routine.<kind>`, with the job id as its `Nats-Msg-Id`, so a job queued twice is stored once (`queue` prints `duplicate <id>`). It names a commit (`--commit`, default `HEAD`, resolved in the cwd repo to a full SHA with its tree) and a repo: the requester node's `repo` when it is a registered node naming one; else the `[repos]` name whose path shares the cwd's git common dir (so a linked worktree, where leads live, names its main repo); else the main repo directory's base name. The daemon resolves it through its own `[repos]`. The kind's inbox consumer is `inbox-routine--<kind>`, with `MaxAckPending` = the kind's instance count (`pool` per model per repo for pooled, `pool` for fresh) and `AckWait` = the kind's `timeout` + 1m. The daemon keeps a running job in progress, so a job is redelivered only when its daemon dies.
 
-The daemon runs a job with the kind as defined at the job's commit (`git show <commit>:.bmesh/routines/<kind>.toml`), falling back to main's definition only when the file is absent at that commit. A deterministic kind's job is answered from its recorded result, ok or failed, without a run unless `--rerun`; `queue` checks the record first and prints `answered from result <key> (job <id>)`. A job whose slot is busy goes back to the inbox for 30 s. Unknown repos, a kind not on the repo's main, an inline kind, an unknown model and a lost lease are answered `ok=false` with that reason.
+The daemon runs a job with the kind as defined at the job's commit (`git show <commit>:.bmesh/routines/<kind>.toml`), falling back to main's definition only when the file is absent at that commit. A deterministic kind's job is answered from its recorded result, ok or failed, without a run unless `--rerun`; `queue` checks the record first and prints `answered from result <key> (job <id>)`. A job whose commit is not in the daemon's clone (queued from another box) gets one `git fetch origin` before it is answered `not a commit`, so push the branch before queueing to a daemon elsewhere. A job whose slot is busy goes back to the inbox for 30 s. An unknown repo, a kind that a configured repo defines but not the job's repo's main, an inline kind, an unknown model and a lost lease are answered `ok=false` with that reason. A kind that no configured repo defines on its main has no feed: its jobs wait unanswered until `routine wait` times out.
 
 A reply is an inbox message (`kind: "reply"`) to the requester carrying `{"job","kind","tree","ok","output","result_key","by"}`; the output is cut at 64 KiB with a trailing `[truncated]` line. `wait` reads only that reply from this node's inbox, leaving other messages unread, prints its output and exits 0 when ok, 1 when failed, 5 on `--timeout` (default 20m).
 
@@ -98,7 +98,7 @@ A reply is an inbox message (`kind: "reply"`) to the requester carrying `{"job",
 
 Fresh and pooled runs never touch a requester's worktree. Each instance has a detached worktree of the `[repos]` path at `<[runner] checkouts>/<repo directory name>/<instance path>`, moved before each job with `git checkout --detach <commit> && git clean -fd`; the daemon reads the repo's main in a sibling checkout named `main`.
 
-`routine run` is the inline run: it runs HEAD of the cwd worktree (`--commit` must name HEAD) and refuses a fresh or pooled kind unless `--here`. A deterministic kind refuses a dirty tree: exit 3 `bmesh: worktree is dirty; commit first`.
+`routine run` is the inline run: it runs HEAD of the cwd worktree (`--commit` must name HEAD) and refuses a fresh or pooled kind unless `--here`. Every inline run records a result for HEAD's tree, so it refuses a dirty tree: exit 3 `bmesh: worktree is dirty; commit first`.
 
 ### Leases
 
@@ -133,7 +133,7 @@ Results live in KV `bm-results`, key `<kind>.<tree>[.<args8>][.<model-short>]`: 
 {"kind":"verify","tree":"<tree>","commit":"<sha>","args":[],"ok":true,"output":"...","at":"2026-01-02T03:04:05Z","by":"app-012","model":"claude-opus-5-5"}
 ```
 
-`model` is omitted for a command kind; `output` is cut at 64 KiB. Every run that names a commit records: inline runs and daemon runs, deterministic or not (a kind's newest run at a tree replaces the last). Answered-from-record jobs, refused jobs, lost leases and runs cut off by a stopping daemon record nothing. `result record` stores a result by hand for any kind name, with or without a kind file; `--commit` defaults to `HEAD`. `result find` prints `<ok|fail> <tree> <at> <by>` (exit 3 when none).
+`model` is omitted for a command kind; `output` is cut at 64 KiB. Every run that names a commit records: inline runs and daemon runs, deterministic or not (a kind's newest run at a tree replaces the last). Answered-from-record jobs, refused jobs, lost leases and runs cut off by a stopping daemon record nothing. `result record` stores a result by hand for any kind name, with or without a kind file; `--commit` defaults to `HEAD`, and a result for HEAD is refused while the worktree is dirty (exit 3 `bmesh: worktree is dirty; commit first`). `result find` prints `<ok|fail> <tree> <at> <by>` (exit 3 when none).
 
 ### `verified`
 
@@ -145,12 +145,12 @@ verified: verify ok t:3f2a9c1e; review ok t:3f2a9c1e m:claude-opus-5-5
 
 Each entry is `<kind> <ok|fail> t:<tree first 8>[ m:<model>]`.
 
-`bmesh spec verified [--spec NNN] [--write]` composes the line from the results recorded for the tree of HEAD in the cwd worktree: one entry per (kind, model), the newest result winning, whatever its args, sorted by kind then model. It prints `verified: ...`, or exits 3 with `bmesh: no results for HEAD's tree; run the routines first`. `--write` sets the line in the spec's file in this worktree (found by `[spec] glob`; the spec is `--spec`, else this node's), replacing a `verified:` line or adding one before the closing `---`.
+`bmesh spec verified [--spec NNN] [--write]` composes the line from the results recorded for the tree of HEAD in the cwd worktree: one entry per (kind, model), the newest result winning, whatever its args, sorted by kind then model. It prints `verified: ...`, or exits 3 with `bmesh: no results for HEAD's tree; run the routines first`. `--write` sets the line in the spec's file in this worktree (found by `[spec] glob`; the spec is `--spec`, else this node's), replacing a `verified:` line or adding one before the closing `---`; a line that would not read back as the same entries is not written.
 
-`bmesh done` for a lead requires, beyond the spec reading `done` with `merged` on main, a non-empty `verified` line whose every entry is for the tree of `merged` and is matched by a record of that kind at that tree with the same `ok` (and the same model when the entry names one), whatever its args. It refuses with exit 3:
+`bmesh done` refuses unless the spec reads `done` on main with a `merged` commit that main contains (`git merge-base --is-ancestor <merged> <ref>`, `ref` = `origin/main` when the repo has an origin, else `main`): exit 3 `bmesh: not done: merged <sha> is not on <ref>`. For a lead it further requires a non-empty `verified` line with no `fail` entry, whose every entry is for the tree of `merged` and is matched by a record of that kind at that tree with the same `ok` (and the same model when the entry names one), whatever its args. It refuses with exit 3:
 
 - `bmesh: not done: verified is empty`
-- `bmesh: not done: merged <sha> is not a commit`
+- `bmesh: not done: verified has a failing entry <kind>`
 - `bmesh: not done: verified entry <kind> is for tree <t>, merged tree is <m>`
 - `bmesh: not done: verified names <kind> but no result for tree <t>`
 
