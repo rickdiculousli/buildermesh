@@ -58,12 +58,17 @@ commands:
                                            bmesh worktree from main, as nodes <repo>-round-<N>.eng|ux; --context
                                            puts the operator's words in both briefs
   choose-ideas <repo> "<reply>"            apply the operator's review to the proposed specs and land it on main
-  build <repo> <NNN> [--model M] [--effort E] [--path P]
+  build <repo> <NNN> [--model M] [--effort E] [--path P] [--family F]
                                            dispatch an accepted spec: record building on main, render the build
-                                           brief and start the lead (as lead start)
-  build --accepted <repo> [--model M] [--effort E]
+                                           brief and start the lead (as lead start); the lead joins build family
+                                           F, else a fresh <repo>-build-<N>
+  build --accepted <repo> [--model M] [--effort E] [--family F]
                                            dispatch every accepted spec, lowest id first, a spec naming a lower id
                                            after that one is done, three leads at a time; print what waits
+  feedback "<text>" [--repo R] [--where <file|command>] [--fixed SHA]
+                                           a lead's lesson for its build family's coordinator, before done
+  feedback list <family> [--json]          the family's pending feedback, each with its stream sequence
+  feedback drain <family> [--through SEQ]  delete the family's feedback from the stream, up to SEQ
   scaffold <repo> [--check]                give a ship repo its AGENTS.md sections, docs/proposals and the routine
                                            kinds its row names; --check prints the diff and exits 1 when any
   executor new --name N [--base REF] [--model M] [--json]
@@ -200,6 +205,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdChooseIdeas(rest)
 	case "build":
 		return a.cmdBuild(rest)
+	case "feedback":
+		return a.cmdFeedback(rest)
 	case "scaffold":
 		return a.cmdScaffold(rest)
 	case "serve":

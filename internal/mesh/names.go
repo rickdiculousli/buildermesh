@@ -18,7 +18,7 @@ const (
 
 var pathRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*$`)
 
-var reserved = map[string]bool{"inbox": true, "routine": true, "daemon": true}
+var reserved = map[string]bool{"inbox": true, "routine": true, "daemon": true, "feedback": true}
 
 // Path names a node: dot-separated tokens, the first of which is its lead.
 type Path []string

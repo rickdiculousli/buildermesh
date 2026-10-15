@@ -54,11 +54,11 @@ func (a *Activity) ObserveStored(s mesh.Stored) {
 }
 
 // Observe records a node event bm.<path>.<event> at at and reports whether
-// it was one. Inbox and daemon subjects are not node activity and are
-// ignored.
+// it was one. Inbox, daemon and feedback subjects are not node activity
+// and are ignored.
 func (a *Activity) Observe(subject string, at time.Time) bool {
 	rest, ok := strings.CutPrefix(subject, "bm.")
-	if !ok || strings.HasPrefix(rest, "inbox.") || strings.HasPrefix(rest, "daemon.") {
+	if !ok || strings.HasPrefix(rest, "inbox.") || strings.HasPrefix(rest, "daemon.") || strings.HasPrefix(rest, "feedback.") {
 		return false
 	}
 	i := strings.LastIndexByte(rest, '.')

@@ -32,6 +32,7 @@ type Node struct {
 	Parent    string     `json:"parent"`
 	Model     string     `json:"model"`
 	Effort    string     `json:"effort,omitempty"`
+	Family    string     `json:"family,omitempty"` // a lead's build family
 	StartedAt string     `json:"started_at"`
 }
 

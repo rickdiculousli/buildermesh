@@ -16,7 +16,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
-const buildUsage = "usage: bmesh build <repo> <NNN> [--model M] [--effort E] [--path P] | bmesh build --accepted <repo> [--model M] [--effort E]"
+const buildUsage = "usage: bmesh build <repo> <NNN> [--model M] [--effort E] [--path P] [--family F] | bmesh build --accepted <repo> [--model M] [--effort E] [--family F]"
 
 // buildSlots is how many leads --accepted keeps working on one repo.
 const buildSlots = 3
@@ -25,15 +25,19 @@ const buildSlots = 3
 var (
 	idRE    = regexp.MustCompile(`\b(\d{3})\b`)
 	rangeRE = regexp.MustCompile(`\b(\d{3}) (?:to|through|-) (\d{3})\b`)
+	// familyNRE reads a minted family's number: <repo>-build-<N>.
+	familyNRE = regexp.MustCompile(`^(.*)-build-(\d+)$`)
 )
 
 // buildStarted is what one build prints: the lead's node and session, the
-// model, the spec and the commit that recorded building on main.
+// model, the spec, the commit that recorded building on main and the
+// build family.
 type buildStarted struct {
 	leadStarted
 	Model    string `json:"model"`
 	Spec     string `json:"spec"`
 	Building string `json:"building"`
+	Family   string `json:"family"`
 }
 
 // cmdBuild dispatches an accepted spec: bmesh build <repo> <NNN> records
@@ -41,13 +45,15 @@ type buildStarted struct {
 // brief and starts the lead through the runner as lead start does.
 // --accepted does that for every accepted spec, lowest id first, a spec
 // that names a lower id after that one is done, at most buildSlots leads
-// working on the repo, and prints what waits.
+// working on the repo, and prints what waits. Every lead one invocation
+// starts is in one build family: --family, else a fresh <repo>-build-<N>.
 func (a *app) cmdBuild(args []string) error {
 	fs := a.flags("build")
 	accepted := fs.Bool("accepted", false, "build every accepted spec, in order, up to three at a time")
 	model := fs.String("model", "", "model the lead runs on (default the spec's judge)")
 	effort := fs.String("effort", "", "the lead's effort (default [models] lead_effort)")
 	pathFlag := fs.String("path", "", "node path (default <repo>-<NNN>)")
+	familyFlag := fs.String("family", "", "join this build family (default a fresh <repo>-build-<N>)")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -60,6 +66,11 @@ func (a *app) cmdBuild(args []string) error {
 	}
 	if err := checkEffort(*effort); err != nil {
 		return err
+	}
+	if *familyFlag != "" {
+		if err := mesh.CheckFamily(*familyFlag); err != nil {
+			return fail(exitUsage, "--family: %v", err)
+		}
 	}
 	if err := a.loadConfig(); err != nil {
 		return err
@@ -87,8 +98,14 @@ func (a *app) cmdBuild(args []string) error {
 	if err := a.connect(ctx, "build"); err != nil {
 		return err
 	}
+	family := *familyFlag
+	if family == "" {
+		if family, err = nextFamily(ctx, a.client, row.Name); err != nil {
+			return err
+		}
+	}
 	if *accepted {
-		return a.buildAccepted(ctx, row, repoPath, specs, *model, *effort)
+		return a.buildAccepted(ctx, row, repoPath, specs, *model, *effort, family)
 	}
 	n, err := strconv.Atoi(pos[1])
 	if err != nil {
@@ -98,23 +115,58 @@ func (a *app) cmdBuild(args []string) error {
 	if !ok {
 		return fail(exitError, "no spec %03d on main in %s", n, repoPath)
 	}
-	started, err := a.buildOne(ctx, row, repoPath, s, *model, *effort, *pathFlag)
+	started, err := a.buildOne(ctx, row, repoPath, s, *model, *effort, *pathFlag, family)
 	if err != nil {
 		return err
 	}
 	return a.printJSON(started)
 }
 
+// nextFamily is <repo>-build-<N>, N one past the highest family of that
+// shape registered in bm-nodes (as rounds are numbered) or still holding
+// feedback, so a family whose nodes were forgotten before its drain is not
+// joined by a new build. A dot in the repo's name, which a subject token
+// can't hold, is written as -.
+func nextFamily(ctx context.Context, c *mesh.Client, repo string) (string, error) {
+	base := strings.ReplaceAll(repo, ".", "-")
+	nodes, err := mesh.ListNodes(ctx, c)
+	if err != nil {
+		return "", err
+	}
+	pending, err := mesh.PendingFeedback(ctx, c)
+	if err != nil {
+		return "", err
+	}
+	families := make([]string, 0, len(nodes)+len(pending))
+	for _, node := range nodes {
+		families = append(families, node.Family)
+	}
+	for _, p := range pending {
+		families = append(families, p.Family)
+	}
+	n := 0
+	for _, f := range families {
+		m := familyNRE.FindStringSubmatch(f)
+		if m == nil || m[1] != base {
+			continue
+		}
+		if k, err := strconv.Atoi(m[2]); err == nil && k > n {
+			n = k
+		}
+	}
+	return fmt.Sprintf("%s-build-%d", base, n+1), nil
+}
+
 // buildOne dispatches one spec. The spec must read accepted on main; its
 // judge names the model unless --model does. The node path must be free
 // (exit 3 and the --path <repo>-<NNN>-2 rule, as lead start) and the host
 // under its lead cap before anything is recorded. Then building lands on
-// main (built_by the thread id, host, and branch when the runner names
-// branches ahead), the brief is rendered to <user cache dir>/bmesh/briefs/
+// main (built_by the thread id, host, family, and branch when the runner
+// names branches ahead), the brief is rendered to <user cache dir>/bmesh/briefs/
 // <path>.md and the lead is started with that thread id; a runner that
 // names the branch itself (t3) gets it recorded in a second commit. A
 // start that fails moves the spec back to accepted.
-func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s *spec.Spec, model, effort, pathFlag string) (buildStarted, error) {
+func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s *spec.Spec, model, effort, pathFlag, family string) (buildStarted, error) {
 	if s.Status() != "accepted" {
 		return buildStarted{}, fail(exitRefused, "refused: spec %s is %s, not accepted", s.IDString(), s.Status())
 	}
@@ -137,7 +189,7 @@ func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s 
 		return buildStarted{}, err
 	}
 	host := a.cfg.HostName()
-	fields := []spec.Field{{Key: "built_by", Value: thread}, {Key: "host", Value: host}}
+	fields := []spec.Field{{Key: "built_by", Value: thread}, {Key: "host", Value: host}, {Key: "family", Value: family}}
 	branch := ""
 	if k := a.cfg.Runner.Kind; k == "claude" || k == "tmux" {
 		branch = thread // those runners make the worktree on a branch named for the thread
@@ -162,7 +214,7 @@ func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s 
 		return buildStarted{}, err
 	}
 	started, err := a.startLead(leadStart{Name: row.Name, RepoPath: repoPath, Spec: s.IDString(), BriefPath: briefPath,
-		Model: model, Effort: effort, Title: fmt.Sprintf("[build] %s %s: %s", row.Name, s.IDString(), s.Title()), Path: p, Thread: thread})
+		Model: model, Effort: effort, Title: fmt.Sprintf("[build] %s %s: %s", row.Name, s.IDString(), s.Title()), Path: p, Thread: thread, Family: family})
 	if err != nil {
 		if _, rerr := a.recordOnMain(ctx, row.Name, repoPath, fmt.Sprintf("Dispatch %s: did not start", s.IDString()),
 			s.ID, "accepted", []string{"building"}); rerr != nil {
@@ -176,7 +228,7 @@ func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s 
 			return buildStarted{}, fmt.Errorf("lead %s started (thread %s) but recording its branch on main failed: %w", p, started.Thread, err)
 		}
 	}
-	return buildStarted{leadStarted: started, Model: model, Spec: s.IDString(), Building: sha}, nil
+	return buildStarted{leadStarted: started, Model: model, Spec: s.IDString(), Building: sha, Family: family}, nil
 }
 
 // recordOnMain sets spec id's status and fields on main: in a bmesh
@@ -238,9 +290,9 @@ func (a *app) recordOnMain(ctx context.Context, name, repoPath, msg string, id i
 // buildAccepted dispatches the repo's accepted specs in id order, keeping
 // at most buildSlots leads working on the repo (across hosts), and prints
 // one line per spec: started, waits (on a named lower spec that is not
-// done, or for a slot) or not started (with the refusal). One spec's
-// refusal does not stop the others.
-func (a *app) buildAccepted(ctx context.Context, row config.Repo, repoPath string, specs []*spec.Spec, model, effort string) error {
+// done, or for a slot) or not started (with the refusal), then the family
+// the started leads are in. One spec's refusal does not stop the others.
+func (a *app) buildAccepted(ctx context.Context, row config.Repo, repoPath string, specs []*spec.Spec, model, effort, family string) error {
 	working, err := a.repoLeads(ctx, row.Name)
 	if err != nil {
 		return err
@@ -250,6 +302,7 @@ func (a *app) buildAccepted(ctx context.Context, row config.Repo, repoPath strin
 		Title  string `json:"title"`
 		State  string `json:"state"`
 		Reason string `json:"reason,omitempty"`
+		Family string `json:"family"`
 		*buildStarted
 	}
 	var out []line
@@ -257,12 +310,12 @@ func (a *app) buildAccepted(ctx context.Context, row config.Repo, repoPath strin
 		if s.Status() != "accepted" {
 			continue
 		}
-		l := line{ID: s.IDString(), Title: s.Title()}
+		l := line{ID: s.IDString(), Title: s.Title(), Family: family}
 		if waits := waitsOn(s, specs); len(waits) > 0 {
 			l.State, l.Reason = "waits", "on "+strings.Join(waits, ", ")
 		} else if working >= buildSlots {
 			l.State, l.Reason = "waits", fmt.Sprintf("%d leads working on %s", working, row.Name)
-		} else if started, err := a.buildOne(ctx, row, repoPath, s, model, effort, ""); err != nil {
+		} else if started, err := a.buildOne(ctx, row, repoPath, s, model, effort, "", family); err != nil {
 			l.State, l.Reason = "not started", err.Error()
 		} else {
 			l.State, l.buildStarted = "started", &started
@@ -273,16 +326,21 @@ func (a *app) buildAccepted(ctx context.Context, row config.Repo, repoPath strin
 	if a.json {
 		return a.printJSON(out)
 	}
+	started := false
 	for _, l := range out {
 		switch l.State {
 		case "started":
-			fmt.Fprintf(a.stdout, "started %s %s: %s on %s (thread %s, branch %s, building %s)\n", l.ID, l.Title, l.Path, l.Model, l.Thread, l.Branch, l.Building[:8])
+			started = true
+			fmt.Fprintf(a.stdout, "started %s %s: %s on %s (thread %s, branch %s, building %s, family %s)\n", l.ID, l.Title, l.Path, l.Model, l.Thread, l.Branch, l.Building[:8], l.Family)
 		default:
 			fmt.Fprintf(a.stdout, "%s %s %s: %s\n", l.State, l.ID, l.Title, l.Reason)
 		}
 	}
 	if len(out) == 0 {
 		fmt.Fprintf(a.stdout, "no accepted specs in %s\n", row.Name)
+	}
+	if started {
+		fmt.Fprintf(a.stdout, "family %s\n", family)
 	}
 	return nil
 }

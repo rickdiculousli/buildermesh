@@ -503,6 +503,7 @@ function apply(f) {
     if (!mesh.drawn.has(to) && !to.startsWith("routine.") && !onShelf(to.split(".")[0])) refetchSoon();
     return;
   }
+  if (rest.startsWith("feedback.")) return; // a family's queue, not a node
   const i = rest.lastIndexOf(".");
   if (i <= 0) return;
   const path = rest.slice(0, i), ev = rest.slice(i + 1);

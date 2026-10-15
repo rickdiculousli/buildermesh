@@ -226,6 +226,7 @@ func TestBuildAcceptedOrdersAndCapsLeads(t *testing.T) {
 		"waits 004 Spec 004: 3 leads working on demo",
 		"waits 005 Spec 005: 3 leads working on demo",
 		"waits 009 Spec 009: 3 leads working on demo",
+		"family demo-build-1",
 	}
 	if len(lines) != len(want) {
 		t.Fatalf("lines:\n%s", out)
@@ -271,5 +272,65 @@ func TestBuildAcceptedOrdersAndCapsLeads(t *testing.T) {
 	}
 	if _, _, code := runCLI(t, nil, "build", "--accepted", "demo", "002"); code != 2 {
 		t.Fatal("--accepted with an id")
+	}
+}
+
+func TestBuildFamilies(t *testing.T) {
+	c, repo, _ := buildSetup(t)
+	ctx := t.Context()
+	build := func(args ...string) buildStarted {
+		t.Helper()
+		out, errs, code := runCLI(t, nil, append([]string{"build", "demo"}, args...)...)
+		if code != 0 {
+			t.Fatalf("%v: %d %q %q", args, code, out, errs)
+		}
+		var got buildStarted
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatalf("%q: %v", out, err)
+		}
+		return got
+	}
+	// Each invocation mints the next family; --family joins one.
+	if got := build("002"); got.Family != "demo-build-1" {
+		t.Fatalf("%+v", got)
+	}
+	if got := build("004"); got.Family != "demo-build-2" {
+		t.Fatalf("%+v", got)
+	}
+	if got := build("009", "--family", "demo-build-1"); got.Family != "demo-build-1" {
+		t.Fatalf("%+v", got)
+	}
+	for p, want := range map[string]string{"demo-002": "demo-build-1", "demo-004": "demo-build-2", "demo-009": "demo-build-1"} {
+		if n, _, _ := mesh.GetNode(ctx, c, p); n.Family != want {
+			t.Errorf("node %s family %q, want %q", p, n.Family, want)
+		}
+	}
+	for f, want := range map[string]string{"002-second": "demo-build-1", "004-fourth": "demo-build-2", "009-ninth": "demo-build-1"} {
+		if text := gitOut(t, "-C", repo, "show", "main:docs/proposals/"+f+".md"); !strings.Contains(text, "family: "+want+"\n") {
+			t.Errorf("%s lacks family %s:\n%s", f, want, text)
+		}
+	}
+	if _, errs, code := runCLI(t, nil, "build", "demo", "003", "--family", "a.b"); code != 2 || !strings.Contains(errs, "--family") {
+		t.Fatalf("bad family: %d %q", code, errs)
+	}
+	// A family still holding feedback counts though its nodes are gone.
+	if _, err := mesh.PublishFeedback(ctx, c, mesh.Feedback{From: "demo-099", Family: "demo-build-7", Text: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"demo-002", "demo-004", "demo-009"} {
+		if _, err := mesh.WriteState(ctx, c, p, mesh.State{State: "working", By: "node"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := mesh.WriteState(ctx, c, p, mesh.State{State: "done", By: "node"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runCLI(t, nil, "spec", "set", "--repo", repo, "--id", "002", "--status", "done", "--field", "merged=abc")
+	runGit(t, repo, "commit", "-qam", "002 done")
+	runGit(t, repo, "push", "-q", "origin", "main")
+	out, errs, code := runCLI(t, nil, "build", "--accepted", "demo")
+	if code != 0 || !strings.Contains(out, "started 003 Spec 003: demo-003 on claude-fable-5-1 (") ||
+		!strings.Contains(out, ", family demo-build-8)\n") || !strings.HasSuffix(out, "\nfamily demo-build-8\n") {
+		t.Fatalf("%d %q %q", code, out, errs)
 	}
 }

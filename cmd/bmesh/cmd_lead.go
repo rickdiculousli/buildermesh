@@ -62,9 +62,10 @@ func (a *app) cmdLeadStart(args []string) error {
 // leadStart is what starting a lead takes: the repo (its registry name and
 // checkout), the spec, the brief and, optionally, the model (default
 // [models] lead), the title (default "[build] <repo> <spec>"), the node
-// path (default <repo>-<spec>) and the thread id (default a fresh UUID).
+// path (default <repo>-<spec>), the thread id (default a fresh UUID) and
+// the build family (a build's; none for lead start).
 type leadStart struct {
-	Name, RepoPath, Spec, BriefPath, Model, Effort, Title, Path, Thread string
+	Name, RepoPath, Spec, BriefPath, Model, Effort, Title, Path, Thread, Family string
 }
 
 // leadStarted is what startLead prints: the node and its session.
@@ -174,7 +175,7 @@ func (a *app) startLead(o leadStart) (leadStarted, error) {
 	ctx, cancel = cmdCtx()
 	defer cancel()
 	if err := a.register(ctx, started, mesh.Node{Path: p, Role: "lead", Repo: o.Name, RepoPath: o.RepoPath, Spec: o.Spec,
-		Host: a.cfg.HostName(), Model: o.Model, Effort: o.Effort}, prev); err != nil {
+		Host: a.cfg.HostName(), Model: o.Model, Effort: o.Effort, Family: o.Family}, prev); err != nil {
 		return leadStarted{}, fmt.Errorf("thread %s started (branch %s, worktree %s) but registering the node failed: %w",
 			started.Thread, started.Branch, started.Worktree, err)
 	}

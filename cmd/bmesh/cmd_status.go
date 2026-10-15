@@ -80,7 +80,8 @@ type statusRow struct {
 
 // cmdMeshStatus prints the registered nodes with their state, runner and
 // unread count: every one with --all or --json, else all but those done for
-// longer than [status] keep_done, which a closing line counts.
+// longer than [status] keep_done, which a closing line counts; then a line
+// per build family with feedback not yet drained.
 func (a *app) cmdMeshStatus(args []string) error {
 	fs := a.flags("mesh-status")
 	all := fs.Bool("all", false, "show every node, finished ones too")
@@ -150,6 +151,13 @@ func (a *app) cmdMeshStatus(args []string) error {
 			noun = "node"
 		}
 		fmt.Fprintf(a.stdout, "… %d finished %s older than %s (--all shows them)\n", n, noun, config.FormatDuration(keep))
+	}
+	pending, err := mesh.PendingFeedback(ctx, a.client)
+	if err != nil {
+		return err
+	}
+	for _, p := range pending {
+		fmt.Fprintf(a.stdout, "feedback: %d pending in %s\n", p.Pending, p.Family)
 	}
 	return nil
 }
@@ -381,11 +389,11 @@ func (a *app) printEvent(m mesh.Stored, leads map[string]bool) {
 	fmt.Fprintln(a.stdout, line)
 }
 
-// splitSubject turns bm.<path>.<event> into its path and event; inbox
-// subjects are not events.
+// splitSubject turns bm.<path>.<event> into its path and event; inbox and
+// feedback subjects are not events.
 func splitSubject(subject string) (path, event string, ok bool) {
 	rest, found := strings.CutPrefix(subject, "bm.")
-	if !found || strings.HasPrefix(rest, "inbox.") {
+	if !found || strings.HasPrefix(rest, "inbox.") || strings.HasPrefix(rest, "feedback.") {
 		return "", "", false
 	}
 	i := strings.LastIndex(rest, ".")
