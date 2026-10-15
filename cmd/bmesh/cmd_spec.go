@@ -260,10 +260,13 @@ func (a *app) cmdSpecReview(args []string) error {
 	if err := addWorktree(ctx, repoPath, wt, branch, "main"); err != nil {
 		return err
 	}
-	landed := false
+	// The worktree always goes; the branch goes with it unless it holds a
+	// review commit that did not land, which is kept and named.
+	committed, landed := false, false
 	defer func() {
-		if err := removeWorktree(ctx, repoPath, wt, branch, !landed); err != nil {
-			fmt.Fprintf(a.stderr, "bmesh: %v (branch %s kept)\n", err, branch)
+		keep := committed && !landed
+		if err := removeWorktree(ctx, repoPath, wt, branch, keep); err != nil {
+			fmt.Fprintf(a.stderr, "bmesh: %v\n", err)
 		}
 	}()
 	lines, changed, err := a.applyReview(wt, pos[1])
@@ -275,7 +278,6 @@ func (a *app) cmdSpecReview(args []string) error {
 	}
 	if len(changed) == 0 {
 		fmt.Fprintln(a.stdout, "nothing to land")
-		landed = true
 		return nil
 	}
 	msg := "Review: " + strings.Join(changed, ", ")
@@ -285,6 +287,7 @@ func (a *app) cmdSpecReview(args []string) error {
 	if _, err := gitIn(ctx, wt, "-c", "user.name=bmesh", "-c", "user.email=bmesh@localhost", "commit", "-q", "-m", msg); err != nil {
 		return err
 	}
+	committed = true
 	sha, err := gitIn(ctx, wt, "rev-parse", "HEAD")
 	if err != nil {
 		return err
@@ -442,22 +445,19 @@ func (a *app) cmdSpecVerified(args []string) error {
 	return nil
 }
 
-// removeWorktree drops a bmesh worktree and, with branch set, its branch
-// (force removes an unmerged one).
-func removeWorktree(ctx context.Context, repoPath, wt, branch string, force bool) error {
+// removeWorktree drops a bmesh worktree, whatever its state, and its
+// branch unless keepBranch (the branch is the caller's to judge: a landed
+// one is merged into main, an abandoned one holds nothing).
+func removeWorktree(ctx context.Context, repoPath, wt, branch string, keepBranch bool) error {
 	if _, err := os.Stat(wt); err == nil {
 		if _, err := gitIn(ctx, repoPath, "worktree", "remove", "--force", wt); err != nil {
 			return err
 		}
 	}
 	_, _ = gitIn(ctx, repoPath, "worktree", "prune")
-	if branch == "" {
+	if keepBranch {
 		return nil
 	}
-	del := "-d"
-	if force {
-		del = "-D"
-	}
-	_, err := gitIn(ctx, repoPath, "branch", del, branch)
+	_, err := gitIn(ctx, repoPath, "branch", "-D", branch)
 	return err
 }

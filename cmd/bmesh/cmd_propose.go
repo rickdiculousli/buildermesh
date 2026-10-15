@@ -245,7 +245,7 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 		return childStarted{}, err
 	}
 	undo := func() {
-		_ = removeWorktree(context.WithoutCancel(ctx), repoPath, wt, branch, true)
+		_ = removeWorktree(context.WithoutCancel(ctx), repoPath, wt, branch, false)
 	}
 	tmpl, title := "engineer", "engineer"
 	if child == "ux" {
