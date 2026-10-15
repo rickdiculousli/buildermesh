@@ -202,3 +202,51 @@ func TestQueueFromLinkedWorktreeNamesConfiguredRepo(t *testing.T) {
 		t.Fatalf("node: repo %q, want named", got)
 	}
 }
+
+// A review is queued once per branch: a review result for a commit of
+// this branch, not on main, refuses a second one without --again; a
+// result for a landed commit in the history does not count.
+func TestQueueReviewOncePerBranch(t *testing.T) {
+	c, ctx := setup(t)
+	repo := kindRepo(t, map[string]string{"review": "models = [\"m1\"]\nprompt = \"check\"\n"})
+	landed := gitOut(t, "rev-parse", "HEAD")
+	runGit(t, repo, "checkout", "-q", "-b", "work")
+	os.WriteFile(filepath.Join(repo, "b.txt"), []byte("b\n"), 0o644)
+	runGit(t, repo, "add", "-A")
+	runGit(t, repo, "commit", "-qm", "b")
+	first := gitOut(t, "rev-parse", "HEAD")
+	// A review of main's commit (another lead's, landed) does not count.
+	if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "review", Tree: "t0", Commit: landed, OK: true, By: "routine.review.m1-1", Model: "m1", At: "2026-01-01T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	out, errs, code := runCLI(t, as("app-001"), "routine", "queue", "review")
+	if code != 0 || !strings.HasPrefix(out, "queued ") {
+		t.Fatalf("first: %d %q %q", code, out, errs)
+	}
+	// The review's result for this branch's commit: a second queue is refused, naming it.
+	if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "review", Tree: "t1", Commit: first, OK: false, By: "routine.review.m1-1", Model: "m1", At: "2026-01-02T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(repo, "b.txt"), []byte("fixed\n"), 0o644)
+	runGit(t, repo, "commit", "-qam", "fix")
+	out, errs, code = runCLI(t, as("app-001"), "routine", "queue", "review")
+	if code != 3 || out != "" || !strings.Contains(errs, "this branch already has a review: review.t1.m1 (fail, commit "+first[:8]) ||
+		!strings.Contains(errs, "with --again") {
+		t.Fatalf("second: %d %q %q", code, out, errs)
+	}
+	if n, err := mesh.Depth(ctx, c, "review"); err != nil || n != 1 {
+		t.Fatalf("depth %d %v", n, err)
+	}
+	out, errs, code = runCLI(t, as("app-001"), "routine", "queue", "review", "--again")
+	if code != 0 || !strings.HasPrefix(out, "queued ") {
+		t.Fatalf("--again: %d %q %q", code, out, errs)
+	}
+	// Another branch from main is unreviewed.
+	runGit(t, repo, "checkout", "-q", "-b", "other", "main")
+	os.WriteFile(filepath.Join(repo, "c.txt"), []byte("c\n"), 0o644)
+	runGit(t, repo, "add", "-A")
+	runGit(t, repo, "commit", "-qm", "c")
+	if out, errs, code := runCLI(t, as("app-001"), "routine", "queue", "review"); code != 0 || !strings.HasPrefix(out, "queued ") {
+		t.Fatalf("other branch: %d %q %q", code, out, errs)
+	}
+}
