@@ -55,11 +55,11 @@ func (r Claude) known(thread string) (string, error) {
 }
 
 // Start makes the worktree on a new branch named for the thread (from
-// s.Branch, else main), copies the brief in as the first turn and starts it
-// without waiting for it. The turn inherits the caller's environment, so
+// s.Branch, else main; or runs in s.Worktree when that is set), copies the
+// brief in as the first turn and starts it without waiting for it. The turn inherits the caller's environment, so
 // BMESH_CONFIG reaches the lead when the caller has it set.
 func (r Claude) Start(ctx context.Context, s StartSpec) (Started, error) {
-	wt, err := filepath.Abs(filepath.Join(r.Worktrees, filepath.Base(s.RepoPath), s.ThreadID))
+	wt, branch, err := worktreeFor(ctx, r.Worktrees, s, "main")
 	if err != nil {
 		return Started{}, err
 	}
@@ -70,13 +70,6 @@ func (r Claude) Start(ctx context.Context, s StartSpec) (Started, error) {
 	brief, err := os.ReadFile(s.BriefPath)
 	if err != nil {
 		return Started{}, err
-	}
-	base := s.Branch
-	if base == "" {
-		base = "main"
-	}
-	if out, err := exec.CommandContext(ctx, "git", "-C", s.RepoPath, "worktree", "add", "-b", s.ThreadID, wt, base).CombinedOutput(); err != nil {
-		return Started{}, fmt.Errorf("git worktree add: %v: %s", err, strings.TrimSpace(string(out)))
 	}
 	if err := os.MkdirAll(filepath.Join(d, "queue"), 0o755); err != nil {
 		return Started{}, err
@@ -94,7 +87,7 @@ func (r Claude) Start(ctx context.Context, s StartSpec) (Started, error) {
 	}); err != nil {
 		return Started{}, err
 	}
-	return Started{Thread: s.ThreadID, Branch: s.ThreadID, Worktree: wt}, nil
+	return Started{Thread: s.ThreadID, Branch: branch, Worktree: wt}, nil
 }
 
 // turn starts turn n in wt, detached, with text on stdin, and records its pid

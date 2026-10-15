@@ -50,6 +50,8 @@ commands:
                                            follow nodes until all are done, blocked or silent
   lead start --repo R --spec NNN --brief FILE [--model M] [--title T] [--path P]
                                            start a lead through the runner and register it
+  propose <repo> [--model M]               run a proposal round: an engineer and a UI/UX engineer thread, each in a
+                                           bmesh worktree from main, as nodes <repo>-round-<N>.eng|ux
   executor new --name N [--base REF] [--model M] [--json]
                                            make a worktree, branch and node for an executor under this node;
                                            print {"path","branch","worktree"} and (without --json) its header
@@ -73,6 +75,13 @@ commands:
   routine run <kind> [--commit HEAD] [--model M] [--here] [--rerun] [--text T] [-- args...]
                                            run a kind in this worktree and record its result; a deterministic
                                            kind needs a clean tree and answers from a recorded result; exit 0 ok / 1 fail
+  spec list [--repo R] [--status S] [--json]
+                                           the repo's specs, one row each (id, status, size, kind, lens, title)
+  spec next-id [--repo R]                  the next free spec id
+  spec set --id NNN --status S [--repo R] [--from A,B] [--field K=V]...
+                                           set a spec's status and fields (--from refuses another status)
+  spec template [--repo R]                 print the half-pager (the repo's .bmesh/briefs/half-pager.md, else embedded)
+  spec review <repo> "<reply>"             apply the operator's review to the proposed specs and land it on main
   spec verified [--spec NNN] [--write]     print the verified line from the results for HEAD's tree (exit 3 when
                                            none); --write sets it in the spec's file in this worktree
 `
@@ -165,6 +174,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdWatch(rest)
 	case "lead":
 		return a.cmdLead(rest)
+	case "propose":
+		return a.cmdPropose(rest)
 	case "serve":
 		return a.cmdServe(rest)
 	case "result":

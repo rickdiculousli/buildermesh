@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -52,16 +51,9 @@ func (r Tmux) Start(ctx context.Context, s StartSpec) (Started, error) {
 	if err != nil {
 		return Started{}, err
 	}
-	wt, err := filepath.Abs(filepath.Join(r.Worktrees, filepath.Base(s.RepoPath), s.ThreadID))
+	wt, branch, err := worktreeFor(ctx, r.Worktrees, s, "HEAD")
 	if err != nil {
 		return Started{}, err
-	}
-	base := s.Branch
-	if base == "" {
-		base = "HEAD"
-	}
-	if out, err := exec.CommandContext(ctx, "git", "-C", s.RepoPath, "worktree", "add", "-b", s.ThreadID, wt, base).CombinedOutput(); err != nil {
-		return Started{}, fmt.Errorf("git worktree add: %v: %s", err, strings.TrimSpace(string(out)))
 	}
 	if _, err := r.tmux(ctx, "has-session", "-t", r.Session); err != nil {
 		if _, err := r.tmux(ctx, "new-session", "-d", "-s", r.Session, "-c", wt); err != nil {
@@ -81,7 +73,7 @@ func (r Tmux) Start(ctx context.Context, s StartSpec) (Started, error) {
 	if err := r.Send(ctx, s.ThreadID, string(brief)); err != nil {
 		return Started{}, err
 	}
-	return Started{Thread: s.ThreadID, Branch: s.ThreadID, Worktree: wt}, nil
+	return Started{Thread: s.ThreadID, Branch: branch, Worktree: wt}, nil
 }
 
 // awaitPrompt watches the window until claude shows its prompt, answering

@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -19,9 +21,11 @@ var ErrRunning = errors.New("runner: thread is running, nothing sent")
 
 // StartSpec is what a runner needs to start a session. Branch is the base to
 // branch from ("" = the repo's HEAD); runners that make their own worktree
-// (T3) ignore it.
+// (T3) ignore it. Worktree, when set, is an existing checkout the session
+// runs in (its branch is Branch): no runner makes one then. Project is the
+// repo T3 files the thread under ("" = RepoPath); other runners ignore it.
 type StartSpec struct {
-	RepoPath, Model, Title, BriefPath, ThreadID, Branch string
+	RepoPath, Model, Title, BriefPath, ThreadID, Branch, Worktree, Project string
 }
 
 // Started is the session a runner started.
@@ -72,4 +76,28 @@ func command(env string, def ...string) []string {
 		return v
 	}
 	return def
+}
+
+// worktreeFor is where a session that makes its own checkout runs: s.Worktree
+// and s.Branch when the caller made one, else a new worktree on a branch
+// named for the thread at <root>/<repo>/<thread>, from s.Branch, else from
+// base (what the runner branches from by default).
+func worktreeFor(ctx context.Context, root string, s StartSpec, base string) (wt, branch string, err error) {
+	if s.Worktree != "" {
+		if abs, err := filepath.Abs(s.Worktree); err == nil {
+			s.Worktree = abs
+		}
+		return s.Worktree, s.Branch, nil
+	}
+	wt, err = filepath.Abs(filepath.Join(root, filepath.Base(s.RepoPath), s.ThreadID))
+	if err != nil {
+		return "", "", err
+	}
+	if s.Branch != "" {
+		base = s.Branch
+	}
+	if out, err := exec.CommandContext(ctx, "git", "-C", s.RepoPath, "worktree", "add", "-b", s.ThreadID, wt, base).CombinedOutput(); err != nil {
+		return "", "", fmt.Errorf("git worktree add: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	return wt, s.ThreadID, nil
 }

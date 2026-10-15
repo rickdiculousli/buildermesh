@@ -26,6 +26,7 @@ type ServeConfig struct{ Listen string }
 type RunnerConfig struct {
 	Kind        string
 	T3Dispatch  string `toml:"t3_dispatch"`
+	T3Project   string `toml:"t3_project"` // the repo whose T3 project proposal threads open in; "" = the target repo
 	TmuxSession string `toml:"tmux_session"`
 	Worktrees   string
 	Checkouts   string // routine instances' checkouts

@@ -40,23 +40,38 @@ var pushKinds = map[string]struct{ title, priority, tags string }{
 }
 
 // Push builds the push for node event ev of node n (ev.From is n's path).
-// ok is false unless n is a lead and ev.Event is listed in cfg.Push. console
-// is the lead's thread link ("" = no action button).
+// ok is false unless n is a lead or a round and ev.Event is listed in
+// cfg.Push. console is the thread link ("" = no action button): the lead's,
+// or for a round its eng child's. A round's done is titled `<repo> round N
+// proposed` and carries the merged pitch; its blocked, `<repo> round N
+// blocked`.
 func Push(ev mesh.Event, n mesh.Node, cfg config.NotifyConfig, console string) (req PushRequest, ok bool) {
 	k, known := pushKinds[ev.Event]
-	if n.Role != "lead" || !known || !slices.Contains(cfg.Push, ev.Event) {
+	if (n.Role != "lead" && n.Role != "round") || !known || !slices.Contains(cfg.Push, ev.Event) {
 		return PushRequest{}, false
 	}
 	req.Title = fmt.Sprintf(k.title, ev.From)
 	req.Priority, req.Tags = k.priority, k.tags
-	if cfg.MapURL != "" {
+	if n.Role == "round" {
+		if ev.Event != "done" && ev.Event != "blocked" {
+			return PushRequest{}, false
+		}
+		word := "proposed"
+		if ev.Event == "blocked" {
+			word = "blocked"
+		}
+		req.Title = fmt.Sprintf("%s round %s %s", n.Repo, roundNumber(n.Path), word)
+		if ev.Event == "done" {
+			req.Tags = "memo"
+		}
+	} else if cfg.MapURL != "" {
 		req.Click = cfg.MapURL + "#/lead/" + ev.From
 	}
 	if console != "" {
 		req.Actions = "view, Open thread, " + console
 	}
 	req.Body = cutUTF8(ev.Text, pushBodyMax)
-	if ev.Event == "done" && ev.Commit != "" {
+	if ev.Event == "done" && ev.Commit != "" && n.Role != "round" {
 		sha := ev.Commit
 		if len(sha) > 8 {
 			sha = sha[:8]
@@ -67,6 +82,15 @@ func Push(ev mesh.Event, n mesh.Node, cfg config.NotifyConfig, console string) (
 		req.Body += "commit " + sha
 	}
 	return req, true
+}
+
+// roundNumber is the N of a round path <repo>-round-<N> ("?" otherwise).
+func roundNumber(path string) string {
+	i := strings.LastIndex(path, "-round-")
+	if i < 0 {
+		return "?"
+	}
+	return path[i+len("-round-"):]
 }
 
 // cutUTF8 cuts s to at most n bytes without splitting a rune.
@@ -105,8 +129,8 @@ type pushJob struct {
 	seq  uint64
 }
 
-// pushLoop pushes a lead's listed events as they happen, once each across
-// restarts and daemons. It subscribes to bm.> live, then catches up from
+// pushLoop pushes a lead's (and a round's) listed events as they happen,
+// once each across restarts and daemons. It subscribes to bm.> live, then catches up from
 // history (events newer than [notify] catch_up with no push claim yet) and
 // skips live events the history already held; a live frame stored over a
 // minute ago (a reconnect's backlog) gets the same catch-up rules. Each event is claimed by a
@@ -292,7 +316,14 @@ func pushClaim(ctx context.Context, d Deps, s mesh.Stored, path, event string, j
 	if !ok {
 		return
 	}
-	req, ok := Push(ev, n, d.Cfg.Notify, web.ConsoleURL(d.Cfg.Console, d.Host, n))
+	linked := n
+	if n.Role == "round" {
+		// The action opens the engineer's thread: the operator replies there.
+		if eng, ok, err := mesh.GetNode(ctx, d.Client, path+".eng"); err == nil && ok {
+			linked = eng
+		}
+	}
+	req, ok := Push(ev, n, d.Cfg.Notify, web.ConsoleURL(d.Cfg.Console, d.Host, linked))
 	if !ok {
 		return
 	}

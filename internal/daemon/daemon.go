@@ -63,7 +63,7 @@ func decodeEvent(data []byte) (mesh.Event, error) {
 	return ev, err
 }
 
-// Run starts the activity follower, the poll+wake and silence loops, the
+// Run starts the activity follower, the poll+wake+rounds and silence loops, the
 // digest and push loops when [notify] has somewhere to send, and, when
 // [repos] names any repo, the routine loop; it returns once ctx ends
 // and every loop has stopped.
@@ -93,7 +93,7 @@ func Run(ctx context.Context, d Deps) error {
 	case <-ctx.Done():
 	}
 	start(func() {
-		every(ctx, pollEvery, func() { pollOnce(ctx, d, act); wakeOnce(ctx, d, act) })
+		every(ctx, pollEvery, func() { pollOnce(ctx, d, act); wakeOnce(ctx, d, act); roundsOnce(ctx, d) })
 	})
 	start(func() { every(ctx, silenceEvery, func() { silenceOnce(ctx, d, act) }) })
 	if d.Cfg.Notify.Ntfy != "" || d.Cfg.Notify.Command != "" {

@@ -20,16 +20,22 @@ send)
 start)
   file=""
   tid="${FAKE_T3_THREAD:-t-fake}"
+  wt=""
+  br=""
   prev=""
   for a in "$@"; do
     if [ "$prev" = "--prompt-file" ]; then file="$a"; fi
     if [ "$prev" = "--thread-id" ]; then tid="$a"; fi
+    if [ "$prev" = "--worktree" ]; then wt="$a"; fi
+    if [ "$prev" = "--branch" ]; then br="$a"; fi
     prev="$a"
   done
+  if [ -z "$wt" ]; then wt="${FAKE_T3_WORKTREE:-/wt}/$tid"; fi
+  if [ -z "$br" ]; then br="t3code/$tid"; fi
   if [ -n "$FAKE_T3_LOG" ]; then echo "start $(cat "$file" 2>/dev/null | head -c 2000)" >> "$FAKE_T3_LOG"; fi
   if [ -n "$FAKE_T3_START_SLEEP" ]; then sleep "$FAKE_T3_START_SLEEP"; fi
   if [ "${FAKE_T3_START_EXIT:-0}" != 0 ]; then echo "start failed" >&2; exit "$FAKE_T3_START_EXIT"; fi
-  echo "{\"threadId\":\"$tid\",\"title\":\"x\",\"branch\":\"t3code/$tid\",\"worktreePath\":\"${FAKE_T3_WORKTREE:-/wt}/$tid\"}"
+  echo "{\"threadId\":\"$tid\",\"title\":\"x\",\"branch\":\"$br\",\"worktreePath\":\"$wt\"}"
   ;;
 stop)
   if [ -n "$FAKE_T3_LOG" ]; then echo "stop $id" >> "$FAKE_T3_LOG"; fi
