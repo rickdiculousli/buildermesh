@@ -4,10 +4,12 @@ title: Finished routine instances, nodes and old results leave the mesh
 kind: maintenance
 size: M
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: fd21a373-851c-4e68-beb6-831cb4be0fa9
 proposed_on: 2026-10-15
+built_by: abc563ec-cc1d-4b35-9bee-03a5e73b60dd
+host: k16
 ---
 
 ## Opportunity
