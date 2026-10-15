@@ -64,9 +64,6 @@ func LoadRepos(path string) (map[string]Repo, error) {
 		return nil, fmt.Errorf("repos %s: unknown key %s", path, keys[0])
 	}
 	for name, r := range f.Repos {
-		if !repoName.MatchString(name) {
-			return nil, fmt.Errorf("repos %s: [repos.%s]: a name matches %s", path, name, repoName)
-		}
 		r.Name = name
 		if err := r.check(); err != nil {
 			return nil, fmt.Errorf("repos %s: [repos.%s]: %w", path, name, err)
@@ -78,6 +75,9 @@ func LoadRepos(path string) (map[string]Repo, error) {
 
 // check fills a row's defaults and refuses what it can't read.
 func (r *Repo) check() error {
+	if !repoName.MatchString(r.Name) {
+		return fmt.Errorf("name %q: a name matches %s", r.Name, repoName)
+	}
 	if r.Path == "" {
 		return errors.New("path is required")
 	}
@@ -113,8 +113,10 @@ func (c *Config) RepoNames() []string {
 	return names
 }
 
-// WriteRepo adds or replaces one row in repos.toml, keeping the other rows.
-// The file is rewritten whole, sorted by name, so a comment in it is lost.
+// WriteRepo adds or replaces one row in repos.toml, keeping the other rows;
+// a row that would not load (a bad name, no path) is refused before anything
+// is written. The file is rewritten whole, sorted by name, so a comment in
+// it is lost.
 func WriteRepo(path string, r Repo) error {
 	repos, err := LoadRepos(path)
 	if err != nil {
@@ -138,7 +140,7 @@ func WriteRepos(path string, repos map[string]Repo) error {
 	b.WriteString("# bmesh's repo registry: one [repos.<name>] per repo (see README.md, Config).\n")
 	for _, n := range names {
 		r := repos[n]
-		fmt.Fprintf(&b, "\n[repos.%s]\n", n)
+		fmt.Fprintf(&b, "\n[repos.%s]\n", tomlKey(n))
 		fmt.Fprintf(&b, "path = %s\n", tomlString(r.Path))
 		if r.Mode != "" && r.Mode != Modes[0] {
 			fmt.Fprintf(&b, "mode = %s\n", tomlString(r.Mode))
@@ -170,6 +172,17 @@ func WriteRepos(path string, repos map[string]Repo) error {
 	}
 	return os.WriteFile(path, []byte(b.String()), 0o644)
 }
+
+// tomlKey is a bare key when TOML allows it, else a quoted one (a name with
+// a dot would read as a nested table).
+func tomlKey(s string) string {
+	if bareKey.MatchString(s) {
+		return s
+	}
+	return tomlString(s)
+}
+
+var bareKey = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 func tomlString(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)

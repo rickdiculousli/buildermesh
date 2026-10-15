@@ -188,3 +188,42 @@ func TestClaudeInterruptKillsTurn(t *testing.T) {
 		t.Fatalf("interrupt when idle: %v", err)
 	}
 }
+
+// A send that arrives after a turn ended but while an earlier send is still
+// queued goes behind it, so sends run in the order they came.
+func TestClaudeSendKeepsOrderBehindQueue(t *testing.T) {
+	log := useFake(t, "BMESH_CLAUDE_COMMAND", "fake-claude.sh", "FAKE_LOG")
+	t.Setenv("FAKE_SLEEP", "1")
+	r, repo, brief := claudeRepo(t)
+	if _, err := r.Start(context.Background(), StartSpec{RepoPath: repo, BriefPath: brief, ThreadID: "th-1"}); err != nil {
+		t.Fatal(err)
+	}
+	until(t, "the fake to start", func() bool { return readLog(t, log) != "" })
+	if err := r.Send(context.Background(), "th-1", "A"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FAKE_SLEEP", "")
+	until(t, "turn 1 to end", func() bool {
+		d, _ := r.dir("th-1")
+		return !running(d, 1)
+	})
+	// Turn 1 is over, A is queued, nothing has polled Status: B must queue behind A.
+	if err := r.Send(context.Background(), "th-1", "B"); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(lines(t, log)); n != 1 {
+		t.Fatalf("B ran ahead of A: %q", readLog(t, log))
+	}
+	for i := 0; i < 2; i++ {
+		until(t, "Status to start the next queued send", func() bool {
+			if _, err := r.Status(context.Background(), "th-1"); err != nil {
+				t.Fatal(err)
+			}
+			return len(lines(t, log)) == i+2
+		})
+		until(t, "the turn to end", idle(t, r, "th-1"))
+	}
+	if in := readLog(t, log+".stdin"); in != "do the thingAB" {
+		t.Fatalf("stdin %q", in)
+	}
+}

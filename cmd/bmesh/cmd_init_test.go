@@ -75,12 +75,12 @@ func TestInitMultiBoxFromStdinAndFlags(t *testing.T) {
 	root := t.TempDir()
 	cfg := filepath.Join(root, "config.toml")
 	// Answers typed: multi, the hub, the token file, then no to registering.
-	out, _, code := runInit(t, cfg, root, "multi\nnats://hub:4222\n/tok\n", "init", "--runner", "tmux", "--no-repo")
+	out, _, code := runInit(t, cfg, root, "Multi\nnats://User:S3cret@hub:4222\n/home/Rick/Hub.token\n", "init", "--runner", "tmux", "--no-repo")
 	if code != 0 {
 		t.Fatalf("%d %q", code, out)
 	}
 	c, err := config.Load(cfg)
-	if err != nil || c.Mesh.NATS != "nats://hub:4222" || c.Mesh.TokenFile != "/tok" || c.Runner.Kind != "tmux" || len(c.Repos) != 0 {
+	if err != nil || c.Mesh.NATS != "nats://User:S3cret@hub:4222" || c.Mesh.TokenFile != "/home/Rick/Hub.token" || c.Runner.Kind != "tmux" || len(c.Repos) != 0 {
 		t.Fatalf("%v %+v %v", err, c.Mesh, c.Repos)
 	}
 	// The same through flags, nothing asked about the hub.

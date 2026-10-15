@@ -132,10 +132,89 @@ func (r Claude) turn(d, wt string, n int, text string, args []string) error {
 	// Reap the child when it exits, so a long-lived caller (the daemon)
 	// never keeps a zombie whose pid would read as alive.
 	go cmd.Wait()
-	if err := os.WriteFile(filepath.Join(d, "pid"), []byte(strconv.Itoa(cmd.Process.Pid)), 0o644); err != nil {
+	// The turn number first: a running() check between the two writes
+	// must not pair the new pid with the old turn's finished output.
+	if err := os.WriteFile(filepath.Join(d, "turn"), []byte(strconv.Itoa(n)), 0o644); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(d, "turn"), []byte(strconv.Itoa(n)), 0o644)
+	return os.WriteFile(filepath.Join(d, "pid"), []byte(strconv.Itoa(cmd.Process.Pid)), 0o644)
+}
+
+// lockStale is how old a lock file may be before it is taken over: a
+// holder that crashed between taking it and removing it.
+const lockStale = 10 * time.Second
+
+// locked runs f holding the thread's lock file, so a Send and a Status (or
+// two Sends) never both see "not running" and start turn n+1 twice.
+func locked(d string, f func() error) error {
+	lock := filepath.Join(d, "lock")
+	for end := time.Now().Add(lockStale); ; {
+		fh, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if err == nil {
+			fh.Close()
+			break
+		}
+		if !os.IsExist(err) {
+			return err
+		}
+		if st, serr := os.Stat(lock); serr == nil && time.Since(st.ModTime()) > lockStale {
+			os.Remove(lock)
+			continue
+		}
+		if time.Now().After(end) {
+			return fmt.Errorf("claude runner: %s is held", lock)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	defer os.Remove(lock)
+	return f()
+}
+
+// queued is the queue's files, oldest first.
+func queued(d string) ([]string, error) {
+	ents, err := os.ReadDir(filepath.Join(d, "queue"))
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	var names []string
+	for _, e := range ents {
+		if !e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// enqueue puts text at the back of the queue.
+func enqueue(d, text string) error {
+	q := filepath.Join(d, "queue")
+	if err := os.MkdirAll(q, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(q, strconv.FormatInt(time.Now().UnixNano(), 10)+".txt"), []byte(text), 0o644)
+}
+
+// drain starts the oldest queued send as turn n+1 when no turn is running;
+// it reports whether one was started.
+func (r Claude) drain(d, thread string) (bool, error) {
+	n := readInt(filepath.Join(d, "turn"))
+	if running(d, n) {
+		return false, nil
+	}
+	names, err := queued(d)
+	if err != nil || len(names) == 0 {
+		return false, err
+	}
+	path := filepath.Join(d, "queue", names[0])
+	text, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	if err := r.resume(d, thread, n+1, string(text)); err != nil {
+		return false, err
+	}
+	return true, os.Remove(path)
 }
 
 // readInt reads a file holding one integer, 0 when it is missing or garbled.
@@ -225,33 +304,12 @@ func (r Claude) Status(ctx context.Context, thread string) (Status, error) {
 	if st.Running {
 		return st, nil
 	}
-	q := filepath.Join(d, "queue")
-	ents, err := os.ReadDir(q)
-	if err != nil && !os.IsNotExist(err) {
-		return Status{}, err
-	}
-	var names []string
-	for _, e := range ents {
-		if !e.IsDir() {
-			names = append(names, e.Name())
-		}
-	}
-	if len(names) == 0 {
-		return st, nil
-	}
-	sort.Strings(names)
-	text, err := os.ReadFile(filepath.Join(q, names[0]))
-	if err != nil {
-		return Status{}, err
-	}
-	if err := r.resume(d, thread, n+1, string(text)); err != nil {
-		return Status{}, err
-	}
-	if err := os.Remove(filepath.Join(q, names[0])); err != nil {
-		return Status{}, err
-	}
-	st.Running = true
-	return st, nil
+	err = locked(d, func() error {
+		started, err := r.drain(d, thread)
+		st.Running = st.Running || started
+		return err
+	})
+	return st, err
 }
 
 // resume starts turn n of the thread's session with text.
@@ -264,21 +322,24 @@ func (r Claude) resume(d, thread string, n int, text string) error {
 }
 
 // Send starts the next turn with text, or queues it under queue/ when a turn
-// is running; Status starts queued sends once the turn ends.
+// is running or sends are already queued (so sends keep their order); Status
+// starts queued sends once the turn ends.
 func (r Claude) Send(ctx context.Context, thread, text string) error {
 	d, err := r.known(thread)
 	if err != nil {
 		return err
 	}
-	n := readInt(filepath.Join(d, "turn"))
-	if running(d, n) {
-		q := filepath.Join(d, "queue")
-		if err := os.MkdirAll(q, 0o755); err != nil {
+	return locked(d, func() error {
+		names, err := queued(d)
+		if err != nil {
 			return err
 		}
-		return os.WriteFile(filepath.Join(q, strconv.FormatInt(time.Now().UnixNano(), 10)+".txt"), []byte(text), 0o644)
-	}
-	return r.resume(d, thread, n+1, text)
+		n := readInt(filepath.Join(d, "turn"))
+		if running(d, n) || len(names) > 0 {
+			return enqueue(d, text)
+		}
+		return r.resume(d, thread, n+1, text)
+	})
 }
 
 // Interrupt kills the running turn; nothing running is not an error.

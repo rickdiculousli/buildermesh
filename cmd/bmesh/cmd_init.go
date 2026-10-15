@@ -57,7 +57,7 @@ func (a *app) cmdInit(args []string) error {
 	} else {
 		multi := *hub != ""
 		if !multi {
-			multi = strings.HasPrefix(ask.ask("Single box (bmesh serve runs the hub) or multi-box (a NATS hub elsewhere)? [single/multi]", "single"), "m")
+			multi = strings.HasPrefix(ask.choice("Single box (bmesh serve runs the hub) or multi-box (a NATS hub elsewhere)? [single/multi]", "single"), "m")
 		}
 		if multi && *hub == "" {
 			*hub = ask.ask("Hub URL", "nats://localhost:4222")
@@ -97,7 +97,7 @@ func (a *app) cmdInit(args []string) error {
 			}
 			if _, have := repos[r.Name]; have && !*force {
 				fmt.Fprintf(a.stdout, "%s is already in %s\n", r.Name, reposPath)
-			} else if strings.HasPrefix(ask.ask(fmt.Sprintf("Register %s (%s) in %s? [Y/n]", r.Name, r.Path, reposPath), "y"), "y") {
+			} else if strings.HasPrefix(ask.choice(fmt.Sprintf("Register %s (%s) in %s? [Y/n]", r.Name, r.Path, reposPath), "y"), "y") {
 				if err := config.WriteRepo(reposPath, r); err != nil {
 					return err
 				}
@@ -160,8 +160,11 @@ func (q *asker) ask(question, def string) string {
 		fmt.Fprintln(q.out, def)
 		return def
 	}
-	return strings.ToLower(line)
+	return line
 }
+
+// choice is ask for a yes/no or either/or answer: lowercased.
+func (q *asker) choice(question, def string) string { return strings.ToLower(q.ask(question, def)) }
 
 // foundRunners is the runner kinds whose program is on PATH, in preference
 // order.

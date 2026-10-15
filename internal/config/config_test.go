@@ -192,7 +192,7 @@ func TestLoadReposRefusals(t *testing.T) {
 		"[repos.x]\nmode = \"ship\"\n":                  "[repos.x]: path is required",
 		"[repos.x]\npath = \"p\"\nmode = \"shipped\"\n": `[repos.x]: mode "shipped" is not one of ship, companion, publish, fork, dormant`,
 		"[repos.x]\npath = \"p\"\nhots = \"k\"\n":       "unknown key repos.x.hots",
-		"[repos.\"a/b\"]\npath = \"p\"\n":               "[repos.a/b]: a name matches",
+		"[repos.\"a/b\"]\npath = \"p\"\n":               `[repos.a/b]: name "a/b": a name matches`,
 	} {
 		os.WriteFile(repos, []byte(body), 0o644)
 		_, err := Load(cfg)
@@ -213,6 +213,13 @@ func TestWriteRepoRoundTrips(t *testing.T) {
 	if err := WriteRepo(p, Repo{Name: "bare", Path: "/b"}); err != nil {
 		t.Fatal(err)
 	}
+	// A dotted name is a quoted key, not a nested table; a bad name is refused.
+	if err := WriteRepo(p, Repo{Name: "socket.io", Path: "/s"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteRepo(p, Repo{Name: "my repo", Path: "/m"}); err == nil || !strings.Contains(err.Error(), `name "my repo"`) {
+		t.Fatalf("bad name: %v", err)
+	}
 	got, err := LoadRepos(p)
 	if err != nil {
 		t.Fatal(err)
@@ -223,12 +230,15 @@ func TestWriteRepoRoundTrips(t *testing.T) {
 	if b := got["bare"]; b.Path != "/b" || b.Mode != "ship" || fmt.Sprint(b.Routines) != "[verify review]" {
 		t.Fatalf("bare %+v", b)
 	}
+	if got["socket.io"].Path != "/s" || len(got) != 3 {
+		t.Fatalf("dotted %+v", got)
+	}
 	// Replacing a row keeps the others.
 	if err := WriteRepo(p, Repo{Name: "app", Path: "/moved"}); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = LoadRepos(p)
-	if got["app"].Path != "/moved" || got["app"].Mode != "ship" || got["bare"].Path != "/b" {
+	if got["app"].Path != "/moved" || got["app"].Mode != "ship" || got["bare"].Path != "/b" || got["socket.io"].Path != "/s" {
 		t.Fatalf("after replace %+v", got)
 	}
 	if _, err := os.Stat(SetupFlag(p)); !os.IsNotExist(err) || SetupFlag(p) != filepath.Join(filepath.Dir(p), ".setup-complete") {
