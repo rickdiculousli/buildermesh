@@ -269,7 +269,7 @@ func (a *app) cmdSpecReview(args []string) error {
 			fmt.Fprintf(a.stderr, "bmesh: %v\n", err)
 		}
 	}()
-	lines, changed, err := a.applyReview(wt, pos[1])
+	lines, changed, err := a.applyReview(ctx, wt, name, pos[1])
 	if err != nil {
 		return err
 	}
@@ -304,13 +304,22 @@ func (a *app) cmdSpecReview(args []string) error {
 }
 
 // applyReview parses reply against the ledger in wt and applies it; it
-// returns the report lines and, for the commit message, what changed.
-func (a *app) applyReview(wt, reply string) (lines, changed []string, err error) {
+// returns the report lines and, for the commit message, what changed. A
+// number that is no spec id is a rank in the pitch of the repo's latest
+// round, read from the mesh; without the mesh, or a settled round, only
+// ids count.
+func (a *app) applyReview(ctx context.Context, wt, repo, reply string) (lines, changed []string, err error) {
 	specs, err := spec.Scan(wt, a.cfg.Spec.Glob)
 	if err != nil {
 		return nil, nil, ledgerFail(err)
 	}
-	r := spec.ParseReply(reply, spec.IDSet(specs), spec.Ranks(specs))
+	var ranks []int
+	if pitch, err := a.latestPitch(ctx, repo); err != nil {
+		lines = append(lines, "note: the mesh is unreachable, so numbers are spec ids only ("+err.Error()+")")
+	} else {
+		ranks = spec.PitchRanks(pitch, specs)
+	}
+	r := spec.ParseReply(reply, spec.IDSet(specs), ranks)
 	// One outcome per spec: the last clause with a move wins, any clause
 	// may set the judge, so "3 yes ... 3 on opus" is one accepted on opus.
 	type outcome struct {
@@ -378,6 +387,34 @@ func (a *app) applyReview(wt, reply string) (lines, changed []string, err error)
 		return nil, nil, ledgerFail(err)
 	}
 	return lines, changed, nil
+}
+
+// latestPitch is the pitch of the repo's newest round as the operator saw
+// it: the engineer's done text, then the UI/UX engineer's ("" when the
+// repo has no round or neither child is done).
+func (a *app) latestPitch(ctx context.Context, repo string) (string, error) {
+	if err := a.connect(ctx, "spec review"); err != nil {
+		return "", err
+	}
+	n, err := nextRound(ctx, a.client, repo)
+	if err != nil {
+		return "", err
+	}
+	if n <= 1 {
+		return "", nil
+	}
+	round := fmt.Sprintf("%s-round-%d", repo, n-1)
+	var parts []string
+	for _, c := range children {
+		st, _, err := mesh.ReadState(ctx, a.client, round+"."+c)
+		if err != nil {
+			return "", err
+		}
+		if st.State == "done" {
+			parts = append(parts, st.Text)
+		}
+	}
+	return strings.Join(parts, "\n"), nil
 }
 
 // cmdSpecVerified prints the verified line composed from the results for

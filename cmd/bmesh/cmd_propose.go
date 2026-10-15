@@ -177,6 +177,7 @@ func (a *app) runRound(row config.Repo, repoPath, model string) error {
 	}
 	out := map[string]any{"path": roundPath, "round": n}
 	ids := map[string]int{"eng": next, "ux": next + 5}
+	var failed []string
 	for _, c := range children {
 		var started childStarted
 		if hosts[c] == me {
@@ -185,24 +186,27 @@ func (a *app) runRound(row config.Repo, repoPath, model string) error {
 			started, err = a.startRemoteChild(ctx, hosts[c], row.Name, n, c, ids[c], threads[c], model)
 		}
 		if err != nil {
-			// The child that did not start is blocked, so the round reads
-			// blocked naming it and the daemon resettles it with the other
-			// child's pitch when that one finishes.
+			// The other child is still started: the one that did not is
+			// blocked, so the round reads blocked naming it and the daemon
+			// resettles it with the other's pitch when that one finishes.
 			why := fmt.Sprintf("did not start: %v", err)
 			child := roundPath + "." + c
 			_, _ = mesh.WriteState(ctx, a.client, child, mesh.State{State: "working", By: "node"})
 			_, _ = mesh.WriteState(ctx, a.client, child, mesh.State{State: "blocked", Text: why, By: "node"})
-			states, rerr := mesh.ReadAllStates(ctx, a.client)
-			if rerr == nil {
-				if state, text, ok := daemon.SettleRound(states[roundPath+".eng"], states[roundPath+".ux"]); ok {
-					if _, werr := mesh.WriteState(ctx, a.client, roundPath, mesh.State{State: state, Text: text, By: "node"}); werr == nil {
-						_ = mesh.PublishEvent(ctx, a.client, mesh.Event{From: roundPath, Event: state, Text: text})
-					}
-				}
-			}
-			return fmt.Errorf("round %s: the %s thread %s", roundPath, c, why)
+			failed = append(failed, fmt.Sprintf("the %s thread %s", c, why))
+			continue
 		}
 		out[c] = started
+	}
+	if len(failed) > 0 {
+		if states, err := mesh.ReadAllStates(ctx, a.client); err == nil {
+			if state, text, ok := daemon.SettleRound(states[roundPath+".eng"], states[roundPath+".ux"]); ok {
+				if _, err := mesh.WriteState(ctx, a.client, roundPath, mesh.State{State: state, Text: text, By: "node"}); err == nil {
+					_ = mesh.PublishEvent(ctx, a.client, mesh.Event{From: roundPath, Event: state, Text: text})
+				}
+			}
+		}
+		return fmt.Errorf("round %s: %s", roundPath, strings.Join(failed, "; "))
 	}
 	return a.printJSON(out)
 }
