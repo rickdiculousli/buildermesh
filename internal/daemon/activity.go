@@ -35,7 +35,9 @@ func (a *Activity) Rebuild(ctx context.Context, c *mesh.Client, since time.Time)
 }
 
 // ObserveStored observes a stream message: a daemon wake event records a wake
-// for its "to"; anything else goes through Observe.
+// for its "to"; anything else goes through Observe, and a node event naming
+// a "to" (a routine's progress on a job, To the requester) is activity of
+// that path too, so a lead waiting on a routine stays alive.
 func (a *Activity) ObserveStored(s mesh.Stored) {
 	if strings.HasPrefix(s.Subject, "bm.daemon.") && strings.HasSuffix(s.Subject, ".wake") {
 		if ev, err := decodeEvent(s.Data); err == nil && ev.To != "" {
@@ -43,21 +45,32 @@ func (a *Activity) ObserveStored(s mesh.Stored) {
 		}
 		return
 	}
-	a.Observe(s.Subject, s.At)
+	if !a.Observe(s.Subject, s.At) {
+		return
+	}
+	if ev, err := decodeEvent(s.Data); err == nil && ev.To != "" {
+		a.touch(ev.To, s.At)
+	}
 }
 
-// Observe records a node event bm.<path>.<event> at at. Inbox and daemon
-// subjects are not node activity and are ignored.
-func (a *Activity) Observe(subject string, at time.Time) {
+// Observe records a node event bm.<path>.<event> at at and reports whether
+// it was one. Inbox and daemon subjects are not node activity and are
+// ignored.
+func (a *Activity) Observe(subject string, at time.Time) bool {
 	rest, ok := strings.CutPrefix(subject, "bm.")
 	if !ok || strings.HasPrefix(rest, "inbox.") || strings.HasPrefix(rest, "daemon.") {
-		return
+		return false
 	}
 	i := strings.LastIndexByte(rest, '.')
 	if i <= 0 {
-		return
+		return false
 	}
-	path := rest[:i]
+	a.touch(rest[:i], at)
+	return true
+}
+
+// touch records activity of path at at.
+func (a *Activity) touch(path string, at time.Time) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if at.After(a.last[path]) {

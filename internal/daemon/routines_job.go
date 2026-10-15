@@ -155,7 +155,7 @@ func (w *worker) instanceFor(kc kind.Kind) instance.Instance {
 	}
 	if w.session == nil || !reflect.DeepEqual(w.sessionDef, kc) {
 		if w.session != nil {
-			w.event("progress", "recycled")
+			w.event("progress", "recycled", "")
 		}
 		w.session, w.sessionDef = instance.NewModel(kc, w.model, w.r.claude), kc
 	}
@@ -179,10 +179,12 @@ func (w *worker) idle() {
 	}
 }
 
-func (w *worker) event(event, text string) {
+// event publishes an event of the instance; to names the requester of the
+// job it is about ("" for none), whose tree it keeps alive.
+func (w *worker) event(event, text, to string) {
 	ctx, cancel := w.r.settleCtx()
 	defer cancel()
-	if err := mesh.PublishEvent(ctx, w.r.d.Client, mesh.Event{From: w.path, Event: event, Text: text}); err != nil {
+	if err := mesh.PublishEvent(ctx, w.r.d.Client, mesh.Event{From: w.path, Event: event, Text: text, To: to}); err != nil {
 		w.r.d.Log.Warn("routines: event", "path", w.path, "event", event, "err", err)
 	}
 }
@@ -198,7 +200,7 @@ func (w *worker) begin() {
 	}
 	w.idle() // a path restarted after done starts over
 	w.setState("working")
-	w.event("started", "")
+	w.event("started", "", "")
 	w.idle()
 }
 
@@ -206,7 +208,7 @@ func (w *worker) begin() {
 func (w *worker) end() {
 	w.setState("working")
 	w.setState("done")
-	w.event("done", "")
+	w.event("done", "", "")
 }
 
 // handle runs one job to its end: reply, record and ack, or a NAK when its
@@ -279,6 +281,7 @@ func (w *worker) handle(dl *delivery) {
 	}
 
 	w.setState("working")
+	w.event("progress", fmt.Sprintf("job %s started", j.ID), dl.from.String())
 	start := time.Now()
 	ij := instance.Job{ID: j.ID, Kind: kc.Name, Commit: j.Commit, Tree: tree, From: w.path, Reply: dl.from.String(),
 		Args: j.Args, Text: j.Text, Dir: w.dir}
@@ -308,11 +311,11 @@ func (w *worker) handle(dl *delivery) {
 	if !ok {
 		verdict = "fail"
 	}
-	w.event("progress", fmt.Sprintf("job %s %s %d", j.ID, verdict, time.Since(start).Milliseconds()))
+	w.event("progress", fmt.Sprintf("job %s %s %d", j.ID, verdict, time.Since(start).Milliseconds()), dl.from.String())
 	w.idle()
 	if w.session != nil && w.session.ShouldRecycle(r.d.Now()) {
 		w.session.Recycle()
-		w.event("progress", "recycled")
+		w.event("progress", "recycled", "")
 	}
 }
 

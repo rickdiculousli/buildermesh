@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -55,5 +56,40 @@ func TestSilenceIsTreeAware(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(f.sends(t), "\n"), "th-x") {
 		t.Fatal("x woken")
+	}
+}
+
+// F7: a lead waiting on a routine stays alive: the instance's progress names
+// the lead as To, which counts as the lead's activity.
+func TestRoutineProgressKeepsRequesterAlive(t *testing.T) {
+	f := setup(t)
+	f.lead(t, "app-001", "th-1", "working")
+	f.lead(t, "app-002", "th-2", "working")
+	base := time.Now()
+	a := NewActivity()
+	a.Observe("bm.app-001.progress", base)
+	a.Observe("bm.app-002.progress", base)
+	ev := func(to string) []byte {
+		b, err := json.Marshal(mesh.Event{From: "routine.review.opus-5-5-1", Event: "progress", Text: "job j1 started", To: to})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	a.ObserveStored(mesh.Stored{Subject: "bm.routine.review.opus-5-5-1.progress", At: base.Add(20 * time.Minute), Data: ev("app-001")})
+	// An inbox message's to is not activity of the recipient.
+	a.ObserveStored(mesh.Stored{Subject: "bm.inbox.app-002", At: base.Add(20 * time.Minute), Data: ev("app-002")})
+	f.now = base.Add(25 * time.Minute)
+
+	silenceOnce(f.ctx, f.d, a)
+
+	if s, _, _ := mesh.ReadState(f.ctx, f.c, "app-001"); s.State != "working" {
+		t.Fatalf("app-001: %+v", s)
+	}
+	if s, _, _ := mesh.ReadState(f.ctx, f.c, "app-002"); s.State != "silent" {
+		t.Fatalf("app-002: %+v", s)
+	}
+	if got := a.Last("routine.review"); !got.Equal(base.Add(20 * time.Minute)) {
+		t.Fatalf("the instance's own activity: %v", got)
 	}
 }

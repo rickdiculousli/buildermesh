@@ -299,8 +299,9 @@ command = "echo $BMESH_JOB >> ` + log + `; echo ran $BMESH_JOB"
 	if got := lines(t, log); len(got) != 4 || got[2] != id3 || got[3] != id4 {
 		t.Fatalf("runs %q", got)
 	}
-	if n := f.events(t, "routine.verify.cmd-1", "progress"); n != 4 {
-		t.Fatalf("progress events %d, want 4", n)
+	// Each job: "job <id> started" and "job <id> ok <ms>".
+	if n := f.events(t, "routine.verify.cmd-1", "progress"); n != 8 {
+		t.Fatalf("progress events %d, want 8", n)
 	}
 }
 
@@ -383,8 +384,20 @@ command = "echo $BMESH_FROM; pwd"
 		if err != nil || !ok || n.Role != "routine" || n.Repo != "app" || n.Host != testHost {
 			t.Fatalf("node %+v %v %v", n, ok, err)
 		}
-		if f.events(t, path, "started") != 1 || f.events(t, path, "done") != 1 || f.events(t, path, "progress") != 1 {
-			t.Fatalf("%s events: started/progress/done not 1 each", path)
+		if f.events(t, path, "started") != 1 || f.events(t, path, "done") != 1 {
+			t.Fatalf("%s events: started/done not 1 each", path)
+		}
+		// Progress names the requester, so its tree stays alive.
+		p, _ := mesh.ParsePath(path)
+		hist, err := mesh.History(f.ctx, f.c, mesh.EventSubject(p, "progress"), time.Time{})
+		if err != nil || len(hist) != 2 {
+			t.Fatalf("%s progress %d %v, want 2", path, len(hist), err)
+		}
+		for i, want := range []string{"job " + id + " started", "job " + id + " ok "} {
+			var ev mesh.Event
+			if err := json.Unmarshal(hist[i].Data, &ev); err != nil || ev.To != requester || !strings.HasPrefix(ev.Text, want) {
+				t.Fatalf("%s progress %d: %+v %v, want %q to %s", path, i, ev, err, want, requester)
+			}
 		}
 	}
 }
