@@ -54,9 +54,11 @@ func spokenAt(tokens []string, i int) bool {
 }
 
 // ParseReply reads reply against the ledger. ids are the spec ids that
-// exist; ranks are the ids of the specs the operator is reviewing, in pitch
-// order, so a number that is no spec id but a position in that list names
-// the spec at it (ids win over ranks). A clause is its leading numbers
+// exist; ranks are the ids of the pitch the operator is answering, in its
+// order. A number names the pitched spec with that id when there is one,
+// else the pitch line at that position, else the spec with that id (one
+// outside the pitch), so "1 and 3 yes" to a pitch of 012 to 016 means its
+// first and third lines. A clause is its leading numbers
 // (joined by "and" or the like) and the phrase after them, whose first
 // word decides: yes/accept to accepted, no/reject to rejected with the rest
 // as the reason, later to later, "on <judge>" alone to a judge note, and
@@ -68,6 +70,10 @@ func spokenAt(tokens []string, i int) bool {
 // not guessed at.
 func ParseReply(reply string, ids map[int]bool, ranks []int) Review {
 	var r Review
+	pitched := map[int]bool{}
+	for _, id := range ranks {
+		pitched[id] = true
+	}
 	for _, clause := range clauses(reply) {
 		tokens := strings.Fields(clause)
 		var nums []int
@@ -90,10 +96,12 @@ func ParseReply(reply string, ids map[int]bool, ranks []int) Review {
 		var missing []string
 		for _, n := range nums {
 			switch {
-			case ids[n]:
+			case pitched[n]:
 				targets = append(targets, n)
 			case n >= 1 && n <= len(ranks):
 				targets = append(targets, ranks[n-1])
+			case ids[n]:
+				targets = append(targets, n)
 			default:
 				missing = append(missing, strconv.Itoa(n))
 			}
@@ -223,20 +231,16 @@ var pitchLine = regexp.MustCompile(`(?m)^\s*#?(\d{1,4})\b`)
 
 // PitchRanks reads the ranked list the operator saw, the pitch (the
 // engineer's lines, then the UI/UX engineer's, each `NNN title ...`), into
-// the ids it names in order, keeping only ids among specs that a review
-// may move; a repeat is kept once. Nothing but that list is a rank.
+// the ids it names in order: every line whose number is a spec, a repeat
+// kept once. The list never shrinks as specs are reviewed, so a position
+// means the same spec in every reply to that pitch.
 func PitchRanks(pitch string, specs []*Spec) []int {
-	reviewable := map[int]bool{}
-	for _, s := range specs {
-		if IsReviewable(s.Status()) {
-			reviewable[s.ID] = true
-		}
-	}
+	ids := IDSet(specs)
 	var out []int
 	seen := map[int]bool{}
 	for _, m := range pitchLine.FindAllStringSubmatch(pitch, -1) {
 		n, _ := strconv.Atoi(m[1])
-		if reviewable[n] && !seen[n] {
+		if ids[n] && !seen[n] {
 			seen[n] = true
 			out = append(out, n)
 		}

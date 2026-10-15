@@ -51,17 +51,28 @@ func ledgerRepoSetup(t *testing.T) (*mesh.Client, context.Context, string) {
 	return c, ctx, repo
 }
 
-// pitchRound registers a round for demo whose engineer pitched 013 then
-// 012 and is done, so rank 1 is 013 and rank 2 is 012.
+// pitchRound registers a settled round for demo whose pitch was 013, 012,
+// 014 (so rank 2 is 012), and a newer round still open whose engineer
+// pitched the other way round, which is not a pitch yet.
 func pitchRound(t *testing.T, c *mesh.Client, ctx context.Context) {
 	t.Helper()
 	putNode(t, c, ctx, mesh.Node{Path: "demo-round-1", Role: "round", Repo: "demo"})
-	putNode(t, c, ctx, mesh.Node{Path: "demo-round-1.eng", Role: "engineer", Parent: "demo-round-1", Repo: "demo"})
-	if _, err := mesh.WriteState(ctx, c, "demo-round-1.eng", mesh.State{State: "working", By: "node"}); err != nil {
+	if _, err := mesh.WriteState(ctx, c, "demo-round-1", mesh.State{State: "working", By: "node"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := mesh.WriteState(ctx, c, "demo-round-1.eng", mesh.State{State: "done", By: "node",
+	if _, err := mesh.WriteState(ctx, c, "demo-round-1", mesh.State{State: "done", By: "daemon",
 		Text: "013 Thing 013 (feature, S, sonnet): second\n012 Thing 012 (feature, S, sonnet): first\n014 Thing 014: building"}); err != nil {
+		t.Fatal(err)
+	}
+	putNode(t, c, ctx, mesh.Node{Path: "demo-round-2", Role: "round", Repo: "demo"})
+	putNode(t, c, ctx, mesh.Node{Path: "demo-round-2.eng", Role: "engineer", Parent: "demo-round-2", Repo: "demo"})
+	if _, err := mesh.WriteState(ctx, c, "demo-round-2", mesh.State{State: "working", By: "node"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mesh.WriteState(ctx, c, "demo-round-2.eng", mesh.State{State: "working", By: "node"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mesh.WriteState(ctx, c, "demo-round-2.eng", mesh.State{State: "done", By: "node", Text: "012 first\n013 second"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -180,13 +191,13 @@ func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
 		t.Fatalf("branch left: %s", br)
 	}
 	// A second review: a rejection carries its reason; a second instruction
-	// adds a second note; a rank beyond the pitch is reported.
-	out, errs, code = runCLI(t, nil, "spec", "review", repo, "13 only the CLI part; 12 no too broad, 3 yes")
+	// adds a second note; a number beyond the pitch and the ledger is reported.
+	out, errs, code = runCLI(t, nil, "spec", "review", repo, "13 only the CLI part; 12 no too broad, 4 yes")
 	if code != 0 {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
 	}
 	if !strings.Contains(out, "013 Thing 013: adjusting -> adjusting (only the CLI part)\n") || !strings.Contains(out, "012 Thing 012: later -> rejected (too broad)\n") ||
-		!strings.Contains(out, "unmatched: no spec 3 (3 yes)\n") {
+		!strings.Contains(out, "unmatched: no spec 4 (4 yes)\n") {
 		t.Fatalf("%q", out)
 	}
 	spec13 = gitOut(t, "-C", repo, "show", "main:docs/proposals/013-thing.md")
@@ -196,6 +207,11 @@ func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
 	if spec12 := gitOut(t, "-C", repo, "show", "main:docs/proposals/012-thing.md"); !strings.Contains(spec12, "status: rejected\nreason: too broad\n") &&
 		!strings.Contains(spec12, "reason: too broad\n") {
 		t.Fatalf("012:\n%s", spec12)
+	}
+	// Positions stay what the pitch said after specs move: 1 is still 013.
+	out, _, code = runCLI(t, nil, "spec", "review", "demo", "1 on opus, 3 yes")
+	if code != 0 || !strings.Contains(out, "013 Thing 013: adjusting -> adjusting on opus\n") || !strings.Contains(out, "014 Thing 014: building, left unchanged") {
+		t.Fatalf("%d %q", code, out)
 	}
 	// A judge note alone on an adjusting spec sets the judge and adds no note.
 	out, _, code = runCLI(t, nil, "spec", "review", "demo", "13 on fable")
@@ -219,8 +235,9 @@ func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
 
 func TestSpecReviewOnMainCheckoutMergesFastForward(t *testing.T) {
 	_, _, repo := ledgerRepoSetup(t)
-	out, errs, code := runCLI(t, nil, "spec", "review", "demo", "012 reject: dup")
-	if code != 0 || !strings.Contains(out, "012 Thing 012: proposed -> rejected (dup)\n") {
+	out, errs, code := runCLI(t, nil, "spec", "review", "demo", "012 reject: dup, 1 yes")
+	if code != 0 || !strings.Contains(out, "012 Thing 012: proposed -> rejected (dup)\n") || !strings.HasPrefix(out, "note: no settled round, so numbers are spec ids only\n") ||
+		!strings.Contains(out, "unmatched: no spec 1 (1 yes)\n") {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
 	}
 	if b, _ := os.ReadFile(filepath.Join(repo, "docs", "proposals", "012-thing.md")); !strings.Contains(string(b), "status: rejected\nreason: dup\n") &&

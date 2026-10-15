@@ -304,10 +304,10 @@ func (a *app) cmdSpecReview(args []string) error {
 }
 
 // applyReview parses reply against the ledger in wt and applies it; it
-// returns the report lines and, for the commit message, what changed. A
-// number that is no spec id is a rank in the pitch of the repo's latest
-// round, read from the mesh; without the mesh, or a settled round, only
-// ids count.
+// returns the report lines and, for the commit message, what changed. The
+// ranks are the lines of the pitch the operator saw last (the newest
+// settled round's text on the mesh); without the mesh, or a settled round,
+// only ids count.
 func (a *app) applyReview(ctx context.Context, wt, repo, reply string) (lines, changed []string, err error) {
 	specs, err := spec.Scan(wt, a.cfg.Spec.Glob)
 	if err != nil {
@@ -316,6 +316,8 @@ func (a *app) applyReview(ctx context.Context, wt, repo, reply string) (lines, c
 	var ranks []int
 	if pitch, err := a.latestPitch(ctx, repo); err != nil {
 		lines = append(lines, "note: the mesh is unreachable, so numbers are spec ids only ("+err.Error()+")")
+	} else if pitch == "" {
+		lines = append(lines, "note: no settled round, so numbers are spec ids only")
 	} else {
 		ranks = spec.PitchRanks(pitch, specs)
 	}
@@ -389,9 +391,10 @@ func (a *app) applyReview(ctx context.Context, wt, repo, reply string) (lines, c
 	return lines, changed, nil
 }
 
-// latestPitch is the pitch of the repo's newest round as the operator saw
-// it: the engineer's done text, then the UI/UX engineer's ("" when the
-// repo has no round or neither child is done).
+// latestPitch is the pitch the operator saw last: the text of the repo's
+// newest settled round (state done or blocked, which is what was pushed).
+// An open round's children, even a finished one, are not a pitch yet; ""
+// when no round has settled.
 func (a *app) latestPitch(ctx context.Context, repo string) (string, error) {
 	if err := a.connect(ctx, "spec review"); err != nil {
 		return "", err
@@ -400,21 +403,16 @@ func (a *app) latestPitch(ctx context.Context, repo string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if n <= 1 {
-		return "", nil
-	}
-	round := fmt.Sprintf("%s-round-%d", repo, n-1)
-	var parts []string
-	for _, c := range children {
-		st, _, err := mesh.ReadState(ctx, a.client, round+"."+c)
+	for k := n - 1; k >= 1; k-- {
+		st, _, err := mesh.ReadState(ctx, a.client, fmt.Sprintf("%s-round-%d", repo, k))
 		if err != nil {
 			return "", err
 		}
-		if st.State == "done" {
-			parts = append(parts, st.Text)
+		if st.State == "done" || st.State == "blocked" {
+			return st.Text, nil
 		}
 	}
-	return strings.Join(parts, "\n"), nil
+	return "", nil
 }
 
 // cmdSpecVerified prints the verified line composed from the results for

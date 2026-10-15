@@ -21,7 +21,7 @@ func TestParseReplyTodaysGrammar(t *testing.T) {
 	}
 }
 
-func TestParseReplyIDsWinOverRanks(t *testing.T) {
+func TestParseReplyPitchedIDsThenRanksThenOtherIDs(t *testing.T) {
 	ids := map[int]bool{1: true, 2: true, 7: true}
 	r := ParseReply("1 yes; 7 no, too big; 2 later", ids, []int{7, 2, 1})
 	want := []Verdict{{ID: 1, Move: "accepted"}, {ID: 7, Move: "rejected"}, {ID: 2, Move: "later"}}
@@ -31,6 +31,14 @@ func TestParseReplyIDsWinOverRanks(t *testing.T) {
 	// ", too big" was its own clause with no number: reported, not guessed.
 	if !reflect.DeepEqual(r.Unmatched, []string{"too big"}) {
 		t.Fatalf("%q", r.Unmatched)
+	}
+	// A repo with history: 001 and 003 exist but were not pitched, so "1
+	// and 3" count lines of the pitch; 7 is an older spec outside it.
+	old := map[int]bool{1: true, 3: true, 7: true, 12: true, 13: true, 14: true}
+	r = ParseReply("1 and 3 yes, 7 on opus, 9 later", old, []int{12, 13, 14})
+	want = []Verdict{{ID: 12, Move: "accepted"}, {ID: 14, Move: "accepted"}, {ID: 7, Judge: "opus"}}
+	if !reflect.DeepEqual(r.Verdicts, want) || !reflect.DeepEqual(r.Unmatched, []string{"no spec 9 (9 later)"}) {
+		t.Fatalf("%+v", r)
 	}
 }
 
@@ -113,8 +121,8 @@ func TestRanksAndAdjustNote(t *testing.T) {
 		{ID: 4, Fields: map[string]string{"status": "later"}},
 		{ID: 8, Fields: map[string]string{"status": "proposed"}},
 	}
-	pitch := "005 A (feature, S, opus): why\n003 B: done already\n  008 C (ux, M, fable): look\n005 A again\nno number here"
-	if got := PitchRanks(pitch, specs); !reflect.DeepEqual(got, []int{5, 8}) {
+	pitch := "005 A (feature, S, opus): why\n003 B: done already\n  008 C (ux, M, fable): look\n005 A again\n099 nobody\nno number here"
+	if got := PitchRanks(pitch, specs); !reflect.DeepEqual(got, []int{5, 3, 8}) {
 		t.Fatal(got)
 	}
 	if got := PitchRanks("", specs); len(got) != 0 {
