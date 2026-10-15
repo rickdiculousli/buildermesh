@@ -4,10 +4,12 @@ title: Routines draw as one box per kind, with spent instances folded
 kind: ux
 size: M
 judge: opus
-status: accepted
+status: building
 lens: ux
 proposed_by: f3d2851e-4460-4cd8-87b7-359407c1c774
 proposed_on: 2026-10-15
+built_by: efb5135d-b74d-4fcd-9d60-8bba961bed2d
+host: k16
 ---
 
 ## Opportunity
