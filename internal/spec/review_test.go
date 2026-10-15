@@ -135,6 +135,15 @@ func TestRanksAndAdjustNote(t *testing.T) {
 	if got := PitchRanks(line, many); !reflect.DeepEqual(got, []int{1, 2, 3}) {
 		t.Fatal(got)
 	}
+	// One item per line: an id cited inside a why is not an item.
+	cited := "001 Ledger (feature, S, opus): replaces the scan; 003 did it by hand.\n002 Review (feature, M, opus): why. 200 lines go.\n003 Push (fix, S, sonnet): why."
+	if got := PitchRanks(cited, many); !reflect.DeepEqual(got, []int{1, 2, 3}) {
+		t.Fatal(got)
+	}
+	cited2 := "001 Ledger (feature, S, opus): replaces the scan. 002 did it by hand.\n003 Push (fix, S, sonnet): why."
+	if got := PitchRanks(cited2, many); !reflect.DeepEqual(got, []int{1, 3}) {
+		t.Fatal(got)
+	}
 	body := "## Opportunity\nslow\n\n## Proposal\nThe change.\n"
 	got := AdjustNote(body, "2026-10-15", "smaller")
 	if got != "## Opportunity\nslow\n\n## Proposal\nAdjust (2026-10-15): smaller\nThe change.\n" {

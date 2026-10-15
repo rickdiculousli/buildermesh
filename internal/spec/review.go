@@ -227,29 +227,41 @@ func IsReviewable(status string) bool {
 	return false
 }
 
-// pitchItem is where a pitch item starts: at a line start or after a
-// sentence end, with the spec's three-digit id ("001 Title (kind, size,
-// judge): why. 002 ..." on one line reads the same as one per line; "200
-// lines" inside a why does not start one).
-var pitchItem = regexp.MustCompile(`(?m)(?:^|[.;!?]\s+)\s*#?(\d{3})\b`)
+// A pitch item starts with the spec's three-digit id at a line start
+// (lineItem: one item per line, the shape the skills ask for) or, in a pitch
+// typed on one line, after a sentence end (sentenceItem: "001 Title (kind,
+// size, judge): why. 002 ..."). "200 lines" inside a why starts neither.
+var (
+	lineItem     = regexp.MustCompile(`(?m)^\s*#?(\d{3})\b`)
+	sentenceItem = regexp.MustCompile(`(?m)(?:^|[.;!?]\s+)\s*#?(\d{3})\b`)
+)
 
 // PitchRanks reads the ranked list the operator saw, the pitch (the
 // engineer's items, then the UI/UX engineer's, each `NNN title ...`), into
 // the ids it names in order: every item whose number is a spec, a repeat
-// kept once. The list never shrinks as specs are reviewed, so a position
+// kept once. A pitch with items on their own lines is read by those lines
+// alone, so an id cited inside a why ("; 004 did it by hand") is not an
+// item; only a pitch with no more than one line item is read sentence by
+// sentence. The list never shrinks as specs are reviewed, so a position
 // means the same spec in every reply to that pitch.
 func PitchRanks(pitch string, specs []*Spec) []int {
 	ids := IDSet(specs)
-	var out []int
-	seen := map[int]bool{}
-	for _, m := range pitchItem.FindAllStringSubmatch(pitch, -1) {
-		n, _ := strconv.Atoi(m[1])
-		if ids[n] && !seen[n] {
-			seen[n] = true
-			out = append(out, n)
+	read := func(re *regexp.Regexp) []int {
+		var out []int
+		seen := map[int]bool{}
+		for _, m := range re.FindAllStringSubmatch(pitch, -1) {
+			n, _ := strconv.Atoi(m[1])
+			if ids[n] && !seen[n] {
+				seen[n] = true
+				out = append(out, n)
+			}
 		}
+		return out
 	}
-	return out
+	if lines := read(lineItem); len(lines) > 1 {
+		return lines
+	}
+	return read(sentenceItem)
 }
 
 // IDSet is the set of ids among specs.
