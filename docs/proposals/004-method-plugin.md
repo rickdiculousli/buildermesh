@@ -4,10 +4,13 @@ title: The method plugin and retiring superpowers
 kind: maintenance
 size: S
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: da6488fd-38bd-4c4c-994c-a7de257d9424
 proposed_on: 2026-10-15
+built_by: 1e0cd8ca-e09a-440f-bd51-9fc2fdcf6260
+branch: t3code/331e824a
+host: k16
 ---
 
 ## Opportunity
