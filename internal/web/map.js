@@ -9,6 +9,12 @@ const NS = "http://www.w3.org/2000/svg";
 // message edges between boxes of one column bow out; minW the narrowest box.
 const G = { row: 48, nodeW: 184, nodeH: 40, indent: 24, gap: 40, pad: 16, head: 28, gutter: 28, minW: 120 };
 const LABEL_PX = 7.5, SUB_PX = 6; // average glyph widths of .label and .sub
+// The done shelf's chips; font and headFont are .chip .label's and
+// .shelf-head's in map.css, for textW.
+const CHIP = { h: 32, pad: 8, gap: 8, inset: 10, checkW: 16, maxLabel: 28, font: "500 12px", headFont: "700 14px" };
+// NEED orders the map's leads: what needs a hand, then what runs, what has
+// no state yet, what is finished.
+const NEED = { blocked: 0, asking: 1, silent: 2, working: 3, idle: 4, done: 5 };
 const PHONE = "(max-width: 699px)";
 const FETCH_MS = 10000; // a /api/tree read taking longer is abandoned
 const RECENT = 30;
@@ -58,6 +64,15 @@ function lastToken(path) {
   return path.slice(path.lastIndexOf(".") + 1);
 }
 
+let ruler = null;
+
+// textW measures s on a canvas in font, a weight and size, in the page's family.
+function textW(s, font) {
+  if (!ruler) ruler = document.createElement("canvas").getContext("2d");
+  ruler.font = font + " " + getComputedStyle(document.body).fontFamily;
+  return ruler.measureText(s).width;
+}
+
 // --- layout ---------------------------------------------------------------
 
 function startOf(t) {
@@ -70,6 +85,26 @@ function byStart(a, b) {
   const x = startOf(a), y = startOf(b);
   if (x !== y) return x < y ? -1 : 1;
   return a.node.path < b.node.path ? -1 : a.node.path > b.node.path ? 1 : 0;
+}
+
+function needRank(state) {
+  const r = NEED[state];
+  return r === undefined ? NEED.idle : r;
+}
+
+function needOf(t) {
+  return needRank(t.state.state);
+}
+
+// byNeed orders leads by need, ties by byStart, so a running lead's place
+// stays stable.
+function byNeed(a, b) {
+  const x = needOf(a), y = needOf(b);
+  return x !== y ? x - y : byStart(a, b);
+}
+
+function isDone(t) {
+  return t.state.state === "done";
 }
 
 function treeSub(t) {
@@ -103,16 +138,20 @@ function kindSub(g, c) {
   return extra.length ? extra : [g.mode || "no kind file"];
 }
 
-// layout places the tree: one block per lead (in started_at order), then
+// layout places the tree: one block per lead in need order (byNeed), then
 // the orphans block under its synthetic root, then the routines. Blocks run
 // left to right with the routines as the right column, or, when vertical,
 // top to bottom with the routines last. Each block is a vertical tree with
 // one node per row. Boxes with a key are mesh nodes (or a kind's inbox); a
 // routine kind is one box, its instances counted, not drawn.
-// A vertical layout given a width fits it: boxes stretch to its right edge
-// less the gutter, and only a tree nested past the narrowest box overflows.
+// When a lead is live (any state but done) and another is done, the done
+// leads leave the tree for a shelf: a row of chips, newest first, under the
+// blocks (and before the routines when vertical). A vertical layout given a
+// width fits it: boxes stretch to its right edge less the gutter, and only a
+// tree nested past the narrowest box overflows; a horizontal one uses the
+// width only to wrap the shelf.
 function layout(tree, vertical, width) {
-  const out = { boxes: [], edges: [], headings: [], width: 0, height: 0 };
+  const out = { boxes: [], edges: [], headings: [], frames: [], width: 0, height: 0 };
   const boxW = (x) => vertical && width ? Math.max(G.minW, width - G.pad - G.gutter - x) : G.nodeW;
   const add = (b) => {
     b.w = b.w || boxW(b.x);
@@ -153,30 +192,72 @@ function layout(tree, vertical, width) {
     return { w: depthMax * G.indent + G.nodeW, h: row * G.row };
   };
 
-  let x = G.pad, y = G.pad;
+  // shelf lays leads out as chips, newest first, at ox, oy after a "done (n)"
+  // heading, wrapping within maxW; returns the size of the frame around them.
+  const shelf = (leads, ox, oy, maxW) => {
+    const head = "done (" + leads.length + ")";
+    const left = ox + CHIP.inset, right = ox + maxW - CHIP.inset;
+    out.headings.push({ x: left, y: oy + CHIP.inset + CHIP.h / 2 + 5, text: head, cls: "shelf-head" });
+    let cx = left + Math.ceil(textW(head, CHIP.headFont)) + CHIP.gap, cy = oy + CHIP.inset, w = cx;
+    for (const t of leads.slice().sort((a, b) => byStart(b, a))) {
+      const label = fit(t.node.path, CHIP.maxLabel);
+      const cw = Math.ceil(2 * CHIP.pad + textW(label, CHIP.font) + CHIP.checkW);
+      if (cx + cw > right && cx > left) {
+        cx = left;
+        cy += CHIP.h + CHIP.gap;
+      }
+      add({ key: t.node.path, kind: "chip", label, title: t.node.path, state: "done", extra: [],
+        x: cx, y: cy, w: cw, h: CHIP.h });
+      cx += cw + CHIP.gap;
+      w = Math.max(w, cx);
+    }
+    const size = { w: vertical ? maxW : Math.min(maxW, w - CHIP.gap - ox + CHIP.inset), h: cy + CHIP.h + CHIP.inset - oy };
+    out.frames.push({ x: ox, y: oy, w: size.w, h: size.h });
+    out.width = Math.max(out.width, ox + size.w);
+    out.height = Math.max(out.height, oy + size.h);
+    return size;
+  };
+
+  let x = G.pad, y = G.pad, tall = 0;
   const next = (size) => {
     if (vertical) y += size.h + G.gap / 2;
     else x += size.w + G.gap;
+    tall = Math.max(tall, size.h);
   };
-  for (const l of tree.leads.slice().sort(byStart)) next(block([l], x, y));
+  const leads = tree.leads.slice().sort(byNeed);
+  const done = leads.filter(isDone);
+  const fold = done.length > 0 && done.length < leads.length;
+  for (const l of fold ? leads.filter((t) => !isDone(t)) : leads) next(block([l], x, y));
   if (tree.orphans.length) {
     const n = tree.orphans.length;
     const root = { kind: "root", label: "orphans", title: "nodes whose lead is not registered", state: "",
       extra: [n === 1 ? "1 root" : n + " roots"] };
     next(block(tree.orphans, x, y, root));
   }
+  const kinds = tree.routines.map((g) => {
+    const c = kindCounts(g);
+    return { g, busy: c.busy > 0, extra: kindSub(g, c) };
+  });
+  // In columns the kind boxes widen together to fit their longest counts.
+  const colW = vertical && width ? 0 : Math.max(G.nodeW,
+    ...kinds.map((k) => Math.ceil(k.extra.join(" · ").length * SUB_PX) + 16));
+  if (fold) {
+    if (vertical) {
+      next(shelf(done, x, y, boxW(x)));
+    } else {
+      // Under the blocks, as wide as they or the page beside the routines
+      // column allow; the column sits right of both.
+      const column = kinds.length ? 1.5 * G.gap + colW : 0;
+      const room = width ? width - 2 * G.pad - column : 0;
+      const s = shelf(done, G.pad, y + tall + G.gap / 2, Math.max(x - G.gap - G.pad, room, G.nodeW));
+      x = Math.max(x, G.pad + s.w + G.gap);
+    }
+  }
 
   if (tree.routines.length) {
     if (!vertical && x > G.pad) x += G.gap / 2;
     out.headings.push({ x, y: y + 14, text: "routines" });
     let ry = y + G.head;
-    const kinds = tree.routines.map((g) => {
-      const c = kindCounts(g);
-      return { g, busy: c.busy > 0, extra: kindSub(g, c) };
-    });
-    // In columns the kind boxes widen together to fit their longest counts.
-    const colW = vertical && width ? 0 : Math.max(G.nodeW,
-      ...kinds.map((k) => Math.ceil(k.extra.join(" · ").length * SUB_PX) + 16));
     for (const k of kinds) {
       const key = "routine." + k.g.kind;
       add({ key, kind: "group", label: k.g.kind, title: key, state: k.busy ? "working" : "", x, y: ry, w: colW,
@@ -193,7 +274,7 @@ function layout(tree, vertical, width) {
 // --- drawing --------------------------------------------------------------
 
 function classOf(kind, state) {
-  const link = kind === "lead" || kind === "group" ? " link" : "";
+  const link = kind === "lead" || kind === "chip" || kind === "group" ? " link" : "";
   return "node " + kind + link + (state ? " st-" + state : "");
 }
 
@@ -209,12 +290,36 @@ function room(w, px, pad) {
 }
 
 function hrefOf(b) {
-  if (b.kind === "lead") return "#/lead/" + b.key;
+  if (b.kind === "lead" || b.kind === "chip") return "#/lead/" + b.key;
   if (b.kind === "group") return "#/routines";
   return "";
 }
 
+function link(g, b) {
+  const href = hrefOf(b);
+  if (!href) return;
+  g.setAttribute("tabindex", "0");
+  g.setAttribute("role", "link");
+  g.setAttribute("aria-label", b.title);
+  const go = () => { location.hash = href; };
+  g.addEventListener("click", go);
+  g.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
+  });
+}
+
+function drawChip(parent, b) {
+  const g = svg("g", { class: classOf(b.kind, b.state), transform: `translate(${b.x},${b.y})` }, parent);
+  svg("title", {}, g).textContent = b.title;
+  svg("rect", { class: "box", width: b.w, height: b.h, rx: b.h / 2 }, g);
+  svgText({ class: "label", x: CHIP.pad, y: b.h / 2 + 4 }, b.label, g);
+  svgText({ class: "check", x: b.w - CHIP.pad - 9, y: b.h / 2 + 5 }, "✓", g);
+  link(g, b);
+  return { g, sub: null };
+}
+
 function drawBox(parent, b) {
+  if (b.kind === "chip") return drawChip(parent, b);
   const g = svg("g", { class: classOf(b.kind, b.state), transform: `translate(${b.x},${b.y})` }, parent);
   svg("title", {}, g).textContent = b.title;
   svg("rect", { class: "ring", x: -4, y: -4, width: b.w + 8, height: b.h + 8, rx: 10 }, g);
@@ -222,17 +327,7 @@ function drawBox(parent, b) {
   svgText({ class: "label", x: 10, y: 17 }, fit(b.label, room(b.w, LABEL_PX, 32)), g);
   const sub = svgText({ class: "sub", x: 10, y: 32 }, subText(b.kind === "group" ? "" : b.state, b.extra, room(b.w, SUB_PX, 16)), g);
   svgText({ class: "check", x: b.w - 22, y: 26 }, "✓", g);
-  const href = hrefOf(b);
-  if (href) {
-    g.setAttribute("tabindex", "0");
-    g.setAttribute("role", "link");
-    g.setAttribute("aria-label", b.title);
-    const go = () => { location.hash = href; };
-    g.addEventListener("click", go);
-    g.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
-    });
-  }
+  link(g, b);
   return { g, sub };
 }
 
@@ -241,12 +336,13 @@ function render() {
   if (!t) return;
   // A hidden map has no width; the view's would be the page's less its padding.
   const w = $("map").clientWidth || document.documentElement.clientWidth - 2 * 12;
-  const L = layout(t, mesh.vertical, mesh.vertical ? w : 0);
+  const L = layout(t, mesh.vertical, w);
   const root = svg("svg", { width: L.width, height: L.height, viewBox: `0 0 ${L.width} ${L.height}`,
     role: "group", "aria-label": "mesh map" });
   const edges = svg("g", { class: "edges" }, root);
+  for (const f of L.frames) svg("rect", { class: "shelf", x: f.x, y: f.y, width: f.w, height: f.h, rx: 10 }, edges);
   for (const d of L.edges) svg("path", { class: "tree-edge", d }, edges);
-  for (const h of L.headings) svgText({ class: "heading", x: h.x, y: h.y }, h.text, root);
+  for (const h of L.headings) svgText({ class: h.cls || "heading", x: h.x, y: h.y }, h.text, root);
   const nodes = svg("g", { class: "nodes" }, root);
   const drawn = new Map();
   for (const b of L.boxes) {
@@ -267,10 +363,17 @@ function render() {
   }
 }
 
+// onShelf reports whether path is drawn as a chip, which only a redraw
+// can move off the shelf.
+function onShelf(path) {
+  const d = mesh.drawn.get(path);
+  return !!d && d.kind === "chip";
+}
+
 // setState restyles a drawn node.
 function setState(path, state) {
   const d = mesh.drawn.get(path);
-  if (!d || d.kind === "group") return;
+  if (!d || d.kind === "group" || d.kind === "chip") return;
   d.state = state;
   d.g.setAttribute("class", classOf(d.kind, state));
   d.sub.textContent = subText(state, d.extra, room(d.box.w, SUB_PX, 16));
@@ -379,9 +482,14 @@ function refetchSoon() {
   refetchTimer = setTimeout(() => { refetchTimer = 0; loadTree(); }, wait);
 }
 
+// liveState restyles a node at once; a lead whose need changed is also
+// reloaded, so the blocks keep their order.
 function liveState(path, state) {
+  const d = mesh.drawn.get(path);
+  const moved = !!d && d.kind === "lead" && needRank(d.state) !== needRank(state);
   mesh.live.set(path, { state, at: Date.now() });
   setState(path, state);
+  if (moved) refetchSoon();
 }
 
 // apply acts on a live frame: node and daemon events restyle nodes, inbox
@@ -392,7 +500,7 @@ function apply(f) {
   if (rest.startsWith("inbox.")) {
     const to = rest.slice(6);
     flash(String(p.from || ""), to, String(p.kind || "message"));
-    if (!mesh.drawn.has(to) && !to.startsWith("routine.")) refetchSoon();
+    if (!mesh.drawn.has(to) && !to.startsWith("routine.") && !onShelf(to.split(".")[0])) refetchSoon();
     return;
   }
   const i = rest.lastIndexOf(".");
@@ -403,7 +511,9 @@ function apply(f) {
     return;
   }
   if (EVENT_STATE[ev]) liveState(path, EVENT_STATE[ev]);
-  if (ev === "started" || ev === "done" || !mesh.drawn.has(path)) refetchSoon();
+  // A shelved lead's executors are not drawn and a reload would not draw them.
+  if (!mesh.drawn.has(path) && onShelf(path.split(".")[0])) return;
+  if (ev === "started" || ev === "done" || !mesh.drawn.has(path) || onShelf(path)) refetchSoon();
 }
 
 // --- the recent-events drawer ---------------------------------------------
@@ -935,7 +1045,8 @@ function checkSoon() {
 }
 
 // selfCheck writes, under ?check=1, whether the page scrolls sideways, the
-// smallest tap target and the connection history into document.title.
+// smallest tap target, the page offset of the first working box's top (none
+// without one) and the connection history into document.title.
 function selfCheck() {
   const sw = document.documentElement.scrollWidth, iw = window.innerWidth;
   let tap = Infinity;
@@ -943,8 +1054,11 @@ function selfCheck() {
     const r = e.getBoundingClientRect();
     if (r.width || r.height) tap = Math.min(tap, r.height, r.width);
   }
+  const live = document.querySelector("#map .node.st-working:not(.group) .box");
+  const workingTop = live ? Math.round(live.getBoundingClientRect().top + window.scrollY) : "none";
   const c = check;
   document.title = `bmesh ${sw <= iw ? "ok" : "SCROLLS"} view=${pages.view} scrollWidth=${sw} innerWidth=${iw} minTap=${Math.round(tap)}` +
+    ` workingTop=${workingTop}` +
     ` svgWidth=${mesh.width} mapWidth=${$("map").clientWidth}` +
     ` vertical=${mesh.vertical} leads=${c.leads} trees=${c.trees} conn=${c.conn.join(">")}` +
     ` replay=${c.replay} live=${c.live} flashes=${c.flashes} strip=${$("strip").hidden ? "hidden" : $("strip").children.length}`;
@@ -974,13 +1088,13 @@ function route() {
   for (const v of ["map", "lead", "routines"]) $("view-" + v).hidden = v !== view;
   if (view === "lead") lead.run();
   if (view === "routines") routines.run();
-  if (view === "map" && mesh.vertical) render(); // the width may have changed while hidden
+  if (view === "map") render(); // the width may have changed while hidden
   for (const a of document.querySelectorAll("nav a[data-route]")) a.classList.toggle("on", a.dataset.route === view);
 }
 
-// The phone layout stacks the blocks; it is redrawn when the media query
-// flips and, since boxes fit the width, when a phone-width window changes
-// width (not height: a phone's toolbar hiding on scroll resizes it).
+// The phone layout stacks the blocks; the map is redrawn when the media
+// query flips and, since boxes and the shelf fit the width, when the window
+// changes width (not height: a phone's toolbar hiding on scroll resizes it).
 const phone = window.matchMedia(PHONE);
 mesh.vertical = phone.matches;
 phone.addEventListener("change", () => {
@@ -989,7 +1103,7 @@ phone.addEventListener("change", () => {
 });
 let resizeTimer = 0, lastWidth = window.innerWidth;
 window.addEventListener("resize", () => {
-  if (!mesh.vertical || window.innerWidth === lastWidth) return;
+  if (window.innerWidth === lastWidth) return;
   lastWidth = window.innerWidth;
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(render, 100);

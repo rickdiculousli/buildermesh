@@ -223,6 +223,14 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
 .st-done .label, .st-done .sub { fill: var(--done-fg); }
 .st-done .check { display: inline; }
 
+/* The done shelf: a dashed frame of chips under the live blocks. */
+.shelf { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.shelf-head { fill: var(--fg); font-size: 14px; font-weight: 700; }
+.node.chip .box { fill: var(--node-bg); stroke: var(--done-bg); stroke-width: 1.5; }
+.node.chip .label { fill: var(--done-fg); font-size: 12px; font-weight: 500; }
+.node.chip .check { fill: var(--check); font-size: 12px; }
+.node.chip.link:hover .box, .node.chip.link:focus-visible .box { stroke: var(--link); }
+
 @keyframes pulse { 50% { stroke-opacity: .25; } }
 
 .msg-edge { fill: none; stroke: var(--msg); stroke-width: 2; stroke-linecap: round; }
