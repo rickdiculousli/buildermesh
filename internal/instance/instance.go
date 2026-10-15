@@ -41,18 +41,19 @@ func (j Job) env() []string {
 		"BMESH_TREE="+j.Tree, "BMESH_FROM="+j.From, "BMESH_REPLY="+j.Reply)
 }
 
-// run runs argv in j.Dir with the job's environment, in its own process
+// run runs the command mk makes (with the run's context) in j.Dir with the
+// job's environment, in its own process
 // group, killing the group at timeout (0: none) or when ctx ends, and again
 // after the command exits so no descendant outlives the job. It returns a
 // note for the output when the run was killed, and the run's error; a command
 // that exited while a leftover child held its output is not an error.
-func run(ctx context.Context, timeout time.Duration, j Job, argv []string, stdin io.Reader, stdout, stderr io.Writer) (string, error) {
+func run(ctx context.Context, timeout time.Duration, j Job, mk func(context.Context) *exec.Cmd, stdin io.Reader, stdout, stderr io.Writer) (string, error) {
 	runCtx, cancel := ctx, context.CancelFunc(func() {})
 	if timeout > 0 {
 		runCtx, cancel = context.WithTimeout(ctx, timeout)
 	}
 	defer cancel()
-	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
+	cmd := mk(runCtx)
 	cmd.Dir, cmd.Env = j.Dir, j.env()
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
 	proc.Group(cmd)

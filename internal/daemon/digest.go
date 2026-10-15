@@ -7,7 +7,6 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/shell"
 	"net/http"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -189,7 +188,7 @@ func deliver(ctx context.Context, d Deps, h Headers, body string) error {
 	ctx, cancel := context.WithTimeout(ctx, deliverTimeout)
 	defer cancel()
 	if cmd := d.Cfg.Notify.Command; cmd != "" {
-		c := exec.CommandContext(ctx, shell.Argv(cmd)[0], shell.Argv(cmd)[1:]...)
+		c := shell.Command(ctx, cmd)
 		c.Stdin = strings.NewReader(body)
 		c.WaitDelay = 2 * time.Second // a child holding the pipes can't block Wait past the timeout
 		c.Env = append(os.Environ(), "BMESH_TITLE="+h.Title, "NTFY_TITLE="+h.Title, "NTFY_PRIORITY="+h.Priority,

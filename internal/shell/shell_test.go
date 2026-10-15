@@ -2,23 +2,21 @@ package shell
 
 import (
 	"context"
-	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
 )
 
-func TestArgvRunsLineWithArgs(t *testing.T) {
+func TestCommandRunsLineWithArgs(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the unix shell")
 	}
-	a := Argv("echo one")
-	if len(a) != 3 || a[0] != "sh" || a[1] != "-c" || a[2] != "echo one" {
-		t.Fatalf("no args: %q", a)
+	c := Command(context.Background(), "echo one")
+	if len(c.Args) != 3 || c.Args[0] != "sh" || c.Args[1] != "-c" || c.Args[2] != "echo one" {
+		t.Fatalf("no args: %q", c.Args)
 	}
-	a = Argv("printf '%s|'", "a b", "c")
-	out, err := exec.CommandContext(context.Background(), a[0], a[1:]...).Output()
-	if err != nil || strings.TrimSpace(string(out)) != "a b|c|" {
+	out, err := Command(context.Background(), `printf '%s|' "x\"y"`, "a b", "c").Output()
+	if err != nil || strings.TrimSpace(string(out)) != `x"y|a b|c|` {
 		t.Fatalf("%q %v", out, err)
 	}
 }

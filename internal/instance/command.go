@@ -21,9 +21,8 @@ func NewCommand(k kind.Kind) Instance {
 }
 
 func (c command) Run(ctx context.Context, j Job) Reply {
-	argv := shell.Argv(c.k.Command, j.Args...)
 	var out bytes.Buffer
-	note, err := run(ctx, c.k.Timeout, j, argv, nil, &out, &out)
+	note, err := run(ctx, c.k.Timeout, j, func(ctx context.Context) *exec.Cmd { return shell.Command(ctx, c.k.Command, j.Args...) }, nil, &out, &out)
 	if note != "" {
 		return Reply{Output: out.String() + newline(out.String()) + note}
 	}

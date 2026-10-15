@@ -85,11 +85,19 @@ func TestInitMultiBoxFromStdinAndFlags(t *testing.T) {
 	}
 	// The same through flags, nothing asked about the hub.
 	cfg2 := filepath.Join(root, "two", "config.toml")
-	out, _, code = runInit(t, cfg2, root, "", "init", "--hub", "nats://h:1", "--runner", "claude", "--no-repo")
-	if code != 0 || strings.Contains(out, "Hub URL") {
+	out, _, code = runInit(t, cfg2, root, "", "init", "--hub", "nats://h:1", "--token-file", "/t", "--runner", "claude", "--no-repo")
+	if code != 0 || strings.Contains(out, "Hub URL") || strings.Contains(out, "Token file") {
 		t.Fatalf("%d %q", code, out)
 	}
-	if c, _ := config.Load(cfg2); c.Mesh.NATS != "nats://h:1" {
+	if c, _ := config.Load(cfg2); c.Mesh.NATS != "nats://h:1" || c.Mesh.TokenFile != "/t" {
+		t.Fatalf("%+v", c.Mesh)
+	}
+	// A token file given by flag survives the multi answer at the prompt.
+	cfg3 := filepath.Join(root, "three", "config.toml")
+	if _, _, code := runInit(t, cfg3, root, "multi\nnats://h:2\n", "init", "--token-file", "/tok3", "--runner", "claude", "--no-repo"); code != 0 {
+		t.Fatalf("code %d", code)
+	}
+	if c, _ := config.Load(cfg3); c.Mesh.NATS != "nats://h:2" || c.Mesh.TokenFile != "/tok3" {
 		t.Fatalf("%+v", c.Mesh)
 	}
 	// An unknown runner is a usage error.

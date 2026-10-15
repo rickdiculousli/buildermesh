@@ -8,8 +8,12 @@ import (
 	"syscall"
 )
 
+// group keeps a SysProcAttr the caller set (the shell's CmdLine).
 func group(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP}
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.CreationFlags |= syscall.CREATE_NEW_PROCESS_GROUP
 }
 
 func killGroup(cmd *exec.Cmd) error {

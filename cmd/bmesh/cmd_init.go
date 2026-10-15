@@ -61,6 +61,8 @@ func (a *app) cmdInit(args []string) error {
 		}
 		if multi && *hub == "" {
 			*hub = ask.ask("Hub URL", "nats://localhost:4222")
+		}
+		if multi && *tokenFile == "" {
 			*tokenFile = ask.ask("Token file (empty for none)", "")
 		}
 		kind := *runnerFlag

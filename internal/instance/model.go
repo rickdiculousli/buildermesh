@@ -97,7 +97,8 @@ func (m *Model) Run(ctx context.Context, j Job) Reply {
 	argv = append(argv, "--allowedTools", tools, "--max-turns", "40")
 
 	var stdout, stderr bytes.Buffer
-	note, err := run(ctx, m.k.Timeout, j, argv, strings.NewReader(text), &stdout, &stderr)
+	note, err := run(ctx, m.k.Timeout, j, func(ctx context.Context) *exec.Cmd { return exec.CommandContext(ctx, argv[0], argv[1:]...) },
+		strings.NewReader(text), &stdout, &stderr)
 	raw := stdout.String() + stderr.String()
 	res, parsed := parseResult(stdout.Bytes())
 

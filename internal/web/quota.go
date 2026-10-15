@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/rickdiculousli/buildermesh/internal/shell"
-	"os/exec"
 	"sync"
 	"time"
 )
@@ -62,7 +61,7 @@ func (q *Quota) Get(ctx context.Context, now time.Time) []Reading {
 func (q *Quota) run(ctx context.Context, now time.Time) ([]Reading, bool) {
 	ctx, cancel := context.WithTimeout(ctx, quotaTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, shell.Argv(q.Command)[0], shell.Argv(q.Command)[1:]...)
+	cmd := shell.Command(ctx, q.Command)
 	cmd.WaitDelay = 2 * time.Second // a child holding stdout can't block Wait past the timeout
 	out, err := cmd.Output()
 	if err != nil {
