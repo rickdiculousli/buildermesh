@@ -35,6 +35,15 @@ func commitSpec(t *testing.T, repo, status, merged string) {
 	runGit(t, repo, "commit", "-m", "spec "+status)
 }
 
+func revParse(t *testing.T, repo, rev string) string {
+	t.Helper()
+	out, err := exec.Command("git", "-C", repo, "rev-parse", rev).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
 func newRepo(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -82,9 +91,27 @@ func TestCheckDoneTrueOnlyWhenLanded(t *testing.T) {
 	}
 	commitSpec(t, repo, "done", "abc")
 	runGit(t, repo, "push", "origin", "main")
+	d, _ = CheckDone(repo, glob, "012")
+	if d.OK || d.Why != "merged abc is not on origin/main" {
+		t.Fatalf("merged not a commit: %+v", d)
+	}
+	landed := revParse(t, repo, "HEAD")
+	commitSpec(t, repo, "done", landed)
+	runGit(t, repo, "push", "origin", "main")
 	d, err = CheckDone(repo, glob, "012")
-	if err != nil || !d.OK || d.Path != "docs/proposals/012-thing.md" || d.Merged != "abc" {
+	if err != nil || !d.OK || d.Path != "docs/proposals/012-thing.md" || d.Merged != landed {
 		t.Fatalf("%+v %v", d, err)
+	}
+	// A commit on a branch never merged is not on origin/main.
+	runGit(t, repo, "checkout", "-q", "-b", "side")
+	runGit(t, repo, "commit", "--allow-empty", "-m", "side")
+	local := revParse(t, repo, "HEAD")
+	runGit(t, repo, "checkout", "-q", "main")
+	commitSpec(t, repo, "done", local)
+	runGit(t, repo, "push", "origin", "main")
+	d, _ = CheckDone(repo, glob, "012")
+	if d.OK || d.Why != "merged "+local+" is not on origin/main" {
+		t.Fatalf("unpushed merged: %+v", d)
 	}
 	commitSpec(t, repo, "done", "")
 	runGit(t, repo, "push", "origin", "main")

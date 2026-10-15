@@ -166,8 +166,10 @@ func TestCheckDoneParsesVerified(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	runGit(t, repo, "commit", "--allow-empty", "-m", "work")
+	merged := revParse(t, repo, "HEAD")
 	write := func(verified string) {
-		text := "---\nid: 12\nstatus: done\nmerged: abc\nverified: " + verified + "\n---\n"
+		text := "---\nid: 12\nstatus: done\nmerged: " + merged + "\nverified: " + verified + "\n---\n"
 		if err := os.WriteFile(filepath.Join(dir, "012-thing.md"), []byte(text), 0o644); err != nil {
 			t.Fatal(err)
 		}

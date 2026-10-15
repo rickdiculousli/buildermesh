@@ -66,9 +66,10 @@ func (a *app) cmdEvent(name string, args []string) error {
 	return nil
 }
 
-// checkSpecDone refuses done unless the node's spec has landed as done; a
-// lead's spec must also carry a verified line whose every entry is matched
-// by a recorded result for the merged commit's tree (any args).
+// checkSpecDone refuses done unless the node's spec has landed as done with
+// merged on main; a lead's spec must also carry a verified line with no
+// failing entry, every entry matched by a recorded result for the merged
+// commit's tree (any args).
 func (a *app) checkSpecDone(ctx context.Context, n mesh.Node) error {
 	d, err := spec.CheckDone(n.RepoPath, a.cfg.Spec.Glob, n.Spec)
 	if err != nil {
@@ -82,6 +83,11 @@ func (a *app) checkSpecDone(ctx context.Context, n mesh.Node) error {
 	}
 	if len(d.Verified) == 0 {
 		return fail(exitRefused, "not done: verified is empty")
+	}
+	for _, e := range d.Verified {
+		if !e.OK {
+			return fail(exitRefused, "not done: verified has a failing entry %s", e.Kind)
+		}
 	}
 	tree, err := spec.Tree(n.RepoPath, d.Merged+"^{commit}")
 	if err != nil {

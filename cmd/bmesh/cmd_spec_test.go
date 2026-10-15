@@ -91,7 +91,11 @@ func TestDoneRequiresVerifiedMatchingResults(t *testing.T) {
 	landSpec(t, repo, front+"verified: verify ok t:0123abcd\n")
 	refused("not done: verified entry verify is for tree 0123abcd, merged tree is " + t8)
 	landSpec(t, repo, "id: 12\nstatus: done\nmerged: 0000000000000000000000000000000000000000\nverified: verify ok t:"+t8+"\n")
-	refused("not done: merged 0000000000000000000000000000000000000000 is not a commit")
+	refused("not done: merged 0000000000000000000000000000000000000000 is not on origin/main")
+
+	// R17: a failing entry is refused before any result is looked up.
+	landSpec(t, repo, front+"verified: verify ok t:"+t8+"; review fail t:"+t8+" m:claude-opus-5-5\n")
+	refused("not done: verified has a failing entry review")
 
 	landSpec(t, repo, front+verified)
 	put(mesh.Result{Kind: "review", OK: true, Model: "claude-opus-5-5"})
@@ -119,6 +123,55 @@ func TestDoneRequiresVerifiedMatchingResults(t *testing.T) {
 	}
 	if got := stateOf(t, c, ctx, "app-012.x1"); got != "done" {
 		t.Fatalf("executor state %s", got)
+	}
+}
+
+// A merged commit that is not on main (here: no origin, so local main) is
+// refused, whatever the verified line says.
+func TestDoneRefusesMergedNotOnMain(t *testing.T) {
+	c, ctx := setup(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	runGit(t, filepath.Dir(repo), "init", "-b", "main", repo)
+	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", "-A")
+	runGit(t, repo, "commit", "-m", "base")
+	runGit(t, repo, "checkout", "-b", "side")
+	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("side\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "commit", "-am", "side")
+	side, tree := gitOut(t, "-C", repo, "rev-parse", "side"), gitOut(t, "-C", repo, "rev-parse", "side^{tree}")
+	runGit(t, repo, "checkout", "main")
+	dir := filepath.Join(repo, "docs", "proposals")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	front := "---\nid: 12\nstatus: done\nmerged: " + side + "\nverified: verify ok t:" + tree[:8] + "\n---\n"
+	if err := os.WriteFile(filepath.Join(dir, "012-thing.md"), []byte(front), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", "-A")
+	runGit(t, repo, "commit", "-m", "spec")
+	if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "verify", Tree: tree, OK: true, By: "h"}); err != nil {
+		t.Fatal(err)
+	}
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: repo, Spec: "012"})
+	if _, errs, code := runCLI(t, as("app-012"), "started"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	_, errs, code := runCLI(t, as("app-012"), "done", "--commit", side)
+	if code != 3 || errs != "bmesh: not done: merged "+side+" is not on main\n" {
+		t.Fatalf("code %d err %q", code, errs)
+	}
+	if got := stateOf(t, c, ctx, "app-012"); got != "working" {
+		t.Fatalf("state %s", got)
+	}
+	// Merged into main, it is done.
+	runGit(t, repo, "merge", "--no-edit", "side")
+	if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", side); code != 0 {
+		t.Fatalf("after merge: %d %q %q", code, out, errs)
 	}
 }
 

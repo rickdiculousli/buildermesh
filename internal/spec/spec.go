@@ -59,10 +59,16 @@ func (e *notFoundError) Error() string { return fmt.Sprintf("no spec %s on %s", 
 // FindOnMain returns the path and text of spec id on origin/main (after a
 // fetch) when the repo has an origin, else on main.
 func FindOnMain(repoPath, glob, id string) (string, string, error) {
-	ref := "main"
+	p, text, _, err := findOnMain(repoPath, glob, id)
+	return p, text, err
+}
+
+// findOnMain is FindOnMain also naming the ref it read.
+func findOnMain(repoPath, glob, id string) (p, text, ref string, err error) {
+	ref = "main"
 	if _, err := git(repoPath, "remote", "get-url", "origin"); err == nil {
 		if _, err := git(repoPath, "fetch", "--quiet", "origin", "main"); err != nil {
-			return "", "", err
+			return "", "", ref, err
 		}
 		ref = "origin/main"
 	}
@@ -70,7 +76,7 @@ func FindOnMain(repoPath, glob, id string) (string, string, error) {
 	dir := path.Dir(glob)
 	out, err := git(repoPath, "ls-tree", "--name-only", "-r", ref, "--", dir)
 	if err != nil {
-		return "", "", err
+		return "", "", ref, err
 	}
 	var hits []string
 	for _, e := range strings.Split(out, "\n") {
@@ -79,7 +85,7 @@ func FindOnMain(repoPath, glob, id string) (string, string, error) {
 		}
 		ok, err := path.Match(pattern, e)
 		if err != nil {
-			return "", "", fmt.Errorf("bad spec glob %q: %w", glob, err)
+			return "", "", ref, fmt.Errorf("bad spec glob %q: %w", glob, err)
 		}
 		if ok {
 			hits = append(hits, e)
@@ -87,16 +93,15 @@ func FindOnMain(repoPath, glob, id string) (string, string, error) {
 	}
 	switch len(hits) {
 	case 0:
-		return "", "", &notFoundError{id, ref}
+		return "", "", ref, &notFoundError{id, ref}
 	case 1:
 	default:
-		return "", "", fmt.Errorf("spec %s matches %d files on %s: %s", id, len(hits), ref, strings.Join(hits, ", "))
+		return "", "", ref, fmt.Errorf("spec %s matches %d files on %s: %s", id, len(hits), ref, strings.Join(hits, ", "))
 	}
-	text, err := git(repoPath, "show", ref+":"+hits[0])
-	if err != nil {
-		return "", "", err
+	if text, err = git(repoPath, "show", ref+":"+hits[0]); err != nil {
+		return "", "", ref, err
 	}
-	return hits[0], text, nil
+	return hits[0], text, ref, nil
 }
 
 // Done is the verdict of CheckDone. Verified is the spec's verified line,
@@ -108,11 +113,12 @@ type Done struct {
 	Verified             []Entry
 }
 
-// CheckDone reports whether spec id has landed as done with a merged value.
-// A missing spec is a verdict (OK false), a malformed one (frontmatter or
-// verified line) an error.
+// CheckDone reports whether spec id has landed as done with a merged value
+// that is on main (origin/main when the repo has an origin). A missing spec
+// is a verdict (OK false), a malformed one (frontmatter or verified line) an
+// error.
 func CheckDone(repoPath, glob, id string) (Done, error) {
-	p, text, err := FindOnMain(repoPath, glob, id)
+	p, text, ref, err := findOnMain(repoPath, glob, id)
 	var nf *notFoundError
 	if errors.As(err, &nf) {
 		return Done{Why: nf.Error()}, nil
@@ -134,8 +140,20 @@ func CheckDone(repoPath, glob, id string) (Done, error) {
 		d.Why = "status is " + d.Status
 	case d.Merged == "":
 		d.Why = "merged is empty"
+	case !onRef(repoPath, d.Merged, ref):
+		d.Why = "merged " + d.Merged + " is not on " + ref
 	default:
 		d.OK = true
 	}
 	return d, nil
+}
+
+// onRef reports whether rev names a commit that ref contains.
+func onRef(repoPath, rev, ref string) bool {
+	sha, err := git(repoPath, "rev-parse", "--verify", "--quiet", "--end-of-options", rev+"^{commit}")
+	if err != nil {
+		return false
+	}
+	_, err = git(repoPath, "merge-base", "--is-ancestor", strings.TrimSpace(sha), ref)
+	return err == nil
 }
