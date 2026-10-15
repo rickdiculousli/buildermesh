@@ -24,6 +24,9 @@ func TestLoadMissingFileIsDefaults(t *testing.T) {
 		c.Runner.Checkouts != "~/.bmesh/checkouts" || c.Runner.Claude != "claude" {
 		t.Fatalf("defaults wrong: %+v", c)
 	}
+	if c.Quota.Command != "" || c.Console.ThreadURL != "" || c.Console.Hosts == nil || len(c.Console.Hosts) != 0 {
+		t.Fatalf("defaults wrong: %+v %+v", c.Quota, c.Console)
+	}
 }
 
 func TestLoadFixture(t *testing.T) {
@@ -52,6 +55,9 @@ func TestLoadFixture(t *testing.T) {
 		"lead":        {c.Models.Lead, "lead-model"},
 		"repos.demo":  {c.Repos["demo"], "demo"},
 		"hostname":    {c.HostName(), "box-one"},
+		"quota":       {c.Quota.Command, "cat quota.json"},
+		"thread_url":  {c.Console.ThreadURL, "http://box-one:3773/t/{thread}"},
+		"hosts.other": {c.Console.Hosts["other"], "http://other:3773/t/{thread}"},
 	}
 	for k, v := range checks {
 		if v[0] != v[1] {

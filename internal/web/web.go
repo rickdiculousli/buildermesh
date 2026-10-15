@@ -1,5 +1,6 @@
-// Package web serves the map: a page with the live event list, the node list
-// as JSON and the mesh's events as server-sent events.
+// Package web serves the map: a page, the JSON it reads (the node tree, a
+// lead's page, the routines and the strip) and the mesh's events as
+// server-sent events.
 package web
 
 import (
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
 
@@ -31,15 +33,29 @@ type frame struct {
 	Payload json.RawMessage `json:"payload"`
 }
 
-// Handler serves / (the page), /api/nodes and /events, whose replay starts
-// hist before the request unless ?since=RFC3339 says otherwise.
-func Handler(c *mesh.Client, hist time.Duration) http.Handler {
+// Options is what the handler needs beyond the client: the config, this
+// daemon's host name and the clock (time.Now when nil).
+type Options struct {
+	Cfg  *config.Config
+	Host string
+	Now  func() time.Time
+}
+
+// Handler serves / (the page), /api/nodes, /api/tree, /api/lead/{path},
+// /api/routines, /api/strip and /events, whose replay starts hist before the
+// request unless ?since=RFC3339 says otherwise.
+func Handler(c *mesh.Client, hist time.Duration, opts Options) http.Handler {
+	s := newServer(c, opts)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write(page)
 	})
 	mux.HandleFunc("GET /api/nodes", func(w http.ResponseWriter, r *http.Request) { nodes(w, r, c) })
+	mux.HandleFunc("GET /api/tree", s.tree)
+	mux.HandleFunc("GET /api/lead/{path}", s.lead)
+	mux.HandleFunc("GET /api/routines", s.routines)
+	mux.HandleFunc("GET /api/strip", s.strip)
 	mux.HandleFunc("GET /events", func(w http.ResponseWriter, r *http.Request) { events(w, r, c, hist) })
 	return mux
 }
@@ -142,12 +158,18 @@ func events(w http.ResponseWriter, r *http.Request, c *mesh.Client, hist time.Du
 	}
 }
 
-func writeFrame(w http.ResponseWriter, event string, m mesh.Stored) error {
+// frameOf is m as an /events frame's data: its payload as JSON, or as a
+// string when it is not JSON.
+func frameOf(m mesh.Stored) frame {
 	payload := json.RawMessage(m.Data)
 	if !json.Valid(m.Data) {
 		payload, _ = json.Marshal(string(m.Data))
 	}
-	data, err := json.Marshal(frame{Subject: m.Subject, At: m.At.UTC().Format(time.RFC3339), Payload: payload})
+	return frame{Subject: m.Subject, At: m.At.UTC().Format(time.RFC3339), Payload: payload}
+}
+
+func writeFrame(w http.ResponseWriter, event string, m mesh.Stored) error {
+	data, err := json.Marshal(frameOf(m))
 	if err != nil {
 		return err
 	}

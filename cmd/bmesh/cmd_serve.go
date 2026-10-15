@@ -105,7 +105,7 @@ func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Wri
 	}()
 
 	srv := &http.Server{
-		Handler: web.Handler(c, serveHistory), ReadHeaderTimeout: 10 * time.Second,
+		Handler: web.Handler(c, serveHistory, web.Options{Cfg: cfg, Host: host}), ReadHeaderTimeout: 10 * time.Second,
 		// Requests end with ctx, so open event streams don't hold Shutdown.
 		BaseContext: func(net.Listener) context.Context { return ctx },
 	}

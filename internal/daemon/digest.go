@@ -173,7 +173,7 @@ func digestOnce(ctx context.Context, d Deps, since *time.Time) {
 		d.Log.Warn("digest: deliver", "err", err)
 		return
 	}
-	ev := mesh.Event{From: d.from(), Event: "digest", Text: title, At: now.UTC().Format(time.RFC3339)}
+	ev := mesh.Event{From: d.from(), Event: "digest", Text: title, Body: body, At: now.UTC().Format(time.RFC3339)}
 	if err := mesh.PublishEvent(ctx, d.Client, ev); err != nil {
 		d.Log.Warn("digest: publish", "err", err)
 	}

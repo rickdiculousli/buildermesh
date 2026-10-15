@@ -22,6 +22,7 @@ type Event struct {
 	Text   string `json:"text"`
 	Commit string `json:"commit"`
 	To     string `json:"to,omitempty"`
+	Body   string `json:"body,omitempty"` // a digest's body
 }
 
 // Stored is a stream message as read back.

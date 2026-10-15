@@ -91,7 +91,8 @@ func TestDigestLoopPostsOnlyWhenChanged(t *testing.T) {
 	if b := read(); !strings.HasPrefix(b, "bmesh "+testHost+": 0 working, 1 asking, 0 silent\n") {
 		t.Errorf("log = %q", b)
 	}
-	if evs := f.daemonEvents(t, "digest"); len(evs) != 1 || evs[0].From != "daemon."+testHost {
+	if evs := f.daemonEvents(t, "digest"); len(evs) != 1 || evs[0].From != "daemon."+testHost ||
+		!strings.HasPrefix(evs[0].Body, "a: asking since ") {
 		t.Errorf("digest events = %+v", evs)
 	}
 	if !since.Equal(f.now) {

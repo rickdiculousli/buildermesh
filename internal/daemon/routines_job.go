@@ -311,7 +311,13 @@ func (w *worker) handle(dl *delivery) {
 	if !ok {
 		verdict = "fail"
 	}
-	w.event("progress", fmt.Sprintf("job %s %s %d", j.ID, verdict, time.Since(start).Milliseconds()), dl.from.String())
+	// A model instance adds its context tokens, so the map can read them
+	// from the stream: "job <id> ok|fail <ms> ctx <tokens>".
+	text := fmt.Sprintf("job %s %s %d", j.ID, verdict, time.Since(start).Milliseconds())
+	if kc.IsModel() {
+		text += fmt.Sprintf(" ctx %d", rep.Context)
+	}
+	w.event("progress", text, dl.from.String())
 	w.idle()
 	if w.session != nil && w.session.ShouldRecycle(r.d.Now()) {
 		w.session.Recycle()

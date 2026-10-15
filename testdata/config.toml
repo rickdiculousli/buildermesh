@@ -30,3 +30,9 @@ demo = "demo"
 glob = "specs/{id}.md"
 [models]
 lead = "lead-model"
+[quota]
+command = "cat quota.json"
+[console]
+thread_url = "http://box-one:3773/t/{thread}"
+[console.hosts]
+other = "http://other:3773/t/{thread}"

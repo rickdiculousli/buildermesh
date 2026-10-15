@@ -49,6 +49,18 @@ type SpecConfig struct{ Glob string }
 
 type ModelsConfig struct{ Lead string }
 
+// QuotaConfig names the command whose JSON output the map's strip shows; ""
+// hides the strip.
+type QuotaConfig struct{ Command string }
+
+// ConsoleConfig holds the thread link templates of the map, {thread} being
+// replaced by a lead's runner thread: ThreadURL for leads on this host, Hosts
+// by host name for leads on other hosts.
+type ConsoleConfig struct {
+	ThreadURL string `toml:"thread_url"`
+	Hosts     map[string]string
+}
+
 // Config is the parsed config.toml. Path-valued fields are stored as written;
 // callers pass them through Expand.
 type Config struct {
@@ -61,6 +73,8 @@ type Config struct {
 	Repos    map[string]string
 	Spec     SpecConfig
 	Models   ModelsConfig
+	Quota    QuotaConfig
+	Console  ConsoleConfig
 
 	dir string // directory of the config file; "" when none was read
 }
@@ -93,9 +107,11 @@ type file struct {
 		PollEvery duration `toml:"poll_every"`
 		WakeEvery duration `toml:"wake_every"`
 	}
-	Repos  map[string]string
-	Spec   SpecConfig
-	Models ModelsConfig
+	Repos   map[string]string
+	Spec    SpecConfig
+	Models  ModelsConfig
+	Quota   QuotaConfig
+	Console ConsoleConfig
 }
 
 func defaults() *Config {
@@ -109,6 +125,7 @@ func defaults() *Config {
 		Repos:    map[string]string{},
 		Spec:     SpecConfig{Glob: "docs/proposals/{id}-*.md"},
 		Models:   ModelsConfig{Lead: "claude-fable-5-1"},
+		Console:  ConsoleConfig{Hosts: map[string]string{}},
 	}
 }
 
@@ -130,6 +147,7 @@ func Load(path string) (*Config, error) {
 	}
 	f := file{
 		Mesh: c.Mesh, Host: c.Host, Serve: c.Serve, Runner: c.Runner, Spec: c.Spec, Models: c.Models,
+		Quota: c.Quota, Console: c.Console,
 	}
 	f.Notify.DigestEvery = duration(c.Notify.DigestEvery)
 	f.Liveness.Grace = duration(c.Liveness.Grace)
@@ -139,6 +157,10 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("config %s: %w", path, err)
 	}
 	c.Mesh, c.Host, c.Serve, c.Runner, c.Spec, c.Models = f.Mesh, f.Host, f.Serve, f.Runner, f.Spec, f.Models
+	c.Quota, c.Console = f.Quota, f.Console
+	if c.Console.Hosts == nil {
+		c.Console.Hosts = map[string]string{}
+	}
 	c.Notify = NotifyConfig{Ntfy: f.Notify.Ntfy, Command: f.Notify.Command, DigestEvery: time.Duration(f.Notify.DigestEvery)}
 	c.Liveness = LivenessConfig{Grace: time.Duration(f.Liveness.Grace), PollEvery: time.Duration(f.Liveness.PollEvery),
 		WakeEvery: time.Duration(f.Liveness.WakeEvery)}

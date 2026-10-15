@@ -553,13 +553,29 @@ batch_idle = "1s"
 		t.Fatalf("unknown repo reply %+v", r)
 	}
 	tree := tgit(t, f.repo, "rev-parse", "HEAD^{tree}")
-	r = f.reply(t, f.queue(t, mesh.Job{Kind: "review", Model: "m-b", Go: true}), 20*time.Second)
+	id := f.queue(t, mesh.Job{Kind: "review", Model: "m-b", Go: true})
+	r = f.reply(t, id, 20*time.Second)
 	key := mesh.ResultKey("review", tree, nil, "m-b")
 	if !r.OK || r.Output != "VERDICT: ok" || r.By != "routine.review.m-b-1" || r.ResultKey != key {
 		t.Fatalf("m-b reply %+v", r)
 	}
 	if rec, ok, err := mesh.GetResult(f.ctx, f.c, key); err != nil || !ok || rec.Model != "m-b" || rec.By != "routine.review.m-b-1" {
 		t.Fatalf("record %+v %v %v", rec, ok, err)
+	}
+	// A model instance's finished-job line carries its context tokens.
+	hist, err := mesh.History(f.ctx, f.c, "bm.routine.review.m-b-1.progress", time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var texts []string
+	for _, s := range hist {
+		var ev mesh.Event
+		_ = json.Unmarshal(s.Data, &ev)
+		texts = append(texts, ev.Text)
+	}
+	if len(texts) == 0 || !strings.HasPrefix(texts[len(texts)-1], "job "+id+" ok ") ||
+		!strings.HasSuffix(texts[len(texts)-1], " ctx 1000") {
+		t.Fatalf("m-b progress %q", texts)
 	}
 	n, ok, err := mesh.GetNode(f.ctx, f.c, "routine.review.m-a-1")
 	if err != nil || !ok || n.Model != "m-a" || n.Role != "routine" {
