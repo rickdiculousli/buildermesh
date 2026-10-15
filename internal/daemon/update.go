@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
@@ -74,6 +75,16 @@ func updateRepo(d Deps) string {
 // whether it did. Each main commit is acted on once: a failed build or a
 // main without this revision (a rollback) is logged once and left.
 func (r *routineSet) checkUpdate(dir string) bool {
+	// Locked from reading main to the end of the build, so a `bmesh update`
+	// on this box cannot move the checkout in between.
+	lockRelease, err := selfupdate.Lock(dir)
+	if err != nil {
+		r.d.Log.Warn("update: lock main", "err", err)
+		return false
+	}
+	var once sync.Once
+	unlock := func() { once.Do(lockRelease) }
+	defer unlock()
 	head, err := selfupdate.Head(dir)
 	if err != nil {
 		r.d.Log.Warn("update: read main", "err", err)
@@ -88,7 +99,9 @@ func (r *routineSet) checkUpdate(dir string) bool {
 		r.d.Log.Warn("update: main does not contain this revision; left alone", "main", next, "running", old)
 		return false
 	}
-	if err := selfupdate.Install(r.ctx, dir, r.d.Exe); err != nil {
+	err = selfupdate.Install(r.ctx, dir, r.d.Exe)
+	unlock()
+	if err != nil {
 		r.d.Log.Warn("update: build failed; keeping this binary", "main", next, "err", err)
 		return false
 	}

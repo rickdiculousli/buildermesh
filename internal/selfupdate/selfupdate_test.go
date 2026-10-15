@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"testing"
+	"time"
 )
 
 func tgit(t *testing.T, dir string, args ...string) string {
@@ -138,7 +139,7 @@ func TestContains(t *testing.T) {
 func TestMainCheckoutClonesAndFollows(t *testing.T) {
 	origin, shas := repo(t, "one")
 	clones := filepath.Join(t.TempDir(), "update")
-	dir, err := MainCheckout(origin, "", clones, "bm")
+	dir, unlock, err := MainCheckout(origin, "", clones, "bm")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,9 +151,11 @@ func TestMainCheckoutClonesAndFollows(t *testing.T) {
 	}
 	tgit(t, origin, "commit", "-q", "--allow-empty", "-m", "two")
 	two := tgit(t, origin, "rev-parse", "HEAD")
-	if dir, err = MainCheckout(origin, "", clones, "bm"); err != nil {
+	unlock()
+	if dir, unlock, err = MainCheckout(origin, "", clones, "bm"); err != nil {
 		t.Fatal(err)
 	}
+	defer unlock()
 	if h, _ := Head(dir); h != two {
 		t.Fatalf("head %s, want %s", h, two)
 	}
@@ -164,14 +167,43 @@ func TestMainCheckoutClonesAndFollows(t *testing.T) {
 func TestMainCheckoutUsesDaemonCheckout(t *testing.T) {
 	origin, shas := repo(t, "one")
 	root := filepath.Join(t.TempDir(), "checkouts")
-	dir, err := MainCheckout(origin, root, "", "bm")
+	dir, unlock, err := MainCheckout(origin, root, "", "bm")
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer unlock()
 	if dir != filepath.Join(root, "bm", "main") {
 		t.Fatalf("dir %s", dir)
 	}
 	if h, _ := Head(dir); h != shas[0] {
 		t.Fatalf("head %s", h)
+	}
+}
+
+func TestLockWaitsForHolder(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "main")
+	unlock, err := Lock(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan func())
+	go func() {
+		u, err := Lock(dir)
+		if err != nil {
+			t.Error(err)
+		}
+		got <- u
+	}()
+	select {
+	case <-got:
+		t.Fatal("second holder got the lock")
+	case <-time.After(300 * time.Millisecond):
+	}
+	unlock()
+	select {
+	case u := <-got:
+		u()
+	case <-time.After(5 * time.Second):
+		t.Fatal("lock not passed on")
 	}
 }

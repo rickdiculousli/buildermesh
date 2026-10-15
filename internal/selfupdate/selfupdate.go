@@ -109,42 +109,63 @@ func Contains(dir, rev, head string) bool {
 // checkouts (the [runner] checkouts root) it is the daemon's own
 // <checkouts>/<repo dir>/main, moved to origin/main after a fetch (main
 // without an origin); else a clone at clones/<name> of repoPath's origin
-// (of repoPath when it has none), moved to origin/main after a fetch.
-func MainCheckout(repoPath, checkouts, clones, name string) (string, error) {
+// (of repoPath when it has none), moved to origin/main after a fetch. The
+// checkout is returned under Lock, which the caller releases once it has
+// built from it.
+func MainCheckout(repoPath, checkouts, clones, name string) (dir string, unlock func(), err error) {
 	if checkouts != "" {
 		if err := checkout.Fetch(repoPath); err != nil {
-			return "", err
+			return "", nil, err
 		}
-		dir, err := checkout.Ensure(repoPath, checkouts, "main")
-		if err != nil {
-			return "", err
+		if dir, err = checkout.Ensure(repoPath, checkouts, "main"); err != nil {
+			return "", nil, err
 		}
 		ref := "main"
 		if _, err := git(repoPath, "remote", "get-url", "origin"); err == nil {
 			ref = "origin/main"
 		}
-		return dir, checkout.MoveTo(dir, ref)
+		return locked(dir, func() error { return checkout.MoveTo(dir, ref) })
 	}
-	dir := filepath.Join(clones, name)
+	dir = filepath.Join(clones, name)
+	if err := os.MkdirAll(clones, 0o755); err != nil {
+		return "", nil, err
+	}
+	return locked(dir, func() error { return cloneMain(repoPath, clones, dir) })
+}
+
+// locked runs move under dir's Lock and returns dir still locked, or
+// unlocks when move fails.
+func locked(dir string, move func() error) (string, func(), error) {
+	unlock, err := Lock(dir)
+	if err != nil {
+		return "", nil, err
+	}
+	if err := move(); err != nil {
+		unlock()
+		return "", nil, err
+	}
+	return dir, unlock, nil
+}
+
+// cloneMain leaves the clone dir at origin/main, cloning it first from
+// repoPath's origin (repoPath itself without one) when it is missing.
+func cloneMain(repoPath, clones, dir string) error {
 	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
 		src, err := git(repoPath, "remote", "get-url", "origin")
 		if err != nil {
 			src = repoPath
 		}
-		if err := os.MkdirAll(clones, 0o755); err != nil {
-			return "", err
-		}
 		if err := os.RemoveAll(dir); err != nil {
-			return "", err
+			return err
 		}
 		if _, err := git(clones, "clone", "--quiet", "--no-checkout", "--end-of-options", src, dir); err != nil {
-			return "", err
+			return err
 		}
 	}
 	if _, err := git(dir, "fetch", "--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main"); err != nil {
-		return "", err
+		return err
 	}
-	return dir, checkout.MoveTo(dir, "origin/main")
+	return checkout.MoveTo(dir, "origin/main")
 }
 
 // Prev is where Install keeps the binary it replaces: bmesh.prev beside it.

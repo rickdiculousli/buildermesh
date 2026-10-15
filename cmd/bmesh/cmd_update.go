@@ -63,10 +63,11 @@ func (a *app) cmdUpdate(args []string) error {
 	} else if a.cfg.Runner.Checkouts == "" {
 		return fmt.Errorf("no checkouts root and no cache dir: %w", err)
 	}
-	dir, err := selfupdate.MainCheckout(repoPath, a.cfg.Expand(a.cfg.Runner.Checkouts), clones, name)
+	dir, unlock, err := selfupdate.MainCheckout(repoPath, a.cfg.Expand(a.cfg.Runner.Checkouts), clones, name)
 	if err != nil {
 		return err
 	}
+	defer unlock()
 	head, err := selfupdate.Head(dir)
 	if err != nil {
 		return err

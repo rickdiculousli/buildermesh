@@ -20,6 +20,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/checkout"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 )
 
 // Tunables; tests shorten them.
@@ -156,7 +157,15 @@ func (r *routineSet) discover(repoPath string) (dir string, kinds []kind.Kind, e
 	if exec.Command("git", "-C", repoPath, "remote", "get-url", "origin").Run() == nil {
 		ref = "origin/main"
 	}
-	if err := checkout.MoveTo(dir, ref); err != nil {
+	// Under the lock a `bmesh update` on this box holds while it builds
+	// from the same checkout.
+	unlock, err := selfupdate.Lock(dir)
+	if err != nil {
+		return "", nil, err
+	}
+	err = checkout.MoveTo(dir, ref)
+	unlock()
+	if err != nil {
 		return "", nil, err
 	}
 	kinds, err = kind.LoadDir(dir)
