@@ -88,6 +88,14 @@ func Run(ctx context.Context, d Deps) error {
 		every(ctx, pollEvery, func() { pollOnce(ctx, d, act); wakeOnce(ctx, d, act) })
 	})
 	start(func() { every(ctx, silenceEvery, func() { silenceOnce(ctx, d, act) }) })
+	if d.Cfg.Notify.Ntfy != "" || d.Cfg.Notify.Command != "" {
+		digestEvery := d.Cfg.Notify.DigestEvery
+		if digestEvery <= 0 {
+			digestEvery = time.Hour
+		}
+		since := d.Now()
+		start(func() { every(ctx, digestEvery, func() { digestOnce(ctx, d, &since) }) })
+	}
 	<-ctx.Done()
 	wg.Wait()
 	return nil

@@ -62,7 +62,7 @@ worktrees = "~/.bmesh/worktrees"            # tmux runner's worktree root
 [notify]
 ntfy = ""                                   # "" = no digest; else "http://k16:2586/bmesh"
 command = ""                                # test hook: receives the POST body on stdin instead of HTTP
-digest_every = "1h"
+digest_every = "1h"                         # command runs via `sh -c`, body on stdin, title in $BMESH_TITLE
 [liveness]
 grace = "20m"
 poll_every = "60s"
