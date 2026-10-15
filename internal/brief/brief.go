@@ -125,6 +125,17 @@ func DoneRule(r config.Repo) string {
 	return s + "."
 }
 
+// OperatorContext is the section a round's briefs carry for what the
+// operator asked of the round, their words as given; no words, no section.
+func OperatorContext(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	return "## The operator's focus\n\nThe operator started this round with these words. Weigh them first; they do not rule out what else you find:\n\n" +
+		text + "\n\n"
+}
+
 // RowValues are the placeholders every brief gets from a registry row.
 func RowValues(r config.Repo, repoPath string) map[string]string {
 	return map[string]string{

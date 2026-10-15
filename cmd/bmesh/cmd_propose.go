@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,7 +23,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
-const proposeUsage = "usage: bmesh propose <repo> [--model M]"
+const proposeUsage = "usage: bmesh propose <repo> [--model M] [--context <text|->]"
 
 // proposedCap is how many proposed specs a repo may hold before a round is
 // refused: they are waiting on the operator's review.
@@ -44,7 +45,7 @@ type childStarted struct {
 }
 
 // cmdPropose runs a proposal round on a ship repo: bmesh propose <repo>
-// [--model M]. It refuses five or more proposed specs, levels main, picks
+// [--model M] [--context <text|->]. It refuses five or more proposed specs, levels main, picks
 // the next round number from the nodes bucket, registers the round node
 // and starts the two children through the runner on the row's host and
 // ux_host (a remote host runs this command's child form over ssh). The
@@ -58,6 +59,7 @@ func (a *app) cmdPropose(args []string) error {
 	round := fs.Int("round", 0, "child form: the round number")
 	nextID := fs.Int("next-id", 0, "child form: the first spec id")
 	thread := fs.String("thread-id", "", "child form: the thread's UUID")
+	focus := fs.String("context", "", "the operator's words for both briefs (- reads stdin)")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -68,6 +70,14 @@ func (a *app) cmdPropose(args []string) error {
 	if err := checkModel(*model); err != nil {
 		return err
 	}
+	if *focus == "-" {
+		b, err := io.ReadAll(a.stdin)
+		if err != nil {
+			return fmt.Errorf("read stdin: %w", err)
+		}
+		*focus = string(b)
+	}
+	*focus = strings.TrimSpace(*focus)
 	if err := a.loadConfig(); err != nil {
 		return err
 	}
@@ -96,17 +106,17 @@ func (a *app) cmdPropose(args []string) error {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		started, err := a.startChild(ctx, row, repoPath, *round, *child, *nextID, *thread, *model)
+		started, err := a.startChild(ctx, row, repoPath, *round, *child, *nextID, *thread, *model, *focus)
 		if err != nil {
 			return err
 		}
 		return a.printJSON(started)
 	}
-	return a.runRound(row, repoPath, *model)
+	return a.runRound(row, repoPath, *model, *focus)
 }
 
 // runRound is the full form.
-func (a *app) runRound(row config.Repo, repoPath, model string) error {
+func (a *app) runRound(row config.Repo, repoPath, model, focus string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	me := a.cfg.HostName()
@@ -181,9 +191,9 @@ func (a *app) runRound(row config.Repo, repoPath, model string) error {
 	for _, c := range children {
 		var started childStarted
 		if hosts[c] == me {
-			started, err = a.startChild(ctx, row, repoPath, n, c, ids[c], threads[c], model)
+			started, err = a.startChild(ctx, row, repoPath, n, c, ids[c], threads[c], model, focus)
 		} else {
-			started, err = a.startRemoteChild(ctx, hosts[c], row.Name, n, c, ids[c], threads[c], model)
+			started, err = a.startRemoteChild(ctx, hosts[c], row.Name, n, c, ids[c], threads[c], model, focus)
 		}
 		if err != nil {
 			// The other child is still started: the one that did not is
@@ -233,7 +243,7 @@ func nextRound(ctx context.Context, c *mesh.Client, repo string) (int, error) {
 // startChild makes one child's bmesh worktree from main, renders its brief,
 // starts it through this box's runner and registers its node.
 func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, round int, child string, nextID int,
-	thread, model string) (childStarted, error) {
+	thread, model, focus string) (childStarted, error) {
 	if err := levelMain(ctx, repoPath); err != nil {
 		return childStarted{}, fail(exitRefused, "refused: %v", err)
 	}
@@ -275,6 +285,7 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 	for k, v := range map[string]string{
 		"node": path, "round": roundPath, "round_n": strconv.Itoa(round), "worktree": wt, "branch": branch,
 		"thread_id": thread, "next_id": fmt.Sprintf("%03d", nextID), "date": time.Now().UTC().Format("2006-01-02"),
+		"operator_context": brief.OperatorContext(focus),
 	} {
 		values[k] = v
 	}
@@ -282,6 +293,11 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 	if err != nil {
 		undo()
 		return childStarted{}, err
+	}
+	if section := values["operator_context"]; section != "" && !strings.Contains(text, section) {
+		// A repo's own template without {{operator_context}} still gets
+		// the operator's words.
+		text = strings.TrimRight(text, "\n") + "\n\n" + strings.TrimRight(section, "\n") + "\n"
 	}
 	briefPath, err := writeBrief(roundPath+"-"+child, text)
 	if err != nil {
@@ -383,9 +399,12 @@ func reachable(ctx context.Context, host string) error {
 
 // startRemoteChild runs the child form on host and reads what it printed.
 func (a *app) startRemoteChild(ctx context.Context, host, repo string, round int, child string, nextID int,
-	thread, model string) (childStarted, error) {
+	thread, model, focus string) (childStarted, error) {
 	parts := []string{"bmesh", "propose", repo, "--child", child, "--round", strconv.Itoa(round),
 		"--next-id", strconv.Itoa(nextID), "--thread-id", thread, "--model", model}
+	if focus != "" {
+		parts = append(parts, "--context", focus)
+	}
 	for i, p := range parts {
 		parts[i] = shellQuote(p)
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -167,6 +168,45 @@ func TestProposeStartsARoundWithTwoChildren(t *testing.T) {
 	out, errs, code = runCLI(t, nil, "propose", "demo")
 	if code != 0 || !strings.Contains(out, `"path":"demo-round-2"`) {
 		t.Fatalf("second round: %d %q %q", code, out, errs)
+	}
+}
+
+func TestProposeCarriesTheOperatorsContext(t *testing.T) {
+	_, repo, _ := proposeSetup(t, "ux_host = \"other\"\n")
+	t.Setenv("FAKE_SSH_OUTPUT", `{"path":"demo-round-1.ux","thread":"t-remote","branch":"demo-round-1-ux","worktree":"/other/wt","host":"other"}`)
+	// A repo's own engineer template without the placeholder still gets the words.
+	dir := filepath.Join(repo, ".bmesh", "briefs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "engineer.md"), []byte("# mine for {{repo}}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, errs, code := runCLI(t, nil, "propose", "demo", "--context", "  the map's flow  "); code != 0 {
+		t.Fatalf("code %d out %q err %q", code, out, errs)
+	}
+	b, err := os.ReadFile(filepath.Join(os.Getenv("XDG_CACHE_HOME"), "bmesh", "briefs", "demo-round-1-eng.md"))
+	if err != nil || !strings.HasPrefix(string(b), "# mine for demo\n\n## The operator's focus\n") || !strings.HasSuffix(string(b), "\n\nthe map's flow\n") {
+		t.Fatalf("%v %q", err, b)
+	}
+	l, _ := os.ReadFile(os.Getenv("FAKE_SSH_LOG"))
+	if !strings.Contains(string(l), " --model lead-model --context ") || !strings.Contains(string(l), "the map") {
+		t.Fatalf("ssh log:\n%s", l)
+	}
+}
+
+func TestProposeChildFormReadsContextFromStdin(t *testing.T) {
+	proposeSetup(t, "")
+	t.Setenv("BMESH_NODE", "")
+	var out, errb bytes.Buffer
+	code := run([]string{"propose", "demo", "--child", "ux", "--round", "2", "--next-id", "9",
+		"--thread-id", "5d0c7a1e-0000-4000-8000-000000000002", "--context", "-"}, strings.NewReader("routines first\n"), &out, &errb)
+	if code != 0 {
+		t.Fatalf("code %d err %q", code, errb.String())
+	}
+	b, err := os.ReadFile(filepath.Join(os.Getenv("XDG_CACHE_HOME"), "bmesh", "briefs", "demo-round-2-ux.md"))
+	if err != nil || !strings.Contains(string(b), "## The operator's focus") || !strings.Contains(string(b), "routines first\n\n## Closing") {
+		t.Fatalf("%v %s", err, b)
 	}
 }
 

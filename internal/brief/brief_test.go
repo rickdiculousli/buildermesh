@@ -16,7 +16,7 @@ func proposalValues(nextID string) map[string]string {
 	v := RowValues(pb, "/home/x/repos/pb")
 	for k, s := range map[string]string{"date": "2026-10-15", "next_id": nextID, "thread_id": "5d0c7a1e-0000-4000-8000-000000000001",
 		"node": "pb-round-1.eng", "round": "pb-round-1", "round_n": "1", "worktree": "/home/x/.bmesh/worktrees/pb/pb-round-1-eng",
-		"branch": "pb-round-1-eng"} {
+		"branch": "pb-round-1-eng", "operator_context": ""} {
 		v[k] = s
 	}
 	return v
@@ -97,6 +97,28 @@ func TestMissingPlaceholderIsAnError(t *testing.T) {
 	}
 	if _, _, err := Template("", "nope"); err == nil || !strings.Contains(err.Error(), "build, engineer") {
 		t.Fatal(err)
+	}
+}
+
+func TestBriefsCarryTheOperatorsFocus(t *testing.T) {
+	if OperatorContext("  \n") != "" {
+		t.Fatal("blank words made a section")
+	}
+	v := proposalValues("007")
+	plain, err := Render("", "engineer", v)
+	if err != nil || strings.Contains(plain, "operator's focus") || !strings.Contains(plain, "\n\n## Closing") {
+		t.Fatal(plain, err)
+	}
+	v["operator_context"] = OperatorContext("routines: reuse and retirement\nthe map's flow\n")
+	for _, name := range []string{"engineer", "ux-engineer"} {
+		out, err := Render("", name, v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		i, j := strings.Index(out, "## The operator's focus"), strings.Index(out, "## Closing")
+		if i < 0 || j < i || !strings.Contains(out, "routines: reuse and retirement\nthe map's flow\n\n## Closing") {
+			t.Fatalf("%s:\n%s", name, out)
+		}
 	}
 }
 

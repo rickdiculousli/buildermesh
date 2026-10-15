@@ -15,7 +15,7 @@ You are the engineer on `{{repo}}` (`{{repo_path}}`) for this proposal round, {{
 - `proposed_by`: `{{thread_id}}` (this thread). `proposed_on`: {{date}}.
 - The half-pager is `bmesh spec template`; the ledger check is `bmesh spec list --repo .`.
 
-## Closing
+{{operator_context}}## Closing
 
 The standard closing for threads on this repo, which this thread follows as far as it applies (your change is docs only, and it lands on `main`):
 
