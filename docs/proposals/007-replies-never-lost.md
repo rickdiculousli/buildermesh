@@ -4,10 +4,12 @@ title: A routine reply is never lost, and an inbox read returns at once
 kind: refinement
 size: S
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: fd21a373-851c-4e68-beb6-831cb4be0fa9
 proposed_on: 2026-10-15
+built_by: f4f2c7cd-c29e-42d1-8933-c349e5e1d78d
+host: k16
 ---
 
 ## Opportunity
