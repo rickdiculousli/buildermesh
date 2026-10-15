@@ -28,7 +28,7 @@ In:
 - For a round, the spec card becomes `specs`: `NNN title · status` lines, each opening the spec's body in place with the same `specBody` renderer; before any land it reads `no specs landed yet`.
 - Empty cards (`no messages`, `no spec`) shrink to one muted line and, on the phone layout, sort after cards with content.
 
-Out: editing or reviewing specs from the page (that is `bmesh spec review` and the chat); executor worktrees on other hosts.
+Out: editing or reviewing specs from the page (that is `bmesh choose-ideas` and the chat); executor worktrees on other hosts.
 
 Judge: opus, because the API additions and the ledger read are named here and the work is wiring, not taste.
 

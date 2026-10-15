@@ -11,7 +11,7 @@ proposed_on: 2026-10-15
 ---
 
 ## Opportunity
-On 2026-10-15 T3 Code renamed lead 005's branch from `t3code/b0ee2f6d`, the name dispatch recorded in the node and the spec (`Dispatch 005: branch t3code/b0ee2f6d`), to `t3code/command-center-reorg` while the lead worked; the lead's `git merge --ff-only t3code/b0ee2f6d` in the main checkout failed with "not something we can merge", and the fix lives in a session memory rather than in the product. `bm-nodes`, `bmesh status --json`, the map's lead page and the ledger all still name the dispatch-time branch; nothing re-reads it for a lead. An executor's identity already follows a rename (`cmd/bmesh/cmd_executor.go:87-90`: "the worktree's current branch wins over the one recorded at start: a console may have renamed it since"), so the lead is the one node the mesh can misname. Lost work is one of this round's three focus areas (inbox, 2026-10-15): a lead that lands the wrong branch lands nothing.
+On 2026-10-15 T3 Code renamed lead 005's branch from `t3code/b0ee2f6d`, the name dispatch recorded in the node and the spec (`Dispatch 005: branch t3code/b0ee2f6d`), to `t3code/command-center-reorg` while the lead worked; the lead's `git merge --ff-only t3code/b0ee2f6d` in the main checkout failed with "not something we can merge", and the fix lives in a session memory rather than in the product. `bm-nodes`, `bmesh mesh-status --json`, the map's lead page and the ledger all still name the dispatch-time branch; nothing re-reads it for a lead. An executor's identity already follows a rename (`cmd/bmesh/cmd_executor.go:87-90`: "the worktree's current branch wins over the one recorded at start: a console may have renamed it since"), so the lead is the one node the mesh can misname. Lost work is one of this round's three focus areas (inbox, 2026-10-15): a lead that lands the wrong branch lands nothing.
 
 ## Proposal
 In:
@@ -23,7 +23,7 @@ Out: a `git branch` watch (a minute's lag is fine); executors (already right).
 Judge: sonnet, because every step is named and each touches one small place.
 
 ## What you'll see
-`bmesh status --json` and the map show `t3code/command-center-reorg` within a minute of the rename; a spec landed after a rename reads `branch: t3code/command-center-reorg`, and the lead's land step works first time.
+`bmesh mesh-status --json` and the map show `t3code/command-center-reorg` within a minute of the rename; a spec landed after a rename reads `branch: t3code/command-center-reorg`, and the lead's land step works first time.
 
 ## Verification
 The repo's verify. New tests: a poll after a rename in the worktree rewrites the node's branch and a detached worktree does not; the rendered build brief carries the sentence; the lead skill's §7 names `git branch --show-current`.
