@@ -228,7 +228,7 @@ Three files in the config dir (`<os.UserConfigDir()>/bmesh`: `~/.config/bmesh` o
 
 ### repos.toml
 
-One `[repos.<name>]` table per repo (a name matches `^[a-z0-9][a-z0-9_.-]*$`); every key with its default:
+One `[repos.<name>]` table per repo (a name matches `^[A-Za-z0-9][A-Za-z0-9_.-]*$`: a directory name, so a checkout keeps its name); every key with its default:
 
 ```toml
 [repos.party-buzzer]
