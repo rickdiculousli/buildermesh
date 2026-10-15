@@ -103,12 +103,19 @@ func SurfacesText(surfaces []string) string {
 	return strings.Join(surfaces, "; ")
 }
 
+// riskText and roteText size a change's review: a review is for risk the
+// verify commands can't catch, never for rote work.
+const (
+	riskText = "new logic, concurrency, quoting or escaping, a state or data migration, an interface others depend on"
+	roteText = "a rename, config values, wording, a mechanical edit across a few files that verify covers"
+)
+
 // Closing is the standard closing for a thread on this repo, a blockquote:
 // finish the work by the definition of done rather than leaving it on a
 // branch.
 func Closing(verify []string) string {
 	return "> When it works, finish it: run the repo's verify commands (" + VerifyText(verify) +
-		") until they pass; have a validation agent that didn't write the change review it, and fix what it finds; " +
+		") until they pass; when the change carries risk verify can't catch (" + riskText + "), have a model that didn't write it review it once and fix what it finds, while a rote change (" + roteText + ") lands on verify alone; " +
 		"rebase onto `main` and re-run verify; merge fast-forward to `main`; and push where the repo has a remote. " +
 		"It isn't done while it sits on a branch. End with one line: what's on `main` (the commit) and what, if anything, waits on the operator."
 }
@@ -117,7 +124,7 @@ func Closing(verify []string) string {
 // before a change is done.
 func DoneRule(r config.Repo) string {
 	s := "A change is done when all of these hold: the repo's verify commands pass (" + VerifyText(r.Verify) +
-		"); a validation agent that didn't write the change reviewed it against its spec and the findings were fixed; " +
+		"); a change carrying risk verify can't catch (" + riskText + ") was reviewed once against its spec by a model that didn't write it and the findings were fixed, while a rote change (" + roteText + ") is done on verify alone; " +
 		"the branch is rebased onto `main` with verify re-run; it is merged fast-forward to `main`"
 	if r.Remote != "" {
 		s += " and pushed to `" + r.Remote + "`"
