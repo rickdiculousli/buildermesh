@@ -253,6 +253,29 @@ func TestProposeBlocksTheRoundWhenAChildDoesNotStart(t *testing.T) {
 	}
 }
 
+func TestProposeStartsTheOtherChildWhenTheFirstFails(t *testing.T) {
+	c, repo, log := proposeSetup(t, "")
+	ctx := t.Context()
+	// The engineer's host is unreachable only when its child starts: ssh
+	// answers the reachability check and then prints no JSON.
+	writeRepos(t, "[repos.demo]\npath = \""+repo+"\"\nhost = \"other\"\nux_host = \""+testHost+"\"\n")
+	t.Setenv("FAKE_SSH_OUTPUT", "not json")
+	_, errs, code := runCLI(t, nil, "propose", "demo")
+	if code != 1 || !strings.Contains(errs, "round demo-round-1: the eng thread did not start") {
+		t.Fatalf("code %d err %q", code, errs)
+	}
+	if _, ok, _ := mesh.GetNode(ctx, c, "demo-round-1.ux"); !ok {
+		t.Fatal("the ux thread was not started after the eng failure")
+	}
+	if tl, _ := os.ReadFile(log); strings.Count(string(tl), "argv start") != 1 {
+		t.Fatalf("t3 log:\n%s", tl)
+	}
+	st, _, _ := mesh.ReadState(ctx, c, "demo-round-1")
+	if st.State != "blocked" || !strings.HasPrefix(st.Text, "eng blocked: did not start") {
+		t.Fatalf("%+v", st)
+	}
+}
+
 func TestProposeRefusesAnExistingWorktreePathUntouched(t *testing.T) {
 	proposeSetup(t, "")
 	cfgB, _ := os.ReadFile(os.Getenv("BMESH_CONFIG"))

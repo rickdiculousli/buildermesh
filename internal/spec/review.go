@@ -2,7 +2,6 @@ package spec
 
 import (
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -119,30 +118,26 @@ func ParseReply(reply string, ids map[int]bool, ranks []int) Review {
 }
 
 // clauses splits a reply at commas, semicolons and line breaks, and inside
-// one of those at a number that follows a spoken verdict and opens another
-// ("3 yes and 4 no" is two clauses, "4 no because 5 covers it" is one). A
-// filler left dangling before the cut ("and") is dropped.
+// one of those, once its phrase has begun, at a number that a spoken
+// verdict follows ("3 yes and 4 no" and "11 smaller and 12 no" are two
+// clauses each; "4 no because 5 covers it" is one). A filler left dangling
+// before the cut ("and") is dropped.
 func clauses(reply string) []string {
 	var out []string
 	for _, clause := range clauseSep.Split(strings.TrimSpace(reply), -1) {
 		tokens := strings.Fields(clause)
 		start := 0
-		spoken := false // the current clause's phrase opened with a spoken verdict
 		inPhrase := false
 		for i := 0; i < len(tokens); i++ {
 			if isNumber(tokens[i]) {
-				if inPhrase && spoken && opensClause(tokens, i) {
+				if inPhrase && opensClause(tokens, i) {
 					out = append(out, strings.Join(trimFillers(tokens[start:i]), " "))
-					start, spoken, inPhrase = i, false, false
+					start, inPhrase = i, false
 				}
 				continue
 			}
-			if fillers[word(tokens[i])] {
-				continue
-			}
-			if !inPhrase {
+			if !fillers[word(tokens[i])] {
 				inPhrase = true
-				spoken = spokenAt(tokens, i)
 			}
 		}
 		if rest := trimFillers(tokens[start:]); len(rest) > 0 {
@@ -224,16 +219,28 @@ func IsReviewable(status string) bool {
 	return false
 }
 
-// Ranks are the ids the operator sees as a ranked list: every reviewable
-// spec, lowest id first (a round numbers its specs in rank order).
-func Ranks(specs []*Spec) []int {
-	var out []int
+var pitchLine = regexp.MustCompile(`(?m)^\s*#?(\d{1,4})\b`)
+
+// PitchRanks reads the ranked list the operator saw, the pitch (the
+// engineer's lines, then the UI/UX engineer's, each `NNN title ...`), into
+// the ids it names in order, keeping only ids among specs that a review
+// may move; a repeat is kept once. Nothing but that list is a rank.
+func PitchRanks(pitch string, specs []*Spec) []int {
+	reviewable := map[int]bool{}
 	for _, s := range specs {
 		if IsReviewable(s.Status()) {
-			out = append(out, s.ID)
+			reviewable[s.ID] = true
 		}
 	}
-	sort.Ints(out)
+	var out []int
+	seen := map[int]bool{}
+	for _, m := range pitchLine.FindAllStringSubmatch(pitch, -1) {
+		n, _ := strconv.Atoi(m[1])
+		if reviewable[n] && !seen[n] {
+			seen[n] = true
+			out = append(out, n)
+		}
+	}
 	return out
 }
 

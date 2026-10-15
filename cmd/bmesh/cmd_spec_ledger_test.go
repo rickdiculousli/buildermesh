@@ -1,19 +1,22 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
 
 // ledgerRepoSetup is setup with a repo (bare origin, main pushed) holding
 // specs 012 and 013 proposed and 014 building, registered as demo, bmesh
 // worktrees under the temp dir; it returns the repo path.
-func ledgerRepoSetup(t *testing.T) string {
+func ledgerRepoSetup(t *testing.T) (*mesh.Client, context.Context, string) {
 	t.Helper()
-	setup(t)
+	c, ctx := setup(t)
 	repo, _, _ := landedRepo(t)
 	dir := filepath.Join(repo, "docs", "proposals")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -45,11 +48,26 @@ func ledgerRepoSetup(t *testing.T) string {
 	}
 	f.Close()
 	writeRepos(t, "[repos.demo]\npath = \""+repo+"\"\n")
-	return repo
+	return c, ctx, repo
+}
+
+// pitchRound registers a round for demo whose engineer pitched 013 then
+// 012 and is done, so rank 1 is 013 and rank 2 is 012.
+func pitchRound(t *testing.T, c *mesh.Client, ctx context.Context) {
+	t.Helper()
+	putNode(t, c, ctx, mesh.Node{Path: "demo-round-1", Role: "round", Repo: "demo"})
+	putNode(t, c, ctx, mesh.Node{Path: "demo-round-1.eng", Role: "engineer", Parent: "demo-round-1", Repo: "demo"})
+	if _, err := mesh.WriteState(ctx, c, "demo-round-1.eng", mesh.State{State: "working", By: "node"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mesh.WriteState(ctx, c, "demo-round-1.eng", mesh.State{State: "done", By: "node",
+		Text: "013 Thing 013 (feature, S, sonnet): second\n012 Thing 012 (feature, S, sonnet): first\n014 Thing 014: building"}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestSpecListNextIDSetTemplate(t *testing.T) {
-	repo := ledgerRepoSetup(t)
+	_, _, repo := ledgerRepoSetup(t)
 	out, errs, code := runCLI(t, nil, "spec", "list", "--repo", "demo")
 	if code != 0 || out != "012  proposed   S   feature      eng  Thing 012\n013  proposed   S   feature      eng  Thing 013\n014  building   S   feature      eng  Thing 014\n" {
 		t.Fatalf("list: %d %q %q", code, out, errs)
@@ -109,7 +127,8 @@ func TestSpecListNextIDSetTemplate(t *testing.T) {
 }
 
 func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
-	repo := ledgerRepoSetup(t)
+	c, ctx, repo := ledgerRepoSetup(t)
+	pitchRound(t, c, ctx)
 	// The main checkout is on another branch, so the landing fast-forwards
 	// main through `fetch . <branch>:main`.
 	runGit(t, repo, "checkout", "-q", "-b", "side")
@@ -125,33 +144,33 @@ func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
 		"unmatched: no spec 99 (99 yes)",
 		"unmatched: hmm",
 	}
-	// "2 later": rank 2 of the reviewable list (012, 013) is 013, so 013
-	// moved to adjusting then later; the last move wins.
-	want[1] = "013 Thing 013: proposed -> later"
+	// "2 later": rank 2 of the latest round's pitch (013 then 012) is 012,
+	// which also said yes; the last move wins and the judge stays.
+	want[0] = "012 Thing 012: proposed -> later on opus"
 	for i, w := range want {
 		if i >= len(lines) || lines[i] != w {
 			t.Fatalf("line %d: %q, want %q\n%s", i, lines[min(i, len(lines)-1)], w, out)
 		}
 	}
-	if !strings.HasPrefix(lines[len(lines)-1], "landed ") || !strings.HasSuffix(lines[len(lines)-1], ": Review: 012 accepted, 013 later") {
+	if !strings.HasPrefix(lines[len(lines)-1], "landed ") || !strings.HasSuffix(lines[len(lines)-1], ": Review: 012 later, 013 adjusting") {
 		t.Fatalf("last line %q", lines[len(lines)-1])
 	}
 	// main moved and was pushed; the side checkout was not touched.
 	if gitOut(t, "-C", repo, "rev-parse", "main") != gitOut(t, "-C", repo, "rev-parse", "origin/main") {
 		t.Fatal("main not pushed")
 	}
-	if msg := gitOut(t, "-C", repo, "log", "-1", "--format=%s", "main"); msg != "Review: 012 accepted, 013 later" {
+	if msg := gitOut(t, "-C", repo, "log", "-1", "--format=%s", "main"); msg != "Review: 012 later, 013 adjusting" {
 		t.Fatalf("main's commit: %q", msg)
 	}
 	if b := gitOut(t, "-C", repo, "rev-parse", "--abbrev-ref", "HEAD"); b != "side" {
 		t.Fatalf("checkout moved to %s", b)
 	}
 	spec12 := gitOut(t, "-C", repo, "show", "main:docs/proposals/012-thing.md")
-	if !strings.Contains(spec12, "status: accepted\n") || !strings.Contains(spec12, "judge: opus\n") {
+	if !strings.Contains(spec12, "status: later\n") || !strings.Contains(spec12, "judge: opus\n") || strings.Contains(spec12, "Adjust (") {
 		t.Fatalf("012:\n%s", spec12)
 	}
 	spec13 := gitOut(t, "-C", repo, "show", "main:docs/proposals/013-thing.md")
-	if !strings.Contains(spec13, "status: later\n") || strings.Contains(spec13, "Adjust (") {
+	if !strings.Contains(spec13, "status: adjusting\n") || !strings.Contains(spec13, "## Proposal\nAdjust (20") || !strings.Contains(spec13, "): smaller\nThe change.") {
 		t.Fatalf("013:\n%s", spec13)
 	}
 	if wts := gitOut(t, "-C", repo, "worktree", "list"); strings.Contains(wts, "review-") {
@@ -160,21 +179,23 @@ func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
 	if br := gitOut(t, "-C", repo, "branch", "--list", "demo-review-*"); br != "" {
 		t.Fatalf("branch left: %s", br)
 	}
-	// A second review: an adjust note lands in the body, a rejection its reason.
-	out, errs, code = runCLI(t, nil, "spec", "review", repo, "13 only the CLI part; 12 no, too broad")
+	// A second review: a rejection carries its reason; a second instruction
+	// adds a second note; a rank beyond the pitch is reported.
+	out, errs, code = runCLI(t, nil, "spec", "review", repo, "13 only the CLI part; 12 no too broad, 3 yes")
 	if code != 0 {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
 	}
-	if !strings.Contains(out, "013 Thing 013: later -> adjusting (only the CLI part)\n") {
+	if !strings.Contains(out, "013 Thing 013: adjusting -> adjusting (only the CLI part)\n") || !strings.Contains(out, "012 Thing 012: later -> rejected (too broad)\n") ||
+		!strings.Contains(out, "unmatched: no spec 3 (3 yes)\n") {
 		t.Fatalf("%q", out)
 	}
 	spec13 = gitOut(t, "-C", repo, "show", "main:docs/proposals/013-thing.md")
-	if !strings.Contains(spec13, "status: adjusting\n") || !strings.Contains(spec13, "## Proposal\nAdjust (20") || !strings.Contains(spec13, "): only the CLI part\nThe change.") {
+	if strings.Count(spec13, "Adjust (") != 2 || !strings.Contains(spec13, "): only the CLI part\nAdjust (") {
 		t.Fatalf("013:\n%s", spec13)
 	}
-	// "12 no, too broad" splits at the comma: 012 is accepted now, not reviewable.
-	if !strings.Contains(out, "012 Thing 012: accepted, left unchanged") || !strings.Contains(out, "unmatched: too broad") {
-		t.Fatalf("%q", out)
+	if spec12 := gitOut(t, "-C", repo, "show", "main:docs/proposals/012-thing.md"); !strings.Contains(spec12, "status: rejected\nreason: too broad\n") &&
+		!strings.Contains(spec12, "reason: too broad\n") {
+		t.Fatalf("012:\n%s", spec12)
 	}
 	// A judge note alone on an adjusting spec sets the judge and adds no note.
 	out, _, code = runCLI(t, nil, "spec", "review", "demo", "13 on fable")
@@ -182,7 +203,7 @@ func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
 		t.Fatalf("%d %q", code, out)
 	}
 	spec13 = gitOut(t, "-C", repo, "show", "main:docs/proposals/013-thing.md")
-	if !strings.Contains(spec13, "judge: fable\n") || strings.Count(spec13, "Adjust (") != 1 {
+	if !strings.Contains(spec13, "judge: fable\n") || strings.Count(spec13, "Adjust (") != 2 {
 		t.Fatalf("013:\n%s", spec13)
 	}
 	// Nothing matched: nothing to land, no commit.
@@ -197,7 +218,7 @@ func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
 }
 
 func TestSpecReviewOnMainCheckoutMergesFastForward(t *testing.T) {
-	repo := ledgerRepoSetup(t)
+	_, _, repo := ledgerRepoSetup(t)
 	out, errs, code := runCLI(t, nil, "spec", "review", "demo", "012 reject: dup")
 	if code != 0 || !strings.Contains(out, "012 Thing 012: proposed -> rejected (dup)\n") {
 		t.Fatalf("code %d out %q err %q", code, out, errs)

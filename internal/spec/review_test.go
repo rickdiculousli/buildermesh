@@ -101,7 +101,7 @@ func TestParseReplyFirstWordDecides(t *testing.T) {
 	if !reflect.DeepEqual(r.Verdicts, want) || len(r.Unmatched) != 0 {
 		t.Fatalf("%+v", r)
 	}
-	if c := clauses("3 yes and 4 no, 4 no because 5 covers it and 6 later"); !reflect.DeepEqual(c, []string{"3 yes", "4 no", "4 no because 5 covers it", "6 later"}) {
+	if c := clauses("3 yes and 4 no, 4 no because 5 covers it and 6 later, 11 smaller and 12 no"); !reflect.DeepEqual(c, []string{"3 yes", "4 no", "4 no because 5 covers it", "6 later", "11 smaller", "12 no"}) {
 		t.Fatalf("%q", c)
 	}
 }
@@ -111,8 +111,13 @@ func TestRanksAndAdjustNote(t *testing.T) {
 		{ID: 3, Fields: map[string]string{"status": "done"}},
 		{ID: 5, Fields: map[string]string{"status": "proposed"}},
 		{ID: 4, Fields: map[string]string{"status": "later"}},
+		{ID: 8, Fields: map[string]string{"status": "proposed"}},
 	}
-	if got := Ranks(specs); !reflect.DeepEqual(got, []int{4, 5}) {
+	pitch := "005 A (feature, S, opus): why\n003 B: done already\n  008 C (ux, M, fable): look\n005 A again\nno number here"
+	if got := PitchRanks(pitch, specs); !reflect.DeepEqual(got, []int{5, 8}) {
+		t.Fatal(got)
+	}
+	if got := PitchRanks("", specs); len(got) != 0 {
 		t.Fatal(got)
 	}
 	body := "## Opportunity\nslow\n\n## Proposal\nThe change.\n"
