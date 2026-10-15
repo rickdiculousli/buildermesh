@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -80,7 +81,7 @@ func TestLoadFixture(t *testing.T) {
 		"map_url":     {c.Notify.MapURL, "http://map.example/"},
 		"glob":        {c.Spec.Glob, "specs/{id}.md"},
 		"lead":        {c.Models.Lead, "lead-model"},
-		"repos.demo":  {c.Repos["demo"], "demo"},
+		"repos.demo":  {c.Repos["demo"].Path, "demo"},
 		"hostname":    {c.HostName(), "box-one"},
 		"quota":       {c.Quota.Command, "cat quota.json"},
 		"thread_url":  {c.Console.ThreadURL, "http://box-one:3773/t/{thread}"},
@@ -146,5 +147,91 @@ func TestExpandAndToken(t *testing.T) {
 	c.Mesh.TokenFile = p
 	if tok, err := c.Token(); tok != "secret" || err != nil {
 		t.Fatalf("%q %v", tok, err)
+	}
+}
+
+func TestLoadReposFixture(t *testing.T) {
+	c, err := Load("../../testdata/config.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := c.Repos["demo"]
+	if d.Name != "demo" || d.Path != "demo" || d.Mode != "ship" || d.Remote != "example/demo" || d.Host != "box-one" ||
+		d.UXHost != "other" || fmt.Sprint(d.Verify) != "[npm test npm run lint]" || fmt.Sprint(d.Surfaces) != "[desk / at 1280x800]" ||
+		d.Pin != "v1.2" || fmt.Sprint(d.Routines) != "[verify]" {
+		t.Fatalf("demo row: %+v", d)
+	}
+	// A row with only a path gets the defaults: mode ship, routines verify and review, empty lists.
+	b := c.Repos["bare"]
+	if b.Name != "bare" || b.Mode != "ship" || fmt.Sprint(b.Routines) != "[verify review]" || b.Verify == nil || len(b.Verify) != 0 ||
+		b.Surfaces == nil || len(b.Surfaces) != 0 || b.Host != "" {
+		t.Fatalf("bare row: %+v", b)
+	}
+	if fmt.Sprint(c.RepoNames()) != "[bare demo]" {
+		t.Fatalf("names %v", c.RepoNames())
+	}
+	// A config without a repos.toml beside it has an empty registry.
+	c, err = Load(filepath.Join(t.TempDir(), "config.toml"))
+	if err != nil || len(c.Repos) != 0 {
+		t.Fatalf("%v %v", err, c.Repos)
+	}
+}
+
+func TestLoadReposRefusals(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.toml")
+	repos := filepath.Join(dir, "repos.toml")
+	// [repos] in config.toml is refused, naming repos.toml.
+	os.WriteFile(cfg, []byte("[repos]\ndemo = \"demo\"\n"), 0o644)
+	_, err := Load(cfg)
+	if err == nil || !strings.Contains(err.Error(), "[repos] has moved to "+repos) {
+		t.Fatalf("config [repos]: %v", err)
+	}
+	os.Remove(cfg)
+	for body, want := range map[string]string{
+		"[repos.x]\nmode = \"ship\"\n":                  "[repos.x]: path is required",
+		"[repos.x]\npath = \"p\"\nmode = \"shipped\"\n": `[repos.x]: mode "shipped" is not one of ship, companion, publish, fork, dormant`,
+		"[repos.x]\npath = \"p\"\nhots = \"k\"\n":       "unknown key repos.x.hots",
+		"[repos.Bad]\npath = \"p\"\n":                   "[repos.Bad]: a name matches",
+	} {
+		os.WriteFile(repos, []byte(body), 0o644)
+		_, err := Load(cfg)
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: %v, want %s", body, err, want)
+		}
+	}
+}
+
+func TestWriteRepoRoundTrips(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "repos.toml")
+	r := Repo{Name: "app", Path: "~/repos/app", Mode: "fork", Remote: "o/app", Host: "k16", UXHost: "mac",
+		Verify: []string{`test -z "$(gofmt -l .)"`, "go test ./..."}, Surfaces: []string{"desk at 1280x800"}, Pin: "v1",
+		Routines: []string{"verify"}}
+	if err := WriteRepo(p, r); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteRepo(p, Repo{Name: "bare", Path: "/b"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadRepos(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprintf("%+v", got["app"]) != fmt.Sprintf("%+v", r) {
+		t.Fatalf("got %+v\nwant %+v", got["app"], r)
+	}
+	if b := got["bare"]; b.Path != "/b" || b.Mode != "ship" || fmt.Sprint(b.Routines) != "[verify review]" {
+		t.Fatalf("bare %+v", b)
+	}
+	// Replacing a row keeps the others.
+	if err := WriteRepo(p, Repo{Name: "app", Path: "/moved"}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = LoadRepos(p)
+	if got["app"].Path != "/moved" || got["app"].Mode != "ship" || got["bare"].Path != "/b" {
+		t.Fatalf("after replace %+v", got)
+	}
+	if _, err := os.Stat(SetupFlag(p)); !os.IsNotExist(err) || SetupFlag(p) != filepath.Join(filepath.Dir(p), ".setup-complete") {
+		t.Fatalf("flag %s %v", SetupFlag(p), err)
 	}
 }

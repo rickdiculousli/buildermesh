@@ -64,8 +64,10 @@ worktrees = "$RUN/worktrees"
 checkouts = ""
 [notify]
 ntfy = ""
-[repos]
-scratch = "$REPO"
+TOML
+cat > "$RUN/repos.toml" <<TOML
+[repos.scratch]
+path = "$REPO"
 TOML
 sed -e "s|^nats = \"\"|nats = \"nats://127.0.0.1:$PORT\"|" "$RUN/serve.toml" > "$RUN/cli.toml"
 

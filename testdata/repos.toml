@@ -1,0 +1,13 @@
+[repos.demo]
+path = "demo"
+mode = "ship"
+remote = "example/demo"
+host = "box-one"
+ux_host = "other"
+verify = ["npm test", "npm run lint"]
+surfaces = ["desk / at 1280x800"]
+pin = "v1.2"
+routines = ["verify"]
+
+[repos.bare]
+path = "~/bare"

@@ -12,7 +12,7 @@ import (
 )
 
 // leadSetup is setup plus a t3 runner backed by testdata/fake-t3.sh and a
-// [repos] demo entry; it returns the fake's log.
+// repos.toml demo entry; it returns the fake's log.
 func leadSetup(t *testing.T) (*mesh.Client, string) {
 	t.Helper()
 	c, _ := setup(t)
@@ -29,11 +29,12 @@ func leadSetup(t *testing.T) (*mesh.Client, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	extra := "[runner]\nkind = \"t3\"\n[repos]\ndemo = \"" + repo + "\"\n[models]\nlead = \"lead-model\"\n"
+	extra := "[runner]\nkind = \"t3\"\n[models]\nlead = \"lead-model\"\n"
 	if _, err := f.WriteString(extra); err != nil {
 		t.Fatal(err)
 	}
 	f.Close()
+	writeRepos(t, "[repos.demo]\npath = \""+repo+"\"\n")
 	return c, log
 }
 

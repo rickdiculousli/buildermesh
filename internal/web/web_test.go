@@ -329,7 +329,7 @@ func TestLeadPageReadsSpecFromOrigin(t *testing.T) {
 
 	later := filepath.Join(root, "later") // configured, but not cloned yet
 	cfg := &config.Config{
-		Repos:   map[string]string{"demo": clone, "later": later},
+		Repos:   map[string]config.Repo{"demo": {Path: clone}, "later": {Path: later}},
 		Spec:    config.SpecConfig{Glob: "docs/proposals/{id}-*.md"},
 		Console: config.ConsoleConfig{ThreadURL: "http://here/t/{thread}", Hosts: map[string]string{"other": "http://other/t/{thread}"}},
 	}
@@ -473,7 +473,7 @@ func TestRoutinesEndpointListsLeases(t *testing.T) {
 		".bmesh/routines/review.toml": "model = \"m\"\nprompt = \"P\"\n",
 		".bmesh/routines/fmt.toml":    "mode = \"inline\"\ndeterministic = true\ncommand = \"gofmt -l .\"\n",
 	})
-	cfg := &config.Config{Repos: map[string]string{"app": repo, "gone": filepath.Join(repo, "missing")}}
+	cfg := &config.Config{Repos: map[string]config.Repo{"app": {Path: repo}, "gone": {Path: filepath.Join(repo, "missing")}}}
 	for _, n := range []mesh.Node{
 		{Path: "a", Role: "lead"},
 		{Path: "routine.verify.cmd-1", Role: "routine", Repo: "app"},

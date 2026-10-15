@@ -192,14 +192,7 @@ func TestQueueFromLinkedWorktreeNamesConfiguredRepo(t *testing.T) {
 	if got := queuedRepo(t, c, ctx); got != filepath.Base(repo) {
 		t.Fatalf("no [repos]: repo %q, want %q", got, filepath.Base(repo))
 	}
-	f, err := os.OpenFile(os.Getenv("BMESH_CONFIG"), os.O_APPEND|os.O_WRONLY, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.WriteString("[repos]\nother = \"" + t.TempDir() + "\"\ndemo = \"" + repo + "\"\n"); err != nil {
-		t.Fatal(err)
-	}
-	f.Close()
+	writeRepos(t, "[repos.other]\npath = \""+t.TempDir()+"\"\n[repos.demo]\npath = \""+repo+"\"\n")
 	if got := queuedRepo(t, c, ctx); got != "demo" {
 		t.Fatalf("[repos]: repo %q, want demo", got)
 	}

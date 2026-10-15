@@ -16,6 +16,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/nats-io/nuid"
+	"github.com/rickdiculousli/buildermesh/internal/config"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
@@ -80,7 +81,7 @@ func routineSetup(t *testing.T, files map[string]string) *rfix {
 	}
 	tgit(t, repo, "init", "-q", "-b", "main")
 	commitFiles(t, repo, files)
-	f.d.Cfg.Repos = map[string]string{"app": repo}
+	f.d.Cfg.Repos = map[string]config.Repo{"app": {Path: repo}}
 	f.d.Checkouts = filepath.Join(t.TempDir(), "checkouts")
 	fake, err := filepath.Abs(filepath.Join("..", "..", "testdata", "fake-claude.sh"))
 	if err != nil {

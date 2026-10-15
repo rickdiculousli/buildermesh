@@ -27,8 +27,6 @@ catch_up = "2h"
 grace = "5m"
 poll_every = "15s"
 wake_every = "2m"
-[repos]
-demo = "demo"
 [spec]
 glob = "specs/{id}.md"
 [models]

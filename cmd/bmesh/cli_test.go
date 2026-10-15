@@ -55,6 +55,14 @@ func runCLI(t *testing.T, env map[string]string, args ...string) (stdout, stderr
 	return out.String(), errb.String(), code
 }
 
+// writeRepos writes body as the repos.toml beside the test's config.
+func writeRepos(t *testing.T, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(filepath.Dir(os.Getenv("BMESH_CONFIG")), "repos.toml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func as(p string) map[string]string { return map[string]string{"BMESH_NODE": p} }
 
 func putNode(t *testing.T, c *mesh.Client, ctx context.Context, n mesh.Node) {

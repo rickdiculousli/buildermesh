@@ -68,8 +68,9 @@ type ConsoleConfig struct {
 	Hosts     map[string]string
 }
 
-// Config is the parsed config.toml. Path-valued fields are stored as written;
-// callers pass them through Expand.
+// Config is the parsed config.toml plus the registry read from repos.toml
+// beside it. Path-valued fields are stored as written; callers pass them
+// through Expand.
 type Config struct {
 	Mesh     MeshConfig
 	Host     HostConfig
@@ -77,13 +78,14 @@ type Config struct {
 	Runner   RunnerConfig
 	Notify   NotifyConfig
 	Liveness LivenessConfig
-	Repos    map[string]string
+	Repos    map[string]Repo // from repos.toml, by name
 	Spec     SpecConfig
 	Models   ModelsConfig
 	Quota    QuotaConfig
 	Console  ConsoleConfig
 
-	dir string // directory of the config file; "" when none was read
+	dir  string // directory of the config file; "" when none was read
+	path string // the config file's path as given to Load
 }
 
 // duration decodes strings like "20m" from TOML.
@@ -117,7 +119,7 @@ type file struct {
 		PollEvery duration `toml:"poll_every"`
 		WakeEvery duration `toml:"wake_every"`
 	}
-	Repos   map[string]string
+	Repos   map[string]any // refused: the registry lives in repos.toml
 	Spec    SpecConfig
 	Models  ModelsConfig
 	Quota   QuotaConfig
@@ -126,32 +128,71 @@ type file struct {
 
 func defaults() *Config {
 	return &Config{
-		Mesh:  MeshConfig{Domain: "hub", Store: "~/.local/state/bmesh/jetstream", Listen: "127.0.0.1:4222"},
+		Mesh:  MeshConfig{Domain: "hub", Store: DefaultStore(), Listen: "127.0.0.1:4222"},
 		Serve: ServeConfig{Listen: "127.0.0.1:3774"},
 		Runner: RunnerConfig{Kind: "t3", T3Dispatch: "t3_dispatch.py", TmuxSession: "bmesh",
 			Worktrees: "~/.bmesh/worktrees", Checkouts: "~/.bmesh/checkouts", Claude: "claude"},
 		Notify:   NotifyConfig{DigestEvery: time.Hour, Push: []string{"ask", "blocked", "done"}, CatchUp: time.Hour},
 		Liveness: LivenessConfig{Grace: 20 * time.Minute, PollEvery: 60 * time.Second, WakeEvery: 10 * time.Minute},
-		Repos:    map[string]string{},
+		Repos:    map[string]Repo{},
 		Spec:     SpecConfig{Glob: "docs/proposals/{id}-*.md"},
 		Models:   ModelsConfig{Lead: "claude-fable-5-1"},
 		Console:  ConsoleConfig{Hosts: map[string]string{}},
 	}
 }
 
-// Path is $BMESH_CONFIG, else ~/.config/bmesh/config.toml.
+// Dir is the config directory: the user's config dir (os.UserConfigDir:
+// ~/.config on Linux, ~/Library/Application Support on macOS, %AppData% on
+// Windows) plus bmesh. The home directory stands in when the OS names none.
+func Dir() string {
+	d, err := os.UserConfigDir()
+	if err != nil {
+		d, _ = os.UserHomeDir()
+		d = filepath.Join(d, ".config")
+	}
+	return filepath.Join(d, "bmesh")
+}
+
+// DefaultStore is the embedded server's store, under the user's cache dir
+// (os.UserCacheDir: ~/.cache on Linux, ~/Library/Caches on macOS,
+// %LocalAppData% on Windows).
+func DefaultStore() string {
+	d, err := os.UserCacheDir()
+	if err != nil {
+		d, _ = os.UserHomeDir()
+		d = filepath.Join(d, ".cache")
+	}
+	return filepath.Join(d, "bmesh", "jetstream")
+}
+
+// Path is $BMESH_CONFIG, else <Dir>/config.toml.
 func Path() string {
 	if p := os.Getenv("BMESH_CONFIG"); p != "" {
 		return p
 	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "bmesh", "config.toml")
+	return filepath.Join(Dir(), "config.toml")
 }
 
-// Load reads path over the defaults. A missing file yields the defaults;
-// unknown keys are ignored.
+// SetupFlag is the file bmesh init writes last, beside the config file: its
+// presence means the box has been set up.
+func SetupFlag(configPath string) string {
+	return filepath.Join(filepath.Dir(configPath), ".setup-complete")
+}
+
+// Load reads path over the defaults and the registry from repos.toml beside
+// it. A missing file yields the defaults; unknown keys are ignored, except
+// [repos], which is refused: it moved to repos.toml.
 func Load(path string) (*Config, error) {
 	c := defaults()
+	c.path = path
+	if abs, err := filepath.Abs(path); err == nil {
+		c.dir = filepath.Dir(abs)
+	}
+	repos, err := LoadRepos(ReposPath(path))
+	if err != nil {
+		return nil, err
+	}
+	c.Repos = repos
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return c, nil
 	}
@@ -186,13 +227,14 @@ func Load(path string) (*Config, error) {
 	c.Liveness = LivenessConfig{Grace: time.Duration(f.Liveness.Grace), PollEvery: time.Duration(f.Liveness.PollEvery),
 		WakeEvery: time.Duration(f.Liveness.WakeEvery)}
 	if f.Repos != nil {
-		c.Repos = f.Repos
-	}
-	if abs, err := filepath.Abs(path); err == nil {
-		c.dir = filepath.Dir(abs)
+		return nil, fmt.Errorf("config %s: [repos] has moved to %s: one [repos.<name>] table per repo with path, mode, remote, host, ux_host, verify, surfaces, pin and routines (see README, Config)",
+			path, ReposPath(path))
 	}
 	return c, nil
 }
+
+// Path is the config file's path as loaded.
+func (c *Config) Path() string { return c.path }
 
 // HostName is [host] name, else the short host name, lowercased.
 func (c *Config) HostName() string {
@@ -231,8 +273,8 @@ func (c *Config) Expand(p string) string {
 // (the current directory when no file was read); a relative nameOrPath
 // resolves against the current directory.
 func (c *Config) RepoPath(nameOrPath string) (name, path string, err error) {
-	if p, ok := c.Repos[nameOrPath]; ok {
-		p = c.Expand(p)
+	if r, ok := c.Repos[nameOrPath]; ok {
+		p := c.Expand(r.Path)
 		if !filepath.IsAbs(p) && c.dir != "" {
 			p = filepath.Join(c.dir, p)
 		}

@@ -62,12 +62,14 @@ listen = "$http"
 checkouts = ""
 [notify]
 ntfy = ""
-[repos]
-app = "$dir/app"
 [quota]
 command = "cat '$dir/quota.json'"
 [console]
 thread_url = "http://127.0.0.1:3773/env/{thread}"
+TOML
+cat > "$dir/repos.toml" <<TOML
+[repos.app]
+path = "$dir/app"
 TOML
 
 (cd "$root" && go build -o "$dir/bmesh" ./cmd/bmesh)
