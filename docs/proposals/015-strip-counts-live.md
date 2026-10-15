@@ -4,13 +4,15 @@ title: The strip counts the mesh live instead of quoting the last digest
 kind: refinement
 size: XS
 judge: sonnet
-status: building
+status: done
 lens: ux
 proposed_by: f3d2851e-4460-4cd8-87b7-359407c1c774
 proposed_on: 2026-10-15
 built_by: c03070cc-62ba-46cd-a569-77bae36d4319
 host: k16
-branch: t3code/d3dc1fad
+branch: t3code/live-strip-counts
+verified: verify ok t:0c0662f5
+merged: 1505b616f15478461033122eb7a78bf1cf0a29f5
 ---
 
 ## Opportunity
