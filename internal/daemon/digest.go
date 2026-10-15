@@ -169,7 +169,7 @@ func digestOnce(ctx context.Context, d Deps, since *time.Time) {
 	if !changed {
 		return
 	}
-	if err := deliver(ctx, d, title, body); err != nil {
+	if err := deliver(ctx, d, Headers{Title: title}, body); err != nil {
 		d.Log.Warn("digest: deliver", "err", err)
 		return
 	}
@@ -180,16 +180,19 @@ func digestOnce(ctx context.Context, d Deps, since *time.Time) {
 	*since = now
 }
 
-// deliver pipes body to Notify.Command (title in $BMESH_TITLE) when set, else
-// POSTs it to Notify.Ntfy with a Title header.
-func deliver(ctx context.Context, d Deps, title, body string) error {
+// deliver pipes body to Notify.Command when set, the headers in its
+// environment ($BMESH_TITLE and $NTFY_TITLE, $NTFY_PRIORITY, $NTFY_TAGS,
+// $NTFY_CLICK, $NTFY_ACTIONS, empty when unset), else POSTs it to
+// Notify.Ntfy with the non-empty headers.
+func deliver(ctx context.Context, d Deps, h Headers, body string) error {
 	ctx, cancel := context.WithTimeout(ctx, deliverTimeout)
 	defer cancel()
 	if cmd := d.Cfg.Notify.Command; cmd != "" {
 		c := exec.CommandContext(ctx, "sh", "-c", cmd)
 		c.Stdin = strings.NewReader(body)
 		c.WaitDelay = 2 * time.Second // a child holding the pipes can't block Wait past the timeout
-		c.Env = append(os.Environ(), "BMESH_TITLE="+title)
+		c.Env = append(os.Environ(), "BMESH_TITLE="+h.Title, "NTFY_TITLE="+h.Title, "NTFY_PRIORITY="+h.Priority,
+			"NTFY_TAGS="+h.Tags, "NTFY_CLICK="+h.Click, "NTFY_ACTIONS="+h.Actions)
 		if out, err := c.CombinedOutput(); err != nil {
 			return fmt.Errorf("notify command: %w: %s", err, strings.TrimSpace(string(out)))
 		}
@@ -199,7 +202,12 @@ func deliver(ctx context.Context, d Deps, title, body string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Title", title)
+	for k, v := range map[string]string{"Title": h.Title, "Priority": h.Priority, "Tags": h.Tags,
+		"Click": h.Click, "Actions": h.Actions} {
+		if v != "" {
+			req.Header.Set(k, v)
+		}
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err

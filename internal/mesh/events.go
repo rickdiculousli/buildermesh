@@ -23,6 +23,7 @@ type Event struct {
 	Commit string `json:"commit"`
 	To     string `json:"to,omitempty"`
 	Body   string `json:"body,omitempty"` // a digest's body
+	Seq    uint64 `json:"seq,omitempty"`  // a push claim's event: its stream sequence
 }
 
 // Stored is a stream message as read back.
@@ -38,20 +39,35 @@ var tokenRE = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 // PublishEvent publishes ev on its event subject (daemon.<host> senders use
 // the daemon subject), filling at when empty.
 func PublishEvent(ctx context.Context, c *Client, ev Event) error {
+	_, err := publishEvent(ctx, c, ev, "")
+	return err
+}
+
+// PublishEventID is PublishEvent with a Nats-Msg-Id: dup reports that the
+// stream already holds msgID inside its duplicate window, so nothing was
+// stored.
+func PublishEventID(ctx context.Context, c *Client, ev Event, msgID string) (dup bool, err error) {
+	if msgID == "" {
+		return false, errors.New("PublishEventID: empty msg id")
+	}
+	return publishEvent(ctx, c, ev, msgID)
+}
+
+func publishEvent(ctx context.Context, c *Client, ev Event, msgID string) (bool, error) {
 	if !tokenRE.MatchString(ev.Event) {
-		return fmt.Errorf("invalid event %q: want a single token of letters, digits, - or _", ev.Event)
+		return false, fmt.Errorf("invalid event %q: want a single token of letters, digits, - or _", ev.Event)
 	}
 	var subject string
 	if strings.HasPrefix(ev.From, "daemon.") {
 		host := strings.Split(ev.From, ".")[1]
 		if host == "" {
-			return fmt.Errorf("invalid daemon sender %q", ev.From)
+			return false, fmt.Errorf("invalid daemon sender %q", ev.From)
 		}
 		subject = DaemonSubject(host, ev.Event)
 	} else {
 		p, err := ParsePath(ev.From)
 		if err != nil {
-			return err
+			return false, err
 		}
 		subject = EventSubject(p, ev.Event)
 	}
@@ -60,12 +76,17 @@ func PublishEvent(ctx context.Context, c *Client, ev Event) error {
 	}
 	data, err := json.Marshal(ev)
 	if err != nil {
-		return err
+		return false, err
 	}
-	if _, err := c.JS.Publish(ctx, subject, data, jetstream.WithExpectStream(StreamMesh)); err != nil {
-		return fmt.Errorf("publish %s: %w", subject, err)
+	opts := []jetstream.PublishOpt{jetstream.WithExpectStream(StreamMesh)}
+	if msgID != "" {
+		opts = append(opts, jetstream.WithMsgID(msgID))
 	}
-	return nil
+	ack, err := c.JS.Publish(ctx, subject, data, opts...)
+	if err != nil {
+		return false, fmt.Errorf("publish %s: %w", subject, err)
+	}
+	return ack.Duplicate, nil
 }
 
 // History replays the stream messages matching filter (from since, when set)

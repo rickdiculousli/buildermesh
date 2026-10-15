@@ -27,6 +27,25 @@ func TestLoadMissingFileIsDefaults(t *testing.T) {
 	if c.Quota.Command != "" || c.Console.ThreadURL != "" || c.Console.Hosts == nil || len(c.Console.Hosts) != 0 {
 		t.Fatalf("defaults wrong: %+v %+v", c.Quota, c.Console)
 	}
+	if fmt.Sprint(c.Notify.Push) != "[ask blocked done]" || c.Notify.MapURL != "" || c.Notify.CatchUp != time.Hour {
+		t.Fatalf("notify defaults wrong: %+v", c.Notify)
+	}
+}
+
+func TestLoadPushList(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	// [notify] without push keeps the default list.
+	os.WriteFile(p, []byte("[notify]\nntfy = \"http://n/x\"\n"), 0o644)
+	c, err := Load(p)
+	if err != nil || fmt.Sprint(c.Notify.Push) != "[ask blocked done]" || c.Notify.CatchUp != time.Hour {
+		t.Fatalf("%v %+v", err, c.Notify)
+	}
+	// An empty list turns pushes off rather than meaning the default.
+	os.WriteFile(p, []byte("[notify]\npush = []\n"), 0o644)
+	c, err = Load(p)
+	if err != nil || c.Notify.Push == nil || len(c.Notify.Push) != 0 {
+		t.Fatalf("push = []: %v %#v", err, c.Notify.Push)
+	}
 }
 
 func TestLoadFixture(t *testing.T) {
@@ -51,6 +70,8 @@ func TestLoadFixture(t *testing.T) {
 		"max_leads":   {fmt.Sprint(c.Runner.MaxLeads), "4"},
 		"ntfy":        {c.Notify.Ntfy, "http://ntfy.example/bm"},
 		"command":     {c.Notify.Command, "cat"},
+		"push":        {fmt.Sprint(c.Notify.Push), "[ask done]"},
+		"map_url":     {c.Notify.MapURL, "http://map.example/"},
 		"glob":        {c.Spec.Glob, "specs/{id}.md"},
 		"lead":        {c.Models.Lead, "lead-model"},
 		"repos.demo":  {c.Repos["demo"], "demo"},
@@ -64,7 +85,7 @@ func TestLoadFixture(t *testing.T) {
 			t.Errorf("%s = %q, want %q", k, v[0], v[1])
 		}
 	}
-	if c.Notify.DigestEvery != 30*time.Minute || c.Liveness.Grace != 5*time.Minute ||
+	if c.Notify.DigestEvery != 30*time.Minute || c.Notify.CatchUp != 2*time.Hour || c.Liveness.Grace != 5*time.Minute ||
 		c.Liveness.PollEvery != 15*time.Second || c.Liveness.WakeEvery != 2*time.Minute {
 		t.Errorf("durations wrong: %+v %+v", c.Notify, c.Liveness)
 	}

@@ -33,10 +33,17 @@ type RunnerConfig struct {
 	MaxLeads    int    `toml:"max_leads"` // leads at once on this host; 0 = no cap
 }
 
+// NotifyConfig is where the digest and the pushes go. Push lists the lead
+// events pushed at once (empty = none); MapURL is the map's URL for a push's
+// click-through ("" = none); CatchUp is how old a missed event may be and
+// still be pushed when the daemon starts.
 type NotifyConfig struct {
 	Ntfy        string
 	Command     string
 	DigestEvery time.Duration
+	Push        []string
+	MapURL      string
+	CatchUp     time.Duration
 }
 
 type LivenessConfig struct {
@@ -100,7 +107,10 @@ type file struct {
 	Notify struct {
 		Ntfy        string
 		Command     string
-		DigestEvery duration `toml:"digest_every"`
+		DigestEvery duration  `toml:"digest_every"`
+		Push        *[]string // nil = not in the file, so the default
+		MapURL      string    `toml:"map_url"`
+		CatchUp     duration  `toml:"catch_up"`
 	}
 	Liveness struct {
 		Grace     duration
@@ -120,7 +130,7 @@ func defaults() *Config {
 		Serve: ServeConfig{Listen: "127.0.0.1:3774"},
 		Runner: RunnerConfig{Kind: "t3", T3Dispatch: "t3_dispatch.py", TmuxSession: "bmesh",
 			Worktrees: "~/.bmesh/worktrees", Checkouts: "~/.bmesh/checkouts", Claude: "claude"},
-		Notify:   NotifyConfig{DigestEvery: time.Hour},
+		Notify:   NotifyConfig{DigestEvery: time.Hour, Push: []string{"ask", "blocked", "done"}, CatchUp: time.Hour},
 		Liveness: LivenessConfig{Grace: 20 * time.Minute, PollEvery: 60 * time.Second, WakeEvery: 10 * time.Minute},
 		Repos:    map[string]string{},
 		Spec:     SpecConfig{Glob: "docs/proposals/{id}-*.md"},
@@ -150,6 +160,7 @@ func Load(path string) (*Config, error) {
 		Quota: c.Quota, Console: c.Console,
 	}
 	f.Notify.DigestEvery = duration(c.Notify.DigestEvery)
+	f.Notify.CatchUp = duration(c.Notify.CatchUp)
 	f.Liveness.Grace = duration(c.Liveness.Grace)
 	f.Liveness.PollEvery = duration(c.Liveness.PollEvery)
 	f.Liveness.WakeEvery = duration(c.Liveness.WakeEvery)
@@ -161,7 +172,12 @@ func Load(path string) (*Config, error) {
 	if c.Console.Hosts == nil {
 		c.Console.Hosts = map[string]string{}
 	}
-	c.Notify = NotifyConfig{Ntfy: f.Notify.Ntfy, Command: f.Notify.Command, DigestEvery: time.Duration(f.Notify.DigestEvery)}
+	push := c.Notify.Push
+	if f.Notify.Push != nil {
+		push = append([]string{}, *f.Notify.Push...) // push = [] stays empty: no pushes
+	}
+	c.Notify = NotifyConfig{Ntfy: f.Notify.Ntfy, Command: f.Notify.Command, DigestEvery: time.Duration(f.Notify.DigestEvery),
+		Push: push, MapURL: f.Notify.MapURL, CatchUp: time.Duration(f.Notify.CatchUp)}
 	c.Liveness = LivenessConfig{Grace: time.Duration(f.Liveness.Grace), PollEvery: time.Duration(f.Liveness.PollEvery),
 		WakeEvery: time.Duration(f.Liveness.WakeEvery)}
 	if f.Repos != nil {

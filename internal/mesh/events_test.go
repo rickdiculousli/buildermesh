@@ -80,3 +80,21 @@ func got0At(t *testing.T, c *Client, ctx context.Context) time.Time {
 	}
 	return all[0].At
 }
+
+func TestPublishEventIDDedupes(t *testing.T) {
+	c, ctx := connect(t)
+	ev := Event{From: "daemon.k16", Event: "push", To: "a", Text: "a asks", Seq: 7}
+	if dup, err := PublishEventID(ctx, c, ev, "push-7"); err != nil || dup {
+		t.Fatal(dup, err)
+	}
+	if dup, err := PublishEventID(ctx, c, Event{From: "daemon.k17", Event: "push", To: "a", Seq: 7}, "push-7"); err != nil || !dup {
+		t.Fatal("second claim:", dup, err)
+	}
+	got, err := History(ctx, c, "bm.daemon.*.push", time.Time{})
+	if err != nil || len(got) != 1 {
+		t.Fatal(got, err)
+	}
+	if _, err := PublishEventID(ctx, c, ev, ""); err == nil {
+		t.Fatal("empty msg id accepted")
+	}
+}

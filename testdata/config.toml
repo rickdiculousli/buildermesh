@@ -20,6 +20,9 @@ max_leads = 4
 ntfy = "http://ntfy.example/bm"
 command = "cat"
 digest_every = "30m"
+push = ["ask", "done"]
+map_url = "http://map.example/"
+catch_up = "2h"
 [liveness]
 grace = "5m"
 poll_every = "15s"

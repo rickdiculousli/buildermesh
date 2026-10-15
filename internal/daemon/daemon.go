@@ -36,6 +36,8 @@ type Deps struct {
 
 	Checkouts string // routine instances' checkouts root ([runner] checkouts, expanded)
 	ClaudeBin string // the claude command for model routines, split on spaces
+
+	PushRetry []time.Duration // waits before each push retry; nil = 5s, 30s
 }
 
 func (d *Deps) defaults() {
@@ -60,8 +62,9 @@ func decodeEvent(data []byte) (mesh.Event, error) {
 	return ev, err
 }
 
-// Run starts the activity follower, the poll+wake and silence loops and,
-// when [repos] names any repo, the routine loop; it returns once ctx ends
+// Run starts the activity follower, the poll+wake and silence loops, the
+// digest and push loops when [notify] has somewhere to send, and, when
+// [repos] names any repo, the routine loop; it returns once ctx ends
 // and every loop has stopped.
 func Run(ctx context.Context, d Deps) error {
 	if d.Client == nil || d.Cfg == nil || d.Runner == nil || d.Host == "" {
@@ -99,6 +102,9 @@ func Run(ctx context.Context, d Deps) error {
 		}
 		since := d.Now()
 		start(func() { every(ctx, digestEvery, func() { digestOnce(ctx, d, &since) }) })
+	}
+	if pushEnabled(d.Cfg.Notify) {
+		start(func() { pushLoop(ctx, d) })
 	}
 	if len(d.Cfg.Repos) > 0 {
 		start(func() { routines(ctx, d) })
