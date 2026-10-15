@@ -71,7 +71,7 @@ func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Wri
 		return err
 	}
 	defer c.Close()
-	if err := mesh.Provision(ctx, c); err != nil {
+	if err := mesh.Provision(ctx, c, cfg.Routines.KeepResults); err != nil {
 		return err
 	}
 	r, err := runner.New(cfg)

@@ -106,7 +106,7 @@ bmesh executor remove <name> [--force]
 
 `new` runs as the lead (or as an executor fanning out again; the caller is the parent): it makes `<[runner] worktrees>/<repo>/<parent path>.<name>` with `git worktree add -b <parent's branch>-<name>` from the parent's HEAD (`--base` picks another commit; the branch is the worktree's current one, so a renamed branch is followed), registers node `<parent path>.<name>` (`role: executor`, `parent`, branch, worktree, repo, host, model) with an inbox and state `idle`, and prints `{"path","branch","worktree"}` followed, unless `--json`, by the executor header: the paragraph to paste at the top of the subagent's prompt, which names the path, worktree and branch, says to start every shell command with `cd <worktree> &&` and to carry `--node <path>` on every `bmesh` command (the harness keeps neither working directory nor environment between tool calls), to run `bmesh started` first and to invoke the `buildermesh:executor` skill. A name matches `^[a-z0-9][a-z0-9-]*$`; a second `new` with a name whose node is not `done` or `blocked`, or whose branch still exists, is refused (exit 3). When `git worktree add` fails (a hook, an unwritable root), nothing is registered and the worktree and branch are removed.
 
-`list` prints the lead's tree (every node under the lead): path, state, branch, head (when the worktree is on this host) and unread count. `remove` refuses (exit 3) while the branch is not merged into the caller's HEAD unless `--force`; it then removes the worktree (`--force` also drops uncommitted changes) and the branch (`-d`, or `-D` with `--force`), forgets the worktree in the node, drains its inbox and marks it `done`. The node and its branch name stay in `bm-nodes` for the map; the name can be used again.
+`list` prints the lead's tree (every node under the lead): path, state, branch, head (when the worktree is on this host) and unread count. `remove` refuses (exit 3) while the branch is not merged into the caller's HEAD unless `--force`; it then removes the worktree (`--force` also drops uncommitted changes) and the branch (`-d`, or `-D` with `--force`), forgets the worktree in the node, drains its inbox and marks it `done`. The node and its branch name stay in `bm-nodes` until `bmesh node forget` (see Finished nodes); the name can be used again.
 
 An executor's `ask` is sent to its parent's inbox as a message `ask from <path>: <text>` as well as published as its own `ask` event, since only leads reach the operator; the digest lists an executor's ask, silence, block or completion nested under its lead's line and counts only leads under "asking". An executor's `done` needs `--commit` and never reads the spec.
 
@@ -119,6 +119,19 @@ claude plugin marketplace add rickdiculousli/buildermesh && claude plugin instal
 ```
 
 or from a checkout: `claude plugin marketplace add <path to the checkout> && claude plugin install buildermesh@buildermesh`. A lead's brief says "follow the `buildermesh:lead` skill" and adds the operator's own conventions; the executor header names the executor skill; a round's briefs name the ideate skills. The skills name no repo convention; `docs/agents-snippet.md` is the paragraph a repo's AGENTS.md gets, embedded in the binary for `bmesh scaffold` and kept in the repo for reading.
+
+## Finished nodes
+
+```
+bmesh mesh-status [--all] [--json]
+bmesh node forget <path> [--worktree]
+```
+
+`mesh-status` prints the nodes sorted by path: path, role, state, since, runner and unread count. A node `done` for longer than `[status] keep_done` (default `24h`; `0` shows them all) is left out, and a closing line counts what was: `… N finished nodes older than 24h (--all shows them)`. A `blocked` node is never left out: it waits on the operator. A round and its children are one unit, left out only when every one of them is. `--all` lists every node; `--json` carries every node with no flag, as the map's `/api/nodes` does, as an array of `{"node","state","runner","unread"}`.
+
+A routine instance's node leaves the mesh by itself. A fresh run's node, state and runner sample are deleted once its run ends and its checkout is removed; its `started`, `progress` and `done` events stay in the stream for the map, and its reply's `by` still names it. A pooled instance that stops (its pool restarted or shrunk, its kind gone from its repo's main, its repo gone from the registry) is marked `done`; the daemon's kind rescan, once a minute, deletes the node, state and runner sample of every routine instance on its host that has been `done` for `[status] keep_done` (`0`: never) and is not running, a fresh run's left behind included.
+
+Every other node stays until it is forgotten. `node forget` deletes a `done` or `blocked` node: its `bm-nodes` entry, state, runner sample and inbox consumer, printing `forgot <path>`; its events stay in the stream, and the nodes under it are not forgotten with it. Any other state is refused (exit 3, `refused: <path> is <state>; only a done or blocked node is forgotten`), as is a node with a node under it (a lead's executors, a round's children) that is not `done` or `blocked` (`refused: <child> under <path> is <state>`). Without `--worktree` nothing on disk is touched, and a node with a worktree prints `worktree <path> kept`. `--worktree` first removes the node's worktree (`git worktree remove` in its repo; one already gone from disk is pruned) and deletes its branch, printing `removed worktree <path>` and `deleted branch <b>`; it is refused (exit 3, naming it, nothing touched) when the worktree is on another host (`run it there`), is dirty (`git status --porcelain` prints anything) or the branch is not merged into `main` (an executor's: into its parent's branch). The merged branch is deleted with `-D`, since `-d` would also want it merged into its upstream, which a rebase before landing leaves behind.
 
 ## Routines
 
@@ -160,14 +173,14 @@ A command runs with `BMESH_JOB`, `BMESH_KIND`, `BMESH_COMMIT`, `BMESH_TREE`, `BM
 | Mode | Runs | Where |
 |---|---|---|
 | `inline` | `bmesh routine run` in the requester's own process; no daemon | the requester's worktree, at HEAD |
-| `fresh` | the daemon starts a new instance per job, `routine.<kind>.f<id8>`, and removes its checkout afterwards | a checkout of its own |
+| `fresh` | the daemon starts a new instance per job, `routine.<kind>.f<id8>`, and removes its checkout and node afterwards | a checkout of its own |
 | `pooled` | the daemon keeps `pool` instances per model, `routine.<kind>.<model-short>-<n>` (`cmd-<n>` for a command), that drain the kind's inbox in batches | one checkout per instance, kept |
 
 `id8` is the job id's first 8 characters, lowercased. `model-short` is the model id lowercased with a leading `claude-` stripped, every character outside `[a-z0-9]` made `-`, runs of `-` collapsed to one and leading and trailing `-` trimmed (`claude-opus-5-5` is `opus-5-5`, `claude-opus-5-5[1m]` is `opus-5-5-1m`). Pooled instances are numbered from 1 per model across every repo that defines the kind.
 
 A pooled instance holds the jobs it takes until `batch_idle` passes with nothing new, or a go arrives (`bmesh routine go <kind>`, or a job queued with `--go`), then runs them in order and runs any job queued meanwhile at once. A model instance keeps one session across jobs (`--session-id` on its first job, `--resume` after) and starts a new one when `recycle_uses`, `recycle_context` or `recycle_idle` is reached, or when the kind's definition at a job's commit differs from the one its session started with. A run whose output does not parse as claude's JSON result (including a non-zero exit with no JSON), first or resumed, drops its session whatever the recycle settings: the next job starts a new one with the prompt.
 
-Instances are nodes (`role: routine`, with repo, host and model). The daemon writes their state (`working` during a job, `idle` between, `done` when it stops: a fresh run after its job, a pooled one when its pool is stopped or restarted) and publishes `started`, `progress` (`job <id> started` before a run and `job <id> ok|fail <ms>` after it, `job <id> ok|fail <ms> ctx <tokens>` for a model instance (its context tokens), both with `to` = the requester's path; or `recycled`) and `done` for them on `bm.<instance path>.<event>`. A node event with a `to` counts as activity of that path too, so a lead waiting on a routine is not marked silent.
+Instances are nodes (`role: routine`, with repo, host and model). The daemon writes their state (`working` during a job, `idle` between, `done` when it stops: a fresh run after its job, a pooled one when its pool is stopped or restarted; see Finished nodes for when their nodes leave) and publishes `started`, `progress` (`job <id> started` before a run and `job <id> ok|fail <ms>` after it, `job <id> ok|fail <ms> ctx <tokens>` for a model instance (its context tokens), both with `to` = the requester's path; or `recycled`) and `done` for them on `bm.<instance path>.<event>`. A node event with a `to` counts as activity of that path too, so a lead waiting on a routine is not marked silent.
 
 The daemon reads each registered repo's (repos.toml) kinds every minute from its main (`origin/main` after a fetch when the repo has an `origin`, else `main`) and starts, restarts or stops pools to match. Routines are off when `[runner] checkouts` is empty.
 
@@ -233,6 +246,8 @@ Results live in KV `bm-results`, key `<kind>.<tree>[.<args8>][.<model-short>]`: 
 
 `model` is omitted for a command kind; `output` is cut at 64 KiB. Every run that names a commit records: inline runs and daemon runs, deterministic or not (a kind's newest run at a tree replaces the last). Answered-from-record jobs, refused jobs, lost leases and runs cut off by a stopping daemon record nothing. `result record` stores a result by hand for any kind name, with or without a kind file; `--commit` defaults to `HEAD`, and a result for HEAD is refused while the worktree is dirty (exit 3 `bmesh: worktree is dirty; commit first`). `result find` prints `<ok|fail> <tree> <at> <by>` (exit 3 when none).
 
+A result older than `[routines] keep_results` (default `30d`, the stream's age; `0` keeps them forever) is gone: `bmesh serve` provisions `bm-results` with that age. A deterministic kind then runs again, and `bmesh done` for a spec landed longer ago than that needs its routines run again on the merged tree (it names the missing result); the spec's `verified` line is the record that stays.
+
 ### `verified`
 
 A spec's frontmatter carries one line of proof, `;`-separated, one entry per check:
@@ -271,7 +286,7 @@ Paths match `^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*$`; the first token is ne
 | KV | `bm-nodes` | `<path>` to Node |
 | KV | `bm-state` | `<path>` to State |
 | KV | `bm-runner` | `<path>` to RunnerSample |
-| KV | `bm-results` | `<kind>.<tree>[.<args8>][.<model-short>]` to Result |
+| KV | `bm-results` | `<kind>.<tree>[.<args8>][.<model-short>]` to Result (`[routines] keep_results`, default 30 days) |
 | KV | `bm-leases` | `<slot>.<n>` to `{"holder","expires_at"}` |
 
 JetStream is addressed through the domain from `[mesh] domain` (default `hub`).
@@ -348,6 +363,10 @@ lead = "claude-opus-5-5"                    # lead start's model when --model na
 lead_effort = "high"                        # a lead's effort: low, medium, high, xhigh or max; "" = the runner's default
 proposer = "claude-opus-5-5"                # a proposal round's two threads
 proposer_effort = "xhigh"                   # their effort
+[status]
+keep_done = "24h"                           # mesh-status leaves out nodes done longer than this, and the daemon deletes stopped routine instances' nodes after it; "0" = never. Durations take whole days too: "30d"
+[routines]
+keep_results = "30d"                        # bm-results' age limit, applied by serve; an older result is gone; "0" = none
 [quota]
 command = ""                                # the map's quota strip; "" = no strip. Run through the platform shell at most every 5m (30s timeout); prints a JSON array of {"reading":{"provider","five_hour","week","five_reset","week_reset"}}
 [console]
@@ -372,7 +391,7 @@ The map's lead page reads the lead's spec from its registered repo's local `orig
 | 0 | ok |
 | 1 | error; a failed run (`routine run`, `routine wait`); a lost lease; an interrupted `lock-lease run`; a malformed spec, or a `spec set` its `--from` refuses |
 | 2 | usage; a `scaffold` of a repo without a row or whose row is not `ship` |
-| 3 | refused (a command other than `init` and `help` on a box not set up, run outside a terminal; a `repos show` of an unknown name; a `done` the spec or its `verified` line doesn't support, a reserved or taken path, a send to a running thread, an executor name or branch in use, an `executor remove` of an unmerged branch, a dirty worktree for a deterministic inline run, an unknown kind, a fresh or pooled kind run inline without `--here`, an inline run of a commit other than HEAD, a busy slot, a lease held by someone else, no result for `result find` or `spec verified`; an `ideate` on a non-ship row, with five proposed specs, an unreachable host, a live child or an existing branch; a `main` that `ideate`, `build` or `choose-ideas` cannot level with origin or fast-forward; a `build` of a non-ship row, of a spec that is not `accepted`, with no judge and no `--model`, of a taken path or on a host at its lead cap; a second `review` job for a reviewed branch without `--again`) |
+| 3 | refused (a command other than `init` and `help` on a box not set up, run outside a terminal; a `repos show` of an unknown name; a `done` the spec or its `verified` line doesn't support, a reserved or taken path, a send to a running thread, an executor name or branch in use, an `executor remove` of an unmerged branch, a dirty worktree for a deterministic inline run, an unknown kind, a fresh or pooled kind run inline without `--here`, an inline run of a commit other than HEAD, a busy slot, a lease held by someone else, no result for `result find` or `spec verified`; an `ideate` on a non-ship row, with five proposed specs, an unreachable host, a live child or an existing branch; a `main` that `ideate`, `build` or `choose-ideas` cannot level with origin or fast-forward; a `build` of a non-ship row, of a spec that is not `accepted`, with no judge and no `--model`, of a taken path or on a host at its lead cap; a second `review` job for a reviewed branch without `--again`; a `node forget` of an unknown node, of one not `done` or `blocked`, of one with a node under it that is neither, or with `--worktree` of a worktree on another host, dirty or with its branch unmerged) |
 | 5 | timeout (`watch`, `routine wait`) |
 
 `lock-lease run` exits with its command's code.

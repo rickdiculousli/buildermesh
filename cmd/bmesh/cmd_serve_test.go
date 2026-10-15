@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
@@ -69,5 +70,21 @@ func TestServeEmbeddedThenHub(t *testing.T) {
 	store := filepath.Join(t.TempDir(), "js")
 	serveOnce(t, "[mesh]\nnats = \"\"\nstore = \""+store+"\"\nlisten = \"127.0.0.1:0\"\n[host]\nname = \""+testHost+"\"\n", "embedded")
 	url := meshtest.Start(t)
-	serveOnce(t, "[mesh]\nnats = \""+url+"\"\n[host]\nname = \""+testHost+"\"\n", "hub")
+	serveOnce(t, "[mesh]\nnats = \""+url+"\"\n[host]\nname = \""+testHost+"\"\n[routines]\nkeep_results = \"7d\"\n", "hub")
+
+	// serve provisioned bm-results with [routines] keep_results.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	c, err := mesh.Connect(ctx, url, "", "hub", "test", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	kv, err := c.JS.KeyValue(ctx, mesh.BucketResults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st, err := kv.Status(ctx); err != nil || st.TTL() != 7*24*time.Hour {
+		t.Fatalf("bm-results TTL %v %v, want 168h", st, err)
+	}
 }

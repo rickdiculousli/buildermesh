@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
 
@@ -77,14 +78,18 @@ type statusRow struct {
 	Unread int                `json:"unread"`
 }
 
-// cmdMeshStatus prints every registered node with its state, runner and unread count.
+// cmdMeshStatus prints the registered nodes with their state, runner and
+// unread count: every one with --all or --json, else all but those done for
+// longer than [status] keep_done, which a closing line counts.
 func (a *app) cmdMeshStatus(args []string) error {
-	pos, err := parse(a.flags("mesh-status"), args)
+	fs := a.flags("mesh-status")
+	all := fs.Bool("all", false, "show every node, finished ones too")
+	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
 	if len(pos) != 0 {
-		return fail(exitUsage, "status takes no arguments")
+		return fail(exitUsage, "usage: bmesh mesh-status [--all] [--json]")
 	}
 	ctx, cancel := cmdCtx()
 	defer cancel()
@@ -122,13 +127,66 @@ func (a *app) cmdMeshStatus(args []string) error {
 	if a.json {
 		return a.printJSON(rows)
 	}
+	keep := a.cfg.Status.KeepDone
+	var hide map[string]bool
+	if !*all {
+		hide = finishedUnits(rows, time.Now().Add(-keep), keep > 0)
+	}
 	tw := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "PATH\tROLE\tSTATE\tSINCE\tRUNNER\tUNREAD")
 	for _, r := range rows {
+		if hide[r.Node.Path] {
+			continue
+		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\n", r.Node.Path, dash(r.Node.Role), r.State.State,
 			dash(r.State.At), runnerWord(r.Runner), r.Unread)
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if n := len(hide); n > 0 {
+		noun := "nodes"
+		if n == 1 {
+			noun = "node"
+		}
+		fmt.Fprintf(a.stdout, "… %d finished %s older than %s (--all shows them)\n", n, noun, config.FormatDuration(keep))
+	}
+	return nil
+}
+
+// finishedUnits returns the paths mesh-status hides: nodes done before
+// cutoff (none when !on). A round and its children are one unit, hidden only
+// when every one of them is; blocked is never hidden.
+func finishedUnits(rows []statusRow, cutoff time.Time, on bool) map[string]bool {
+	hide := map[string]bool{}
+	if !on {
+		return hide
+	}
+	role := map[string]string{}
+	for _, r := range rows {
+		role[r.Node.Path] = r.Node.Role
+	}
+	unit := func(n mesh.Node) string {
+		if n.Parent != "" && role[n.Parent] == "round" {
+			return n.Parent
+		}
+		return n.Path
+	}
+	finished := map[string]bool{} // unit → every member done before cutoff
+	for _, r := range rows {
+		u := unit(r.Node)
+		at, err := time.Parse(time.RFC3339, r.State.At)
+		old := r.State.State == "done" && err == nil && at.Before(cutoff)
+		if f, seen := finished[u]; !seen || f {
+			finished[u] = old
+		}
+	}
+	for _, r := range rows {
+		if finished[unit(r.Node)] {
+			hide[r.Node.Path] = true
+		}
+	}
+	return hide
 }
 
 func dash(s string) string {

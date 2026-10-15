@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -376,15 +377,22 @@ command = "echo $BMESH_FROM; pwd"
 		if !r.OK || r.By != path || len(out) != 2 || out[0] != path {
 			t.Fatalf("reply %+v, want by %s", r, path)
 		}
-		waitFor(t, 10*time.Second, path+" done", func() bool { return f.state(t, path) == "done" })
 		waitFor(t, 10*time.Second, out[1]+" removed", func() bool {
 			_, err := os.Stat(out[1])
 			return errors.Is(err, os.ErrNotExist)
 		})
-		n, ok, err := mesh.GetNode(f.ctx, f.c, path)
-		if err != nil || !ok || n.Role != "routine" || n.Repo != "app" || n.Host != testHost {
-			t.Fatalf("node %+v %v %v", n, ok, err)
+		// The run's node, state and runner sample go with its checkout.
+		waitFor(t, 10*time.Second, path+" forgotten", func() bool {
+			_, ok, err := mesh.GetNode(f.ctx, f.c, path)
+			return err == nil && !ok
+		})
+		if s, rev, err := mesh.ReadState(f.ctx, f.c, path); err != nil || rev != 0 || s.State != "idle" {
+			t.Fatalf("%s state %+v rev %d %v, want none", path, s, rev, err)
 		}
+		if _, ok, err := mesh.GetRunner(f.ctx, f.c, path); err != nil || ok {
+			t.Fatalf("%s runner sample kept: %v %v", path, ok, err)
+		}
+		// Its events stay for the map.
 		if f.events(t, path, "started") != 1 || f.events(t, path, "done") != 1 {
 			t.Fatalf("%s events: started/done not 1 each", path)
 		}
@@ -422,7 +430,7 @@ recycle_context = 10
 	if !r.OK || r.By != path {
 		t.Fatalf("reply %+v", r)
 	}
-	waitFor(t, 10*time.Second, path+" done", func() bool { return f.state(t, path) == "done" })
+	waitFor(t, 10*time.Second, path+" done", func() bool { return f.events(t, path, "done") == 1 })
 	hist, err := mesh.History(f.ctx, f.c, "bm."+path+".>", time.Time{})
 	if err != nil {
 		t.Fatal(err)
@@ -633,5 +641,62 @@ func TestJobFetchedWhileStoppingStaysQueued(t *testing.T) {
 	f.noReply(t, id, 500*time.Millisecond)
 	if n, err := mesh.Depth(f.ctx, f.c, "verify"); err != nil || n != 1 {
 		t.Fatalf("depth after stop %d %v, want the job still queued", n, err)
+	}
+}
+
+// A pooled instance stopped because its kind left main stays done until
+// [status] keep_done has passed, then the rescan forgets it; a fresh run's
+// node left from before is forgotten the same way, a running one never.
+func TestRescanForgetsStoppedInstancesAfterKeepDone(t *testing.T) {
+	f := routineSetup(t, map[string]string{".bmesh/routines/verify.toml": "timeout = \"30s\"\ncommand = \"echo ran\"\n"})
+	kindRescan = 300 * time.Millisecond
+	var offset atomic.Int64 // how far the daemon's clock runs ahead
+	f.d.Now = func() time.Time { return time.Now().Add(time.Duration(offset.Load())) }
+	f.d.Cfg.Status.KeepDone = time.Hour
+	stale := "routine.old.fdeadbeef"
+	if err := mesh.PutNode(f.ctx, f.c, mesh.Node{Path: stale, Role: "routine", Host: testHost}); err != nil {
+		t.Fatal(err)
+	}
+	f.setState(t, stale, "working")
+	f.setState(t, stale, "done")
+	elsewhere := "routine.old.fcafef00d" // another host's: its own daemon sweeps it
+	if err := mesh.PutNode(f.ctx, f.c, mesh.Node{Path: elsewhere, Role: "routine", Host: "otherhost"}); err != nil {
+		t.Fatal(err)
+	}
+	f.setState(t, elsewhere, "working")
+	f.setState(t, elsewhere, "done")
+
+	f.start(t)
+	f.waitStarted(t, "routine.verify.cmd-1", 1)
+	tgit(t, f.repo, "rm", "-q", ".bmesh/routines/verify.toml")
+	tgit(t, f.repo, "commit", "-q", "-m", "drop verify")
+	waitFor(t, 10*time.Second, "cmd-1 done", func() bool { return f.state(t, "routine.verify.cmd-1") == "done" })
+
+	present := func(path string) bool {
+		_, ok, err := mesh.GetNode(f.ctx, f.c, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	f.poll(t, 2*time.Second) // several rescans, none past keep_done
+	for _, p := range []string{"routine.verify.cmd-1", stale, elsewhere} {
+		if !present(p) {
+			t.Fatalf("%s forgotten before keep_done", p)
+		}
+	}
+
+	offset.Store(int64(time.Hour + time.Minute))
+	for _, p := range []string{"routine.verify.cmd-1", stale} {
+		waitFor(t, 10*time.Second, p+" forgotten", func() bool { return !present(p) })
+		if s, rev, err := mesh.ReadState(f.ctx, f.c, p); err != nil || rev != 0 {
+			t.Fatalf("%s state %+v rev %d %v, want none", p, s, rev, err)
+		}
+	}
+	if !present(elsewhere) {
+		t.Fatalf("%s on another host forgotten", elsewhere)
+	}
+	if f.events(t, "routine.verify.cmd-1", "done") != 1 {
+		t.Fatal("cmd-1's done event is gone")
 	}
 }

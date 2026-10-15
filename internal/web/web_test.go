@@ -49,7 +49,7 @@ func TestEventsStreamReplaysThenFollows(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	if err := mesh.Provision(ctx, c); err != nil {
+	if err := mesh.Provision(ctx, c, 0); err != nil {
 		t.Fatal(err)
 	}
 	if err := mesh.PublishEvent(ctx, c, mesh.Event{From: "app-001", Event: "started", Text: "first"}); err != nil {
@@ -108,7 +108,7 @@ func TestNodesAndPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	if err := mesh.Provision(ctx, c); err != nil {
+	if err := mesh.Provision(ctx, c, 0); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(Handler(c, time.Hour, Options{}))
@@ -189,7 +189,7 @@ func connect(t *testing.T) (context.Context, *mesh.Client) {
 		t.Fatal(err)
 	}
 	t.Cleanup(c.Close)
-	if err := mesh.Provision(ctx, c); err != nil {
+	if err := mesh.Provision(ctx, c, 0); err != nil {
 		t.Fatal(err)
 	}
 	return ctx, c

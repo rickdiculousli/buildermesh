@@ -35,7 +35,7 @@ func setup(t *testing.T) (*mesh.Client, context.Context) {
 		t.Fatal(err)
 	}
 	t.Cleanup(c.Close)
-	if err := mesh.Provision(ctx, c); err != nil {
+	if err := mesh.Provision(ctx, c, 0); err != nil {
 		t.Fatal(err)
 	}
 	return c, ctx

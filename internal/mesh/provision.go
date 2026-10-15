@@ -9,7 +9,8 @@ import (
 )
 
 // Provision creates the stream and buckets; it is safe to run repeatedly.
-func Provision(ctx context.Context, c *Client) error {
+// keepResults is bm-results' age limit (0 = none): an older result is gone.
+func Provision(ctx context.Context, c *Client, keepResults time.Duration) error {
 	if _, err := c.JS.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
 		Name:       StreamMesh,
 		Subjects:   []string{"bm.>"},
@@ -23,9 +24,10 @@ func Provision(ctx context.Context, c *Client) error {
 	for _, b := range []struct {
 		name    string
 		history uint8
-	}{{BucketNodes, 1}, {BucketState, 16}, {BucketRunner, 1}, {BucketResults, 1}, {BucketLeases, 1}} {
+		ttl     time.Duration
+	}{{BucketNodes, 1, 0}, {BucketState, 16, 0}, {BucketRunner, 1, 0}, {BucketResults, 1, keepResults}, {BucketLeases, 1, 0}} {
 		if _, err := c.JS.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{
-			Bucket: b.name, History: b.history, Storage: jetstream.FileStorage,
+			Bucket: b.name, History: b.history, TTL: b.ttl, Storage: jetstream.FileStorage,
 		}); err != nil {
 			return fmt.Errorf("bucket %s: %w", b.name, err)
 		}

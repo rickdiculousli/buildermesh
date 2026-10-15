@@ -45,7 +45,10 @@ commands:
   send <path> <text|->                     message a node (- reads stdin)
   inbox [--peek] [--json]                  read (and ack) this node's messages
   thread-status [<path>] [--json]          print a node's state
-  mesh-status [--json]                     every node's state, runner and unread count
+  mesh-status [--all] [--json]             every node's state, runner and unread count; nodes done longer than
+                                           [status] keep_done are counted, not listed, unless --all (or --json)
+  node forget <path> [--worktree]          delete a done or blocked node, its state and inbox; --worktree also
+                                           removes its clean worktree and merged branch on this host
   watch --nodes a,b [--since T] [--timeout D]
                                            follow nodes until all are done, blocked or silent
   lead start --repo R --spec NNN --brief FILE [--model M] [--effort E] [--title T] [--path P]
@@ -206,6 +209,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdSpec(rest)
 	case "executor":
 		return a.cmdExecutor(rest)
+	case "node":
+		return a.cmdNode(rest)
 	case "help":
 		fmt.Fprint(a.stdout, usage)
 		return nil

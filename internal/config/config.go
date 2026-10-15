@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -74,6 +75,13 @@ func CheckEffort(e string) error {
 	return fmt.Errorf("effort %q: want one of %s", e, strings.Join(Efforts, ", "))
 }
 
+// StatusConfig: KeepDone is how long a done node shows in mesh-status (and
+// how long a stopped routine instance's node stays); 0 = forever.
+type StatusConfig struct{ KeepDone time.Duration }
+
+// RoutinesConfig: KeepResults is bm-results' age limit; 0 = none.
+type RoutinesConfig struct{ KeepResults time.Duration }
+
 // QuotaConfig names the command whose JSON output the map's strip shows; ""
 // hides the strip.
 type QuotaConfig struct{ Command string }
@@ -101,21 +109,53 @@ type Config struct {
 	Models   ModelsConfig
 	Quota    QuotaConfig
 	Console  ConsoleConfig
+	Status   StatusConfig
+	Routines RoutinesConfig
 
 	dir  string // directory of the config file; "" when none was read
 	path string // the config file's path as given to Load
 }
 
-// duration decodes strings like "20m" from TOML.
+// duration decodes strings like "20m" or "30d" from TOML.
 type duration time.Duration
 
 func (d *duration) UnmarshalText(b []byte) error {
-	v, err := time.ParseDuration(string(b))
+	v, err := ParseDuration(string(b))
 	if err != nil {
 		return err
 	}
 	*d = duration(v)
 	return nil
+}
+
+// ParseDuration is time.ParseDuration plus whole days, "30d".
+func ParseDuration(s string) (time.Duration, error) {
+	if n, ok := strings.CutSuffix(s, "d"); ok {
+		days, err := strconv.Atoi(n)
+		if err != nil || days < 0 {
+			return 0, fmt.Errorf("time: invalid duration %q", s)
+		}
+		return time.Duration(days) * 24 * time.Hour, nil
+	}
+	return time.ParseDuration(s)
+}
+
+// FormatDuration writes d the way config.toml takes it: "30d" for whole days
+// past one, else time.Duration's form without zero minutes and seconds
+// ("24h", "1h30m").
+func FormatDuration(d time.Duration) string {
+	day := 24 * time.Hour
+	if d > day && d%day == 0 {
+		return strconv.Itoa(int(d/day)) + "d"
+	}
+	s := d.String()
+	if strings.HasSuffix(s, "m0s") {
+		s = strings.TrimSuffix(s, "0s")
+	}
+	if strings.HasSuffix(s, "h0m") {
+		s = strings.TrimSuffix(s, "0m")
+	}
+	return s
 }
 
 // file mirrors the TOML layout; durations use the text-decoding type.
@@ -142,6 +182,12 @@ type file struct {
 	Models  ModelsConfig
 	Quota   QuotaConfig
 	Console ConsoleConfig
+	Status  struct {
+		KeepDone duration `toml:"keep_done"`
+	}
+	Routines struct {
+		KeepResults duration `toml:"keep_results"`
+	}
 }
 
 func defaults() *Config {
@@ -156,7 +202,9 @@ func defaults() *Config {
 		Spec:     SpecConfig{Glob: "docs/proposals/{id}-*.md"},
 		Models: ModelsConfig{Lead: "claude-opus-5-5", LeadEffort: "high", Proposer: "claude-opus-5-5",
 			ProposerEffort: "xhigh"},
-		Console: ConsoleConfig{Hosts: map[string]string{}},
+		Console:  ConsoleConfig{Hosts: map[string]string{}},
+		Status:   StatusConfig{KeepDone: 24 * time.Hour},
+		Routines: RoutinesConfig{KeepResults: 30 * 24 * time.Hour},
 	}
 }
 
@@ -242,6 +290,8 @@ func Load(path string) (*Config, error) {
 	f.Liveness.Grace = duration(c.Liveness.Grace)
 	f.Liveness.PollEvery = duration(c.Liveness.PollEvery)
 	f.Liveness.WakeEvery = duration(c.Liveness.WakeEvery)
+	f.Status.KeepDone = duration(c.Status.KeepDone)
+	f.Routines.KeepResults = duration(c.Routines.KeepResults)
 	if _, err := toml.DecodeFile(path, &f); err != nil {
 		return nil, fmt.Errorf("config %s: %w", path, err)
 	}
@@ -268,6 +318,13 @@ func Load(path string) (*Config, error) {
 		Push: push, MapURL: f.Notify.MapURL, CatchUp: time.Duration(f.Notify.CatchUp)}
 	c.Liveness = LivenessConfig{Grace: time.Duration(f.Liveness.Grace), PollEvery: time.Duration(f.Liveness.PollEvery),
 		WakeEvery: time.Duration(f.Liveness.WakeEvery)}
+	c.Status = StatusConfig{KeepDone: time.Duration(f.Status.KeepDone)}
+	c.Routines = RoutinesConfig{KeepResults: time.Duration(f.Routines.KeepResults)}
+	for key, d := range map[string]time.Duration{"[status] keep_done": c.Status.KeepDone, "[routines] keep_results": c.Routines.KeepResults} {
+		if d < 0 {
+			return nil, fmt.Errorf("config %s: %s: negative duration", path, key)
+		}
+	}
 	if f.Repos != nil {
 		return nil, fmt.Errorf("config %s: [repos] has moved to %s: one [repos.<name>] table per repo with path, mode, remote, host, ux_host, verify, surfaces, pin and routines (see README, Config)",
 			path, ReposPath(path))

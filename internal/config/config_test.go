@@ -259,3 +259,26 @@ func TestWriteRepoRoundTrips(t *testing.T) {
 		t.Fatalf("flag %s %v", SetupFlag(p), err)
 	}
 }
+
+func TestLoadKeepDurations(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	c, err := Load(p)
+	if err != nil || c.Status.KeepDone != 24*time.Hour || c.Routines.KeepResults != 30*24*time.Hour {
+		t.Fatalf("defaults: %v %+v %+v", err, c.Status, c.Routines)
+	}
+	os.WriteFile(p, []byte("[status]\nkeep_done = \"36h\"\n[routines]\nkeep_results = \"7d\"\n"), 0o644)
+	if c, err = Load(p); err != nil || c.Status.KeepDone != 36*time.Hour || c.Routines.KeepResults != 7*24*time.Hour {
+		t.Fatalf("%v %+v %+v", err, c.Status, c.Routines)
+	}
+	for _, bad := range []string{"[status]\nkeep_done = \"-1h\"\n", "[routines]\nkeep_results = \"xd\"\n", "[routines]\nkeep_results = \"-2d\"\n"} {
+		os.WriteFile(p, []byte(bad), 0o644)
+		if _, err := Load(p); err == nil {
+			t.Fatalf("%q accepted", bad)
+		}
+	}
+	for d, want := range map[time.Duration]string{24 * time.Hour: "24h", 30 * 24 * time.Hour: "30d", 90 * time.Minute: "1h30m", 45 * time.Second: "45s", 0: "0s"} {
+		if got := FormatDuration(d); got != want {
+			t.Fatalf("FormatDuration(%s) = %q, want %q", d, got, want)
+		}
+	}
+}

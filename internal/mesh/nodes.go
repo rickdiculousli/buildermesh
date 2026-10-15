@@ -95,6 +95,31 @@ func GetNode(ctx context.Context, c *Client, path string) (Node, bool, error) {
 	return n, ok, err
 }
 
+// ForgetNode deletes path's node, state and runner sample and its inbox
+// consumer; what is already gone is skipped. Its events stay in the stream.
+func ForgetNode(ctx context.Context, c *Client, path string) error {
+	for _, name := range []string{BucketNodes, BucketState, BucketRunner} {
+		kv, err := bucket(ctx, c, name)
+		if err != nil {
+			return err
+		}
+		if err := kv.Purge(ctx, path); err != nil && !errors.Is(err, jetstream.ErrKeyNotFound) {
+			return fmt.Errorf("%s %s: %w", name, path, err)
+		}
+	}
+	p, err := ParsePath(path)
+	if err != nil {
+		return err
+	}
+	if _, ok := KindFromPath(p); ok && len(p) == 2 {
+		return nil // routine.<kind>'s consumer is the kind's queue, not an inbox
+	}
+	if err := c.JS.DeleteConsumer(ctx, StreamMesh, InboxConsumer(p)); err != nil && !errors.Is(err, jetstream.ErrConsumerNotFound) {
+		return fmt.Errorf("inbox consumer for %s: %w", path, err)
+	}
+	return nil
+}
+
 // ListNodes returns every node sorted by path.
 func ListNodes(ctx context.Context, c *Client) ([]Node, error) {
 	kv, err := bucket(ctx, c, BucketNodes)

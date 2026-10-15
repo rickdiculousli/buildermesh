@@ -218,6 +218,47 @@ func (r *routineSet) rescan() {
 	for _, name := range kinds {
 		r.applyKind(name, want[name], repoPaths)
 	}
+	r.sweep()
+}
+
+// sweep forgets this host's routine instances that have been done for
+// [status] keep_done: a pooled instance whose pool stopped, or a fresh one
+// whose node outlived its run. A path an instance runs as is skipped, and
+// held while it is forgotten, so an instance starting on it waits.
+func (r *routineSet) sweep() {
+	keep := r.d.Cfg.Status.KeepDone
+	if keep <= 0 {
+		return
+	}
+	nodes, err := mesh.ListNodes(r.ctx, r.d.Client)
+	if err != nil {
+		r.d.Log.Warn("routines: sweep", "err", err)
+		return
+	}
+	cutoff := r.d.Now().Add(-keep)
+	for _, n := range nodes {
+		if n.Role != "routine" || n.Host != r.d.Host {
+			continue
+		}
+		release := r.tryClaimPath(n.Path)
+		if release == nil {
+			continue
+		}
+		s, _, err := mesh.ReadState(r.ctx, r.d.Client, n.Path)
+		if err == nil && doneBefore(s, cutoff) {
+			err = mesh.ForgetNode(r.ctx, r.d.Client, n.Path)
+		}
+		release()
+		if err != nil {
+			r.d.Log.Warn("routines: sweep", "path", n.Path, "err", err)
+		}
+	}
+}
+
+// doneBefore reports a state that is done and was written before cutoff.
+func doneBefore(s mesh.State, cutoff time.Time) bool {
+	at, err := time.Parse(time.RFC3339, s.At)
+	return s.State == "done" && err == nil && at.Before(cutoff)
 }
 
 // modelsOf is the models a kind's pools run: its models, or "" for a command.
@@ -571,6 +612,24 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 		return false
 	case <-t.C:
 		return true
+	}
+}
+
+// tryClaimPath holds path as claimPath does when no instance runs as it;
+// nil when one does.
+func (r *routineSet) tryClaimPath(path string) (release func()) {
+	r.pathMu.Lock()
+	defer r.pathMu.Unlock()
+	if _, busy := r.paths[path]; busy {
+		return nil
+	}
+	ch := make(chan struct{})
+	r.paths[path] = ch
+	return func() {
+		r.pathMu.Lock()
+		delete(r.paths, path)
+		r.pathMu.Unlock()
+		close(ch)
 	}
 }
 
