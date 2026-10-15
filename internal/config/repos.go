@@ -21,7 +21,13 @@ var Modes = []string{"ship", "companion", "publish", "fork", "dormant"}
 // DefaultRoutines are the routine kinds a row runs when it names none.
 var DefaultRoutines = []string{"verify", "review"}
 
-var repoName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
+// NamePattern is what a registry name matches: a directory name.
+const NamePattern = `^[A-Za-z0-9][A-Za-z0-9_.-]*$`
+
+var repoName = regexp.MustCompile(NamePattern)
+
+// ValidName reports whether name matches NamePattern.
+func ValidName(name string) bool { return repoName.MatchString(name) }
 
 // Repo is one row of repos.toml: everything the mesh knows about a repo that
 // is the same on every box. Path is as written (callers Expand it).

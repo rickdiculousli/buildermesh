@@ -87,7 +87,11 @@ func (r Claude) Start(ctx context.Context, s StartSpec) (Started, error) {
 	if err := os.WriteFile(filepath.Join(d, "model"), []byte(s.Model), 0o644); err != nil {
 		return Started{}, err
 	}
-	if err := r.turn(d, wt, 1, string(brief), withModel([]string{"--session-id", s.ThreadID}, s.Model)); err != nil {
+	// Under the lock, like every other turn start: a Status or Send that
+	// lands between the turn and pid writes must not read turn 1 as dead.
+	if err := locked(d, func() error {
+		return r.turn(d, wt, 1, string(brief), withModel([]string{"--session-id", s.ThreadID}, s.Model))
+	}); err != nil {
 		return Started{}, err
 	}
 	return Started{Thread: s.ThreadID, Branch: s.ThreadID, Worktree: wt}, nil

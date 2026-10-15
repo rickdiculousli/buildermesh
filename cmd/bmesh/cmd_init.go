@@ -92,7 +92,10 @@ func (a *app) cmdInit(args []string) error {
 
 	reposPath := config.ReposPath(cfgPath)
 	if !*noRepo {
-		if r, ok := cwdRepo(); ok {
+		if r, ok := cwdRepo(); ok && !config.ValidName(r.Name) {
+			fmt.Fprintf(a.stdout, "not registering %s: a registry name matches %s (rename the directory, or add a row to %s by hand)\n",
+				r.Path, config.NamePattern, reposPath)
+		} else if ok {
 			repos, err := config.LoadRepos(reposPath)
 			if err != nil {
 				return err
@@ -255,6 +258,7 @@ func writeService(configDir string) (string, []string, error) {
 		unit := filepath.Join(ucd, "systemd", "user", "bmesh.service")
 		body := "[Unit]\nDescription=buildermesh daemon (bmesh serve)\nAfter=network-online.target\n\n[Service]\n" +
 			"ExecStart=" + exe + " serve\nRestart=always\nRestartSec=5\n" +
+			"KillMode=process\n" + // a restart must not take the claude turns the daemon started with it
 			"Environment=PATH=" + path + "\nEnvironment=BMESH_CONFIG=" + filepath.Join(configDir, "config.toml") + "\n\n" +
 			"[Install]\nWantedBy=default.target\n"
 		if err := os.MkdirAll(filepath.Dir(unit), 0o755); err != nil {

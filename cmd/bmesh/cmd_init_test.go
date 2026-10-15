@@ -71,6 +71,25 @@ func TestInitSingleBoxWritesConfigRepoAndFlag(t *testing.T) {
 	}
 }
 
+// A checkout whose directory name is not a registry name is skipped with a
+// note; init still completes.
+func TestInitSkipsUnregisterableDirectory(t *testing.T) {
+	root := t.TempDir()
+	cfg := filepath.Join(root, "config.toml")
+	repo := filepath.Join(root, "my repo")
+	runGit(t, root, "init", "-b", "main", repo)
+	out, errs, code := runInit(t, cfg, repo, "", "init", "--runner", "claude")
+	if code != 0 || !strings.Contains(out, "not registering "+repo) {
+		t.Fatalf("%d %q %q", code, out, errs)
+	}
+	if _, err := os.Stat(config.SetupFlag(cfg)); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := config.Load(cfg); len(c.Repos) != 0 {
+		t.Fatalf("%v", c.Repos)
+	}
+}
+
 func TestInitMultiBoxFromStdinAndFlags(t *testing.T) {
 	root := t.TempDir()
 	cfg := filepath.Join(root, "config.toml")
@@ -123,7 +142,8 @@ func TestInitServiceWritesUnit(t *testing.T) {
 		t.Fatal(err)
 	}
 	exe, _ := os.Executable()
-	if !strings.Contains(string(b), "ExecStart="+exe+" serve") || !strings.Contains(string(b), "BMESH_CONFIG="+cfg) {
+	if !strings.Contains(string(b), "ExecStart="+exe+" serve") || !strings.Contains(string(b), "BMESH_CONFIG="+cfg) ||
+		!strings.Contains(string(b), "KillMode=process\n") {
 		t.Fatalf("unit:\n%s", b)
 	}
 	if !strings.Contains(out, "systemctl --user enable --now bmesh") || !strings.Contains(out, "wrote "+unit) {
