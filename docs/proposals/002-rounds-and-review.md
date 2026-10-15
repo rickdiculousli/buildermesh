@@ -4,10 +4,13 @@ title: Proposal rounds and review in bmesh
 kind: feature
 size: L
 judge: fable
-status: accepted
+status: building
 lens: eng
 proposed_by: da6488fd-38bd-4c4c-994c-a7de257d9424
 proposed_on: 2026-10-15
+built_by: 6931e5d3-6a3e-40d0-97f1-1ffe41030ccf
+branch: t3code/d46e218c
+host: k16
 ---
 
 ## Opportunity
