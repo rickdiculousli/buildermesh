@@ -35,6 +35,22 @@ type delivery struct {
 	r    *routineSet
 	stop chan struct{}
 	once sync.Once
+
+	held   bool // counted in f.held until started or settled
+	unheld sync.Once
+}
+
+// hold counts dl as waiting in a pool; call before handing it over.
+func (dl *delivery) hold() {
+	dl.held = true
+	dl.f.held.Add(1)
+}
+
+// start ends dl's wait in a pool.
+func (dl *delivery) start() {
+	if dl.held {
+		dl.unheld.Do(func() { dl.f.held.Add(-1) })
+	}
 }
 
 func (r *routineSet) newDelivery(f *feed, m jetstream.Msg, j mesh.Job, from mesh.Path) *delivery {
@@ -63,6 +79,7 @@ func (r *routineSet) newDelivery(f *feed, m jetstream.Msg, j mesh.Job, from mesh
 }
 
 func (dl *delivery) settle(how string, do func() error) {
+	dl.start()
 	dl.once.Do(func() {
 		close(dl.stop)
 		dl.f.inflight.Add(-1)
@@ -196,6 +213,7 @@ func (w *worker) end() {
 // slots are busy, or nothing when the loop stops mid-run (the job stays
 // unacked and is redelivered after AckWait).
 func (w *worker) handle(dl *delivery) {
+	dl.start()
 	r, j := w.r, dl.job
 	ctx := r.ctx
 	fail := func(text string) {

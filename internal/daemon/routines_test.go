@@ -313,7 +313,7 @@ timeout = "1m"
 batch_idle = "1s"
 command = "echo x >> ` + runs + `; if [ $(wc -l < ` + runs + `) -ge 2 ]; then echo second; else sleep 30; fi; true"
 `})
-	ackWaitExtra = 2*time.Second - time.Minute // AckWait = timeout + extra = 2s
+	ackWaitExtra = 3*time.Second - time.Minute // AckWait = timeout + extra = 3s
 	stop := f.start(t)
 	f.waitStarted(t, "routine.slow.cmd-1", 1)
 	f.waitStarted(t, "routine.slow.cmd-2", 1)
@@ -321,7 +321,7 @@ command = "echo x >> ` + runs + `; if [ $(wc -l < ` + runs + `) -ge 2 ]; then ec
 	id := f.queue(t, mesh.Job{Kind: "slow", Go: true})
 	waitFor(t, 10*time.Second, "first run", func() bool { return len(lines(t, runs)) == 1 })
 	// Held past AckWait by one instance, never handed to the other.
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(3500 * time.Millisecond)
 	for time.Now().Before(deadline) {
 		working := 0
 		for _, p := range []string{"routine.slow.cmd-1", "routine.slow.cmd-2"} {
@@ -334,10 +334,19 @@ command = "echo x >> ` + runs + `; if [ $(wc -l < ` + runs + `) -ge 2 ]; then ec
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	died := time.Now()
 	stop() // the instance dies mid-job: no ack, no reply
 	f.noReply(t, id, 200*time.Millisecond)
 
+	// Redelivered only after AckWait (3s, the last heartbeat at most 1s
+	// before the death), not at once as a NAK would.
 	f.start(t)
+	for time.Since(died) < 1800*time.Millisecond {
+		if n := len(lines(t, runs)); n != 1 {
+			t.Fatalf("rerun %s after the death, before AckWait", time.Since(died))
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 	r := f.reply(t, id, 20*time.Second)
 	if !r.OK || r.Output != "second\n" {
 		t.Fatalf("reply %+v", r)
@@ -496,5 +505,22 @@ batch_idle = "1s"
 	n, ok, err := mesh.GetNode(f.ctx, f.c, "routine.review.m-a-1")
 	if err != nil || !ok || n.Model != "m-a" || n.Role != "routine" {
 		t.Fatalf("m-a node %+v %v %v", n, ok, err)
+	}
+}
+
+// A job fetched while the loop stops is returned to the inbox, not refused.
+func TestJobFetchedWhileStoppingStaysQueued(t *testing.T) {
+	f := routineSetup(t, map[string]string{".bmesh/routines/verify.toml": "timeout = \"30s\"\ncommand = \"echo ran\"\n"})
+	fetchWait = 2 * time.Second // the dispatcher's fetch outlives the stop
+	stop := f.start(t)
+	f.waitStarted(t, "routine.verify.cmd-1", 1)
+	time.Sleep(300 * time.Millisecond) // the dispatcher is inside a fetch
+	done := make(chan struct{})
+	go func() { stop(); close(done) }()
+	id := f.queue(t, mesh.Job{Kind: "verify", Go: true})
+	<-done
+	f.noReply(t, id, 500*time.Millisecond)
+	if n, err := mesh.Depth(f.ctx, f.c, "verify"); err != nil || n != 1 {
+		t.Fatalf("depth after stop %d %v, want the job still queued", n, err)
 	}
 }

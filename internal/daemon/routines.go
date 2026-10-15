@@ -47,16 +47,35 @@ type routineSet struct {
 
 	pathMu sync.Mutex // guards paths
 	paths  map[string]chan struct{}
+
+	// worktreeMu serializes adding and removing checkouts: concurrent `git
+	// worktree add` and `prune` in one repo read each other's half-written
+	// metadata.
+	worktreeMu sync.Mutex
+}
+
+func (r *routineSet) ensureCheckout(repoPath, instance string) (string, error) {
+	r.worktreeMu.Lock()
+	defer r.worktreeMu.Unlock()
+	return checkout.Ensure(repoPath, r.root, instance)
+}
+
+func (r *routineSet) removeCheckout(repoPath, dir string) error {
+	r.worktreeMu.Lock()
+	defer r.worktreeMu.Unlock()
+	return checkout.Remove(repoPath, dir)
 }
 
 // feed is one kind's consumer, dispatcher and per-repo groups.
 type feed struct {
 	name     string
 	cons     jetstream.Consumer
+	ctx      context.Context // ends when the feed stops
 	cancel   context.CancelFunc
 	maxAck   int
 	ackWait  atomic.Int64 // time.Duration
 	inflight atomic.Int64 // jobs fetched and not yet settled
+	held     atomic.Int64 // jobs handed to a pool and not yet started
 
 	mu     sync.Mutex // guards groups and sends to their pools
 	groups map[string]*group
@@ -112,7 +131,7 @@ func (r *routineSet) discover(repoPath string) ([]kind.Kind, error) {
 	if err := checkout.Fetch(repoPath); err != nil {
 		r.d.Log.Warn("routines: fetch", "repo", repoPath, "err", err)
 	}
-	dir, err := checkout.Ensure(repoPath, r.root, "main")
+	dir, err := r.ensureCheckout(repoPath, "main")
 	if err != nil {
 		return nil, err
 	}
@@ -290,7 +309,7 @@ func (r *routineSet) applyKind(name string, defs map[string]kind.Kind, repoPaths
 
 func (r *routineSet) startFeed(name string, cons jetstream.Consumer) *feed {
 	ctx, cancel := context.WithCancel(r.ctx)
-	f := &feed{name: name, cons: cons, cancel: cancel, groups: map[string]*group{}}
+	f := &feed{name: name, cons: cons, ctx: ctx, cancel: cancel, groups: map[string]*group{}}
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
@@ -382,7 +401,8 @@ func isGo(m mesh.Message) bool {
 // dispatch fetches the kind's messages one at a time until ctx ends. A go
 // is passed to the instances; a job is routed. Held jobs count against
 // MaxAckPending, so a go queued behind them cannot be fetched: while jobs
-// are out, each empty fetch looks ahead in the stream for one.
+// are held and not yet running, each empty fetch looks ahead in the stream
+// for one. A message fetched once ctx has ended goes back to the inbox.
 func (r *routineSet) dispatch(ctx context.Context, f *feed) {
 	var last, goSeen uint64 // highest stream sequence fetched; of a go acted on
 	for ctx.Err() == nil {
@@ -396,13 +416,19 @@ func (r *routineSet) dispatch(ctx context.Context, f *feed) {
 				sleepCtx(ctx, fetchWait)
 				continue
 			}
-			if f.inflight.Load() > 0 {
+			if f.held.Load() > 0 {
 				if seq, ok := r.peekGo(ctx, f.name, max(last, goSeen)); ok {
 					goSeen = seq
 					f.signalGo()
 				}
 			}
 			continue
+		}
+		if ctx.Err() != nil { // Next takes no ctx: the feed stopped meanwhile
+			if err := m.Nak(); err != nil {
+				r.d.Log.Warn("routines: nak", "kind", f.name, "err", err)
+			}
+			return
 		}
 		var seq uint64
 		if meta, err := m.Metadata(); err == nil {
@@ -466,6 +492,10 @@ func (r *routineSet) route(f *feed, m jetstream.Msg, msg mesh.Message) {
 		return
 	}
 	dl := r.newDelivery(f, m, j, from)
+	if f.ctx.Err() != nil {
+		dl.nak()
+		return
+	}
 	refuse := func(text string) {
 		r.reply(dl, mesh.Reply{Output: text, By: mesh.RoutinePath(f.name).String()})
 		dl.ack()
@@ -485,6 +515,10 @@ func (r *routineSet) handOff(f *feed, dl *delivery) string {
 	j := dl.job
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.ctx.Err() != nil { // stopping: its groups are gone, not undefined
+		dl.nak()
+		return ""
+	}
 	g := f.groups[j.Repo]
 	switch {
 	case g == nil:
@@ -509,6 +543,7 @@ func (r *routineSet) handOff(f *feed, dl *delivery) string {
 			r.freshRun(g, dl, model)
 		}()
 	default:
+		dl.hold()
 		select {
 		case g.pools[model].jobs <- dl:
 		default:

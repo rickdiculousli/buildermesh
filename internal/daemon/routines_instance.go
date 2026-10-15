@@ -4,7 +4,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rickdiculousli/buildermesh/internal/checkout"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
 
@@ -24,7 +23,7 @@ func (r *routineSet) pooledInstance(g *group, p *pool, path string, goCh chan st
 	var dir string
 	for {
 		var err error
-		if dir, err = checkout.Ensure(g.repoPath, r.root, path); err == nil {
+		if dir, err = r.ensureCheckout(g.repoPath, path); err == nil {
 			break
 		}
 		r.d.Log.Warn("routines: checkout", "path", path, "err", err)
@@ -127,7 +126,7 @@ func (r *routineSet) freshRun(g *group, dl *delivery, model string) {
 		return
 	}
 	defer release()
-	dir, err := checkout.Ensure(g.repoPath, r.root, path)
+	dir, err := r.ensureCheckout(g.repoPath, path)
 	if err != nil {
 		if r.ctx.Err() != nil {
 			dl.abandon()
@@ -141,7 +140,7 @@ func (r *routineSet) freshRun(g *group, dl *delivery, model string) {
 	w.begin()
 	w.handle(dl)
 	w.end()
-	if err := checkout.Remove(g.repoPath, dir); err != nil {
+	if err := r.removeCheckout(g.repoPath, dir); err != nil {
 		r.d.Log.Warn("routines: remove checkout", "path", path, "err", err)
 	}
 }

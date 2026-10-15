@@ -1,7 +1,7 @@
 // Package daemon holds the bmesh daemon's loops: it keeps each lead's runner
 // sample current, wakes idle leads with unread mail, marks quiet nodes
-// silent, and runs the routine kinds of the repos in [repos]. Every loop is its own goroutine; a failing step is logged and the
-// loop carries on.
+// silent, and runs the routine kinds of the repos in [repos]. Every loop is
+// its own goroutine; a failing step is logged and the loop carries on.
 package daemon
 
 import (
