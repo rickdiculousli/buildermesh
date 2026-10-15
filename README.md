@@ -22,6 +22,32 @@ Runner tests drive shell fakes instead of T3 and tmux. `BMESH_T3_COMMAND`, when 
 - `t3`: `uv run <t3_dispatch> start|status|send|stop`, 120 s per call. `send` runs `status` first and never sends to a running thread; no `--force`, `--queue` or `wait-idle`.
 - `tmux`: `git worktree add -b <thread> <worktrees>/<repo>/<thread>`, then `claude` in window `<thread>` of session `<tmux_session>` (created when missing), with the brief typed in. It can't tell whether claude is mid-turn.
 
+## Executors
+
+A lead fans out by making executors: subagents in worktrees of their own, on branches under the lead's, each a node under the lead's path.
+
+```
+bmesh executor new --name N [--base REF] [--model M] [--json]
+bmesh executor list [--json]
+bmesh executor remove <name> [--force]
+```
+
+`new` runs as the lead (or as an executor fanning out again): it makes `<[runner] worktrees>/<repo>/<lead>.<name>` with `git worktree add -b <lead branch>-<name>` from the lead's HEAD (`--base` picks another commit), registers node `<lead>.<name>` (`role: executor`, `parent`, branch, worktree, repo, host, model) with an inbox and state `idle`, and prints `{"path","branch","worktree"}` followed, unless `--json`, by the executor header: the paragraph to paste at the top of the subagent's prompt, which names the path, worktree and branch, says to carry `--node <path>` on every `bmesh` command, to run `bmesh started` first and to invoke the `buildermesh:executor` skill. A name matches `^[a-z0-9][a-z0-9-]*$`; a second `new` with a name whose node is not `done` or `blocked`, or whose branch still exists, is refused (exit 3). When `git worktree add` fails, nothing is registered and the branch is removed. The branch must not exist before.
+
+`list` prints the lead's tree (every node under the lead): path, state, branch, head (when the worktree is on this host) and unread count. `remove` refuses (exit 3) while the branch is not merged into the lead's HEAD unless `--force`; it then removes the worktree (`--force` also drops uncommitted changes) and the branch (`-d`, or `-D` with `--force`), forgets the worktree in the node and marks it `done`. The node and its branch name stay in `bm-nodes` for the map; the name can be used again.
+
+An executor's `ask` is sent to its parent's inbox as a message `ask from <path>: <text>` as well as published as its own `ask` event, since only leads reach the operator; the digest lists an executor's ask, silence, block or completion nested under its lead's line and counts only leads under "asking". An executor's `done` needs `--commit` and never reads the spec.
+
+### The skills
+
+The repo is a Claude Code plugin, `buildermesh`, with two skills: `lead` (own one spec, decide the shape, executors, checkpoints, merge, verify, land, ask) and `executor` (your worktree and branch only, checkpoints, routines, report, ask goes to the lead, never merge or push). Install it from the repo:
+
+```
+claude plugin marketplace add rickdiculousli/buildermesh && claude plugin install buildermesh@buildermesh
+```
+
+or from a checkout: `claude plugin marketplace add ~/repos/buildermesh && claude plugin install buildermesh@buildermesh`. A lead's brief says "follow the `buildermesh:lead` skill" and adds the operator's own conventions; the executor header names the executor skill. The skills name no repo convention; `docs/agents-snippet.md` is the paragraph a repo's AGENTS.md gets.
+
 ## Routines
 
 A routine runs one of a repo's checks against a commit: a shell command or a headless `claude -p` session. A kind says how; a job asks for one run; a result records it by tree.
@@ -197,7 +223,7 @@ listen = "127.0.0.1:3774"
 kind = "t3"                                 # t3 | tmux
 t3_dispatch = "t3_dispatch.py"              # path; run as `uv run <path>`
 tmux_session = "bmesh"
-worktrees = "~/.bmesh/worktrees"            # tmux runner's worktree root
+worktrees = "~/.bmesh/worktrees"            # executors' worktrees, and the tmux runner's
 checkouts = "~/.bmesh/checkouts"            # routine instances' checkouts; "" = routines off
 claude = "claude"                           # claude command for model routines, split on spaces
 [notify]
@@ -222,7 +248,7 @@ lead = "claude-fable-5-1"
 | 0 | ok |
 | 1 | error; a failed run (`routine run`, `routine wait`); a lost lease; an interrupted `lease run` |
 | 2 | usage |
-| 3 | refused (a `done` the spec or its `verified` line doesn't support, a reserved or taken path, a send to a running thread, a dirty worktree for a deterministic inline run, an unknown kind, a fresh or pooled kind run inline without `--here`, an inline run of a commit other than HEAD, a busy slot, a lease held by someone else, no result for `result find` or `spec verified`) |
+| 3 | refused (a `done` the spec or its `verified` line doesn't support, a reserved or taken path, a send to a running thread, an executor name or branch in use, an `executor remove` of an unmerged branch, a dirty worktree for a deterministic inline run, an unknown kind, a fresh or pooled kind run inline without `--here`, an inline run of a commit other than HEAD, a busy slot, a lease held by someone else, no result for `result find` or `spec verified`) |
 | 5 | timeout (`watch`, `routine wait`) |
 
 `lease run` exits with its command's code.

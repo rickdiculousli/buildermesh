@@ -79,7 +79,8 @@ func TestExecutorNewMakesWorktreeBranchNode(t *testing.T) {
 		t.Fatalf("output %+v", got)
 	}
 	if !strings.Contains(rest, "You are executor demo-012.alpha in buildermesh. Work only in "+wt+" on branch t3code/lead-alpha;") ||
-		!strings.Contains(rest, "export BMESH_NODE=demo-012.alpha") || !strings.Contains(rest, "`buildermesh:executor` skill") {
+		!strings.Contains(rest, "Every bmesh command carries --node demo-012.alpha.") ||
+		!strings.Contains(rest, "`bmesh --node demo-012.alpha started --text") || !strings.Contains(rest, "`buildermesh:executor` skill") {
 		t.Fatalf("header %q", rest)
 	}
 	if b := gitLines(t, wt, "rev-parse", "--abbrev-ref", "HEAD"); len(b) != 1 || b[0] != "t3code/lead-alpha" {

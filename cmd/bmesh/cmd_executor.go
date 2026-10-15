@@ -18,9 +18,13 @@ import (
 
 const executorUsage = "usage: bmesh executor new --name N [--base REF] [--model M] [--json] | list [--json] | remove <name> [--force]"
 
-// executorHeader is pasted at the top of an executor's Agent prompt.
-const executorHeader = "You are executor %s in buildermesh. Work only in %s on branch %s; every file path you touch is under it. " +
-	"Before anything else: export BMESH_NODE=%s and run `bmesh started --text \"<what you will do>\"`. " +
+// executorHeader is pasted at the top of an executor's Agent prompt. It
+// names the node on every bmesh command rather than exporting BMESH_NODE:
+// the harness's shell keeps no environment between tool calls, and a bmesh
+// run from the lead's worktree would otherwise act as the lead.
+const executorHeader = "You are executor %s in buildermesh. Work only in %s on branch %s; every file path you touch is under it " +
+	"and every command runs from it (cd there first). Every bmesh command carries --node %s. " +
+	"Before anything else run `bmesh --node %s started --text \"<what you will do>\"`. " +
 	"Read your brief below, then invoke the `buildermesh:executor` skill.\n"
 
 var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
@@ -187,7 +191,7 @@ func (a *app) cmdExecutorNew(args []string) error {
 	}
 	fmt.Fprintf(a.stdout, "%s\n", line)
 	if !a.json {
-		fmt.Fprintf(a.stdout, executorHeader, path, wt, branch, path)
+		fmt.Fprintf(a.stdout, executorHeader, path, wt, branch, path, path)
 	}
 	return nil
 }

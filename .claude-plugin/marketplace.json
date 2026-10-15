@@ -1,0 +1,24 @@
+{
+  "name": "buildermesh",
+  "owner": {
+    "name": "Rick Li"
+  },
+  "description": "buildermesh: a NATS mesh for coordinating coding agents, and the skills its nodes follow.",
+  "plugins": [
+    {
+      "name": "buildermesh",
+      "version": "0.3.0",
+      "description": "The lead and executor skills for nodes on a buildermesh mesh: delegation shape, checkpoints, branch hand-back and the verified line, over the bmesh CLI.",
+      "author": {
+        "name": "Rick Li"
+      },
+      "keywords": [
+        "buildermesh",
+        "bmesh",
+        "lead",
+        "executor"
+      ],
+      "source": "./"
+    }
+  ]
+}
