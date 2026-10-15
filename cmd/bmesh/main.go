@@ -40,6 +40,7 @@ commands:
                                            follow nodes until all are done, blocked or silent
   lead start --repo R --spec NNN --brief FILE [--model M] [--title T] [--path P]
                                            start a lead through the runner and register it
+  serve [--listen ADDR]                    run the daemon and the map (embedded NATS when [mesh] nats is empty)
 `
 
 // exitErr carries an exit code and the message printed as "bmesh: <msg>".
@@ -123,6 +124,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdWatch(rest)
 	case "lead":
 		return a.cmdLead(rest)
+	case "serve":
+		return a.cmdServe(rest)
 	case "help":
 		fmt.Fprint(a.stdout, usage)
 		return nil
