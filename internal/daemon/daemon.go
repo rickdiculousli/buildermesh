@@ -1,6 +1,6 @@
 // Package daemon holds the bmesh daemon's loops: it keeps each lead's runner
-// sample current, wakes idle leads with unread mail, and marks quiet nodes
-// silent. Every loop is its own goroutine; a failing step is logged and the
+// sample current, wakes idle leads with unread mail, marks quiet nodes
+// silent, and runs the routine kinds of the repos in [repos]. Every loop is its own goroutine; a failing step is logged and the
 // loop carries on.
 package daemon
 
@@ -33,6 +33,9 @@ type Deps struct {
 	Host   string
 	Log    *slog.Logger
 	Now    func() time.Time
+
+	Checkouts string // routine instances' checkouts root ([runner] checkouts, expanded)
+	ClaudeBin string // the claude command for model routines, split on spaces
 }
 
 func (d *Deps) defaults() {
@@ -57,8 +60,9 @@ func decodeEvent(data []byte) (mesh.Event, error) {
 	return ev, err
 }
 
-// Run starts the activity follower and the poll+wake and silence loops, and
-// returns once ctx ends and every loop has stopped.
+// Run starts the activity follower, the poll+wake and silence loops and,
+// when [repos] names any repo, the routine loop; it returns once ctx ends
+// and every loop has stopped.
 func Run(ctx context.Context, d Deps) error {
 	if d.Client == nil || d.Cfg == nil || d.Runner == nil || d.Host == "" {
 		return errors.New("daemon: Client, Cfg, Runner and Host are required")
@@ -95,6 +99,9 @@ func Run(ctx context.Context, d Deps) error {
 		}
 		since := d.Now()
 		start(func() { every(ctx, digestEvery, func() { digestOnce(ctx, d, &since) }) })
+	}
+	if len(d.Cfg.Repos) > 0 {
+		start(func() { routines(ctx, d) })
 	}
 	<-ctx.Done()
 	wg.Wait()

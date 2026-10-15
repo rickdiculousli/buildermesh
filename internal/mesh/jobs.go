@@ -60,18 +60,24 @@ const (
 	defaultKindAckWait = 21 * time.Minute
 )
 
-// KindConsumer creates or updates the kind's inbox consumer: at most maxAck
-// jobs out at once, each redelivered when unacked after ackWait.
-func KindConsumer(ctx context.Context, c *Client, kindName string, maxAck int, ackWait time.Duration) (jetstream.Consumer, error) {
+// kindConsumerConfig is the kind's inbox consumer: at most maxAck jobs out
+// at once, each redelivered when unacked after ackWait.
+func kindConsumerConfig(kindName string, maxAck int, ackWait time.Duration) jetstream.ConsumerConfig {
 	p := RoutinePath(kindName)
-	cons, err := c.JS.CreateOrUpdateConsumer(ctx, StreamMesh, jetstream.ConsumerConfig{
+	return jetstream.ConsumerConfig{
 		Durable:       InboxConsumer(p),
 		FilterSubject: InboxSubject(p),
 		AckPolicy:     jetstream.AckExplicitPolicy,
 		AckWait:       ackWait,
 		MaxAckPending: maxAck,
 		DeliverPolicy: jetstream.DeliverAllPolicy,
-	})
+	}
+}
+
+// KindConsumer creates or updates the kind's inbox consumer: at most maxAck
+// jobs out at once, each redelivered when unacked after ackWait.
+func KindConsumer(ctx context.Context, c *Client, kindName string, maxAck int, ackWait time.Duration) (jetstream.Consumer, error) {
+	cons, err := c.JS.CreateOrUpdateConsumer(ctx, StreamMesh, kindConsumerConfig(kindName, maxAck, ackWait))
 	if err != nil {
 		return nil, fmt.Errorf("kind consumer for %s: %w", kindName, err)
 	}
@@ -79,13 +85,17 @@ func KindConsumer(ctx context.Context, c *Client, kindName string, maxAck int, a
 }
 
 // EnsureKindInbox creates the kind's consumer with default settings when it
-// does not exist, never overwriting a daemon's.
+// does not exist. The create fails on an existing consumer with other
+// settings, so a requester never overwrites a daemon's.
 func EnsureKindInbox(ctx context.Context, c *Client, kindName string) error {
-	_, err := c.JS.Consumer(ctx, StreamMesh, InboxConsumer(RoutinePath(kindName)))
-	if errors.Is(err, jetstream.ErrConsumerNotFound) {
-		_, err = KindConsumer(ctx, c, kindName, defaultKindMaxAck, defaultKindAckWait)
+	_, err := c.JS.CreateConsumer(ctx, StreamMesh, kindConsumerConfig(kindName, defaultKindMaxAck, defaultKindAckWait))
+	if errors.Is(err, jetstream.ErrConsumerExists) {
+		return nil
 	}
-	return err
+	if err != nil {
+		return fmt.Errorf("kind consumer for %s: %w", kindName, err)
+	}
+	return nil
 }
 
 // ensureAnyInbox ensures p's consumer: a kind's for routine.<kind>, the

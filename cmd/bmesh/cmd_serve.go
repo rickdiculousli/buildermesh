@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -88,13 +89,18 @@ func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Wri
 	addr := ln.Addr().String()
 	fmt.Fprintf(stderr, "bmesh serve: nats %s (%s), http %s, host %s\n", url, mode, addr, host)
 
+	claude := os.Getenv("BMESH_CLAUDE_COMMAND")
+	if strings.TrimSpace(claude) == "" {
+		claude = cfg.Runner.Claude
+	}
 	dctx, stopDaemon := context.WithCancel(ctx)
 	defer stopDaemon()
 	daemonDone := make(chan error, 1)
 	go func() {
 		daemonDone <- daemon.Run(dctx, daemon.Deps{
 			Client: c, Cfg: cfg, Runner: r, Host: host,
-			Log: slog.New(slog.NewTextHandler(stderr, nil)),
+			Log:       slog.New(slog.NewTextHandler(stderr, nil)),
+			Checkouts: cfg.Expand(cfg.Runner.Checkouts), ClaudeBin: claude,
 		})
 	}()
 
