@@ -10,16 +10,26 @@ import (
 )
 
 func TestResultKeyWithAndWithoutArgs(t *testing.T) {
-	if got := ResultKey("verify", "3f2a9c1e", nil); got != "verify.3f2a9c1e" {
+	if got := ResultKey("verify", "3f2a9c1e", nil, ""); got != "verify.3f2a9c1e" {
 		t.Fatalf("no args: %q", got)
 	}
 	sum := sha256.Sum256([]byte("a\x00b c"))
 	want := "verify.3f2a9c1e." + hex.EncodeToString(sum[:])[:8]
-	if got := ResultKey("verify", "3f2a9c1e", []string{"a", "b c"}); got != want {
+	if got := ResultKey("verify", "3f2a9c1e", []string{"a", "b c"}, ""); got != want {
 		t.Fatalf("args: %q, want %q", got, want)
 	}
-	if ResultKey("verify", "t", []string{"a b"}) == ResultKey("verify", "t", []string{"a", "b"}) {
+	if ResultKey("verify", "t", []string{"a b"}, "") == ResultKey("verify", "t", []string{"a", "b"}, "") {
 		t.Fatal("args joined ambiguously")
+	}
+	if got := ResultKey("review", "t", nil, "claude-opus-5-5"); got != "review.t.opus-5-5" {
+		t.Fatalf("model: %q", got)
+	}
+	sum = sha256.Sum256([]byte("x"))
+	if got, want := ResultKey("review", "t", []string{"x"}, "claude-opus-5-5"), "review.t."+hex.EncodeToString(sum[:])[:8]+".opus-5-5"; got != want {
+		t.Fatalf("args and model: %q, want %q", got, want)
+	}
+	if got := ModelShort("claude-Sonnet_5.5[1m]"); got != "-onnet-5-5-1m-" {
+		t.Fatalf("model short: %q", got)
 	}
 
 	c, ctx := connect(t)
@@ -31,6 +41,9 @@ func TestResultKeyWithAndWithoutArgs(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := PutResult(ctx, c, Result{Kind: "review", Tree: "t1", By: "host"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := PutResult(ctx, c, Result{Kind: "review", Tree: "t1", By: "host", Model: "claude-opus-5-5"}); err != nil {
 		t.Fatal(err)
 	}
 	got, ok, err := GetResult(ctx, c, "verify.t1")
@@ -50,6 +63,10 @@ func TestResultKeyWithAndWithoutArgs(t *testing.T) {
 	list, err := ListResults(ctx, c, "verify")
 	if err != nil || len(list) != 2 {
 		t.Fatalf("list: %+v %v", list, err)
+	}
+	if list, err := ListResults(ctx, c, "review"); err != nil || len(list) != 2 ||
+		list[0].Model != "" || list[1].Model != "claude-opus-5-5" {
+		t.Fatalf("review list: %+v %v", list, err)
 	}
 	if list, err := ListResults(ctx, c, "lint"); err != nil || len(list) != 0 {
 		t.Fatalf("empty list: %+v %v", list, err)

@@ -43,9 +43,9 @@ commands:
   lead start --repo R --spec NNN --brief FILE [--model M] [--title T] [--path P]
                                            start a lead through the runner and register it
   serve [--listen ADDR]                    run the daemon and the map (embedded NATS when [mesh] nats is empty)
-  result find <kind> [--commit C] [--json] [-- args...]
+  result find <kind> [--commit C] [--model M] [--json] [-- args...]
                                            print the result of kind at the commit's tree (exit 3 when none)
-  result record <kind> --ok|--fail [--commit C] [--output FILE|-] [-- args...]
+  result record <kind> --ok|--fail [--commit C] [--model M] [--output FILE|-] [-- args...]
                                            record a result of kind at the commit's tree
   lease acquire <slot> [--ttl D]           take a place in a slot and print its key (exit 3 when busy)
   lease renew <key> [--ttl D]              extend a held lease
@@ -58,8 +58,8 @@ commands:
   routine go <kind>                        tell the kind's instances to start on waiting jobs
   routine wait <job id> [--timeout D]      wait for a job's reply; print its output, exit 0 ok / 1 fail / 5 timeout
   routine run <kind> [--commit HEAD] [--model M] [--here] [--rerun] [--text T] [-- args...]
-                                           run a kind in this worktree; a deterministic kind needs a clean
-                                           tree, answers from a recorded result and records one; exit 0 ok / 1 fail
+                                           run a kind in this worktree and record its result; a deterministic
+                                           kind needs a clean tree and answers from a recorded result; exit 0 ok / 1 fail
 `
 
 // exitErr carries an exit code and the message printed as "bmesh: <msg>".

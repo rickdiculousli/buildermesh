@@ -22,17 +22,22 @@ type Result struct {
 	Output string   `json:"output"`
 	At     string   `json:"at"`
 	By     string   `json:"by"`
+	Model  string   `json:"model,omitempty"`
 }
 
 // ResultKey is <kind>.<tree>, with "." and the first 8 hex digits of the
-// sha256 of the args joined by NUL appended when there are args.
-func ResultKey(kind, tree string, args []string) string {
+// sha256 of the args joined by NUL appended when there are args, then "."
+// and the model's ModelShort when model is set.
+func ResultKey(kind, tree string, args []string, model string) string {
 	key := kind + "." + tree
-	if len(args) == 0 {
-		return key
+	if len(args) > 0 {
+		sum := sha256.Sum256([]byte(strings.Join(args, "\x00")))
+		key += "." + hex.EncodeToString(sum[:])[:8]
 	}
-	sum := sha256.Sum256([]byte(strings.Join(args, "\x00")))
-	return key + "." + hex.EncodeToString(sum[:])[:8]
+	if model != "" {
+		key += "." + ModelShort(model)
+	}
+	return key
 }
 
 // PutResult stores r under its key, filling At when empty; nil Args are
@@ -44,7 +49,7 @@ func PutResult(ctx context.Context, c *Client, r Result) error {
 	if r.At == "" {
 		r.At = time.Now().UTC().Format(time.RFC3339)
 	}
-	return put(ctx, c, BucketResults, ResultKey(r.Kind, r.Tree, r.Args), r)
+	return put(ctx, c, BucketResults, ResultKey(r.Kind, r.Tree, r.Args, r.Model), r)
 }
 
 // GetResult returns false when no result is stored under key.

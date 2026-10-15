@@ -35,7 +35,7 @@ func TestInlineRunsAndRecords(t *testing.T) {
 	})
 	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 	head := gitOut(t, "rev-parse", "HEAD")
-	key := mesh.ResultKey("verify", tree, []string{"a", "b"})
+	key := mesh.ResultKey("verify", tree, []string{"a", "b"}, "")
 
 	out, errs, code := runCLI(t, nil, "routine", "run", "verify", "--", "a", "b")
 	if code != 0 || out != "ran "+tree+" "+testHost+" a b\n" || errs != "recorded "+key+"\n" {
@@ -58,13 +58,24 @@ func TestInlineRunsAndRecords(t *testing.T) {
 		t.Fatalf("broken result %+v %v %v", r, ok, err)
 	}
 
-	// A non-deterministic kind records nothing.
+	// A non-deterministic kind records too, and a second run replaces the
+	// record rather than being answered from it.
 	out, errs, code = runCLI(t, nil, "routine", "run", "notes")
-	if code != 0 || out != "hi\n" || errs != "" {
+	if code != 0 || out != "hi\n" || errs != "recorded notes."+tree+"\n" {
 		t.Fatalf("notes: %d %q %q", code, out, errs)
 	}
-	if rs, err := mesh.ListResults(ctx, c, "notes"); err != nil || len(rs) != 0 {
+	rs, err := mesh.ListResults(ctx, c, "notes")
+	if err != nil || len(rs) != 1 || !rs[0].OK || rs[0].Output != "hi\n" || rs[0].Model != "" {
 		t.Fatalf("notes recorded %+v %v", rs, err)
+	}
+	first := rs[0].At
+	time.Sleep(1100 * time.Millisecond) // At has one-second resolution
+	out, errs, code = runCLI(t, nil, "routine", "run", "notes")
+	if code != 0 || out != "hi\n" || errs != "recorded notes."+tree+"\n" {
+		t.Fatalf("notes again: %d %q %q", code, out, errs)
+	}
+	if rs, err := mesh.ListResults(ctx, c, "notes"); err != nil || len(rs) != 1 || rs[0].At == first {
+		t.Fatalf("notes not replaced %+v %v", rs, err)
 	}
 }
 
@@ -152,6 +163,7 @@ func TestInlineHoldsSlotLease(t *testing.T) {
 	}
 	runGit(t, repo, "add", "-A")
 	runGit(t, repo, "commit", "-m", "slots")
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 	mark := marker(t)
 	goFile := filepath.Join(t.TempDir(), "go")
 	t.Setenv("GO", goFile)
@@ -190,7 +202,7 @@ func TestInlineHoldsSlotLease(t *testing.T) {
 	}
 	select {
 	case r := <-res:
-		if r[0] != 0 || r[1] != "played\n" || r[2] != "" {
+		if r[0] != 0 || r[1] != "played\n" || r[2] != "recorded game."+tree+"\n" {
 			t.Fatalf("run: %v", r)
 		}
 	case <-time.After(10 * time.Second):
@@ -215,10 +227,10 @@ func TestInlineModelKindThroughFake(t *testing.T) {
 	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 
 	out, errs, code := runCLI(t, nil, "routine", "run", "review", "--model", "m2", "--text", "look at it")
-	if code != 0 || out != "looks fine\nVERDICT: ok\n" || errs != "recorded review."+tree+"\n" {
+	if code != 0 || out != "looks fine\nVERDICT: ok\n" || errs != "recorded review."+tree+".m2\n" {
 		t.Fatalf("run: %d %q %q", code, out, errs)
 	}
-	if r, ok, err := mesh.GetResult(ctx, c, "review."+tree); err != nil || !ok || !r.OK {
+	if r, ok, err := mesh.GetResult(ctx, c, "review."+tree+".m2"); err != nil || !ok || !r.OK || r.Model != "m2" {
 		t.Fatalf("result %+v %v %v", r, ok, err)
 	}
 	b, err := os.ReadFile(log)
@@ -237,8 +249,14 @@ func TestInlineModelKindThroughFake(t *testing.T) {
 	if b, _ := os.ReadFile(log); !strings.Contains(string(b), "--model m1 ") {
 		t.Fatalf("default model: %q", b)
 	}
-	if r, _, _ := mesh.GetResult(ctx, c, "review."+tree); r.OK {
-		t.Fatal("record not replaced")
+	if r, ok, _ := mesh.GetResult(ctx, c, "review."+tree+".m1"); !ok || r.OK || r.Model != "m1" {
+		t.Fatalf("m1 record %+v %v", r, ok)
+	}
+	if r, _, _ := mesh.GetResult(ctx, c, "review."+tree+".m2"); !r.OK {
+		t.Fatal("m2 record changed by the m1 run")
+	}
+	if rs, err := mesh.ListResults(ctx, c, "review"); err != nil || len(rs) != 2 {
+		t.Fatalf("review results %+v %v", rs, err)
 	}
 	if _, errs, code := runCLI(t, nil, "routine", "run", "review", "--model", "m3"); code != 2 {
 		t.Fatalf("unknown model: %d %q", code, errs)

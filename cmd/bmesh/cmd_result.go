@@ -13,8 +13,8 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
 
-const resultUsage = "usage: bmesh result find <kind> [--commit C] [--json] [-- args...] | " +
-	"bmesh result record <kind> --ok|--fail [--commit C] [--output FILE|-] [-- args...]"
+const resultUsage = "usage: bmesh result find <kind> [--commit C] [--model M] [--json] [-- args...] | " +
+	"bmesh result record <kind> --ok|--fail [--commit C] [--model M] [--output FILE|-] [-- args...]"
 
 func (a *app) cmdResult(args []string) error {
 	if len(args) > 0 {
@@ -53,6 +53,7 @@ func kindArg(pos []string) (string, []string, error) {
 func (a *app) cmdResultFind(args []string) error {
 	fs := a.flags("result find")
 	commit := fs.String("commit", "HEAD", "commit whose tree to look up")
+	model := fs.String("model", "", "the model of a model kind's result")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -70,7 +71,7 @@ func (a *app) cmdResultFind(args []string) error {
 	if err := a.connect(ctx, "result"); err != nil {
 		return err
 	}
-	key := mesh.ResultKey(name, tree, jobArgs)
+	key := mesh.ResultKey(name, tree, jobArgs, *model)
 	r, ok, err := mesh.GetResult(ctx, a.client, key)
 	if err != nil {
 		return err
@@ -101,6 +102,7 @@ func (a *app) cmdResultRecord(args []string) error {
 	ok := fs.Bool("ok", false, "the run passed")
 	failed := fs.Bool("fail", false, "the run failed")
 	commit := fs.String("commit", "HEAD", "commit the run checked")
+	model := fs.String("model", "", "the model that ran, for a model kind")
 	outPath := fs.String("output", "", "file holding the run's output (- reads stdin)")
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -131,11 +133,11 @@ func (a *app) cmdResultRecord(args []string) error {
 	if err != nil {
 		return err
 	}
-	r := mesh.Result{Kind: name, Tree: tree, Commit: sha, Args: jobArgs, OK: *ok, Output: output, By: by}
+	r := mesh.Result{Kind: name, Tree: tree, Commit: sha, Args: jobArgs, OK: *ok, Output: output, By: by, Model: *model}
 	if err := mesh.PutResult(ctx, a.client, r); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.stdout, "recorded %s\n", mesh.ResultKey(name, tree, jobArgs))
+	fmt.Fprintf(a.stdout, "recorded %s\n", mesh.ResultKey(name, tree, jobArgs, *model))
 	return nil
 }
 

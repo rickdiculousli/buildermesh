@@ -65,7 +65,7 @@ func TestResultRecordAndFind(t *testing.T) {
 	if err := os.WriteFile(big, []byte(strings.Repeat("x", 70<<10)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	key := mesh.ResultKey("verify", tree, []string{"--fast", "a b"})
+	key := mesh.ResultKey("verify", tree, []string{"--fast", "a b"}, "")
 	out, errs, code = runCLI(t, as("app-001"), "result", "record", "verify", "--fail", "--output", big, "--", "--fast", "a b")
 	if code != 0 || out != "recorded "+key+"\n" {
 		t.Fatalf("record args: %d %q %q", code, out, errs)
@@ -81,5 +81,19 @@ func TestResultRecordAndFind(t *testing.T) {
 	}
 	if got, ok, err := mesh.GetResult(ctx, c, "verify."+tree); err != nil || !ok || !got.OK {
 		t.Fatalf("no-args record changed: %+v %v %v", got, ok, err)
+	}
+
+	// A model makes a separate record, found only with that model.
+	out, errs, code = runCLI(t, nil, "result", "record", "review", "--ok", "--model", "claude-opus-5-5")
+	if code != 0 || out != "recorded review."+tree+".opus-5-5\n" {
+		t.Fatalf("record model: %d %q %q", code, out, errs)
+	}
+	if _, errs, code := runCLI(t, nil, "result", "find", "review"); code != 3 || errs != "bmesh: no result for review."+tree+"\n" {
+		t.Fatalf("find without model: %d %q", code, errs)
+	}
+	out, errs, code = runCLI(t, nil, "result", "find", "review", "--model", "claude-opus-5-5", "--json")
+	r = mesh.Result{}
+	if code != 0 || json.Unmarshal([]byte(out), &r) != nil || !r.OK || r.Model != "claude-opus-5-5" {
+		t.Fatalf("find model: %d %q %q", code, out, errs)
 	}
 }

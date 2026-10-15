@@ -296,7 +296,11 @@ func (a *app) cmdRoutineQueue(args []string) error {
 		if err != nil {
 			return err
 		}
-		key := mesh.ResultKey(name, tree, jobArgs)
+		resultModel := *model
+		if resultModel == "" && k.IsModel() {
+			resultModel = k.ModelsList()[0]
+		}
+		key := mesh.ResultKey(name, tree, jobArgs, resultModel)
 		r, ok, err := mesh.GetResult(ctx, a.client, key)
 		if err != nil {
 			return err
@@ -414,8 +418,9 @@ func (a *app) cmdRoutineWait(args []string) error {
 }
 
 // cmdRoutineRun runs a kind in this worktree: the requester's own run of
-// HEAD, holding the kind's slots. A deterministic kind needs a clean tree,
-// answers from a recorded result unless --rerun, and records its result.
+// HEAD, holding the kind's slots, and records its result (with the model for
+// a model kind). A deterministic kind needs a clean tree and answers from a
+// recorded result unless --rerun.
 func (a *app) cmdRoutineRun(args []string) error {
 	fs := a.flags("routine run")
 	commit := fs.String("commit", "HEAD", "commit to run (must be HEAD)")
@@ -479,7 +484,7 @@ func (a *app) cmdRoutineRun(args []string) error {
 	if err != nil {
 		return err
 	}
-	key := mesh.ResultKey(name, tree, jobArgs)
+	key := mesh.ResultKey(name, tree, jobArgs, *model)
 	if k.Deterministic && !*rerun {
 		r, ok, err := mesh.GetResult(ctx, a.client, key)
 		if err != nil {
@@ -514,16 +519,16 @@ func (a *app) cmdRoutineRun(args []string) error {
 	if err != nil {
 		return err
 	}
-	if k.Deterministic {
-		putCtx, cancel := cmdCtx() // the run may have outlasted ctx
-		defer cancel()
-		r := mesh.Result{Kind: name, Tree: tree, Commit: head, Args: jobArgs, OK: reply.OK,
-			Output: mesh.Truncate(reply.Output), By: self}
-		if err := mesh.PutResult(putCtx, a.client, r); err != nil {
-			return err
-		}
-		fmt.Fprintf(a.stderr, "recorded %s\n", key)
+	// Every inline run ran HEAD, so every one records (R12); only a
+	// deterministic kind is answered from its record.
+	putCtx, cancel := cmdCtx() // the run may have outlasted ctx
+	defer cancel()
+	r := mesh.Result{Kind: name, Tree: tree, Commit: head, Args: jobArgs, OK: reply.OK,
+		Output: mesh.Truncate(reply.Output), By: self, Model: *model}
+	if err := mesh.PutResult(putCtx, a.client, r); err != nil {
+		return err
 	}
+	fmt.Fprintf(a.stderr, "recorded %s\n", key)
 	return a.printVerdict(reply.OK, reply.Output)
 }
 
