@@ -84,11 +84,10 @@ func (r Claude) Start(ctx context.Context, s StartSpec) (Started, error) {
 	if err := os.WriteFile(filepath.Join(d, "worktree"), []byte(wt), 0o644); err != nil {
 		return Started{}, err
 	}
-	args := []string{"--session-id", s.ThreadID}
-	if s.Model != "" {
-		args = append(args, "--model", s.Model)
+	if err := os.WriteFile(filepath.Join(d, "model"), []byte(s.Model), 0o644); err != nil {
+		return Started{}, err
 	}
-	if err := r.turn(d, wt, 1, string(brief), args); err != nil {
+	if err := r.turn(d, wt, 1, string(brief), withModel([]string{"--session-id", s.ThreadID}, s.Model)); err != nil {
 		return Started{}, err
 	}
 	return Started{Thread: s.ThreadID, Branch: s.ThreadID, Worktree: wt}, nil
@@ -255,11 +254,18 @@ func claudeResult(b []byte) (string, bool) {
 	found := false
 	take := func(raw json.RawMessage) {
 		var r struct {
-			Type   string `json:"type"`
-			Result string `json:"result"`
+			Type    string `json:"type"`
+			Result  string `json:"result"`
+			IsError bool   `json:"is_error"`
+			Subtype string `json:"subtype"`
 		}
 		if json.Unmarshal(raw, &r) == nil && r.Type == "result" {
 			last, found = r.Result, true
+			if r.IsError {
+				// claude's own failure (a gone session, max turns): the
+				// turn is over, and the reply says what went wrong.
+				last = strings.TrimSpace("[error " + r.Subtype + "] " + r.Result)
+			}
 		}
 	}
 	dec := json.NewDecoder(bytes.NewReader(b))
@@ -293,22 +299,25 @@ func (r Claude) Status(ctx context.Context, thread string) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	n := readInt(filepath.Join(d, "turn"))
-	st := Status{Known: true, Running: running(d, n)}
-	if reply, ok := turnResult(d, n); ok {
-		st.LastReply = reply
-	} else if !st.Running && n > 0 {
-		// The turn ended without a result (a failed --resume, an auth
-		// error): say so with its stderr rather than show an older reply.
-		errb, _ := os.ReadFile(filepath.Join(d, "turn-"+strconv.Itoa(n)+".err"))
-		st.LastReply = fmt.Sprintf("[turn %d failed] %s", n, strings.TrimSpace(string(errb)))
-	}
-	if st.Running {
-		return st, nil
-	}
+	st := Status{Known: true}
+	// Under the lock, so a turn being started (turn written, pid not yet)
+	// is never read as a dead one.
 	err = locked(d, func() error {
+		n := readInt(filepath.Join(d, "turn"))
+		st.Running = running(d, n)
+		if reply, ok := turnResult(d, n); ok {
+			st.LastReply = reply
+		} else if !st.Running && n > 0 {
+			// The turn ended without a result (a failed --resume, an auth
+			// error): say so with its stderr rather than show an older reply.
+			errb, _ := os.ReadFile(filepath.Join(d, "turn-"+strconv.Itoa(n)+".err"))
+			st.LastReply = fmt.Sprintf("[turn %d failed] %s", n, strings.TrimSpace(string(errb)))
+		}
+		if st.Running {
+			return nil
+		}
 		started, err := r.drain(d, thread)
-		st.Running = st.Running || started
+		st.Running = started
 		return err
 	})
 	return st, err
@@ -320,7 +329,17 @@ func (r Claude) resume(d, thread string, n int, text string) error {
 	if err != nil {
 		return err
 	}
-	return r.turn(d, strings.TrimSpace(string(wt)), n, text, []string{"--resume", thread})
+	// --resume does not restore the session's model, so every turn names it.
+	model, _ := os.ReadFile(filepath.Join(d, "model"))
+	return r.turn(d, strings.TrimSpace(string(wt)), n, text, withModel([]string{"--resume", thread}, strings.TrimSpace(string(model))))
+}
+
+// withModel appends --model when one is set.
+func withModel(args []string, model string) []string {
+	if model == "" {
+		return args
+	}
+	return append(args, "--model", model)
 }
 
 // Send starts the next turn with text, or queues it under queue/ when a turn

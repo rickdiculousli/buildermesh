@@ -141,10 +141,17 @@ func defaults() *Config {
 	}
 }
 
-// Dir is the config directory: the user's config dir (os.UserConfigDir:
-// ~/.config on Linux, ~/Library/Application Support on macOS, %AppData% on
-// Windows) plus bmesh. The home directory stands in when the OS names none.
+// Dir is the config directory: ~/.config/bmesh when it exists (where an
+// earlier bmesh kept it on every OS), else the user's config dir
+// (os.UserConfigDir: ~/.config on Linux, ~/Library/Application Support on
+// macOS, %AppData% on Windows) plus bmesh. The home directory stands in
+// when the OS names none.
 func Dir() string {
+	if home, err := os.UserHomeDir(); err == nil {
+		if old := filepath.Join(home, ".config", "bmesh"); dirExists(old) {
+			return old
+		}
+	}
 	d, err := os.UserConfigDir()
 	if err != nil {
 		d, _ = os.UserHomeDir()

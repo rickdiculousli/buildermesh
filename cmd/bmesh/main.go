@@ -191,7 +191,7 @@ func (a *app) dispatch(args []string) error {
 func (a *app) flags(name string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	fs.StringVar(&a.configPath, "config", a.configPath, "config file (default $BMESH_CONFIG or ~/.config/bmesh/config.toml)")
+	fs.StringVar(&a.configPath, "config", a.configPath, "config file (default $BMESH_CONFIG, else config.toml in the config dir)")
 	fs.StringVar(&a.node, "node", a.node, "act as this node path")
 	fs.BoolVar(&a.json, "json", a.json, "print JSON")
 	return fs

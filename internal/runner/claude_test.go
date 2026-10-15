@@ -142,7 +142,7 @@ func TestClaudeSendQueuesWhileRunning(t *testing.T) {
 func TestClaudeSendWhenIdleResumes(t *testing.T) {
 	log := useFake(t, "BMESH_CLAUDE_COMMAND", "fake-claude.sh", "FAKE_LOG")
 	r, repo, brief := claudeRepo(t)
-	if _, err := r.Start(context.Background(), StartSpec{RepoPath: repo, BriefPath: brief, ThreadID: "th-1"}); err != nil {
+	if _, err := r.Start(context.Background(), StartSpec{RepoPath: repo, BriefPath: brief, ThreadID: "th-1", Model: "m"}); err != nil {
 		t.Fatal(err)
 	}
 	until(t, "turn 1 to end", idle(t, r, "th-1"))
@@ -154,8 +154,25 @@ func TestClaudeSendWhenIdleResumes(t *testing.T) {
 		st, err := r.Status(context.Background(), "th-1")
 		return err == nil && !st.Running && st.LastReply == "second"
 	})
-	if l := lines(t, log); len(l) != 2 || l[1] != "-p --output-format json --resume th-1 --dangerously-skip-permissions" {
+	// The model is named on the resume too: claude does not restore it.
+	if l := lines(t, log); len(l) != 2 || l[1] != "-p --output-format json --resume th-1 --model m --dangerously-skip-permissions" {
 		t.Fatalf("log %q", l)
+	}
+}
+
+// An is_error result ends the turn as a failure the reply names.
+func TestClaudeErrorResultShowsInStatus(t *testing.T) {
+	useFake(t, "BMESH_CLAUDE_COMMAND", "fake-claude.sh", "FAKE_LOG")
+	t.Setenv("FAKE_IS_ERROR", "1")
+	t.Setenv("FAKE_RESULT", "session gone")
+	r, repo, brief := claudeRepo(t)
+	if _, err := r.Start(context.Background(), StartSpec{RepoPath: repo, BriefPath: brief, ThreadID: "th-1"}); err != nil {
+		t.Fatal(err)
+	}
+	until(t, "turn 1 to end", idle(t, r, "th-1"))
+	st, err := r.Status(context.Background(), "th-1")
+	if err != nil || st.Running || !strings.HasPrefix(st.LastReply, "[error") || !strings.Contains(st.LastReply, "session gone") {
+		t.Fatalf("%+v %v", st, err)
 	}
 }
 
