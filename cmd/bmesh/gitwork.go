@@ -27,17 +27,17 @@ func onMain(ctx context.Context, repoPath string) bool {
 	return err == nil && b == "main"
 }
 
-// levelMain brings the repo's main up to date with origin: `pull --ff-only`
-// when the main checkout is on main, else `fetch origin main:main`. A
-// refusal (local main has commits origin does not, a dirty checkout the
-// pull would touch) is an error naming it; without an origin nothing is
-// done.
+// levelMain brings the repo's main up to date with origin: `pull --ff-only
+// origin main` when the main checkout is on main, else `fetch origin
+// main:main`. A refusal (local main has commits origin does not, a dirty
+// checkout the pull would touch) is an error naming it; without an origin
+// nothing is done.
 func levelMain(ctx context.Context, repoPath string) error {
 	if !hasOrigin(ctx, repoPath) {
 		return nil
 	}
 	if onMain(ctx, repoPath) {
-		if _, err := gitIn(ctx, repoPath, "pull", "--quiet", "--ff-only"); err != nil {
+		if _, err := gitIn(ctx, repoPath, "pull", "--quiet", "--ff-only", "origin", "main"); err != nil {
 			return fmt.Errorf("main in %s is not level with origin: %v", repoPath, err)
 		}
 		return nil

@@ -70,6 +70,7 @@ func TestLoadFixture(t *testing.T) {
 		"serve":       {c.Serve.Listen, "127.0.0.1:3999"},
 		"kind":        {c.Runner.Kind, "tmux"},
 		"t3":          {c.Runner.T3Dispatch, "~/bin/t3_dispatch.py"},
+		"t3_project":  {c.Runner.T3Project, "bm"},
 		"tmux":        {c.Runner.TmuxSession, "mesh"},
 		"worktrees":   {c.Runner.Worktrees, "~/wt"},
 		"checkouts":   {c.Runner.Checkouts, "~/co"},

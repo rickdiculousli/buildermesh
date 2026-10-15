@@ -11,6 +11,7 @@ listen = "127.0.0.1:3999"
 [runner]
 kind = "tmux"
 t3_dispatch = "~/bin/t3_dispatch.py"
+t3_project = "bm"
 tmux_session = "mesh"
 worktrees = "~/wt"
 checkouts = "~/co"

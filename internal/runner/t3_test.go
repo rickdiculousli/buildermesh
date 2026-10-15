@@ -93,3 +93,25 @@ func TestT3StartPassesThreadIDAndPromptFile(t *testing.T) {
 		t.Fatalf("log %q", l)
 	}
 }
+
+func TestT3StartInAnExistingWorktreeUnderAProject(t *testing.T) {
+	log := useFake(t, "BMESH_T3_COMMAND", "fake-t3.sh", "FAKE_T3_LOG")
+	brief := filepath.Join(t.TempDir(), "brief.md")
+	if err := os.WriteFile(brief, []byte("propose"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := T3{Dispatch: "t3_dispatch.py", Dir: t.TempDir()}
+	got, err := r.Start(context.Background(), StartSpec{RepoPath: "/r/demo", Model: "m1", Title: "[propose] demo round 1: engineer",
+		BriefPath: brief, ThreadID: "uuid-2", Branch: "demo-round-1-eng", Worktree: "/bm/wt/demo/demo-round-1-eng", Project: "/r/bm"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != (Started{Thread: "uuid-2", Branch: "demo-round-1-eng", Worktree: "/bm/wt/demo/demo-round-1-eng"}) {
+		t.Fatalf("started %+v", got)
+	}
+	want := "argv start --repo /r/bm --provider claude --model m1 --title [propose] demo round 1: engineer --prompt-file " + brief +
+		" --thread-id uuid-2 --worktree /bm/wt/demo/demo-round-1-eng --branch demo-round-1-eng\n"
+	if l := readLog(t, log); !strings.HasPrefix(l, want) {
+		t.Fatalf("log %q\nwant prefix %q", l, want)
+	}
+}

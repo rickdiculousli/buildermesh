@@ -1,6 +1,6 @@
 # buildermesh (bmesh)
 
-A NATS-based mesh for coordinating coding agents: lead and executor threads report events, exchange inbox messages and are woken when they go quiet; routines run a repo's checks (shell commands or headless `claude -p` sessions) against commits and record results by tree, and a lead's `done` is checked against them.
+A NATS-based mesh for coordinating coding agents: lead and executor threads report events, exchange inbox messages and are woken when they go quiet; routines run a repo's checks (shell commands or headless `claude -p` sessions) against commits and record results by tree, and a lead's `done` is checked against them. A repo's work starts as proposal rounds (`bmesh propose`): two engineer threads write ranked half-page specs into its ledger, the daemon pushes the pitch, and the operator's reply (`bmesh spec review`) lands the verdicts on main.
 
 ## Quickstart
 
@@ -10,7 +10,7 @@ A machine with Go and Claude Code (`claude` on PATH) gets a working single-box m
 go install github.com/rickdiculousli/buildermesh/cmd/bmesh@latest   # or, from a checkout, GOBIN=~/.local/bin go install ./cmd/bmesh
 cd ~/repos/your-repo && bmesh init     # asks single or multi-box, writes config.toml, registers this repo, picks the claude runner
 bmesh serve                            # the hub (embedded on a single box), the daemon and the map at http://127.0.0.1:3774/; keep it running
-bmesh repos                            # the registry; then bmesh status, or bmesh lead start --repo your-repo --spec 001 --brief brief.md
+bmesh repos                            # the registry; then bmesh propose your-repo, bmesh status, or bmesh lead start --repo your-repo --spec 001 --brief brief.md
 ```
 
 `bmesh init` asks for what its flags don't say (`--hub`, `--token-file`, `--runner`, `--no-repo`), reading answers from stdin (an empty line, or no stdin, takes the default), so a script can drive it; `--service` also writes the unit that keeps `bmesh serve` running (a systemd user unit on Linux, a launchd agent on macOS) and says how to enable it. It writes the setup flag last (`<config dir>/.setup-complete`); every other command but `help`, finding neither the flag nor a `config.toml`, prints one line and runs `init` first when run from a terminal, and is refused (exit 3, ``run `bmesh init` ``) when not. On an existing `config.toml` it edits nothing without `--force` (a registry row it already has is left too), but still writes the flag and, with `--service`, the unit. Pick the multi-box answer on a second box and give it the first box's hub URL and token file.
@@ -28,17 +28,53 @@ Tests never use `/tmp`: `meshtest.Start` fails when `TMPDIR` is `/tmp`. CI (`.gi
 
 ### Testing
 
-Runner tests drive shell fakes instead of T3 and tmux. `BMESH_T3_COMMAND`, when set, is split on spaces and replaces `uv run <t3_dispatch>` (tests set it to `sh <repo>/testdata/fake-t3.sh`); `BMESH_TMUX_COMMAND` replaces the tmux binary the same way (`sh <repo>/testdata/fake-tmux.sh`). `BMESH_T3_TIMEOUT` (a Go duration) replaces the t3 runner's 120 s per-call timeout. `BMESH_CLAUDE_COMMAND` replaces `[runner] claude` the same way (`sh <repo>/testdata/fake-claude.sh`), for routines and for the claude runner's tests. Leave all four unset outside tests.
+Runner tests drive shell fakes instead of T3 and tmux. `BMESH_T3_COMMAND`, when set, is split on spaces and replaces `uv run <t3_dispatch>` (tests set it to `sh <repo>/testdata/fake-t3.sh`); `BMESH_TMUX_COMMAND` replaces the tmux binary the same way (`sh <repo>/testdata/fake-tmux.sh`). `BMESH_T3_TIMEOUT` (a Go duration) replaces the t3 runner's 120 s per-call timeout. `BMESH_CLAUDE_COMMAND` replaces `[runner] claude` the same way (`sh <repo>/testdata/fake-claude.sh`), for routines and for the claude runner's tests. `BMESH_SSH_COMMAND` replaces the `ssh` that `bmesh propose` reaches another host with (`sh <repo>/testdata/fake-ssh.sh`). Leave all five unset outside tests.
 
 ## Runners
 
 `bmesh lead start --repo R --spec NNN --brief FILE [--model M] [--title T] [--path P]` starts a lead through `[runner] kind` and registers it as node `<repo>-<NNN>` (state `idle`), printing `{"path","thread","branch","worktree"}`. A path whose node is not `done` or `blocked` is refused (exit 3); a `done` or `blocked` path is reused and its state reset to `idle`. The runner's start runs under the runner's own timeout, not the CLI's one-minute deadline; if it times out, or registration fails after it, the error names the thread id (and branch and worktree when known) so the session can be found.
 
-- `t3`: `uv run <t3_dispatch> start|status|send|stop`, 120 s per call. `send` runs `status` first and never sends to a running thread; no `--force`, `--queue` or `wait-idle`.
+- `t3`: `uv run <t3_dispatch> start|status|send|stop`, 120 s per call. `send` runs `status` first and never sends to a running thread; no `--force`, `--queue` or `wait-idle`. A session started in a checkout bmesh made (a round's thread) passes `--worktree <path> --branch <branch>`, and `--repo` names the T3 project it is filed under (`[runner] t3_project`, else the repo).
 - `tmux`: `git worktree add -b <thread> <worktrees>/<repo>/<thread>`, then `claude` in window `<thread>` of session `<tmux_session>` (created when missing; the window gets `BMESH_CONFIG` when the CLI has it, so the lead reports to the same mesh). It watches the window until claude's prompt is up, answering the dialogs a fresh worktree raises (the folder-trust question with yes, the first-run screens with Enter, an offer to try something with Escape), then types the brief in (one second before the Enter, since claude takes a burst of text as a paste); after 90 s it types anyway. It can't tell whether claude is mid-turn.
-- `claude`: `git worktree add -b <thread> <worktrees>/<repo>/<thread> <branch or main>`, then each turn is a detached headless `<claude> -p --output-format json --dangerously-skip-permissions` in the worktree, the first with `--session-id <thread> [--model M]` and the brief on stdin, later ones with `--resume <thread>` and the same `--model` (a resume does not restore the session's model); no T3, no tmux. The session id is the thread id, so it must be a UUID (`lead start` passes one). Turns inherit the CLI's environment (so `BMESH_CONFIG` reaches the lead). State lives in `<user cache dir>/bmesh/claude/<thread>/`: `worktree`, `pid`, `turn`, and `turn-<n>.in`, `.json`, `.err` per turn. A turn is running while its pid is alive and its `.json` is not yet claude's result; `status` replies with the newest result. `send` mid-turn queues the text under `queue/` instead of refusing, and `status` starts the oldest queued send once the turn ends (the daemon polls status every minute, so queued sends drain). An interrupt kills the running turn's process group.
+- `claude`: `git worktree add -b <thread> <worktrees>/<repo>/<thread> <branch or main>` (or the checkout bmesh made, for a round's thread), then each turn is a detached headless `<claude> -p --output-format json --dangerously-skip-permissions` in the worktree, the first with `--session-id <thread> [--model M]` and the brief on stdin, later ones with `--resume <thread>` and the same `--model` (a resume does not restore the session's model); no T3, no tmux. The session id is the thread id, so it must be a UUID (`lead start` passes one). Turns inherit the CLI's environment (so `BMESH_CONFIG` reaches the lead). State lives in `<user cache dir>/bmesh/claude/<thread>/`: `worktree`, `pid`, `turn`, and `turn-<n>.in`, `.json`, `.err` per turn. A turn is running while its pid is alive and its `.json` is not yet claude's result; `status` replies with the newest result. `send` mid-turn queues the text under `queue/` instead of refusing, and `status` starts the oldest queued send once the turn ends (the daemon polls status every minute, so queued sends drain). An interrupt kills the running turn's process group.
 
 `lead start` refuses with exit 3 `bmesh: N leads already working on this host` when `[runner] max_leads` is set and that many leads registered on this host are not `done` or `blocked`. It counts working leads, not resident sessions: a finished lead's session (a tmux window, a T3 thread) keeps its memory until the operator closes it, and a lead is counted only once its runner has started it. `scripts/memcap.sh N` measures what a box can carry: it runs N leads on the tmux runner against a mesh of its own, each spawning three executors, and prints the peak memory.
+
+## Proposal rounds
+
+```
+bmesh propose <repo> [--model M]
+```
+
+A round is two threads on one ship repo, an engineer and a UI/UX engineer, each writing three to five ranked half-page specs into `docs/proposals/` and landing them on `main` as `proposed`. The round is a node `<repo>-round-<N>` (role `round`, `N` one past the highest round registered for the repo in `bm-nodes`) with children `<repo>-round-<N>.eng` and `.ux` (role `engineer`, `parent` the round), each with an inbox, a thread and a bmesh worktree; `bmesh status` lists the round with its children and the map draws it like a lead with executors.
+
+`propose` takes the repo's registry row (a path without a row is refused: the row carries `host`, `ux_host`, `verify` and `surfaces`) and refuses (exit 3) a row whose `mode` is not `ship`, a repo with five or more `proposed` specs on `main` (naming them: they wait on review), a host it cannot reach, and a `main` it cannot level with origin (`pull --ff-only origin main` when the main checkout is on `main`, else `fetch origin main:main`; never a reset or a stash). Then, from `main`, it makes `<[runner] worktrees>/<repo>/<repo>-round-<N>-eng` and `-ux` on branches of those names, renders the two briefs (the next free spec ID for the engineer, five past it for the UI/UX engineer, so the two never collide; the thread's UUID as `proposed_by`), registers the round (its `started` event opens it as `working`) and starts both threads through the runner on the row's `host` (the engineer) and `ux_host` (the UI/UX engineer; `""` = `host`, `""` = this box), with `--model` (default `[models] lead`) and the title `[propose] <repo> round <N>: engineer|UI/UX`. It prints `{"path","round","eng":{"path","thread","branch","worktree","host"},"ux":{...}}`. Briefs are kept under `<user cache dir>/bmesh/briefs/<round>-<child>.md`.
+
+A host other than this box is reached as `ssh -o BatchMode=yes <host> bash -lc 'bmesh propose <repo> --child eng|ux --round N --next-id N --thread-id UUID --model M'`: the child form, which makes that one worktree, brief and node on the box it runs on (the registry is the same on every box) and prints its child's line. Both hosts are checked first (`bmesh help` over ssh), so an unreachable one is refused before anything starts. The child form refuses a child whose node is live or whose branch exists.
+
+With the `t3` runner a round's thread is filed under the T3 project of `[runner] t3_project` (a registry name; `""` = the target repo) and runs in the bmesh worktree, so the target repo's T3 project gains no thread with no diff.
+
+Each thread's node reports as any node does (`started`, `progress`, `ask`, `blocked`, `done`); the daemon polls and wakes an engineer like a lead, and an engineer's `done` needs only `--commit` (the commit on `main`) and carries its ranked list as `--text`. Once a minute the daemon settles every open round: both children `done` moves the round to `done` with the merged pitch as its text (the engineer's list, then the UI/UX engineer's, each as reported) and publishes `done` from the round; one child `blocked` moves it to `blocked` (`<child> blocked: <text>`, then the other's pitch when it is done). The round's `done` is pushed as `<repo> round N proposed` (priority default, tag `memo`, the pitch as body) and its `blocked` as `<repo> round N blocked` (high, `no_entry`), each with an `Open thread` action for the engineer's thread when `[console]` resolves it; a round's push, like a lead's, needs the event in `[notify] push`. An engineer's `ask` pushes as a lead's does (`<path> asks`, with its own thread's link); its `done` and `blocked` reach the operator through the round.
+
+### Briefs
+
+The engineer, UI/UX engineer, build and half-pager templates are embedded in the binary (`internal/brief/templates/`); a repo overrides any of them with `.bmesh/briefs/<name>.md` (`engineer`, `ux-engineer`, `build`, `half-pager`). A template is filled in one pass: `{{name}}` placeholders take values and braces inside a value stay as written; a placeholder with no value is an error naming the template and the placeholder, never left in a brief. Every brief gets `repo`, `repo_path`, `verify` (the row's commands in backticks, or that none are listed), `surfaces` (the row's, or what to do without them), `standard_closing` (the closing paragraph with the verify commands inlined) and `done_rule` (the definition of done the row implies: verify passes, a validation agent reviewed it, rebased, fast-forwarded to `main`, pushed to the row's `remote`); a round's brief also `node`, `round`, `round_n`, `worktree`, `branch`, `thread_id`, `next_id` and `date`; a build brief `spec`, `spec_path`, `spec_id`, `node` and `date`. The proposal briefs carry the repo's facts and point at the `propose-engineer` and `propose-ux` skills for the method.
+
+## The ledger
+
+A repo's specs live in `docs/proposals/NNN-slug.md` (`[spec] glob`), each a flat `key: value` frontmatter between `---` fences (lines starting with `#` are ignored) over a half-page body. The frontmatter is the whole record, so a file that cannot be read is an error for every command, never skipped or counted around: a missing or non-numeric `id`, an `id` that does not match the file name's, a `status` outside `proposed`, `accepted`, `adjusting`, `later`, `rejected`, `building`, `blocked`, `done`, a `judge` outside `fable`, `opus`, `sonnet`, missing fences or a line that is not `key: value`; two files sharing an id. `README.md` is not a spec.
+
+```
+bmesh spec list [--repo R] [--status S] [--json]
+bmesh spec next-id [--repo R]
+bmesh spec set --id NNN --status S [--repo R] [--from A,B] [--field K=V]...
+bmesh spec template [--repo R]
+bmesh spec review <repo> "<reply>"
+```
+
+`--repo` is a registry name or a path (default the current directory). `list` prints one row per spec, `NNN  status  size  kind  lens  title` (`?` for a missing field), sorted by id; `--json` prints each spec's frontmatter plus `path` as an array. `next-id` is one past the highest id (`001` for an empty ledger). `set` rewrites the spec's status and the given fields in place (an existing key keeps its line, a new one is added last, every other byte stays) and prints its row; `--from` refuses, changing nothing, a spec whose status is not one of the listed ones (exit 1, naming its status), as does a write the ledger would read back otherwise (a duplicated `status:` key) and a value with a line break. `template` prints the half-pager (the repo's `.bmesh/briefs/half-pager.md` when it has one, else the embedded one).
+
+`review` is the operator's reply to a round, typed in plain words: `"1 and 3 yes, 2 smaller, 4 no, 5 later, 3 on opus"`. Clauses are split at commas, semicolons and line breaks; a clause's numbers name specs (a spec id when one exists, else a rank in the list of reviewable specs sorted by id, which is pitch order) and its words say what happens to them: `yes`/`accept`/`ok` to `accepted`; `no`/`reject` to `rejected`, the clause's other words as `reason`; `later` to `later`; `on fable|opus|sonnet` sets `judge` (alone it moves nothing); any other words are an instruction, so the spec becomes `adjusting` with the words recorded as `Adjust (<date>): <words>` under its Proposal heading, for the thread that reworks the body (`yes but smaller` adjusts too). A spec named in several clauses gets the last move and every judge. Only `proposed`, `later` and `adjusting` specs move; another status is reported and left alone. A clause with no number, no verdict, or a number that matches nothing is printed as `unmatched: ...`, never guessed at. The command levels `main` (as `propose` does), makes a worktree `<[runner] worktrees>/<repo>/<repo>-review-<hex8>` from it, applies the verdicts there, commits `Review: 012 accepted, 013 later`, fast-forwards `main` (`merge --ff-only` in the main checkout when it is on `main`, else `fetch . <branch>:main`), pushes to origin, removes the worktree and its branch, and prints one line per spec (`NNN title: old -> new [on judge] [(note)]`), the unmatched items and `landed <sha8> on main: Review: ...` (or `nothing to land`). A `main` that will not fast-forward is refused (exit 3) with the review kept on its branch.
 
 ## Executors
 
@@ -58,13 +94,13 @@ An executor's `ask` is sent to its parent's inbox as a message `ask from <path>:
 
 ### The skills
 
-The repo is a Claude Code plugin, `buildermesh`, with two skills: `lead` (own one spec, decide the shape, executors, checkpoints, merge, verify, land, ask) and `executor` (your worktree and branch only, checkpoints, routines, report, ask goes to the lead, never merge or push). Install it from the repo:
+The repo is a Claude Code plugin, `buildermesh`, with four skills: `lead` (own one spec, decide the shape, executors, checkpoints, merge, verify, land, ask), `executor` (your worktree and branch only, checkpoints, routines, report, ask goes to the lead, never merge or push), `propose-engineer` and `propose-ux` (a round's method: what to read, the lenses and measurements, screenshots of the row's surfaces for the UI/UX engineer, three to five ranked half-pagers, landing on `main`, `done` with the ranked list, and the operator's reply through `bmesh spec review`; with "if the pstack plugin is installed, `exhaust-the-design-space` and `attack-the-premise` before ranking" and a written default). Install it from the repo:
 
 ```
 claude plugin marketplace add rickdiculousli/buildermesh && claude plugin install buildermesh@buildermesh
 ```
 
-or from a checkout: `claude plugin marketplace add <path to the checkout> && claude plugin install buildermesh@buildermesh`. A lead's brief says "follow the `buildermesh:lead` skill" and adds the operator's own conventions; the executor header names the executor skill. The skills name no repo convention; `docs/agents-snippet.md` is the paragraph a repo's AGENTS.md gets.
+or from a checkout: `claude plugin marketplace add <path to the checkout> && claude plugin install buildermesh@buildermesh`. A lead's brief says "follow the `buildermesh:lead` skill" and adds the operator's own conventions; the executor header names the executor skill; a round's briefs name the propose skills. The skills name no repo convention; `docs/agents-snippet.md` is the paragraph a repo's AGENTS.md gets.
 
 ## Routines
 
@@ -270,6 +306,7 @@ listen = "127.0.0.1:3774"
 [runner]
 kind = "t3"                                 # claude | t3 | tmux (init writes claude when claude is on PATH)
 t3_dispatch = "t3_dispatch.py"              # path; run as `uv run <path>`
+t3_project = ""                             # registry name of the repo whose T3 project a round's threads open in; "" = the target repo
 tmux_session = "bmesh"
 worktrees = "~/.bmesh/worktrees"            # executors' worktrees, and the claude and tmux runners'
 checkouts = "~/.bmesh/checkouts"            # routine instances' checkouts; "" = routines off
@@ -279,7 +316,7 @@ max_leads = 0                               # leads at once on this host (lead s
 ntfy = ""                                   # "" = no digest; else "http://k16:2586/bmesh"
 command = ""                                # test hook: receives the POST body on stdin instead of HTTP
 digest_every = "1h"                         # command runs through the platform shell, body on stdin, title in $BMESH_TITLE (and $NTFY_TITLE)
-push = ["ask", "blocked", "done"]           # a lead's events pushed at once (only these three; another entry is a config error); [] = no pushes
+push = ["ask", "blocked", "done"]           # a lead's (and a round's) events pushed at once (only these three; another entry is a config error); [] = no pushes
 map_url = ""                                # the map's URL for a push's click-through (<map_url>#/lead/<path>); "" = none
 catch_up = "1h"                             # on start, push missed events no older than this
 [liveness]
@@ -301,7 +338,7 @@ A digest is also published as a `digest` event on `bm.daemon.<host>.digest`, wit
 
 ### Pushes
 
-A daemon with `[notify] ntfy` or `command` set also pushes a lead's `ask`, `blocked` and `done` (the `push` list) to the same topic at once: title `<path> asks`, `<path> is blocked` or `<path> is done`; priority `high` for an ask or a block and `default` for done; tags `question`, `no_entry`, `white_check_mark`; the body is the event's text cut to 3 KB, plus `commit <sha8>` for done; `Click` opens the lead's map page when `map_url` is set and an `Open thread` action opens its thread when `[console]` resolves it. Executors' and routines' events never push. With `command` set, the body goes on stdin and the headers in `$NTFY_TITLE`, `$NTFY_PRIORITY`, `$NTFY_TAGS`, `$NTFY_CLICK` and `$NTFY_ACTIONS`.
+A daemon with `[notify] ntfy` or `command` set also pushes a lead's `ask`, `blocked` and `done` (the `push` list) to the same topic at once: title `<path> asks`, `<path> is blocked` or `<path> is done`; priority `high` for an ask or a block and `default` for done; tags `question`, `no_entry`, `white_check_mark`; the body is the event's text cut to 3 KB, plus `commit <sha8>` for done; `Click` opens the lead's map page when `map_url` is set and an `Open thread` action opens its thread when `[console]` resolves it. A round's `done` and `blocked`, and an engineer's `ask`, push as Proposal rounds says. Executors' and routines' events never push. With `command` set, the body goes on stdin and the headers in `$NTFY_TITLE`, `$NTFY_PRIORITY`, `$NTFY_TAGS`, `$NTFY_CLICK` and `$NTFY_ACTIONS`.
 
 Each event is pushed once across restarts and daemons: before posting, a daemon claims it by publishing `bm.daemon.<host>.push` (`to` the lead, `text` the title, `seq` the event's stream sequence) with `Nats-Msg-Id` `push-<seq>`, and a duplicate reply means another daemon has it; on start a daemon pushes the listed events no older than `catch_up` (by the event's `at`, else its stored time) that have no `push` claim yet, in order, then follows live. A live event stored over a minute ago (the backlog a reconnect to the hub delivers) gets the same rules: it is dropped when older than `catch_up` or when any daemon's `push` claim names its seq. A push that still fails after retries at 5 s and 30 s is logged and recorded as `push-failed`; the claim stands, so it is never repeated. At shutdown the push being posted gets 10 s to finish; any claimed push still queued or waiting to retry is logged and recorded as `push-failed` with body `shutdown`.
 
@@ -312,9 +349,9 @@ The map's lead page reads the lead's spec from its registered repo's local `orig
 | Code | Meaning |
 |---|---|
 | 0 | ok |
-| 1 | error; a failed run (`routine run`, `routine wait`); a lost lease; an interrupted `lease run` |
+| 1 | error; a failed run (`routine run`, `routine wait`); a lost lease; an interrupted `lease run`; a malformed spec, or a `spec set` its `--from` refuses |
 | 2 | usage |
-| 3 | refused (a command other than `init` and `help` on a box not set up, run outside a terminal; a `repos show` of an unknown name; a `done` the spec or its `verified` line doesn't support, a reserved or taken path, a send to a running thread, an executor name or branch in use, an `executor remove` of an unmerged branch, a dirty worktree for a deterministic inline run, an unknown kind, a fresh or pooled kind run inline without `--here`, an inline run of a commit other than HEAD, a busy slot, a lease held by someone else, no result for `result find` or `spec verified`) |
+| 3 | refused (a command other than `init` and `help` on a box not set up, run outside a terminal; a `repos show` of an unknown name; a `done` the spec or its `verified` line doesn't support, a reserved or taken path, a send to a running thread, an executor name or branch in use, an `executor remove` of an unmerged branch, a dirty worktree for a deterministic inline run, an unknown kind, a fresh or pooled kind run inline without `--here`, an inline run of a commit other than HEAD, a busy slot, a lease held by someone else, no result for `result find` or `spec verified`; a `propose` on a non-ship row, with five proposed specs, an unreachable host, a live child or an existing branch; a `main` that `propose` or `spec review` cannot level with origin or fast-forward) |
 | 5 | timeout (`watch`, `routine wait`) |
 
 `lease run` exits with its command's code.
