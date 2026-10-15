@@ -359,3 +359,66 @@ func TestStatusAndUnreachable(t *testing.T) {
 		t.Fatalf("unknown command: %d", code)
 	}
 }
+
+func TestExecutorAskGoesToParent(t *testing.T) {
+	c, ctx := setup(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012"})
+	putNode(t, c, ctx, mesh.Node{Path: "app-012.alpha", Role: "executor", Parent: "app-012"})
+	if _, errs, code := runCLI(t, as("app-012.alpha"), "started"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	if out, errs, code := runCLI(t, as("app-012.alpha"), "ask", "--text", "which db?"); code != 0 || out != "" {
+		t.Fatalf("ask: %d %q %q", code, out, errs)
+	}
+	lead, _ := mesh.ParsePath("app-012")
+	msgs, err := mesh.Fetch(ctx, c, lead, true)
+	if err != nil || len(msgs) != 1 || msgs[0].Kind != "message" || msgs[0].From != "app-012.alpha" ||
+		msgs[0].Text != "ask from app-012.alpha: which db?" {
+		t.Fatalf("lead inbox %+v %v", msgs, err)
+	}
+	if hist, _ := mesh.History(ctx, c, "bm.app-012.alpha.ask", time.Time{}); len(hist) != 1 {
+		t.Fatalf("ask event: %v", hist)
+	}
+	if got := stateOf(t, c, ctx, "app-012.alpha"); got != "asking" {
+		t.Fatalf("state %s", got)
+	}
+	// A lead's ask stays its own: nothing is sent anywhere.
+	if _, errs, code := runCLI(t, as("app-012"), "started"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	if _, errs, code := runCLI(t, as("app-012"), "ask", "--text", "ship it?"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	if n, err := mesh.Unread(ctx, c, lead); err != nil || n != 0 {
+		t.Fatalf("lead inbox after its own ask: %d %v", n, err)
+	}
+	if hist, _ := mesh.History(ctx, c, "bm.inbox.>", time.Time{}); len(hist) != 1 {
+		t.Fatalf("inbox messages: %d", len(hist))
+	}
+}
+
+func TestExecutorDoneNeedsCommitSkipsSpec(t *testing.T) {
+	c, ctx := setup(t)
+	// No RepoPath and no spec: a lead's done would fail its spec lookup.
+	putNode(t, c, ctx, mesh.Node{Path: "app-012.alpha", Role: "executor", Parent: "app-012"})
+	if _, errs, code := runCLI(t, as("app-012.alpha"), "started"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	if _, errs, code := runCLI(t, as("app-012.alpha"), "done", "--text", "built"); code != 2 || !strings.Contains(errs, "--commit") {
+		t.Fatalf("without --commit: %d %q", code, errs)
+	}
+	if got := stateOf(t, c, ctx, "app-012.alpha"); got != "working" {
+		t.Fatalf("state after refusal %s", got)
+	}
+	out, errs, code := runCLI(t, as("app-012.alpha"), "done", "--commit", "abc1234", "--text", "built")
+	if code != 0 || out != "" || errs != "" {
+		t.Fatalf("done: %d %q %q", code, out, errs)
+	}
+	if got := stateOf(t, c, ctx, "app-012.alpha"); got != "done" {
+		t.Fatalf("state %s", got)
+	}
+	hist, err := mesh.History(ctx, c, "bm.app-012.alpha.done", time.Time{})
+	if err != nil || len(hist) != 1 || !strings.Contains(string(hist[0].Data), `"commit":"abc1234"`) {
+		t.Fatalf("done event %v %v", hist, err)
+	}
+}

@@ -9,7 +9,10 @@ import (
 )
 
 // cmdEvent reports started|progress|blocked|ask|done: the move is checked
-// against the node's state first, so a refused event publishes nothing.
+// against the node's state first, so a refused event publishes nothing. A
+// lead's done is checked against its spec; an executor's needs only
+// --commit. An executor's ask is also sent to its parent's inbox, since the
+// operator reads only leads' asks.
 func (a *app) cmdEvent(name string, args []string) error {
 	fs := a.flags(name)
 	text := fs.String("text", "", "what to say")
@@ -32,15 +35,17 @@ func (a *app) cmdEvent(name string, args []string) error {
 		return err
 	}
 	path := p.String()
-	if name == "done" {
-		n, ok, err := mesh.GetNode(ctx, a.client, path)
+	var n mesh.Node
+	if name == "done" || name == "ask" {
+		var ok bool
+		n, ok, err = mesh.GetNode(ctx, a.client, path)
 		if err != nil {
 			return err
 		}
-		if !ok {
+		if !ok && name == "done" {
 			return fail(exitError, "node %s is not registered", path)
 		}
-		if n.Role != "executor" {
+		if name == "done" && n.Role != "executor" {
 			if err := a.checkSpecDone(ctx, n); err != nil {
 				return err
 			}
@@ -52,6 +57,21 @@ func (a *app) cmdEvent(name string, args []string) error {
 	}
 	if !mesh.Legal(cur.State, to) {
 		return fail(exitRefused, "refused: %v", mesh.ErrIllegalTransition{From: cur.State, To: to})
+	}
+	if name == "ask" && n.Role == "executor" {
+		parent := n.Parent
+		if parent == "" {
+			if pp, ok := p.Parent(); ok {
+				parent = pp.String()
+			}
+		}
+		if parent == "" {
+			return fail(exitError, "executor %s has no parent to ask", path)
+		}
+		m := mesh.Message{ID: newID(), From: path, To: parent, Kind: "message", Text: "ask from " + path + ": " + *text}
+		if _, err := mesh.Send(ctx, a.client, m); err != nil {
+			return err
+		}
 	}
 	if err := mesh.PublishEvent(ctx, a.client, mesh.Event{From: path, Event: name, Text: *text, Commit: *commit}); err != nil {
 		return err

@@ -21,12 +21,16 @@ const deliverTimeout = 10 * time.Second
 // the ages are measured to now. states is the source of truth (a state with
 // no registered node still counts); nodes is reserved for enrichment.
 //
-// The body has one line per node that entered asking, silent or blocked in
-// the window (since, now], then one per node done in that window. A state is
-// listed only in the pass whose window holds its At, so a standing state is
-// posted once rather than every pass; one stamped after now waits for the
-// next pass, so none is lost between passes. The title's counts cover every
-// node. changed is false when there are no such lines.
+// The body has one line per lead that entered asking, silent or blocked in
+// the window (since, now], then one per lead done in that window. Nodes in a
+// lead's tree (executors) are nested under their lead's line, "  └ <name>:
+// <state>: <text>", which is added as "<lead>: <state>" when the lead itself
+// is not news; the operator reads only leads' asks, so the title's asking
+// count covers leads alone. A state is listed only in the pass whose window
+// holds its At, so a standing state is posted once rather than every pass;
+// one stamped after now waits for the next pass, so none is lost between
+// passes. The title's working and silent counts cover every node. changed is
+// false when there are no such lines.
 func Digest(host string, states map[string]mesh.State, nodes []mesh.Node, since, now time.Time) (title, body string, changed bool) {
 	paths := make([]string, 0, len(states))
 	for p := range states {
@@ -34,36 +38,105 @@ func Digest(host string, states map[string]mesh.State, nodes []mesh.Node, since,
 	}
 	sort.Strings(paths)
 	var working, asking, silent int
-	var attention, finished []string
+	type entry struct {
+		attention, finished []string // the lead's own lines
+		nested              []string // its tree's lines, in path order
+	}
+	entries := map[string]*entry{}
+	var leads []string
+	at := func(lead string) *entry {
+		e, ok := entries[lead]
+		if !ok {
+			e = &entry{}
+			entries[lead] = e
+			leads = append(leads, lead)
+		}
+		return e
+	}
 	for _, p := range paths {
 		st := states[p]
-		at, _ := time.Parse(time.RFC3339, st.At)
+		stAt, _ := time.Parse(time.RFC3339, st.At)
+		lead, name, inTree := treeMember(p)
 		switch st.State {
 		case "working":
 			working++
-		case "asking", "silent", "blocked":
-			if st.State == "asking" {
+		case "silent":
+			silent++
+		case "asking":
+			if !inTree {
 				asking++
-			} else if st.State == "silent" {
-				silent++
 			}
-			if !inWindow(at, since, now) {
+		}
+		if !inWindow(stAt, since, now) {
+			continue
+		}
+		switch st.State {
+		case "asking", "silent", "blocked":
+			if inTree {
+				word := st.State
+				if word == "asking" {
+					word = "ask"
+				}
+				line := "  └ " + name + ": " + word
+				if st.Text != "" {
+					line += ": " + st.Text
+				}
+				e := at(lead)
+				e.nested = append(e.nested, line)
 				continue
 			}
-			line := fmt.Sprintf("%s: %s since %s", p, st.State, age(now.Sub(at)))
+			line := fmt.Sprintf("%s: %s since %s", p, st.State, age(now.Sub(stAt)))
 			if st.Text != "" {
 				line += ": " + st.Text
 			}
-			attention = append(attention, line)
+			e := at(lead)
+			e.attention = append(e.attention, line)
 		case "done":
-			if inWindow(at, since, now) {
-				finished = append(finished, p+": done")
+			e := at(lead)
+			if inTree {
+				e.nested = append(e.nested, "  └ "+name+": done")
+			} else {
+				e.finished = append(e.finished, p+": done")
 			}
 		}
 	}
 	title = fmt.Sprintf("bmesh %s: %d working, %d asking, %d silent", host, working, asking, silent)
+	var attention, finished []string
+	for _, lead := range leads {
+		e := entries[lead]
+		switch {
+		case len(e.attention) > 0:
+			attention = append(attention, e.attention...)
+			attention = append(attention, e.nested...)
+		case len(e.finished) > 0:
+			finished = append(finished, e.finished...)
+			finished = append(finished, e.nested...)
+		case len(e.nested) > 0:
+			// The lead itself is not news: head its tree's lines with its state.
+			st := states[lead].State
+			if st == "" {
+				st = "idle"
+			}
+			head := lead + ": " + st
+			if stAt, err := time.Parse(time.RFC3339, states[lead].At); err == nil && !stAt.IsZero() {
+				head += " since " + age(now.Sub(stAt))
+			}
+			attention = append(attention, head)
+			attention = append(attention, e.nested...)
+		}
+	}
 	lines := append(attention, finished...)
 	return title, strings.Join(lines, "\n"), len(lines) > 0
+}
+
+// treeMember splits a path under a lead (an executor, "a.x") into the lead
+// and the rest; routine instances and leads themselves are not members.
+func treeMember(p string) (lead, name string, ok bool) {
+	lead, name, found := strings.Cut(p, ".")
+	if !found || lead == "routine" {
+		return p, "", false
+	}
+	return lead, name, true
 }
 
 // inWindow reports whether at is in (since, now].

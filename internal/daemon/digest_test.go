@@ -17,12 +17,12 @@ func TestDigestTextAndChanged(t *testing.T) {
 	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
 	at := func(ago time.Duration) string { return now.Add(-ago).Format(time.RFC3339) }
 	states := map[string]mesh.State{
-		"a":     {State: "working", At: at(time.Minute)},
-		"a.b":   {State: "asking", At: at(5 * time.Minute), Text: "which db?"},
-		"a.c":   {State: "silent", At: at(2*time.Hour + 10*time.Minute)},
-		"a.d":   {State: "done", At: at(time.Minute)},
-		"a.e":   {State: "blocked", At: at(20 * time.Minute)},
-		"a.old": {State: "done", At: at(3 * time.Hour)},
+		"a":   {State: "working", At: at(time.Minute)},
+		"b":   {State: "asking", At: at(5 * time.Minute), Text: "which db?"},
+		"c":   {State: "silent", At: at(2*time.Hour + 10*time.Minute)},
+		"d":   {State: "done", At: at(time.Minute)},
+		"e":   {State: "blocked", At: at(20 * time.Minute)},
+		"old": {State: "done", At: at(3 * time.Hour)},
 	}
 	since := now.Add(-time.Hour)
 	title, body, changed := Digest("h", states, nil, since, now)
@@ -32,18 +32,18 @@ func TestDigestTextAndChanged(t *testing.T) {
 	if !changed {
 		t.Error("changed = false")
 	}
-	for _, want := range []string{"a.b: asking since 5m: which db?", "a.e: blocked since 20m\n", "a.d: done"} {
+	for _, want := range []string{"b: asking since 5m: which db?", "e: blocked since 20m\n", "d: done"} {
 		if !strings.Contains(body+"\n", want) {
 			t.Errorf("body missing %q:\n%s", want, body)
 		}
 	}
-	// a.c has been silent since before the window: posted then, not again.
-	if strings.Contains(body, "a.old") || strings.Contains(body, "a: ") || strings.Contains(body, "a.c") {
+	// c has been silent since before the window: posted then, not again.
+	if strings.Contains(body, "old") || strings.Contains(body, "a: ") || strings.Contains(body, "c: ") {
 		t.Errorf("body has unrelated lines:\n%s", body)
 	}
-	// A window that holds a.c's At lists it, with the hours form of the age.
-	if _, body, _ := Digest("h", states, nil, now.Add(-3*time.Hour), now); !strings.Contains(body+"\n", "a.c: silent since 2h10m\n") {
-		t.Errorf("wide window missing a.c:\n%s", body)
+	// A window that holds c's At lists it, with the hours form of the age.
+	if _, body, _ := Digest("h", states, nil, now.Add(-3*time.Hour), now); !strings.Contains(body+"\n", "c: silent since 2h10m\n") {
+		t.Errorf("wide window missing c:\n%s", body)
 	}
 
 	calm := map[string]mesh.State{"a": {State: "working", At: at(time.Minute)}, "b": {State: "idle"}}
@@ -193,5 +193,36 @@ func TestDigestFailedDeliveryKeepsSince(t *testing.T) {
 	digestOnce(f.ctx, f.d, &since)
 	if !since.Equal(f.now) {
 		t.Errorf("success left since at %v", since)
+	}
+}
+
+func TestDigestNestsExecutorAsks(t *testing.T) {
+	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
+	at := func(ago time.Duration) string { return now.Add(-ago).Format(time.RFC3339) }
+	since := now.Add(-time.Hour)
+	states := map[string]mesh.State{
+		"a":                  {State: "working", At: at(30 * time.Minute)},
+		"a.x":                {State: "asking", At: at(5 * time.Minute), Text: "which db?"},
+		"a.y":                {State: "done", At: at(2 * time.Minute)},
+		"b":                  {State: "asking", At: at(10 * time.Minute), Text: "ship it?"},
+		"b.z":                {State: "silent", At: at(3 * time.Minute), Text: "quiet for 25m"},
+		"c":                  {State: "working", At: at(time.Minute)},
+		"routine.verify.c-1": {State: "working", At: at(time.Minute)},
+	}
+	title, body, changed := Digest("h", states, nil, since, now)
+	if title != "bmesh h: 3 working, 1 asking, 1 silent" {
+		t.Errorf("title = %q", title)
+	}
+	if !changed {
+		t.Error("changed = false")
+	}
+	want := "a: working since 30m\n  └ x: ask: which db?\n  └ y: done\nb: asking since 10m: ship it?\n  └ z: silent: quiet for 25m"
+	if body != want {
+		t.Errorf("body =\n%s\nwant\n%s", body, want)
+	}
+	// An executor asking outside the window is not news; its lead has no line.
+	old := map[string]mesh.State{"a": {State: "working", At: at(3 * time.Hour)}, "a.x": {State: "asking", At: at(2 * time.Hour), Text: "q"}}
+	if _, body, changed := Digest("h", old, nil, since, now); changed || body != "" {
+		t.Errorf("old ask: changed %v body %q", changed, body)
 	}
 }
