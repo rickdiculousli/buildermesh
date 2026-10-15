@@ -11,6 +11,17 @@ TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test ./...
 
 Tests never use `/tmp`: `meshtest.Start` fails when `TMPDIR` is `/tmp`.
 
+### Testing
+
+Runner tests drive shell fakes instead of T3 and tmux. `BMESH_T3_COMMAND`, when set, is split on spaces and replaces `uv run <t3_dispatch>` (tests set it to `sh <repo>/testdata/fake-t3.sh`); `BMESH_TMUX_COMMAND` replaces the tmux binary the same way (`sh <repo>/testdata/fake-tmux.sh`). Leave both unset outside tests.
+
+## Runners
+
+`bmesh lead start --repo R --spec NNN --brief FILE [--model M] [--title T] [--path P]` starts a lead through `[runner] kind` and registers it as node `<repo>-<NNN>` (state `idle`), printing `{"path","thread","branch","worktree"}`. A path whose node is not `done` or `blocked` is refused (exit 3); a `done` or `blocked` path is reused and its state reset to `idle`.
+
+- `t3`: `uv run <t3_dispatch> start|status|send|stop`, 120 s per call. `send` runs `status` first and never sends to a running thread; no `--force`, `--queue` or `wait-idle`.
+- `tmux`: `git worktree add -b <thread> <worktrees>/<repo>/<thread>`, then `claude` in window `<thread>` of session `<tmux_session>` (created when missing), with the brief typed in. It can't tell whether claude is mid-turn.
+
 ## Names
 
 Paths match `^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*$`; the first token is never `inbox`, `routine` or `daemon`, and no token contains `--` (the inbox consumer name maps `.` to `--`, so `a--b` and `a.b` would collide).

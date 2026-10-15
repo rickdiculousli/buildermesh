@@ -38,6 +38,8 @@ commands:
   status [--json]                          every node's state, runner and unread count
   watch --nodes a,b [--since T] [--timeout D]
                                            follow nodes until all are done, blocked or silent
+  lead start --repo R --spec NNN --brief FILE [--model M] [--title T] [--path P]
+                                           start a lead through the runner and register it
 `
 
 // exitErr carries an exit code and the message printed as "bmesh: <msg>".
@@ -119,6 +121,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdStatus(rest)
 	case "watch":
 		return a.cmdWatch(rest)
+	case "lead":
+		return a.cmdLead(rest)
 	case "help":
 		fmt.Fprint(a.stdout, usage)
 		return nil

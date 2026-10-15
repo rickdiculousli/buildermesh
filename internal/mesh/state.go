@@ -169,3 +169,13 @@ func writeState(ctx context.Context, c *Client, path string, to State, afterRead
 	}
 	return 0, lastErr
 }
+
+// ResetState deletes path's state so it reads idle again (rev 0); a node
+// restarted on a done or blocked path starts from idle.
+func ResetState(ctx context.Context, c *Client, path string) error {
+	kv, err := bucket(ctx, c, BucketState)
+	if err != nil {
+		return err
+	}
+	return kv.Delete(ctx, path)
+}
