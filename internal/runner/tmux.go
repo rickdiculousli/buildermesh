@@ -19,10 +19,13 @@ type Tmux struct {
 }
 
 // How long Start waits for claude's prompt before typing the brief anyway,
-// and how often it looks.
+// how often it looks, and how long Send pauses between the text and Enter:
+// claude takes text that arrives in one burst as a paste, and an Enter inside
+// that burst is part of the paste rather than the submit.
 const (
 	promptWait = 90 * time.Second
 	promptPoll = 500 * time.Millisecond
+	sendPause  = time.Second
 )
 
 func (r Tmux) tmux(ctx context.Context, args ...string) (string, error) {
@@ -135,10 +138,16 @@ func dialogKeys(pane string) []string {
 // Status is never Known: tmux can't see claude's turn state.
 func (r Tmux) Status(ctx context.Context, thread string) (Status, error) { return Status{}, nil }
 
-// Send types text into the window and presses Enter.
+// Send types text into the window, lets claude finish taking it as a paste,
+// and presses Enter.
 func (r Tmux) Send(ctx context.Context, thread, text string) error {
 	if _, err := r.tmux(ctx, "send-keys", "-t", r.target(thread), "-l", text); err != nil {
 		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(sendPause):
 	}
 	_, err := r.tmux(ctx, "send-keys", "-t", r.target(thread), "Enter")
 	return err
