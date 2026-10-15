@@ -3,7 +3,7 @@
 # port, routines and ntfy off) with a seeded mesh, to look at the map. It
 # prints the map URL and a CLI config for poking the mesh, and keeps serve
 # running until Ctrl-C. State lives under ~/.cache/bmesh-scratch/seed and is
-# wiped on each run.
+# wiped on each run. Arguments go to the seeder (scripts/seed), e.g. -leads 6.
 set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
@@ -51,7 +51,7 @@ nats = "$url"
 name = "seed"
 TOML
 
-(cd "$root" && go run ./scripts/seed -nats "$url" -map "http://$http/")
+(cd "$root" && go run ./scripts/seed -nats "$url" -map "http://$http/" "$@")
 printf 'cli: BMESH_CONFIG=%s %s --node app-0042 send app-0042.api hi\nserving until Ctrl-C (log: %s)\n' \
 	"$dir/cli.toml" "$dir/bmesh" "$dir/serve.log"
 wait "$pid"

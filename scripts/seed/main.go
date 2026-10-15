@@ -1,6 +1,8 @@
 // Command seed fills a scratch mesh (scripts/seed.sh runs it against a
 // throwaway bmesh serve) with two leads, their executors, an orphan, a pooled
-// routine kind with two instances and a few events and messages.
+// routine kind with two instances and a few events and messages. -leads N
+// adds leads up to N in all, each with one working executor, to look at a
+// crowded map (and long names) on a phone.
 package main
 
 import (
@@ -16,17 +18,18 @@ import (
 func main() {
 	url := flag.String("nats", "nats://127.0.0.1:4222", "the scratch mesh's NATS URL")
 	mapURL := flag.String("map", "http://127.0.0.1:3775/", "the map's URL, printed when done")
+	leads := flag.Int("leads", 2, "how many leads in all (at least the two seeded)")
 	flag.Parse()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	if err := seed(ctx, *url); err != nil {
+	if err := seed(ctx, *url, *leads); err != nil {
 		fmt.Fprintln(os.Stderr, "seed:", err)
 		os.Exit(1)
 	}
 	fmt.Println("map:", *mapURL)
 }
 
-func seed(ctx context.Context, url string) error {
+func seed(ctx context.Context, url string, leads int) error {
 	c, err := mesh.Connect(ctx, url, "", "hub", "bmesh/seed", false)
 	if err != nil {
 		return err
@@ -85,6 +88,27 @@ func seed(ctx context.Context, url string) error {
 	} {
 		if _, err := mesh.Send(ctx, c, m); err != nil {
 			return err
+		}
+	}
+	for i := 2; i < leads; i++ {
+		lead := fmt.Sprintf("platform-migration-%04d", 100+i)
+		exec := lead + ".database-schema-backfill"
+		for _, n := range []mesh.Node{
+			{Path: lead, Role: "lead", Repo: "platform", Spec: fmt.Sprintf("%04d", 100+i), StartedAt: ago(20 - i)},
+			{Path: exec, Role: "executor", Repo: "platform", Parent: lead, StartedAt: ago(15 - i)},
+		} {
+			n.Host = "seed"
+			if err := mesh.PutNode(ctx, c, n); err != nil {
+				return err
+			}
+		}
+		for _, p := range []string{lead, exec} {
+			if err := mesh.PublishEvent(ctx, c, mesh.Event{From: p, Event: "started"}); err != nil {
+				return err
+			}
+			if _, err := mesh.WriteState(ctx, c, p, mesh.State{State: "working", By: "seed"}); err != nil {
+				return fmt.Errorf("%s working: %w", p, err)
+			}
 		}
 	}
 	return mesh.SendReply(ctx, c, mesh.Path{"routine", "review", "opus-5-5-1"}, mesh.Path{"app-0042"},

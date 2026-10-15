@@ -5,7 +5,12 @@
 // in through textContent or setAttribute.
 
 const NS = "http://www.w3.org/2000/svg";
-const G = { row: 48, nodeW: 184, nodeH: 40, indent: 24, gap: 40, pad: 16, head: 28 };
+// gutter is the room right of the boxes in the vertical layout, where
+// message edges between boxes of one column bow out; minW the narrowest box.
+const G = { row: 48, nodeW: 184, nodeH: 40, indent: 24, gap: 40, pad: 16, head: 28, gutter: 28, minW: 120 };
+const LABEL_PX = 7.5, SUB_PX = 6; // average glyph widths of .label and .sub
+const PHONE = "(max-width: 699px)";
+const FETCH_MS = 10000; // a /api/tree read taking longer is abandoned
 const RECENT = 30;
 const EDGE_MS = 1200;
 const REFETCH_MS = 500;
@@ -21,9 +26,15 @@ const mesh = {
   drawn: new Map(), // path -> {g, sub, box, extra, kind, state}
   layer: null, // where message edges go, above the nodes
   vertical: false, // blocks top to bottom instead of left to right
+  width: 0, // the drawn SVG's width
   live: new Map(), // path -> {state, at}: states set by live events
   recent: [], // newest first
 };
+
+// check is set by ?check=1: a self-check that writes viewport and
+// connection facts into document.title for headless screenshots.
+const check = new URLSearchParams(location.search).get("check") === "1"
+  ? { conn: [], trees: 0, leads: 0, replay: 0, live: 0, flashes: 0 } : null;
 
 function svg(tag, attrs, parent) {
   const e = document.createElementNS(NS, tag);
@@ -78,10 +89,13 @@ function instanceSub(i) {
 // left to right with the routines as the right column, or, when vertical,
 // top to bottom with the routines last. Each block is a vertical tree with
 // one node per row. Boxes with a key are mesh nodes (or a kind's inbox).
-function layout(tree, vertical) {
+// A vertical layout given a width fits it: boxes stretch to its right edge
+// less the gutter, and only a tree nested past the narrowest box overflows.
+function layout(tree, vertical, width) {
   const out = { boxes: [], edges: [], headings: [], width: 0, height: 0 };
+  const boxW = (x) => vertical && width ? Math.max(G.minW, width - G.pad - G.gutter - x) : G.nodeW;
   const add = (b) => {
-    b.w = b.w || G.nodeW;
+    b.w = b.w || boxW(b.x);
     b.h = b.h || G.nodeH;
     out.boxes.push(b);
     out.width = Math.max(out.width, b.x + b.w);
@@ -149,9 +163,9 @@ function layout(tree, vertical) {
         ry += G.row;
       }
     }
-    out.width = Math.max(out.width, x + G.nodeW);
+    out.width = Math.max(out.width, x + boxW(x));
   }
-  out.width += G.pad;
+  out.width += vertical && width ? G.gutter + G.pad : G.pad;
   out.height += G.pad;
   return out;
 }
@@ -163,8 +177,15 @@ function classOf(kind, state) {
   return "node " + kind + link + (state ? " st-" + state : "");
 }
 
-function subText(state, extra) {
-  return [state, ...extra].filter(Boolean).join(" · ");
+// subText is a box's second line, cut to n characters.
+function subText(state, extra, n) {
+  return fit([state, ...extra].filter(Boolean).join(" · "), n);
+}
+
+// room is how many characters of px average width fit a box w wide less
+// its padding (and, for a label, the done check).
+function room(w, px, pad) {
+  return Math.max(4, Math.floor((w - pad) / px));
 }
 
 function hrefOf(b) {
@@ -178,8 +199,8 @@ function drawBox(parent, b) {
   svg("title", {}, g).textContent = b.title;
   svg("rect", { class: "ring", x: -4, y: -4, width: b.w + 8, height: b.h + 8, rx: 10 }, g);
   svg("rect", { class: "box", width: b.w, height: b.h, rx: 7 }, g);
-  svgText({ class: "label", x: 10, y: 17 }, fit(b.label, 22), g);
-  const sub = svgText({ class: "sub", x: 10, y: 32 }, subText(b.state, b.extra), g);
+  svgText({ class: "label", x: 10, y: 17 }, fit(b.label, room(b.w, LABEL_PX, 32)), g);
+  const sub = svgText({ class: "sub", x: 10, y: 32 }, subText(b.state, b.extra, room(b.w, SUB_PX, 16)), g);
   svgText({ class: "check", x: b.w - 22, y: 26 }, "✓", g);
   const href = hrefOf(b);
   if (href) {
@@ -198,7 +219,9 @@ function drawBox(parent, b) {
 function render() {
   const t = mesh.tree;
   if (!t) return;
-  const L = layout(t, mesh.vertical);
+  // A hidden map has no width; the view's would be the page's less its padding.
+  const w = $("map").clientWidth || document.documentElement.clientWidth - 2 * 12;
+  const L = layout(t, mesh.vertical, mesh.vertical ? w : 0);
   const root = svg("svg", { width: L.width, height: L.height, viewBox: `0 0 ${L.width} ${L.height}`,
     role: "group", "aria-label": "mesh map" });
   const edges = svg("g", { class: "edges" }, root);
@@ -210,10 +233,18 @@ function render() {
     const { g, sub } = drawBox(nodes, b);
     if (b.key) drawn.set(b.key, { g, sub, box: b, extra: b.extra, kind: b.kind, state: b.state });
   }
-  mesh.layer = svg("g", { class: "messages" }, root);
+  // Edges still in flight move to the new drawing rather than vanish.
+  if (mesh.layer) root.append(mesh.layer);
+  else mesh.layer = svg("g", { class: "messages" }, root);
   mesh.drawn = drawn;
+  mesh.width = L.width;
   $("map").replaceChildren(root);
   $("map-empty").hidden = L.boxes.length > 0;
+  if (check) {
+    check.trees++;
+    check.leads = t.leads.length;
+    checkSoon();
+  }
 }
 
 // setState restyles a drawn node.
@@ -222,15 +253,16 @@ function setState(path, state) {
   if (!d || d.kind === "group") return;
   d.state = state;
   d.g.setAttribute("class", classOf(d.kind, state));
-  d.sub.textContent = subText(state, d.extra);
+  d.sub.textContent = subText(state, d.extra, room(d.box.w, SUB_PX, 16));
 }
 
 // curve is a path from box a to box b, leaving and entering on the facing
-// sides; boxes in one column bow out to the right.
+// sides; boxes in one column bow out to the right, within the drawing.
 function curve(a, b) {
   const ay = a.y + a.h / 2, by = b.y + b.h / 2;
-  if (Math.abs(a.x - b.x) < a.w / 2) {
-    const x1 = a.x + a.w, x2 = b.x + b.w, bow = 36 + Math.abs(by - ay) / 4;
+  if (Math.abs(a.x - b.x) < a.w / 2 || mesh.vertical) {
+    const x1 = a.x + a.w, x2 = b.x + b.w;
+    const bow = Math.max(8, Math.min(36 + Math.abs(by - ay) / 4, mesh.width - Math.max(x1, x2) - 4));
     return `M${x1},${ay} C${x1 + bow},${ay} ${x2 + bow},${by} ${x2},${by}`;
   }
   const right = b.x > a.x;
@@ -256,6 +288,7 @@ function flash(from, to, kind) {
   const g = svg("g", { class: "msg k-" + (MSG_KINDS.has(kind) ? kind : "message") }, mesh.layer);
   const p = svg("path", { class: "msg-edge", d: a ? curve(a.box, b.box) : entry(b.box) }, g);
   const dot = svg("circle", { class: "msg-dot", r: 5 }, g);
+  if (check) check.flashes++;
   const len = p.getTotalLength();
   const t0 = performance.now();
   const step = (now) => {
@@ -273,15 +306,24 @@ function flash(from, to, kind) {
 
 // --- the tree -------------------------------------------------------------
 
-let fetchSeq = 0, refetchTimer = 0, refetchFirst = 0;
+let loading = false, reload = false, refetchTimer = 0, refetchFirst = 0;
 
+// loadTree reads /api/tree and redraws. One read runs at a time: a call
+// while one is in flight runs one more read after it, so a slow server
+// still gets every answer drawn instead of each being overtaken.
 async function loadTree() {
-  const seq = ++fetchSeq, began = Date.now();
+  if (loading) {
+    reload = true;
+    return;
+  }
+  loading = true;
+  const began = Date.now();
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), FETCH_MS);
   try {
-    const r = await fetch("/api/tree", { cache: "no-store" });
+    const r = await fetch("/api/tree", { cache: "no-store", signal: stop.signal });
     if (!r.ok) throw new Error("/api/tree: " + r.status);
     const v = await r.json();
-    if (seq !== fetchSeq) return;
     mesh.tree = { leads: v.leads || [], routines: v.routines || [], orphans: v.orphans || [] };
     render();
     // A live event newer than this read wins over the state it returned.
@@ -291,6 +333,13 @@ async function loadTree() {
     }
   } catch (e) {
     // The next event or poll tries again.
+  } finally {
+    clearTimeout(timer);
+    loading = false;
+    if (reload) {
+      reload = false;
+      loadTree();
+    }
   }
 }
 
@@ -394,27 +443,80 @@ function parseFrame(data) {
   }
 }
 
+function setConn(s) {
+  const c = $("conn");
+  c.textContent = s;
+  c.classList.toggle("down", s === "reconnecting");
+  if (check) {
+    if (check.conn[check.conn.length - 1] !== s) check.conn.push(s);
+    checkSoon();
+  }
+}
+
+const RETRY_MS = [1000, 2000, 5000, 10000];
+let retries = 0;
+
+// connect follows /events. The browser retries a dropped stream itself; a
+// stream it gave up on (an error status while the daemon starts) is opened
+// again here with backoff.
 function connect() {
   const es = new EventSource("/events");
   es.onopen = () => {
     // Every connection replays the last day, and live frames were missed
     // while it was down.
+    retries = 0;
     mesh.recent = [];
     drawRecent();
-    $("conn").textContent = "live";
-    refetchSoon();
+    setConn("live");
+    loadTree();
   };
-  es.onerror = () => { $("conn").textContent = "reconnecting"; };
+  es.onerror = () => {
+    setConn("reconnecting");
+    if (es.readyState !== EventSource.CLOSED) return;
+    setTimeout(connect, RETRY_MS[Math.min(retries++, RETRY_MS.length - 1)]);
+  };
+  // Replayed frames only fill the drawer: they already happened.
   es.addEventListener("replay", (e) => {
     const f = parseFrame(e.data);
-    if (f) remember(f);
+    if (!f) return;
+    if (check) {
+      check.replay++;
+      checkSoon();
+    }
+    remember(f);
   });
   es.addEventListener("live", (e) => {
     const f = parseFrame(e.data);
     if (!f) return;
+    if (check) {
+      check.live++;
+      checkSoon();
+    }
     remember(f);
     apply(f);
   });
+}
+
+let checkTimer = 0;
+
+function checkSoon() {
+  if (!checkTimer) checkTimer = setTimeout(() => { checkTimer = 0; selfCheck(); }, 100);
+}
+
+// selfCheck writes, under ?check=1, whether the page scrolls sideways, the
+// smallest tap target and the connection history into document.title.
+function selfCheck() {
+  const sw = document.documentElement.scrollWidth, iw = window.innerWidth;
+  let tap = Infinity;
+  for (const e of document.querySelectorAll(".node.link .box, nav a, .drawer summary, header h1 a")) {
+    const r = e.getBoundingClientRect();
+    if (r.width || r.height) tap = Math.min(tap, r.height, r.width);
+  }
+  const c = check;
+  document.title = `bmesh ${sw <= iw ? "ok" : "SCROLLS"} scrollWidth=${sw} innerWidth=${iw} minTap=${Math.round(tap)}` +
+    ` svgWidth=${mesh.width} mapWidth=${$("map").clientWidth}` +
+    ` vertical=${mesh.vertical} leads=${c.leads} trees=${c.trees} conn=${c.conn.join(">")}` +
+    ` replay=${c.replay} live=${c.live} flashes=${c.flashes}`;
 }
 
 // route shows the view the hash names: #/ the map, #/lead/<path> a lead,
@@ -433,8 +535,26 @@ function route() {
     view = "routines";
   }
   for (const v of ["map", "lead", "routines"]) $("view-" + v).hidden = v !== view;
+  if (view === "map" && mesh.vertical) render(); // the width may have changed while hidden
   for (const a of document.querySelectorAll("nav a[data-route]")) a.classList.toggle("on", a.dataset.route === view);
 }
+
+// The phone layout stacks the blocks; it is redrawn when the media query
+// flips and, since boxes fit the width, when a phone-width window changes
+// width (not height: a phone's toolbar hiding on scroll resizes it).
+const phone = window.matchMedia(PHONE);
+mesh.vertical = phone.matches;
+phone.addEventListener("change", () => {
+  mesh.vertical = phone.matches;
+  render();
+});
+let resizeTimer = 0, lastWidth = window.innerWidth;
+window.addEventListener("resize", () => {
+  if (!mesh.vertical || window.innerWidth === lastWidth) return;
+  lastWidth = window.innerWidth;
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(render, 100);
+});
 
 window.addEventListener("hashchange", route);
 route();

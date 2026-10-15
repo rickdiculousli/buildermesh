@@ -76,11 +76,13 @@ header {
   padding: 8px var(--pad);
 }
 header h1 { margin: 0; font-size: 16px; }
+header h1 a, header nav a { display: inline-flex; align-items: center; min-height: 40px; min-width: 40px; }
 header h1 a { color: var(--fg); }
 header nav { display: flex; gap: 4px; margin-left: auto; }
-header nav a { padding: 6px 10px; border-radius: 6px; min-height: 32px; }
+header nav a { justify-content: center; padding: 0 12px; border-radius: 6px; }
 header nav a.on { background: var(--group-bg); color: var(--fg); }
 .conn { font-size: 12px; color: var(--muted); }
+.conn.down { padding: 2px 10px; border-radius: 999px; background: var(--asking); color: var(--bar); font-weight: 600; }
 .strip { flex-basis: 100%; font-size: 12px; color: var(--muted); }
 
 .view { padding: var(--pad); }
@@ -140,7 +142,7 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
   max-height: 45vh;
   overflow-y: auto;
 }
-.drawer summary { cursor: pointer; padding: 10px var(--pad); min-height: 40px; font-weight: 600; }
+.drawer summary { cursor: pointer; padding: 10px var(--pad); min-height: 44px; font-weight: 600; }
 .drawer .count { color: var(--muted); font-weight: normal; }
 .drawer ol { list-style: none; margin: 0; padding: 0 0 8px; }
 .drawer li { padding: 4px var(--pad); border-top: 1px solid var(--line); word-break: break-word; font-size: 13px; }
@@ -152,3 +154,30 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
 .drawer .ev-ask .e { color: var(--asking); }
 .drawer .ev-started .e, .drawer .ev-progress .e { color: var(--working); }
 .drawer .ev-inbox .e { color: var(--msg); }
+
+/* The phone: map.js stacks the blocks to fit the width (matchMedia on the
+   same query), and the drawer is a bottom sheet. */
+@media (max-width: 699px) {
+  .map { overflow-x: hidden; }
+  .drawer {
+    max-height: 70vh;
+    border: 1px solid var(--line);
+    border-bottom: 0;
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, .12);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .drawer summary { list-style: none; text-align: center; }
+  .drawer summary::-webkit-details-marker { display: none; }
+  .drawer summary::before {
+    content: "";
+    display: block;
+    width: 36px;
+    height: 4px;
+    margin: -4px auto 6px;
+    border-radius: 2px;
+    background: var(--line);
+  }
+  .drawer[open] summary { position: sticky; top: 0; background: var(--bar); }
+  body { padding-bottom: 64px; }
+}
