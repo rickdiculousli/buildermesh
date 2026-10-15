@@ -228,40 +228,46 @@ func IsReviewable(status string) bool {
 }
 
 // A pitch item starts with the spec's three-digit id at a line start
-// (lineItem: one item per line, the shape the skills ask for) or, in a pitch
-// typed on one line, after a sentence end (sentenceItem: "001 Title (kind,
-// size, judge): why. 002 ..."). "200 lines" inside a why starts neither.
+// (lineItem: one item per line, the shape the skills ask for). A line that
+// holds a whole list typed in one go is told by its items' shape, `NNN
+// title (kind, size, judge):` after a sentence end (shapedItem); an id
+// cited inside a why ("; 004 did it by hand") has no such shape.
 var (
-	lineItem     = regexp.MustCompile(`(?m)^\s*#?(\d{3})\b`)
-	sentenceItem = regexp.MustCompile(`(?m)(?:^|[.;!?]\s+)\s*#?(\d{3})\b`)
+	lineItem   = regexp.MustCompile(`^\s*#?(\d{3})\b`)
+	shapedItem = regexp.MustCompile(`(?:^|[.;!?]\s+)\s*#?(\d{3})\s+[^(\n]*?\([^)\n]*\):`)
 )
 
 // PitchRanks reads the ranked list the operator saw, the pitch (the
-// engineer's items, then the UI/UX engineer's, each `NNN title ...`), into
-// the ids it names in order: every item whose number is a spec, a repeat
-// kept once. A pitch with items on their own lines is read by those lines
-// alone, so an id cited inside a why ("; 004 did it by hand") is not an
-// item; only a pitch with no more than one line item is read sentence by
-// sentence. The list never shrinks as specs are reviewed, so a position
-// means the same spec in every reply to that pitch.
+// engineer's items, then the UI/UX engineer's, each `NNN title (kind,
+// size, judge): why`), into the ids it names in order: every item whose
+// number is a spec, a repeat kept once. Each line is read on its own: one
+// holding two or more shaped items is a list typed on one line and gives
+// them all; any other line gives the id it starts with, if any. The list
+// never shrinks as specs are reviewed, so a position means the same spec
+// in every reply to that pitch.
 func PitchRanks(pitch string, specs []*Spec) []int {
 	ids := IDSet(specs)
-	read := func(re *regexp.Regexp) []int {
-		var out []int
-		seen := map[int]bool{}
-		for _, m := range re.FindAllStringSubmatch(pitch, -1) {
-			n, _ := strconv.Atoi(m[1])
-			if ids[n] && !seen[n] {
-				seen[n] = true
-				out = append(out, n)
-			}
+	var out []int
+	seen := map[int]bool{}
+	add := func(m []string) {
+		n, _ := strconv.Atoi(m[1])
+		if ids[n] && !seen[n] {
+			seen[n] = true
+			out = append(out, n)
 		}
-		return out
 	}
-	if lines := read(lineItem); len(lines) > 1 {
-		return lines
+	for _, line := range strings.Split(pitch, "\n") {
+		if shaped := shapedItem.FindAllStringSubmatch(line, -1); len(shaped) > 1 {
+			for _, m := range shaped {
+				add(m)
+			}
+			continue
+		}
+		if m := lineItem.FindStringSubmatch(line); m != nil {
+			add(m)
+		}
 	}
-	return read(sentenceItem)
+	return out
 }
 
 // IDSet is the set of ids among specs.
