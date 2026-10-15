@@ -185,3 +185,22 @@ func TestCheckDoneParsesVerified(t *testing.T) {
 		t.Fatalf("bad verified: %v", err)
 	}
 }
+
+// An entry that would not read back as itself (a model with ";" or a
+// space) is refused unwritten.
+func TestWriteVerifiedRefusesUnparsableLine(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "012-thing.md")
+	in := "---\nid: 12\n---\n"
+	if err := os.WriteFile(p, []byte(in), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, model := range []string{"m; verify ok t:3f2a9c1e", "m x"} {
+		err := WriteVerified(p, []Entry{{Kind: "review", OK: true, Tree8: "3f2a9c1e", Model: model}})
+		if err == nil || !strings.Contains(err.Error(), "left unchanged") {
+			t.Fatalf("%q: err %v", model, err)
+		}
+		if b, _ := os.ReadFile(p); string(b) != in {
+			t.Fatalf("%q: file changed: %q", model, b)
+		}
+	}
+}

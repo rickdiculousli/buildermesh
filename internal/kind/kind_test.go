@@ -47,6 +47,10 @@ func TestParseDefaultsAndValidation(t *testing.T) {
 		"unknown key":        {"r", `command = "x"` + "\n" + `timout = "1m"`},
 		"bad duration":       {"r", `command = "x"` + "\n" + `timeout = "soon"`},
 		"trailing comment":   {"r", "command = \"\"\"\nmake test # note\n\"\"\""},
+		"model with a space": {"r", `model = "m 1"`},
+		"model with a ;":     {"r", `model = "m;x"`},
+		"models with a ;":    {"r", `models = ["ok", "m; review ok t:00000000"]`},
+		"empty models entry": {"r", `models = ["ok", ""]`},
 	}
 	for what, c := range bad {
 		if _, err := Parse(c.name, []byte(c.body)); err == nil {

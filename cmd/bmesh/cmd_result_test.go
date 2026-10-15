@@ -97,3 +97,25 @@ func TestResultRecordAndFind(t *testing.T) {
 		t.Fatalf("find model: %d %q %q", code, out, errs)
 	}
 }
+
+// A model id with a space or ";" would break a verified line: refused.
+func TestModelIDsValidated(t *testing.T) {
+	c, ctx := setup(t)
+	kindRepo(t, map[string]string{
+		"review": "mode = \"inline\"\nmodels = [\"m1\"]\nprompt = \"check\"\n",
+	})
+	for _, args := range [][]string{
+		{"result", "record", "review", "--ok", "--model", "m1; verify ok t:00000000"},
+		{"result", "record", "review", "--ok", "--model", "m 1"},
+		{"routine", "queue", "review", "--model", "m1;x"},
+		{"routine", "run", "review", "--model", "m 1"},
+	} {
+		_, errs, code := runCLI(t, as("app-001"), args...)
+		if code != 2 || !strings.Contains(errs, "want no spaces or \";\"") {
+			t.Fatalf("%v: %d %q", args, code, errs)
+		}
+	}
+	if rs, err := mesh.ListAllResults(ctx, c); err != nil || len(rs) != 0 {
+		t.Fatalf("recorded %+v %v", rs, err)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -169,6 +170,11 @@ func WriteVerified(specPath string, entries []Entry) error {
 		return fmt.Errorf("%s: %w", specPath, err)
 	}
 	value := FormatVerified(entries)
+	if back, err := ParseVerified(value); err != nil {
+		return fmt.Errorf("%s: %w; left unchanged", specPath, err)
+	} else if !slices.Equal(back, entries) {
+		return fmt.Errorf("%s: verified %q would read back as other entries; left unchanged", specPath, value)
+	}
 	lines := strings.SplitAfter(text, "\n")
 	closing := -1
 	set := false

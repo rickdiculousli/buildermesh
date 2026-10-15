@@ -41,6 +41,15 @@ func gitRev(args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// checkModel refuses a --model value that is not a model id (it would
+// break a verified line's m:<model>).
+func checkModel(model string) error {
+	if model != "" && !kind.ModelRE.MatchString(model) {
+		return fail(exitUsage, "model %q: want no spaces or \";\"", model)
+	}
+	return nil
+}
+
 // kindArg checks the kind positional; the rest are the job args.
 func kindArg(pos []string) (string, []string, error) {
 	if len(pos) == 0 || !kind.NameRE.MatchString(pos[0]) {
@@ -114,6 +123,9 @@ func (a *app) cmdResultRecord(args []string) error {
 	}
 	if *ok == *failed {
 		return fail(exitUsage, "result record: exactly one of --ok and --fail")
+	}
+	if err := checkModel(*model); err != nil {
+		return err
 	}
 	sha, err := gitRev("--verify", "--end-of-options", *commit+"^{commit}")
 	if err != nil {

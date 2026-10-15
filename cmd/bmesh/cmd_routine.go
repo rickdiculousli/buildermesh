@@ -282,6 +282,9 @@ func (a *app) cmdRoutineQueue(args []string) error {
 		return fail(exitRefused, "no kind %s in %s", name, top)
 	}
 	k := kinds[i]
+	if err := checkModel(*model); err != nil {
+		return err
+	}
 	if *model != "" && !slices.Contains(k.ModelsList(), *model) {
 		return fail(exitUsage, "kind %s has no model %q", name, *model)
 	}
@@ -447,6 +450,9 @@ func (a *app) cmdRoutineRun(args []string) error {
 	k := kinds[i]
 	if k.Mode != "inline" && !*here {
 		return fail(exitRefused, "kind %s is %s; queue it, or pass --here to run it in this worktree", name, k.Mode)
+	}
+	if err := checkModel(*model); err != nil {
+		return err
 	}
 	if *model != "" && !slices.Contains(k.ModelsList(), *model) {
 		return fail(exitUsage, "kind %s has no model %q", name, *model)

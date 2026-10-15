@@ -29,6 +29,10 @@ const (
 // NameRE is the grammar of kind and slot names.
 var NameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
+// ModelRE is the grammar of a model id: no spaces and no ";", so it fits a
+// verified entry's m:<model>.
+var ModelRE = regexp.MustCompile(`^[^\s;]+$`)
+
 // trailingComment matches a shell comment: a # starting a word.
 var trailingComment = regexp.MustCompile(`(^|\s)#`)
 
@@ -128,6 +132,14 @@ func Parse(name string, data []byte) (Kind, error) {
 		return Kind{}, fmt.Errorf("kind %s: set model or models, not both", name)
 	case f.Command == "" && !hasModel:
 		return Kind{}, fmt.Errorf("kind %s: set one of command, model, models", name)
+	}
+	for _, m := range f.Models {
+		if !ModelRE.MatchString(m) {
+			return Kind{}, fmt.Errorf("kind %s: model %q: want no spaces or \";\"", name, m)
+		}
+	}
+	if f.Model != "" && !ModelRE.MatchString(f.Model) {
+		return Kind{}, fmt.Errorf("kind %s: model %q: want no spaces or \";\"", name, f.Model)
 	}
 	if f.Pool < 1 {
 		return Kind{}, fmt.Errorf("kind %s: pool must be at least 1", name)
