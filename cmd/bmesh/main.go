@@ -42,6 +42,11 @@ commands:
                                            follow nodes until all are done, blocked or silent
   lead start --repo R --spec NNN --brief FILE [--model M] [--title T] [--path P]
                                            start a lead through the runner and register it
+  executor new --name N [--base REF] [--model M] [--json]
+                                           make a worktree, branch and node for an executor under this node;
+                                           print {"path","branch","worktree"} and (without --json) its header
+  executor list [--json]                   this lead's tree: path, state, branch, head, unread
+  executor remove <name> [--force]         remove a merged executor's worktree and branch (exit 3 unmerged)
   serve [--listen ADDR]                    run the daemon and the map (embedded NATS when [mesh] nats is empty)
   result find <kind> [--commit C] [--model M] [--json] [-- args...]
                                            print the result of kind at the commit's tree (exit 3 when none)
@@ -153,6 +158,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdRoutine(rest)
 	case "spec":
 		return a.cmdSpec(rest)
+	case "executor":
+		return a.cmdExecutor(rest)
 	case "help":
 		fmt.Fprint(a.stdout, usage)
 		return nil
