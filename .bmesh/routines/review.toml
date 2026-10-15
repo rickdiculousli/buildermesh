@@ -1,7 +1,7 @@
-# One reviewer per change, on Opus in a fresh session: the sized policy (eight
-# single reviewers of either family each caught a six-defect fixture whole, so
-# Opus reviews every change, an Opus lead's too). A job's --model may name
-# another entry; add it to the list first.
+# One reviewer per change that carries risk verify can't catch, on Opus in a
+# fresh session (eight single reviewers of either family each caught a six-defect
+# fixture whole); a rote change is done on verify alone. A job's --model may
+# name another entry; add it to the list first.
 mode = "pooled"
 models = ["claude-opus-5-5"]
 allow = ["Bash(git diff:*)", "Bash(git log:*)"]
