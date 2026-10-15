@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"time"
 
@@ -87,6 +89,11 @@ func roundsOnce(ctx context.Context, d Deps) {
 		}
 		now := d.Now().UTC().Format(time.RFC3339)
 		if cur.State == "blocked" && state == "blocked" {
+			// Re-read before the two-step resettle: another daemon may
+			// have done it since the states were listed.
+			if fresh, _, err := mesh.ReadState(ctx, d.Client, n.Path); err != nil || fresh.Text == text {
+				continue
+			}
 			if _, err := mesh.WriteState(ctx, d.Client, n.Path, mesh.State{State: "working", Text: cur.Text, By: "daemon", At: now}); err != nil {
 				d.Log.Info("rounds: not resettled here", "path", n.Path, "err", err)
 				continue
@@ -96,8 +103,11 @@ func roundsOnce(ctx context.Context, d Deps) {
 			d.Log.Info("rounds: not settled here", "path", n.Path, "err", err)
 			continue
 		}
+		// The event's id is the settlement itself, so two daemons that both
+		// get through the writes store (and push) it once.
+		sum := sha256.Sum256([]byte(text))
 		ev := mesh.Event{From: n.Path, Event: state, Text: text, At: now}
-		if err := mesh.PublishEvent(ctx, d.Client, ev); err != nil {
+		if _, err := mesh.PublishEventID(ctx, d.Client, ev, "round-"+n.Path+"-"+state+"-"+hex.EncodeToString(sum[:8])); err != nil {
 			d.Log.Warn("rounds: publish", "path", n.Path, "err", err)
 		}
 	}

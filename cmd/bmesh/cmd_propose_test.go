@@ -239,8 +239,11 @@ func TestProposeBlocksTheRoundWhenAChildDoesNotStart(t *testing.T) {
 		t.Fatalf("code %d err %q", code, errs)
 	}
 	st, _, _ := mesh.ReadState(ctx, c, "demo-round-1")
-	if st.State != "blocked" || !strings.HasPrefix(st.Text, "the ux thread did not start") {
+	if st.State != "blocked" || !strings.HasPrefix(st.Text, "ux blocked: did not start: on other: bmesh propose printed") {
 		t.Fatalf("%+v", st)
+	}
+	if ux, _, _ := mesh.ReadState(ctx, c, "demo-round-1.ux"); ux.State != "blocked" {
+		t.Fatalf("ux %+v", ux)
 	}
 	if hist, _ := mesh.History(ctx, c, "bm.demo-round-1.blocked", time.Time{}); len(hist) != 1 {
 		t.Fatalf("blocked events: %d", len(hist))
