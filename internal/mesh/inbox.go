@@ -10,14 +10,17 @@ import (
 	"github.com/nats-io/nuid"
 )
 
-// Message is one inbox entry.
+// Message is one inbox entry. Kind is message, wake, job or reply; a job
+// carries Job and a reply carries Reply.
 type Message struct {
-	ID   string `json:"id"`
-	From string `json:"from"`
-	To   string `json:"to"`
-	Kind string `json:"kind"`
-	At   string `json:"at"`
-	Text string `json:"text"`
+	ID    string `json:"id"`
+	From  string `json:"from"`
+	To    string `json:"to"`
+	Kind  string `json:"kind"`
+	At    string `json:"at"`
+	Text  string `json:"text"`
+	Job   *Job   `json:"job,omitempty"`
+	Reply *Reply `json:"reply,omitempty"`
 }
 
 // Send delivers m to its recipient's inbox. dup reports a repeat of an id the
@@ -36,7 +39,7 @@ func Send(ctx context.Context, c *Client, m Message) (dup bool, err error) {
 	if m.Kind == "" {
 		m.Kind = "message"
 	}
-	if err := EnsureInbox(ctx, c, to); err != nil {
+	if err := ensureAnyInbox(ctx, c, to); err != nil {
 		return false, err
 	}
 	data, err := json.Marshal(m)
@@ -53,7 +56,7 @@ func Send(ctx context.Context, c *Client, m Message) (dup bool, err error) {
 // Fetch pulls up to 100 messages from p's inbox, acking them when ack and
 // returning them to the inbox otherwise.
 func Fetch(ctx context.Context, c *Client, p Path, ack bool) ([]Message, error) {
-	if err := EnsureInbox(ctx, c, p); err != nil {
+	if err := ensureAnyInbox(ctx, c, p); err != nil {
 		return nil, err
 	}
 	cons, err := c.JS.Consumer(ctx, StreamMesh, InboxConsumer(p))
@@ -94,7 +97,7 @@ func Fetch(ctx context.Context, c *Client, p Path, ack bool) ([]Message, error) 
 
 // Unread counts p's undelivered plus unacked messages.
 func Unread(ctx context.Context, c *Client, p Path) (int, error) {
-	if err := EnsureInbox(ctx, c, p); err != nil {
+	if err := ensureAnyInbox(ctx, c, p); err != nil {
 		return 0, err
 	}
 	cons, err := c.JS.Consumer(ctx, StreamMesh, InboxConsumer(p))

@@ -24,7 +24,7 @@ Runner tests drive shell fakes instead of T3 and tmux. `BMESH_T3_COMMAND`, when 
 
 ## Names
 
-Paths match `^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*$`; the first token is never `inbox`, `routine` or `daemon`, and no token contains `--` (the inbox consumer name maps `.` to `--`, so `a--b` and `a.b` would collide).
+Paths match `^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*$`; the first token is never `inbox` or `daemon` (`routine` is for the routine pool: `routine.<kind>` and `routine.<kind>.<instance>`), and no token contains `--` (the inbox consumer name maps `.` to `--`, so `a--b` and `a.b` would collide).
 
 | Kind | Name | Subjects / keys |
 |---|---|---|

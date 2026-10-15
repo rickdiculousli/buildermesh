@@ -13,9 +13,6 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
 
-// maxOutput bounds a recorded output; longer output is cut and marked.
-const maxOutput = 64 << 10
-
 const resultUsage = "usage: bmesh result find <kind> [--commit C] [--json] [-- args...] | " +
 	"bmesh result record <kind> --ok|--fail [--commit C] [--output FILE|-] [-- args...]"
 
@@ -142,7 +139,7 @@ func (a *app) cmdResultRecord(args []string) error {
 	return nil
 }
 
-// readOutput reads the --output source ("" is none), cut to maxOutput.
+// readOutput reads the --output source ("" is none), cut by mesh.Truncate.
 func (a *app) readOutput(path string) (string, error) {
 	var b []byte
 	var err error
@@ -157,12 +154,5 @@ func (a *app) readOutput(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("output: %w", err)
 	}
-	return truncateOutput(string(b)), nil
-}
-
-func truncateOutput(s string) string {
-	if len(s) <= maxOutput {
-		return s
-	}
-	return s[:maxOutput] + "\n[truncated]"
+	return mesh.Truncate(string(b)), nil
 }

@@ -23,7 +23,9 @@ var reserved = map[string]bool{"inbox": true, "routine": true, "daemon": true}
 // Path names a node: dot-separated tokens, the first of which is its lead.
 type Path []string
 
-// ParsePath validates s against the path grammar and the reserved first tokens.
+// ParsePath validates s against the path grammar and the reserved first
+// tokens. The first token routine names the routine pool: routine.<kind> and
+// routine.<kind>.<instance> are valid, a bare routine is not.
 func ParsePath(s string) (Path, error) {
 	if !pathRE.MatchString(s) {
 		return nil, fmt.Errorf("invalid path %q: want lowercase tokens [a-z0-9-] joined by dots", s)
@@ -32,10 +34,24 @@ func ParsePath(s string) (Path, error) {
 		return nil, fmt.Errorf("invalid path %q: %q is not allowed (inbox consumer names map \".\" to \"--\")", s, "--")
 	}
 	p := Path(strings.Split(s, "."))
+	if p[0] == "routine" && len(p) >= 2 {
+		return p, nil
+	}
 	if reserved[p[0]] {
 		return nil, fmt.Errorf("invalid path %q: %q is a reserved first token", s, p[0])
 	}
 	return p, nil
+}
+
+// RoutinePath is routine.<kind>, the path whose inbox holds the kind's jobs.
+func RoutinePath(kind string) Path { return Path{"routine", kind} }
+
+// KindFromPath returns the kind of routine.<kind> or routine.<kind>.<instance>.
+func KindFromPath(p Path) (kind string, ok bool) {
+	if len(p) < 2 || p[0] != "routine" {
+		return "", false
+	}
+	return p[1], true
 }
 
 func (p Path) String() string { return strings.Join(p, ".") }

@@ -51,6 +51,12 @@ commands:
   lease renew <key> [--ttl D]              extend a held lease
   lease release <key>                      give back a held lease
   lease run <slot> [--ttl D] -- <cmd...>   hold a lease while a command runs; exit with its code
+  routine list [--json]                    the repo's kinds with their instances and queue depth
+  routine status [<kind>] [--json]         a kind's (or every kind's) instances with state and model
+  routine queue <kind> [--commit C] [--model M] [--go] [--rerun] [--text T] [-- args...]
+                                           queue a job (a deterministic kind answers from a recorded result)
+  routine go <kind>                        tell the kind's instances to start on waiting jobs
+  routine wait <job id> [--timeout D]      wait for a job's reply; print its output, exit 0 ok / 1 fail / 5 timeout
 `
 
 // exitErr carries an exit code and the message printed as "bmesh: <msg>".
@@ -138,6 +144,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdResult(rest)
 	case "lease":
 		return a.cmdLease(rest)
+	case "routine":
+		return a.cmdRoutine(rest)
 	case "help":
 		fmt.Fprint(a.stdout, usage)
 		return nil

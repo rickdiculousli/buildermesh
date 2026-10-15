@@ -92,6 +92,11 @@ func TestLeadStartRefusesTakenPath(t *testing.T) {
 	if code != 0 || !strings.Contains(out, `"path":"demo-012-2"`) {
 		t.Fatalf("--path: %d %q %q", code, out, errs)
 	}
+	// The routine pool's paths are not for leads.
+	if _, errs, code := runCLI(t, nil, "lead", "start", "--repo", "demo", "--spec", "012", "--brief", "/dev/null",
+		"--path", "routine.verify"); code != 3 || !strings.Contains(errs, "routine") {
+		t.Fatalf("routine path: %d %q", code, errs)
+	}
 	// A done path can be started again, and reads idle afterwards.
 	if _, err := mesh.WriteState(ctx, c, "demo-012", mesh.State{State: "done", By: "node"}); err != nil {
 		t.Fatal(err)

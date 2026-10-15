@@ -47,8 +47,12 @@ func (a *app) cmdLeadStart(args []string) error {
 	if p == "" {
 		p = name + "-" + *spec
 	}
-	if _, err := mesh.ParsePath(p); err != nil {
+	pp, err := mesh.ParsePath(p)
+	if err != nil {
 		return fail(exitUsage, "path %q: %v", p, err)
+	}
+	if _, ok := mesh.KindFromPath(pp); ok {
+		return fail(exitRefused, "refused: path %s: the first token routine is for the routine pool", p)
 	}
 	briefPath, err := filepath.Abs(*brief)
 	if err != nil {

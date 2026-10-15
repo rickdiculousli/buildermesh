@@ -19,6 +19,29 @@ func TestParsePath(t *testing.T) {
 	}
 }
 
+func TestParsePathRoutine(t *testing.T) {
+	for _, s := range []string{"routine.verify", "routine.verify.sonnet-1"} {
+		p, err := ParsePath(s)
+		if err != nil {
+			t.Fatalf("%q: %v", s, err)
+		}
+		if k, ok := KindFromPath(p); !ok || k != "verify" {
+			t.Fatalf("%q: kind %q %v", s, k, ok)
+		}
+	}
+	for _, s := range []string{"routine", "inbox.x.y", "daemon.x.y"} {
+		if _, err := ParsePath(s); err == nil {
+			t.Fatalf("%q: want error", s)
+		}
+	}
+	if got := RoutinePath("verify").String(); got != "routine.verify" {
+		t.Fatal(got)
+	}
+	if _, ok := KindFromPath(Path{"app", "verify"}); ok {
+		t.Fatal("non-routine path has a kind")
+	}
+}
+
 func TestPathLeadParent(t *testing.T) {
 	p, _ := ParsePath("a.b.c")
 	if p.Lead() != "a" {
