@@ -2,6 +2,21 @@
 
 A NATS-based mesh for coordinating coding agents: lead and executor threads report events, exchange inbox messages and are woken when they go quiet; routines run a repo's checks (shell commands or headless `claude -p` sessions) against commits and record results by tree, and a lead's `done` is checked against them.
 
+## Quickstart
+
+A machine with Go and Claude Code (`claude` on PATH) gets a working single-box mesh in four commands:
+
+```
+go install github.com/rickdiculousli/buildermesh/cmd/bmesh@latest   # or, from a checkout, GOBIN=~/.local/bin go install ./cmd/bmesh
+cd ~/repos/your-repo && bmesh init     # asks single or multi-box, writes config.toml, registers this repo, picks the claude runner
+bmesh serve                            # the hub (embedded on a single box), the daemon and the map at http://127.0.0.1:3774/; keep it running
+bmesh repos                            # the registry; then bmesh status, or bmesh lead start --repo your-repo --spec 001 --brief brief.md
+```
+
+`bmesh init` asks for what its flags don't say (`--hub`, `--token-file`, `--runner`, `--no-repo`), reading answers from stdin (an empty line, or no stdin, takes the default), so a script can drive it; `--service` also writes the unit that keeps `bmesh serve` running (a systemd user unit on Linux, a launchd agent on macOS) and says how to enable it. It writes the setup flag last (`<config dir>/.setup-complete`); every other command but `help`, finding neither the flag nor a `config.toml`, prints one line and runs `init` first when run from a terminal, and is refused (exit 3, ``run `bmesh init` ``) when not. On an existing `config.toml` it edits nothing without `--force` (a registry row it already has is left too), but still writes the flag and, with `--service`, the unit. Pick the multi-box answer on a second box and give it the first box's hub URL and token file.
+
+The config lives in the OS config dir (`os.UserConfigDir`: `~/.config/bmesh` on Linux, `~/Library/Application Support/bmesh` on macOS, `%AppData%\bmesh` on Windows), the embedded hub's store in the OS cache dir (`os.UserCacheDir`); see Config. A configured command line runs through the platform's shell (`sh` on Unix, `cmd /C` on Windows), nothing assumes tmux, and the build is checked on Linux, macOS and Windows (`GOOS=windows go build ./...` in CI); only Linux and macOS are run.
+
 ## Build and test
 
 ```
@@ -9,7 +24,7 @@ GOBIN=~/.local/bin go install ./cmd/bmesh
 TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test ./...
 ```
 
-Tests never use `/tmp`: `meshtest.Start` fails when `TMPDIR` is `/tmp`.
+Tests never use `/tmp`: `meshtest.Start` fails when `TMPDIR` is `/tmp`. CI (`.github/workflows/ci.yml`) runs the tests, `go vet`, `gofmt -l` and the Windows and macOS builds.
 
 ### Testing
 
@@ -65,7 +80,7 @@ A kind is `.bmesh/routines/<kind>.toml` in the repo (the directory is `[routines
 | `deterministic` | `false` | the same tree always gives the same result: a recorded result answers a repeat job |
 | `slots` | `[]` | slot names (from the repo's `[slots]`) a run holds a lease on |
 | `timeout` | `"20m"` | a run is killed (its whole process group) after this |
-| `command` | `""` | run with `sh -c` in the checkout at the commit; a job's args are appended as `"$@"` |
+| `command` | `""` | run through the platform shell in the checkout at the commit; a job's args are appended as positional arguments (`"$@"` under sh) |
 | `model` | `""` | a model id: the kind runs `claude -p` with it |
 | `models` | `[]` | several model ids; a job's `--model` picks one, default the first |
 | `prompt` | `""` | model kinds: the setup prompt, sent once per session ahead of the first job |
@@ -100,7 +115,7 @@ A pooled instance holds the jobs it takes until `batch_idle` passes with nothing
 
 Instances are nodes (`role: routine`, with repo, host and model). The daemon writes their state (`working` during a job, `idle` between, `done` when it stops: a fresh run after its job, a pooled one when its pool is stopped or restarted) and publishes `started`, `progress` (`job <id> started` before a run and `job <id> ok|fail <ms>` after it, `job <id> ok|fail <ms> ctx <tokens>` for a model instance (its context tokens), both with `to` = the requester's path; or `recycled`) and `done` for them on `bm.<instance path>.<event>`. A node event with a `to` counts as activity of that path too, so a lead waiting on a routine is not marked silent.
 
-The daemon reads each `[repos]` repo's kinds every minute from its main (`origin/main` after a fetch when the repo has an `origin`, else `main`) and starts, restarts or stops pools to match. Routines are off when `[runner] checkouts` is empty.
+The daemon reads each registered repo's (repos.toml) kinds every minute from its main (`origin/main` after a fetch when the repo has an `origin`, else `main`) and starts, restarts or stops pools to match. Routines are off when `[runner] checkouts` is empty.
 
 ### Jobs
 
@@ -115,7 +130,7 @@ bmesh routine run <kind> [--commit HEAD] [--model M] [--here] [--rerun] [--text 
 
 `list` prints the cwd repo's kinds with their instances and queue depth (waiting plus in-flight jobs); `status` prints a kind's (or every kind's) instances with state and model.
 
-A job is an inbox message (`kind: "job"`) to `routine.<kind>`, with the job id as its `Nats-Msg-Id`, so a job queued twice is stored once (`queue` prints `duplicate <id>`). It names a commit (`--commit`, default `HEAD`, resolved in the cwd repo to a full SHA with its tree) and a repo: the requester node's `repo` when it is a registered node naming one; else the `[repos]` name whose path shares the cwd's git common dir (so a linked worktree, where leads live, names its main repo); else the main repo directory's base name. The daemon resolves it through its own `[repos]`. The kind's inbox consumer is `inbox-routine--<kind>`, with `MaxAckPending` = the kind's instance count (`pool` per model per repo for pooled, `pool` for fresh) and `AckWait` = the kind's `timeout` + 1m. The daemon keeps a running job in progress, so a job is redelivered only when its daemon dies.
+A job is an inbox message (`kind: "job"`) to `routine.<kind>`, with the job id as its `Nats-Msg-Id`, so a job queued twice is stored once (`queue` prints `duplicate <id>`). It names a commit (`--commit`, default `HEAD`, resolved in the cwd repo to a full SHA with its tree) and a repo: the requester node's `repo` when it is a registered node naming one; else the registry name whose path shares the cwd's git common dir (so a linked worktree, where leads live, names its main repo); else the main repo directory's base name. The daemon resolves it through its own registry. The kind's inbox consumer is `inbox-routine--<kind>`, with `MaxAckPending` = the kind's instance count (`pool` per model per repo for pooled, `pool` for fresh) and `AckWait` = the kind's `timeout` + 1m. The daemon keeps a running job in progress, so a job is redelivered only when its daemon dies.
 
 The daemon runs a job with the kind as defined at the job's commit (`git show <commit>:.bmesh/routines/<kind>.toml`), falling back to main's definition only when the file is absent at that commit. A deterministic kind's job is answered from its recorded result, ok or failed, without a run unless `--rerun`; `queue` checks the record first and prints `answered from result <key> (job <id>)`. A job whose commit is not in the daemon's clone (queued from another box) gets one `git fetch origin` before it is answered `not a commit`, so push the branch before queueing to a daemon elsewhere. A job whose slot is busy goes back to the inbox for 30 s. An unknown repo, a kind that a configured repo defines but not the job's repo's main, an inline kind, an unknown model and a lost lease are answered `ok=false` with that reason. A kind that no configured repo defines on its main has no feed: its jobs wait unanswered until `routine wait` times out.
 
@@ -125,7 +140,7 @@ A reply is an inbox message (`kind: "reply"`) to the requester carrying `{"job",
 
 ### Checkouts
 
-Fresh and pooled runs never touch a requester's worktree. Each instance has a detached worktree of the `[repos]` path at `<[runner] checkouts>/<repo directory name>/<instance path>`, moved before each job with `git checkout --detach <commit> && git clean -fd`; the daemon reads the repo's main in a sibling checkout named `main`.
+Fresh and pooled runs never touch a requester's worktree. Each instance has a detached worktree of the registered repo's path at `<[runner] checkouts>/<repo directory name>/<instance path>`, moved before each job with `git checkout --detach <commit> && git clean -fd`; the daemon reads the repo's main in a sibling checkout named `main`.
 
 `routine run` is the inline run: it runs HEAD of the cwd worktree (`--commit` must name HEAD) and refuses a fresh or pooled kind unless `--here`. Every inline run records a result for HEAD's tree, so it refuses a dirty tree: exit 3 `bmesh: worktree is dirty; commit first`.
 
@@ -209,31 +224,61 @@ JetStream is addressed through the domain from `[mesh] domain` (default `hub`).
 
 ## Config
 
-`~/.config/bmesh/config.toml` (`BMESH_CONFIG` overrides the path). Keys and defaults:
+Three files in the config dir (`<os.UserConfigDir()>/bmesh`: `~/.config/bmesh` on Linux; `BMESH_CONFIG` overrides the config file's path, and the other two live beside it): `config.toml`, this box's settings; `repos.toml`, the registry of repos, the same on every box; and the setup flag `.setup-complete`, written by `bmesh init` (see Quickstart).
+
+### repos.toml
+
+One `[repos.<name>]` table per repo (a name matches `^[a-z0-9][a-z0-9_.-]*$`); every key with its default:
+
+```toml
+[repos.party-buzzer]
+path = "~/repos/party-buzzer"           # required; the checkout on this box (~ expands; a relative path is from the config dir)
+mode = "ship"                           # ship | companion | publish | fork | dormant
+remote = ""                             # owner/repo, or a URL; for people and the table
+host = ""                               # the box proposal threads run on ("" = this one)
+ux_host = ""                            # the box UI/UX threads run on
+verify = []                             # the shell commands that must pass before a change is done
+surfaces = []                           # the UI screens a UI/UX thread screenshots, with their viewports
+pin = ""                                # a release tag every checkout stays on, instead of following a branch
+routines = ["verify", "review"]         # the routine kinds a build runs
+```
+
+An unknown key, a row without `path` or a mode outside the five is an error for every command, since one loader reads it for all of them. `[repos]` in `config.toml`, where the registry used to be, is refused with a message naming `repos.toml`. `bmesh lead start --repo`, `routine queue` and the daemon resolve repo names through it.
+
+```
+bmesh repos [--json]               # the table: name, mode, remote, verify, host, ux_host, surfaces, pin (sorted by name)
+bmesh repos show <name> [--json]   # one row, key: value lines
+```
+
+`--json` prints the rows as an array (`show`: one object) of `{"name","path","mode","remote","host","ux_host","verify":[],"surfaces":[],"pin","routines":[]}`, defaults filled in, for other tools to read. `show` of an unknown name exits 3. `bmesh init` adds the current directory's checkout as a row (`path` and its GitHub origin as `owner/repo`) unless it is there already, and rewrites the file whole, so a comment in it is lost.
+
+### config.toml
+
+Keys and defaults:
 
 ```toml
 [mesh]
 nats = ""                                   # "" = embedded server; else e.g. "nats://localhost:4222"
 domain = "hub"
 token_file = ""                             # "" = no token
-store = "~/.local/state/bmesh/jetstream"    # embedded server's store
+store = "<cache dir>/bmesh/jetstream"       # embedded server's store (os.UserCacheDir: ~/.cache on Linux, ~/Library/Caches on macOS)
 listen = "127.0.0.1:4222"                   # embedded server's bind
 [host]
 name = ""                                   # "" = `hostname -s`
 [serve]
 listen = "127.0.0.1:3774"
 [runner]
-kind = "t3"                                 # t3 | tmux
+kind = "t3"                                 # claude | t3 | tmux (init writes claude when claude is on PATH)
 t3_dispatch = "t3_dispatch.py"              # path; run as `uv run <path>`
 tmux_session = "bmesh"
-worktrees = "~/.bmesh/worktrees"            # executors' worktrees, and the tmux runner's
+worktrees = "~/.bmesh/worktrees"            # executors' worktrees, and the claude and tmux runners'
 checkouts = "~/.bmesh/checkouts"            # routine instances' checkouts; "" = routines off
-claude = "claude"                           # claude command for model routines, split on spaces
+claude = "claude"                           # claude command for model routines and the claude runner, split on spaces
 max_leads = 0                               # leads at once on this host (lead start refuses past it); 0 = no cap
 [notify]
 ntfy = ""                                   # "" = no digest; else "http://k16:2586/bmesh"
 command = ""                                # test hook: receives the POST body on stdin instead of HTTP
-digest_every = "1h"                         # command runs via `sh -c`, body on stdin, title in $BMESH_TITLE (and $NTFY_TITLE)
+digest_every = "1h"                         # command runs through the platform shell, body on stdin, title in $BMESH_TITLE (and $NTFY_TITLE)
 push = ["ask", "blocked", "done"]           # a lead's events pushed at once (only these three; another entry is a config error); [] = no pushes
 map_url = ""                                # the map's URL for a push's click-through (<map_url>#/lead/<path>); "" = none
 catch_up = "1h"                             # on start, push missed events no older than this
@@ -241,13 +286,12 @@ catch_up = "1h"                             # on start, push missed events no ol
 grace = "20m"
 poll_every = "60s"
 wake_every = "10m"
-[repos]                                     # name = path
 [spec]
 glob = "docs/proposals/{id}-*.md"
 [models]
 lead = "claude-fable-5-1"
 [quota]
-command = ""                                # the map's quota strip; "" = no strip. Run via `sh -c` at most every 5m (30s timeout); prints a JSON array of {"reading":{"provider","five_hour","week","five_reset","week_reset"}}
+command = ""                                # the map's quota strip; "" = no strip. Run through the platform shell at most every 5m (30s timeout); prints a JSON array of {"reading":{"provider","five_hour","week","five_reset","week_reset"}}
 [console]
 thread_url = ""                             # the map's thread link for leads on this host, {thread} = the lead's runner thread; "" = this host's [console.hosts] entry, else no link
 [console.hosts]                             # host = template, for leads on other hosts (e.g. k16 = "http://k16:3773/…/{thread}")
@@ -261,7 +305,7 @@ A daemon with `[notify] ntfy` or `command` set also pushes a lead's `ask`, `bloc
 
 Each event is pushed once across restarts and daemons: before posting, a daemon claims it by publishing `bm.daemon.<host>.push` (`to` the lead, `text` the title, `seq` the event's stream sequence) with `Nats-Msg-Id` `push-<seq>`, and a duplicate reply means another daemon has it; on start a daemon pushes the listed events no older than `catch_up` (by the event's `at`, else its stored time) that have no `push` claim yet, in order, then follows live. A live event stored over a minute ago (the backlog a reconnect to the hub delivers) gets the same rules: it is dropped when older than `catch_up` or when any daemon's `push` claim names its seq. A push that still fails after retries at 5 s and 30 s is logged and recorded as `push-failed`; the claim stands, so it is never repeated. At shutdown the push being posted gets 10 s to finish; any claimed push still queued or waiting to retry is logged and recorded as `push-failed` with body `shutdown`.
 
-The map's lead page reads the lead's spec from its `[repos]` repo's local `origin/main` (`main` without an origin) and never fetches in the request; the daemon fetches `origin main` in the background at most once a minute per repo while lead pages are being viewed, so a spec shows up to a minute or two after it lands.
+The map's lead page reads the lead's spec from its registered repo's local `origin/main` (`main` without an origin) and never fetches in the request; the daemon fetches `origin main` in the background at most once a minute per repo while lead pages are being viewed, so a spec shows up to a minute or two after it lands.
 
 ## Exit codes
 
@@ -270,7 +314,7 @@ The map's lead page reads the lead's spec from its `[repos]` repo's local `origi
 | 0 | ok |
 | 1 | error; a failed run (`routine run`, `routine wait`); a lost lease; an interrupted `lease run` |
 | 2 | usage |
-| 3 | refused (a `done` the spec or its `verified` line doesn't support, a reserved or taken path, a send to a running thread, an executor name or branch in use, an `executor remove` of an unmerged branch, a dirty worktree for a deterministic inline run, an unknown kind, a fresh or pooled kind run inline without `--here`, an inline run of a commit other than HEAD, a busy slot, a lease held by someone else, no result for `result find` or `spec verified`) |
+| 3 | refused (a command other than `init` and `help` on a box not set up, run outside a terminal; a `repos show` of an unknown name; a `done` the spec or its `verified` line doesn't support, a reserved or taken path, a send to a running thread, an executor name or branch in use, an `executor remove` of an unmerged branch, a dirty worktree for a deterministic inline run, an unknown kind, a fresh or pooled kind run inline without `--here`, an inline run of a commit other than HEAD, a busy slot, a lease held by someone else, no result for `result find` or `spec verified`) |
 | 5 | timeout (`watch`, `routine wait`) |
 
 `lease run` exits with its command's code.
