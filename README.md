@@ -17,7 +17,7 @@ Recommended, optional: the [pstack](https://github.com/rickdiculousli/pstack-cla
 
 `bmesh init` asks for what its flags don't say (`--hub`, `--token-file`, `--runner`, `--no-repo`), reading answers from stdin (an empty line, or no stdin, takes the default), so a script can drive it; `--service` also writes the unit that keeps `bmesh serve` running (a systemd user unit on Linux, a launchd agent on macOS) and says how to enable it. It writes the setup flag last (`<config dir>/.setup-complete`); every other command but `help` and `version`, finding neither the flag nor a `config.toml`, prints one line and runs `init` first when run from a terminal, and is refused (exit 3, ``run `bmesh init` ``) when not. On an existing `config.toml` it edits nothing without `--force` (a registry row it already has is left too), but still writes the flag and, with `--service`, the unit. Pick the multi-box answer on a second box and give it the first box's hub URL and token file.
 
-The config lives in the OS config dir (`os.UserConfigDir`: `~/.config/bmesh` on Linux, `~/Library/Application Support/bmesh` on macOS, `%AppData%\bmesh` on Windows; an existing `~/.config/bmesh` is kept on any OS), the embedded hub's store in the OS cache dir (`os.UserCacheDir`); see Config. A configured command line runs through the platform's shell (`sh` on Unix; `cmd /C` on Windows, where every argument is quoted and one holding a quote or a `%` is refused), nothing assumes tmux, and the build is checked on Linux, macOS and Windows (`GOOS=windows go build ./...` in CI); only Linux and macOS are run.
+The config lives in the OS config dir (`os.UserConfigDir`: `~/.config/bmesh` on Linux, `~/Library/Application Support/bmesh` on macOS, `%AppData%\bmesh` on Windows; an existing `~/.config/bmesh` is kept on any OS), the embedded hub's store in the OS cache dir (`os.UserCacheDir`); see Config. A configured command line runs through the platform's shell (`sh` on Unix; `cmd /C` on Windows, where every argument is quoted and one holding a quote or a `%` is refused) and nothing assumes tmux; only Linux and macOS are run.
 
 ### Updates
 
@@ -34,7 +34,7 @@ GOBIN=~/.local/bin go install ./cmd/bmesh
 TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test ./...
 ```
 
-Tests never use `/tmp`: `meshtest.Start` fails when `TMPDIR` is `/tmp`. CI (`.github/workflows/ci.yml`) runs the tests, `go vet`, `gofmt -l` and the Windows and macOS builds.
+Tests never use `/tmp`: `meshtest.Start` fails when `TMPDIR` is `/tmp`.
 
 ### Testing
 
