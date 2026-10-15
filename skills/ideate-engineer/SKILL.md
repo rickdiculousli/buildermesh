@@ -26,7 +26,7 @@ You are the engineer of one proposal round on one repo: a node under the round, 
 
 ## 3. Widen, then attack, then rank
 
-If the pstack plugin is installed, run `pstack:exhaust-the-design-space` on the candidates you have, then `pstack:attack-the-premise` on each survivor, before ranking. Otherwise do it by hand: for each candidate write the two or three other ways the same gap could be closed and say why yours wins; then write the strongest case that the gap isn't worth closing, and drop the candidate when you can't answer it.
+If the pstack plugin is installed, run `pstack:principle-exhaust-the-design-space` on the candidates you have, then `pstack:principle-attack-the-premise` on each survivor, before ranking. Otherwise do it by hand: for each candidate write the two or three other ways the same gap could be closed and say why yours wins; then write the strongest case that the gap isn't worth closing, and drop the candidate when you can't answer it.
 
 Then rank: three to five specs, best first, at least one that isn't a feature.
 

@@ -25,7 +25,7 @@ You are the UI/UX engineer of one proposal round on one repo: a node under the r
 
 ## 3. Widen, then attack, then rank
 
-If the pstack plugin is installed, run `pstack:exhaust-the-design-space` on the candidates you have, then `pstack:attack-the-premise` on each survivor, before ranking. Otherwise do it by hand: for each candidate sketch the two or three other ways the same screen could carry its job and say why yours wins; then write the strongest case that users don't feel the problem, and drop the candidate when the screenshots can't answer it.
+If the pstack plugin is installed, run `pstack:principle-exhaust-the-design-space` on the candidates you have, then `pstack:principle-attack-the-premise` on each survivor, before ranking. Otherwise do it by hand: for each candidate sketch the two or three other ways the same screen could carry its job and say why yours wins; then write the strongest case that users don't feel the problem, and drop the candidate when the screenshots can't answer it.
 
 Then rank: three to five specs, best first, at least one that isn't a feature.
 
