@@ -27,15 +27,15 @@ type Result struct {
 
 // ResultKey is <kind>.<tree>, with "." and the first 8 hex digits of the
 // sha256 of the args joined by NUL appended when there are args, then "."
-// and the model's ModelShort when model is set.
+// and the model's ModelShort when that is not empty.
 func ResultKey(kind, tree string, args []string, model string) string {
 	key := kind + "." + tree
 	if len(args) > 0 {
 		sum := sha256.Sum256([]byte(strings.Join(args, "\x00")))
 		key += "." + hex.EncodeToString(sum[:])[:8]
 	}
-	if model != "" {
-		key += "." + ModelShort(model)
+	if short := ModelShort(model); short != "" {
+		key += "." + short
 	}
 	return key
 }

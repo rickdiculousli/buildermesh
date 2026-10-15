@@ -28,8 +28,17 @@ func TestResultKeyWithAndWithoutArgs(t *testing.T) {
 	if got, want := ResultKey("review", "t", []string{"x"}, "claude-opus-5-5"), "review.t."+hex.EncodeToString(sum[:])[:8]+".opus-5-5"; got != want {
 		t.Fatalf("args and model: %q, want %q", got, want)
 	}
-	if got := ModelShort("claude-Sonnet_5.5[1m]"); got != "-onnet-5-5-1m-" {
-		t.Fatalf("model short: %q", got)
+	for in, want := range map[string]string{
+		"claude-Sonnet_5.5[1m]": "sonnet-5-5-1m-",
+		"Claude-Opus-5-5":       "opus-5-5",
+		"claude-":               "",
+	} {
+		if got := ModelShort(in); got != want {
+			t.Fatalf("ModelShort(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if got := ResultKey("review", "t", nil, "claude-"); got != "review.t" {
+		t.Fatalf("empty model short: %q", got)
 	}
 
 	c, ctx := connect(t)

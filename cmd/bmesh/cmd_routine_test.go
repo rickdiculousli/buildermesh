@@ -69,6 +69,33 @@ func TestQueueAnswersFromRecordEvenWhenFailed(t *testing.T) {
 	}
 }
 
+func TestQueueDedupeIsModelAware(t *testing.T) {
+	c, ctx := setup(t)
+	kindRepo(t, map[string]string{
+		"review": "deterministic = true\nmodels = [\"m1\", \"m2\"]\nprompt = \"check\"\n",
+	})
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
+	if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "review", Tree: tree, OK: false, Output: "bad\n", By: "x", Model: "m1"}); err != nil {
+		t.Fatal(err)
+	}
+	// No --model is the first model, m1, whose record answers.
+	out, errs, code := runCLI(t, as("app-001"), "routine", "queue", "review")
+	if code != 0 || !strings.HasPrefix(out, "answered from result review."+tree+".m1 ") {
+		t.Fatalf("queue: %d %q %q", code, out, errs)
+	}
+	if n, err := mesh.Depth(ctx, c, "review"); err != nil || n != 0 {
+		t.Fatalf("depth %d %v", n, err)
+	}
+	// m2 has no record, so it queues.
+	out, errs, code = runCLI(t, as("app-001"), "routine", "queue", "review", "--model", "m2")
+	if code != 0 || !strings.HasPrefix(out, "queued ") {
+		t.Fatalf("queue m2: %d %q %q", code, out, errs)
+	}
+	if n, err := mesh.Depth(ctx, c, "review"); err != nil || n != 1 {
+		t.Fatalf("depth after m2 %d %v", n, err)
+	}
+}
+
 func TestWaitReturnsReplyExitByOK(t *testing.T) {
 	c, ctx := setup(t)
 	me, _ := mesh.ParsePath("app-001")

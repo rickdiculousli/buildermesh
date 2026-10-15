@@ -83,13 +83,14 @@ func TreeFilter(lead string) string { return "bm." + lead + ".>" }
 
 func InboxConsumer(p Path) string { return "inbox-" + strings.ReplaceAll(p.String(), ".", "--") }
 
-// ModelShort is a model id with a leading "claude-" stripped and every
-// character outside [a-z0-9-] replaced by "-": claude-opus-5-5 is opus-5-5.
+// ModelShort is a model id lowercased, with a leading "claude-" stripped and
+// every character outside [a-z0-9-] replaced by "-": Claude-Opus-5-5 is
+// opus-5-5.
 func ModelShort(model string) string {
 	return strings.Map(func(r rune) rune {
 		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' {
 			return r
 		}
 		return '-'
-	}, strings.TrimPrefix(model, "claude-"))
+	}, strings.TrimPrefix(strings.ToLower(model), "claude-"))
 }
