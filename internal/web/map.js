@@ -568,9 +568,12 @@ function remember(f) {
   if (!recentTimer) recentTimer = setTimeout(drawRecent, 50);
 }
 
-// frameKey names a frame for openRows.
+// frameKey names a frame for openRows: its subject, time and words (frames
+// carry no sequence; two of one subject in one second differ by their words,
+// or read the same).
 function frameKey(f) {
-  return f.subject + "@" + ((f.payload && f.payload.at) || f.at || "");
+  const p = f.payload && typeof f.payload === "object" ? f.payload : {};
+  return f.subject + "@" + (p.at || f.at || "") + "#" + (p.text || "");
 }
 
 function drawRecent() {
@@ -591,8 +594,9 @@ function drawRecent() {
 
 // openRows holds the keys of the clamped rows tapped open (a band row's
 // path, a drawer or timeline frame's frameKey, an inbox message's id), so
-// a redraw keeps them open.
+// a redraw keeps them open; past OPEN_MAX the oldest are forgotten.
 const openRows = new Set();
+const OPEN_MAX = 200;
 
 // clampRow marks a row clamped to three lines until tapped; key names it in
 // openRows.
@@ -612,6 +616,7 @@ function toggleRows(ev) {
   const open = e.classList.toggle("open");
   if (open) openRows.add(e.dataset.key);
   else openRows.delete(e.dataset.key);
+  while (openRows.size > OPEN_MAX) openRows.delete(openRows.values().next().value);
 }
 
 // --- pages: the lead, the routines, the strip -------------------------------
