@@ -171,6 +171,8 @@ func TestConsoleURL(t *testing.T) {
 		{cfg, lead("box-c", "th-3"), ""}, // another host with no template
 		{cfg, lead("box-a", ""), ""},     // no thread
 		{config.ConsoleConfig{}, lead("box-a", "th-1"), ""},
+		// No thread_url: this host's [console.hosts] entry is the fallback.
+		{config.ConsoleConfig{Hosts: cfg.Hosts}, lead("box-a", "th-1"), "http://unused/t/th-1"},
 	} {
 		if got := ConsoleURL(c.cfg, "box-a", c.n); got != c.want {
 			t.Errorf("ConsoleURL(%+v, %s/%s) = %q, want %q", c.cfg, c.n.Host, c.n.Runner.Thread, got, c.want)

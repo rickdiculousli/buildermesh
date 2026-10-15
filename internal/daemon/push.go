@@ -19,6 +19,9 @@ const pushBodyMax = 3 << 10
 // defaultPushRetry is the wait before each retry of a failed push.
 var defaultPushRetry = []time.Duration{5 * time.Second, 30 * time.Second}
 
+// defaultPushGrace is how long the push in flight may finish at shutdown.
+const defaultPushGrace = 10 * time.Second
+
 // Headers are a notification's ntfy headers; empty ones are not sent.
 type Headers struct {
 	Title, Priority, Tags, Click, Actions string
@@ -105,15 +108,32 @@ type pushJob struct {
 // pushLoop pushes a lead's listed events as they happen, once each across
 // restarts and daemons. It subscribes to bm.> live, then catches up from
 // history (events newer than [notify] catch_up with no push claim yet) and
-// skips live events the history already held. Each event is claimed by a
+// skips live events the history already held; a live frame stored over a
+// minute ago (a reconnect's backlog) gets the same catch-up rules. Each event is claimed by a
 // push daemon event with Nats-Msg-Id push-<seq> before delivery; a
 // duplicate reply means someone else has it. Deliveries run in order on
 // their own goroutine so a slow or failing ntfy never stalls the follower.
+// At shutdown the delivery in hand gets d.PushGrace to finish; every
+// claimed push left undelivered is logged and recorded as push-failed with
+// body "shutdown" (the claim stands).
 func pushLoop(ctx context.Context, d Deps) {
 	if !pushEnabled(d.Cfg.Notify) {
 		return
 	}
 	d.defaults()
+	grace := d.PushGrace
+	if grace == 0 {
+		grace = defaultPushGrace
+	}
+	// dctx is what a delivery runs under: it outlives ctx by grace.
+	dctx, dcancel := context.WithCancel(context.WithoutCancel(ctx))
+	defer dcancel()
+	stopGrace := context.AfterFunc(ctx, func() {
+		t := time.AfterFunc(grace, dcancel)
+		<-dctx.Done()
+		t.Stop()
+	})
+	defer stopGrace()
 	jobs := make(chan pushJob, 256)
 	worker := make(chan struct{})
 	go func() {
@@ -123,11 +143,25 @@ func pushLoop(ctx context.Context, d Deps) {
 			case <-ctx.Done():
 				return
 			case j := <-jobs:
-				pushDeliver(ctx, d, j)
+				if ctx.Err() != nil {
+					pushShutdown(d, j)
+					continue
+				}
+				pushDeliver(ctx, dctx, d, j)
 			}
 		}
 	}()
-	defer func() { <-worker }()
+	defer func() {
+		<-worker
+		for {
+			select {
+			case j := <-jobs:
+				pushShutdown(d, j)
+			default:
+				return
+			}
+		}
+	}()
 	for ctx.Err() == nil {
 		sub, cancel := context.WithCancel(ctx)
 		ch, err := mesh.Follow(sub, d.Client, "bm.>")
@@ -152,12 +186,65 @@ func pushLoop(ctx context.Context, d Deps) {
 			if s.Seq <= last {
 				continue // the catch-up had it
 			}
-			if path, event, ok := nodeEvent(s.Subject); ok && slices.Contains(d.Cfg.Notify.Push, event) {
-				pushClaim(ctx, d, s, path, event, jobs)
-			}
+			pushLive(ctx, d, s, jobs)
 		}
 		cancel()
 	}
+}
+
+// liveStale is how old a live frame's stored time may be before it counts
+// as backlog: after a reconnect, Follow delivers what was published during
+// the gap as live, and another daemon may have pushed it meanwhile.
+const liveStale = time.Minute
+
+// pushLive claims live frame s when it is a listed node event. A frame
+// stored over liveStale ago goes through the catch-up rules first: it is
+// dropped when older than [notify] catch_up or when a daemon has claimed it.
+func pushLive(ctx context.Context, d Deps, s mesh.Stored, jobs chan<- pushJob) {
+	path, event, ok := nodeEvent(s.Subject)
+	if !ok || !slices.Contains(d.Cfg.Notify.Push, event) {
+		return
+	}
+	if now := d.Now(); now.Sub(s.At) > liveStale {
+		if eventTime(s).Before(now.Add(-d.Cfg.Notify.CatchUp)) {
+			return
+		}
+		claimed, err := pushClaims(ctx, d, s.At)
+		if err != nil {
+			d.Log.Warn("push: read claims", "path", path, "seq", s.Seq, "err", err)
+			return
+		}
+		if claimed[s.Seq] {
+			return
+		}
+	}
+	pushClaim(ctx, d, s, path, event, jobs)
+}
+
+// eventTime is when node event s happened: its at, else its stored time.
+func eventTime(s mesh.Stored) time.Time {
+	if ev, err := decodeEvent(s.Data); err == nil {
+		if t, err := time.Parse(time.RFC3339, ev.At); err == nil {
+			return t
+		}
+	}
+	return s.At
+}
+
+// pushClaims returns the seqs named by every daemon's push claims stored
+// since since (all of them when zero).
+func pushClaims(ctx context.Context, d Deps, since time.Time) (map[uint64]bool, error) {
+	hist, err := mesh.History(ctx, d.Client, "bm.daemon.*.push", since)
+	if err != nil {
+		return nil, err
+	}
+	claimed := map[uint64]bool{}
+	for _, s := range hist {
+		if ev, err := decodeEvent(s.Data); err == nil && ev.Seq != 0 {
+			claimed[ev.Seq] = true
+		}
+	}
+	return claimed, nil
 }
 
 // pushCatchUp claims the listed node events in history no older than
@@ -169,15 +256,9 @@ func pushCatchUp(ctx context.Context, d Deps, jobs chan<- pushJob) (last uint64,
 	if err != nil {
 		return 0, err
 	}
-	claims, err := mesh.History(ctx, d.Client, "bm.daemon.*.push", time.Time{})
+	claimed, err := pushClaims(ctx, d, time.Time{})
 	if err != nil {
 		return 0, err
-	}
-	claimed := map[uint64]bool{}
-	for _, s := range claims {
-		if ev, err := decodeEvent(s.Data); err == nil && ev.Seq != 0 {
-			claimed[ev.Seq] = true
-		}
 	}
 	for _, s := range hist {
 		last = max(last, s.Seq)
@@ -185,13 +266,7 @@ func pushCatchUp(ctx context.Context, d Deps, jobs chan<- pushJob) (last uint64,
 		if !ok || claimed[s.Seq] || !slices.Contains(d.Cfg.Notify.Push, event) {
 			continue
 		}
-		at := s.At
-		if ev, err := decodeEvent(s.Data); err == nil {
-			if t, err := time.Parse(time.RFC3339, ev.At); err == nil {
-				at = t
-			}
-		}
-		if at.Before(cutoff) {
+		if eventTime(s).Before(cutoff) {
 			continue
 		}
 		pushClaim(ctx, d, s, path, event, jobs)
@@ -231,23 +306,31 @@ func pushClaim(ctx context.Context, d Deps, s mesh.Stored, path, event string, j
 	if dup {
 		return // another daemon, or this one before a restart, has it
 	}
+	j := pushJob{req: req, path: path, seq: s.Seq}
 	select {
-	case jobs <- pushJob{req: req, path: path, seq: s.Seq}:
+	case jobs <- j:
 	case <-ctx.Done():
+		pushShutdown(d, j)
 	}
 }
 
-// pushDeliver delivers j, retrying after each of d.PushRetry (default 5s,
-// 30s); when every try fails it logs and publishes push-failed. The claim
-// stands either way, so a failed push is never repeated.
-func pushDeliver(ctx context.Context, d Deps, j pushJob) {
+// pushDeliver delivers j under dctx, retrying after each of d.PushRetry
+// (default 5s, 30s); when every try fails it logs and publishes
+// push-failed. A try that fails once ctx has ended, or a retry wait that
+// ctx ends, is recorded by pushShutdown. The claim stands either way, so a
+// failed push is never repeated.
+func pushDeliver(ctx, dctx context.Context, d Deps, j pushJob) {
 	delays := d.PushRetry
 	if delays == nil {
 		delays = defaultPushRetry
 	}
 	var err error
 	for i := 0; ; i++ {
-		if err = deliver(ctx, d, j.req.Headers, j.req.Body); err == nil {
+		if err = deliver(dctx, d, j.req.Headers, j.req.Body); err == nil {
+			return
+		}
+		if ctx.Err() != nil {
+			pushShutdown(d, j)
 			return
 		}
 		if i == len(delays) {
@@ -255,15 +338,27 @@ func pushDeliver(ctx context.Context, d Deps, j pushJob) {
 		}
 		select {
 		case <-ctx.Done():
+			pushShutdown(d, j)
 			return
 		case <-time.After(delays[i]):
 		}
 	}
-	if ctx.Err() != nil {
-		return
-	}
 	d.Log.Warn("push: deliver", "path", j.path, "seq", j.seq, "err", err)
 	ev := mesh.Event{From: d.from(), Event: "push-failed", To: j.path, Text: j.req.Title, Seq: j.seq, Body: err.Error(),
+		At: d.Now().UTC().Format(time.RFC3339)}
+	if err := mesh.PublishEvent(ctx, d.Client, ev); err != nil {
+		d.Log.Warn("push: publish push-failed", "err", err)
+	}
+}
+
+// pushShutdown records claimed push j as undelivered at shutdown: a log
+// line and a push-failed event with body "shutdown", published under a
+// short context of its own since the daemon's has ended.
+func pushShutdown(d Deps, j pushJob) {
+	d.Log.Warn("push: not delivered at shutdown", "path", j.path, "seq", j.seq)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ev := mesh.Event{From: d.from(), Event: "push-failed", To: j.path, Text: j.req.Title, Seq: j.seq, Body: "shutdown",
 		At: d.Now().UTC().Format(time.RFC3339)}
 	if err := mesh.PublishEvent(ctx, d.Client, ev); err != nil {
 		d.Log.Warn("push: publish push-failed", "err", err)

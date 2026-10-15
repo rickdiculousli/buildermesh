@@ -233,7 +233,7 @@ max_leads = 0                               # leads at once on this host (lead s
 ntfy = ""                                   # "" = no digest; else "http://k16:2586/bmesh"
 command = ""                                # test hook: receives the POST body on stdin instead of HTTP
 digest_every = "1h"                         # command runs via `sh -c`, body on stdin, title in $BMESH_TITLE (and $NTFY_TITLE)
-push = ["ask", "blocked", "done"]           # a lead's events pushed at once; [] = no pushes
+push = ["ask", "blocked", "done"]           # a lead's events pushed at once (only these three; another entry is a config error); [] = no pushes
 map_url = ""                                # the map's URL for a push's click-through (<map_url>#/lead/<path>); "" = none
 catch_up = "1h"                             # on start, push missed events no older than this
 [liveness]
@@ -248,7 +248,7 @@ lead = "claude-fable-5-1"
 [quota]
 command = ""                                # the map's quota strip; "" = no strip. Run via `sh -c` at most every 5m (30s timeout); prints a JSON array of {"reading":{"provider","five_hour","week","five_reset","week_reset"}}
 [console]
-thread_url = ""                             # the map's thread link for leads on this host, {thread} = the lead's runner thread; "" = no link
+thread_url = ""                             # the map's thread link for leads on this host, {thread} = the lead's runner thread; "" = this host's [console.hosts] entry, else no link
 [console.hosts]                             # host = template, for leads on other hosts (e.g. k16 = "http://k16:3773/…/{thread}")
 ```
 
@@ -258,7 +258,9 @@ A digest is also published as a `digest` event on `bm.daemon.<host>.digest`, wit
 
 A daemon with `[notify] ntfy` or `command` set also pushes a lead's `ask`, `blocked` and `done` (the `push` list) to the same topic at once: title `<path> asks`, `<path> is blocked` or `<path> is done`; priority `high` for an ask or a block and `default` for done; tags `question`, `no_entry`, `white_check_mark`; the body is the event's text cut to 3 KB, plus `commit <sha8>` for done; `Click` opens the lead's map page when `map_url` is set and an `Open thread` action opens its thread when `[console]` resolves it. Executors' and routines' events never push. With `command` set, the body goes on stdin and the headers in `$NTFY_TITLE`, `$NTFY_PRIORITY`, `$NTFY_TAGS`, `$NTFY_CLICK` and `$NTFY_ACTIONS`.
 
-Each event is pushed once across restarts and daemons: before posting, a daemon claims it by publishing `bm.daemon.<host>.push` (`to` the lead, `text` the title, `seq` the event's stream sequence) with `Nats-Msg-Id` `push-<seq>`, and a duplicate reply means another daemon has it; on start a daemon pushes the listed events no older than `catch_up` (by the event's `at`, else its stored time) that have no `push` claim yet, in order, then follows live. A push that still fails after retries at 5 s and 30 s is logged and recorded as `push-failed`; the claim stands, so it is never repeated.
+Each event is pushed once across restarts and daemons: before posting, a daemon claims it by publishing `bm.daemon.<host>.push` (`to` the lead, `text` the title, `seq` the event's stream sequence) with `Nats-Msg-Id` `push-<seq>`, and a duplicate reply means another daemon has it; on start a daemon pushes the listed events no older than `catch_up` (by the event's `at`, else its stored time) that have no `push` claim yet, in order, then follows live. A live event stored over a minute ago (the backlog a reconnect to the hub delivers) gets the same rules: it is dropped when older than `catch_up` or when any daemon's `push` claim names its seq. A push that still fails after retries at 5 s and 30 s is logged and recorded as `push-failed`; the claim stands, so it is never repeated. At shutdown the push being posted gets 10 s to finish; any claimed push still queued or waiting to retry is logged and recorded as `push-failed` with body `shutdown`.
+
+The map's lead page reads the lead's spec from its `[repos]` repo's local `origin/main` (`main` without an origin) and never fetches in the request; the daemon fetches `origin main` in the background at most once a minute per repo while lead pages are being viewed, so a spec shows up to a minute or two after it lands.
 
 ## Exit codes
 

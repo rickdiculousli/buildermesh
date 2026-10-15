@@ -176,6 +176,11 @@ func Load(path string) (*Config, error) {
 	if f.Notify.Push != nil {
 		push = append([]string{}, *f.Notify.Push...) // push = [] stays empty: no pushes
 	}
+	for _, e := range push {
+		if e != "ask" && e != "blocked" && e != "done" {
+			return nil, fmt.Errorf("config %s: [notify] push: unknown event %q", path, e)
+		}
+	}
 	c.Notify = NotifyConfig{Ntfy: f.Notify.Ntfy, Command: f.Notify.Command, DigestEvery: time.Duration(f.Notify.DigestEvery),
 		Push: push, MapURL: f.Notify.MapURL, CatchUp: time.Duration(f.Notify.CatchUp)}
 	c.Liveness = LivenessConfig{Grace: time.Duration(f.Liveness.Grace), PollEvery: time.Duration(f.Liveness.PollEvery),

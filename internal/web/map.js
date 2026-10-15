@@ -722,9 +722,11 @@ function pct(x) {
   return Math.round(+x || 0) + "%";
 }
 
+// renderStrip draws the strip; an open digest stays open.
 function renderStrip() {
   const s = $("strip");
   const q = strip.quota || [], d = strip.digest;
+  const open = s.querySelector("details[open]") !== null;
   if (!q.length && !d) {
     s.hidden = true;
     s.replaceChildren();
@@ -741,7 +743,9 @@ function renderStrip() {
   if (d) {
     const sum = el("summary", "tap", null, clock("digest", d.at, false), ": " + (d.title || ""));
     if (d.body) {
-      rows.push(el("details", "digest", null, sum, el("pre", null, d.body)));
+      const det = el("details", "digest", null, sum, el("pre", null, d.body));
+      if (open) det.setAttribute("open", "");
+      rows.push(det);
     } else {
       rows.push(el("div", "digest", null, ...sum.childNodes));
     }
@@ -754,11 +758,9 @@ async function loadStrip() {
   try {
     const r = await fetchJSON("/api/strip");
     if (!r.body) return; // keep the last strip
-    const open = $("strip").querySelector("details[open]") !== null;
     strip.quota = r.body.quota || [];
-    strip.digest = r.body.digest || strip.digest;
+    strip.digest = r.body.digest || null; // null: no digest any more
     renderStrip();
-    if (open) $("strip").querySelector("details")?.setAttribute("open", "");
   } catch (e) {
     // The next minute tries again.
   }

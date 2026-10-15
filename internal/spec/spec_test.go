@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -150,5 +151,42 @@ func TestFindOnMainWithoutRemote(t *testing.T) {
 	d, _ := CheckDone(repo, glob, "077")
 	if d.Why != "no spec 077 on main" {
 		t.Fatalf("%+v", d)
+	}
+}
+
+func TestFindOnMainLocalDoesNotFetch(t *testing.T) {
+	repo := newRepo(t)
+	commitSpec(t, repo, "building", "")
+	runGit(t, repo, "push", "-q", "origin", "main")
+	// Another clone moves origin's main on; repo's origin/main stays behind.
+	other := filepath.Join(filepath.Dir(repo), "other")
+	runGit(t, filepath.Dir(repo), "clone", "-q", "-b", "main", filepath.Join(filepath.Dir(repo), "origin.git"), other)
+	commitSpec(t, other, "done", "abc")
+	runGit(t, other, "push", "-q", "origin", "main")
+	ctx := context.Background()
+	if _, text, err := FindOnMainLocal(ctx, repo, glob, "012"); err != nil || !strings.Contains(text, "status: building") {
+		t.Fatalf("before a fetch: %q %v", text, err)
+	}
+	if _, _, err := FindOnMainLocal(ctx, repo, glob, "099"); !IsNotFound(err) {
+		t.Fatalf("missing spec: %v", err)
+	}
+	if err := FetchMain(ctx, repo); err != nil {
+		t.Fatal(err)
+	}
+	if _, text, err := FindOnMainLocal(ctx, repo, glob, "012"); err != nil || !strings.Contains(text, "status: done") {
+		t.Fatalf("after a fetch: %q %v", text, err)
+	}
+	// Without an origin it reads main, and there is nothing to fetch.
+	if _, text, err := FindOnMainLocal(ctx, other+"-none", glob, "012"); err == nil || IsNotFound(err) {
+		t.Fatalf("no repo: %q %v", text, err)
+	}
+	solo := filepath.Join(t.TempDir(), "solo")
+	runGit(t, filepath.Dir(solo), "init", "-q", "-b", "main", solo)
+	commitSpec(t, solo, "done", "abc")
+	if err := FetchMain(ctx, solo); err != nil {
+		t.Fatalf("fetch without origin: %v", err)
+	}
+	if _, text, err := FindOnMainLocal(ctx, solo, glob, "012"); err != nil || !strings.Contains(text, "status: done") {
+		t.Fatalf("no origin: %q %v", text, err)
 	}
 }

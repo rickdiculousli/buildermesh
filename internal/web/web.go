@@ -7,6 +7,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -40,11 +41,13 @@ type frame struct {
 }
 
 // Options is what the handler needs beyond the client: the config, this
-// daemon's host name and the clock (time.Now when nil).
+// daemon's host name, the clock (time.Now when nil) and the log (discarded
+// when nil).
 type Options struct {
 	Cfg  *config.Config
 	Host string
 	Now  func() time.Time
+	Log  *slog.Logger
 }
 
 // asset serves an embedded file with its content type.

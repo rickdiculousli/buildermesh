@@ -96,16 +96,17 @@ func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Wri
 	dctx, stopDaemon := context.WithCancel(ctx)
 	defer stopDaemon()
 	daemonDone := make(chan error, 1)
+	log := slog.New(slog.NewTextHandler(stderr, nil))
 	go func() {
 		daemonDone <- daemon.Run(dctx, daemon.Deps{
 			Client: c, Cfg: cfg, Runner: r, Host: host,
-			Log:       slog.New(slog.NewTextHandler(stderr, nil)),
+			Log:       log,
 			Checkouts: cfg.Expand(cfg.Runner.Checkouts), ClaudeBin: claude,
 		})
 	}()
 
 	srv := &http.Server{
-		Handler: web.Handler(c, serveHistory, web.Options{Cfg: cfg, Host: host}), ReadHeaderTimeout: 10 * time.Second,
+		Handler: web.Handler(c, serveHistory, web.Options{Cfg: cfg, Host: host, Log: log}), ReadHeaderTimeout: 10 * time.Second,
 		// Requests end with ctx, so open event streams don't hold Shutdown.
 		BaseContext: func(net.Listener) context.Context { return ctx },
 	}

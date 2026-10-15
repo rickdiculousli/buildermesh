@@ -17,6 +17,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
+	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
 // frame reads one SSE frame (up to a blank line), skipping comments.
@@ -296,6 +297,26 @@ first
 
 func TestLeadPageReadsSpecFromOrigin(t *testing.T) {
 	ctx, c := connect(t)
+	// The background fetch waits for gate and reports on fetched, so the
+	// test can show the request never waits for it.
+	gate, fetched := make(chan struct{}), make(chan error, 8)
+	fetchMain = func(ctx context.Context, repo string) error {
+		<-gate
+		err := spec.FetchMain(ctx, repo)
+		fetched <- err
+		return err
+	}
+	t.Cleanup(func() { fetchMain = spec.FetchMain })
+	waitFetch := func() error {
+		t.Helper()
+		select {
+		case err := <-fetched:
+			return err
+		case <-time.After(30 * time.Second):
+			t.Fatal("no background fetch")
+			return nil
+		}
+	}
 	// origin holds the spec; the configured clone is behind it, and the
 	// lead's own repo_path is another box's path.
 	root := t.TempDir()
@@ -306,8 +327,9 @@ func TestLeadPageReadsSpecFromOrigin(t *testing.T) {
 	specV2 := strings.Replace(strings.Replace(specV1, "status: active", "status: done", 1), "first", "second", 1)
 	commit(t, origin, map[string]string{"docs/proposals/0042-map.md": specV2})
 
+	later := filepath.Join(root, "later") // configured, but not cloned yet
 	cfg := &config.Config{
-		Repos:   map[string]string{"demo": clone},
+		Repos:   map[string]string{"demo": clone, "later": later},
 		Spec:    config.SpecConfig{Glob: "docs/proposals/{id}-*.md"},
 		Console: config.ConsoleConfig{ThreadURL: "http://here/t/{thread}", Hosts: map[string]string{"other": "http://other/t/{thread}"}},
 	}
@@ -315,6 +337,7 @@ func TestLeadPageReadsSpecFromOrigin(t *testing.T) {
 		{Path: "a", Role: "lead", Repo: "demo", RepoPath: "/elsewhere/demo", Spec: "0042", Host: "other",
 			Runner: mesh.NodeRunner{Kind: "t3", Thread: "th-1"}},
 		{Path: "b", Role: "lead", Repo: "nope", Spec: "0042", Host: "box"},
+		{Path: "c", Role: "lead", Repo: "later", Spec: "0042", Host: "box"},
 	} {
 		if err := mesh.PutNode(ctx, c, n); err != nil {
 			t.Fatal(err)
@@ -354,9 +377,18 @@ func TestLeadPageReadsSpecFromOrigin(t *testing.T) {
 	if p.Node.Path != "a" || p.State.State != "working" || p.ConsoleURL != "http://other/t/th-1" {
 		t.Fatalf("page %+v", p)
 	}
-	if p.Spec == nil || p.Spec.ID != "0042" || p.Spec.Title != "Map v1" || p.Spec.Status != "done" ||
-		!strings.Contains(p.Spec.Text, "second") {
+	// The spec is the clone's own origin/main, read without a fetch: the
+	// background fetch is still held at the gate.
+	if p.Spec == nil || p.Spec.ID != "0042" || p.Spec.Title != "Map v1" || p.Spec.Status != "active" ||
+		!strings.Contains(p.Spec.Text, "first") {
 		t.Fatalf("spec %+v", p.Spec)
+	}
+	if _, err := os.Stat(filepath.Join(clone, ".git", "FETCH_HEAD")); !os.IsNotExist(err) {
+		t.Fatalf("the clone was fetched in the request: %v", err)
+	}
+	close(gate)
+	if err := waitFetch(); err != nil {
+		t.Fatal(err)
 	}
 	if len(p.Inbox) != 2 || p.Inbox[0].Text != "two" || p.Inbox[1].Text != "one" {
 		t.Fatalf("inbox %+v", p.Inbox)
@@ -369,17 +401,45 @@ func TestLeadPageReadsSpecFromOrigin(t *testing.T) {
 		t.Fatalf("timeline %+v", p.Timeline)
 	}
 
-	// Within 60 s the spec comes from the cache; after, from origin again.
+	// Within 60 s the spec comes from the cache (and no fetch starts);
+	// after, from origin/main as the last background fetch left it, which
+	// starts the next one.
 	specV3 := strings.Replace(specV2, "# Map v1", "# Map v3", 1)
 	commit(t, origin, map[string]string{"docs/proposals/0042-map.md": specV3})
 	getJSON(t, srv, "/api/lead/a", 200, &p)
-	if p.Spec == nil || p.Spec.Title != "Map v1" {
+	if p.Spec == nil || p.Spec.Status != "active" {
 		t.Fatalf("cached spec %+v", p.Spec)
 	}
 	now = now.Add(61 * time.Second)
 	getJSON(t, srv, "/api/lead/a", 200, &p)
+	if p.Spec == nil || p.Spec.Title != "Map v1" || p.Spec.Status != "done" || !strings.Contains(p.Spec.Text, "second") {
+		t.Fatalf("spec after the first fetch %+v", p.Spec)
+	}
+	if err := waitFetch(); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(61 * time.Second)
+	getJSON(t, srv, "/api/lead/a", 200, &p)
 	if p.Spec == nil || p.Spec.Title != "Map v3" {
-		t.Fatalf("refreshed spec %+v", p.Spec)
+		t.Fatalf("spec after the second fetch %+v", p.Spec)
+	}
+	if err := waitFetch(); err != nil {
+		t.Fatal(err)
+	}
+
+	// A failed read is not cached: once the repo exists, the next view
+	// shows the spec.
+	var pc page
+	getJSON(t, srv, "/api/lead/c", 200, &pc)
+	if pc.Spec != nil {
+		t.Fatalf("spec in a missing repo %+v", pc.Spec)
+	}
+	_ = waitFetch()
+	git(t, root, "init", "-q", "-b", "main", "later")
+	commit(t, later, map[string]string{"docs/proposals/0042-map.md": specV1})
+	getJSON(t, srv, "/api/lead/c", 200, &pc)
+	if pc.Spec == nil || pc.Spec.Title != "Map v1" {
+		t.Fatalf("spec once the repo exists %+v", pc.Spec)
 	}
 
 	// An unknown repo leaves the spec null and the rest of the page whole.
@@ -397,6 +457,9 @@ func TestLeadPageReadsSpecFromOrigin(t *testing.T) {
 	getJSON(t, srv, "/api/lead/a", 200, &p)
 	if len(p.Inbox) != 2 || p.Inbox[0].Text != "two" || len(p.Timeline) != 0 {
 		t.Fatalf("a day later: inbox %+v timeline %+v", p.Inbox, p.Timeline)
+	}
+	if err := waitFetch(); err != nil {
+		t.Fatal(err)
 	}
 	getJSON(t, srv, "/api/lead/a*b", 404, nil)
 }

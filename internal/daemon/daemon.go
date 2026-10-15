@@ -38,6 +38,7 @@ type Deps struct {
 	ClaudeBin string // the claude command for model routines, split on spaces
 
 	PushRetry []time.Duration // waits before each push retry; nil = 5s, 30s
+	PushGrace time.Duration   // how long a push in flight may finish at shutdown; 0 = 10s
 }
 
 func (d *Deps) defaults() {

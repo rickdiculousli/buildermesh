@@ -46,6 +46,12 @@ func TestLoadPushList(t *testing.T) {
 	if err != nil || c.Notify.Push == nil || len(c.Notify.Push) != 0 {
 		t.Fatalf("push = []: %v %#v", err, c.Notify.Push)
 	}
+	// An event outside ask, blocked and done is an error, not a silent no-op.
+	os.WriteFile(p, []byte("[notify]\npush = [\"asks\", \"done\"]\n"), 0o644)
+	_, err = Load(p)
+	if want := "config " + p + `: [notify] push: unknown event "asks"`; err == nil || err.Error() != want {
+		t.Fatalf("push = [asks]: %v, want %s", err, want)
+	}
 }
 
 func TestLoadFixture(t *testing.T) {

@@ -38,7 +38,12 @@ func Frontmatter(text string) (map[string]string, error) {
 }
 
 func git(repo string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	return gitCtx(context.Background(), repo, args...)
+}
+
+// gitCtx runs git in repo under ctx, for at most 30 s.
+func gitCtx(ctx context.Context, repo string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", repo}, args...)...)
 	out, err := cmd.Output()
@@ -56,25 +61,51 @@ type notFoundError struct{ id, ref string }
 
 func (e *notFoundError) Error() string { return fmt.Sprintf("no spec %s on %s", e.id, e.ref) }
 
+// IsNotFound reports whether err says the spec is not on the ref read.
+func IsNotFound(err error) bool {
+	var nf *notFoundError
+	return errors.As(err, &nf)
+}
+
 // FindOnMain returns the path and text of spec id on origin/main (after a
 // fetch) when the repo has an origin, else on main.
 func FindOnMain(repoPath, glob, id string) (string, string, error) {
-	p, text, _, err := findOnMain(repoPath, glob, id)
+	p, text, _, err := findOnMain(context.Background(), repoPath, glob, id, true)
 	return p, text, err
 }
 
-// findOnMain is FindOnMain also naming the ref it read.
-func findOnMain(repoPath, glob, id string) (p, text, ref string, err error) {
+// FindOnMainLocal is FindOnMain without the fetch: it reads the local
+// origin/main ref as it stands, under ctx.
+func FindOnMainLocal(ctx context.Context, repoPath, glob, id string) (string, string, error) {
+	p, text, _, err := findOnMain(ctx, repoPath, glob, id, false)
+	return p, text, err
+}
+
+// FetchMain fetches origin's main into the local origin/main when the repo
+// has an origin; without one it does nothing.
+func FetchMain(ctx context.Context, repoPath string) error {
+	if _, err := gitCtx(ctx, repoPath, "remote", "get-url", "origin"); err != nil {
+		return nil
+	}
+	_, err := gitCtx(ctx, repoPath, "fetch", "--quiet", "origin", "main")
+	return err
+}
+
+// findOnMain is FindOnMain (FindOnMainLocal when fetch is false) also
+// naming the ref it read.
+func findOnMain(ctx context.Context, repoPath, glob, id string, fetch bool) (p, text, ref string, err error) {
 	ref = "main"
-	if _, err := git(repoPath, "remote", "get-url", "origin"); err == nil {
-		if _, err := git(repoPath, "fetch", "--quiet", "origin", "main"); err != nil {
-			return "", "", ref, err
+	if _, err := gitCtx(ctx, repoPath, "remote", "get-url", "origin"); err == nil {
+		if fetch {
+			if _, err := gitCtx(ctx, repoPath, "fetch", "--quiet", "origin", "main"); err != nil {
+				return "", "", ref, err
+			}
 		}
 		ref = "origin/main"
 	}
 	pattern := strings.ReplaceAll(glob, "{id}", id)
 	dir := path.Dir(glob)
-	out, err := git(repoPath, "ls-tree", "--name-only", "-r", ref, "--", dir)
+	out, err := gitCtx(ctx, repoPath, "ls-tree", "--name-only", "-r", ref, "--", dir)
 	if err != nil {
 		return "", "", ref, err
 	}
@@ -98,7 +129,7 @@ func findOnMain(repoPath, glob, id string) (p, text, ref string, err error) {
 	default:
 		return "", "", ref, fmt.Errorf("spec %s matches %d files on %s: %s", id, len(hits), ref, strings.Join(hits, ", "))
 	}
-	if text, err = git(repoPath, "show", ref+":"+hits[0]); err != nil {
+	if text, err = gitCtx(ctx, repoPath, "show", ref+":"+hits[0]); err != nil {
 		return "", "", ref, err
 	}
 	return hits[0], text, ref, nil
@@ -118,7 +149,7 @@ type Done struct {
 // is a verdict (OK false), a malformed one (frontmatter or verified line) an
 // error.
 func CheckDone(repoPath, glob, id string) (Done, error) {
-	p, text, ref, err := findOnMain(repoPath, glob, id)
+	p, text, ref, err := findOnMain(context.Background(), repoPath, glob, id, true)
 	var nf *notFoundError
 	if errors.As(err, &nf) {
 		return Done{Why: nf.Error()}, nil

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -294,6 +295,98 @@ func TestPushCatchUpSkipsStale(t *testing.T) {
 	}
 }
 
+// consumers counts the mesh stream's consumers.
+func (f *fixture) consumers(t *testing.T) int {
+	t.Helper()
+	st, err := f.c.JS.Stream(f.ctx, mesh.StreamMesh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := st.Info(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return info.State.Consumers
+}
+
+// stored returns the one stored message on subject.
+func (f *fixture) stored(t *testing.T, subject string) mesh.Stored {
+	t.Helper()
+	hist, err := mesh.History(f.ctx, f.c, subject, time.Time{})
+	if err != nil || len(hist) != 1 {
+		t.Fatalf("%s: %d messages, %v", subject, len(hist), err)
+	}
+	return hist[0]
+}
+
+// A live frame stored over a minute ago (a reconnect backlog) goes through
+// the catch-up rules: past catch_up it is dropped, and another daemon's
+// claim for it, though out of the duplicate window, keeps it from a second
+// push. A fresh live frame is pushed.
+func TestPushLiveBacklogUsesCatchUpRules(t *testing.T) {
+	f, n := pushSetup(t)
+	f.shortDupWindow(t)
+	for _, p := range []string{"a", "b", "c"} {
+		f.lead(t, p, "th-"+p, "")
+	}
+	f.event(t, mesh.Event{From: "a", Event: "ask", Text: "claimed elsewhere"})
+	a := f.stored(t, "bm.a.ask")
+	if _, err := mesh.PublishEventID(f.ctx, f.c, mesh.Event{From: "daemon.otherhost", Event: "push", To: "a",
+		Text: "a asks", Seq: a.Seq}, fmt.Sprintf("push-%d", a.Seq)); err != nil {
+		t.Fatal(err)
+	}
+	f.event(t, mesh.Event{From: "b", Event: "ask", Text: "too old", At: f.now.Add(-2 * time.Hour).UTC().Format(time.RFC3339)})
+	b := f.stored(t, "bm.b.ask")
+	time.Sleep(300 * time.Millisecond) // past the duplicate window: only the claims history guards a
+	f.event(t, mesh.Event{From: "c", Event: "ask", Text: "fresh"})
+	c := f.stored(t, "bm.c.ask")
+
+	jobs := make(chan pushJob, 8)
+	a.At = f.now.Add(-5 * time.Minute) // within catch_up, but a backlog
+	b.At = f.now.Add(-5 * time.Minute) // its own at is 2 h old
+	for _, s := range []mesh.Stored{a, b, c} {
+		pushLive(f.ctx, f.d, s, jobs)
+	}
+	close(jobs)
+	for j := range jobs {
+		pushDeliver(f.ctx, f.ctx, f.d, j)
+	}
+	if got := n.waitRequests(t, 1); got[0].Title != "c asks" {
+		t.Errorf("requests = %+v", got)
+	}
+	if c := f.claims(t, "push"); len(c) != 2 {
+		t.Errorf("push claims = %+v", c)
+	}
+}
+
+// An event whose at is unparseable is judged by its stored time: stored
+// more than catch_up ago, the catch-up does not push it.
+func TestPushCatchUpStoredTimeFallback(t *testing.T) {
+	f, n := pushSetup(t)
+	f.lead(t, "a", "th-a", "")
+	f.lead(t, "b", "th-b", "")
+	f.event(t, mesh.Event{From: "a", Event: "ask", Text: "no usable at", At: "soon"})
+	f.now = time.Now().Add(2 * time.Hour) // the event was stored 2 h ago
+	base := f.consumers(t)
+	startPush(t, f.d)
+	// The sentinel must arrive live: by this clock the catch-up reads
+	// nothing stored now. Follow's consumer is made before the catch-up's.
+	deadline := time.Now().Add(10 * time.Second)
+	for f.consumers(t) <= base && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	f.event(t, mesh.Event{From: "b", Event: "ask", Text: "sentinel", At: f.now.UTC().Format(time.RFC3339)})
+	if got := n.waitRequests(t, 1); got[0].Title != "b asks" {
+		t.Errorf("requests = %+v", got)
+	}
+	// The live path falls back to the stored time the same way.
+	jobs := make(chan pushJob, 1)
+	pushLive(f.ctx, f.d, f.stored(t, "bm.a.ask"), jobs)
+	if len(jobs) != 0 {
+		t.Errorf("live frame with no usable at, stored 2 h ago: queued %+v", <-jobs)
+	}
+}
+
 func TestPushFailureRecordedNotRepeated(t *testing.T) {
 	f, n := pushSetup(t)
 	f.shortDupWindow(t)
@@ -324,6 +417,33 @@ func TestPushFailureRecordedNotRepeated(t *testing.T) {
 	}
 	if c := f.daemonEvents(t, "push-failed"); len(c) != 1 {
 		t.Errorf("push-failed events = %+v", c)
+	}
+}
+
+// A push still retrying at shutdown is recorded as push-failed with body
+// shutdown; its claim stands, so a restart does not send it.
+func TestPushShutdownRecordsFailed(t *testing.T) {
+	f, n := pushSetup(t)
+	f.shortDupWindow(t)
+	f.lead(t, "a", "th-a", "")
+	f.lead(t, "b", "th-b", "")
+	n.setStatus(http.StatusInternalServerError)
+	f.d.PushRetry = []time.Duration{time.Minute}
+	stop := startPush(t, f.d)
+	f.event(t, mesh.Event{From: "a", Event: "ask", Text: "q"})
+	n.waitRequests(t, 1) // the first try; the retry waits a minute
+	stop()
+	failed := f.daemonEvents(t, "push-failed")
+	if len(failed) != 1 || failed[0].To != "a" || failed[0].Body != "shutdown" || failed[0].Seq == 0 {
+		t.Fatalf("push-failed events = %+v", failed)
+	}
+	time.Sleep(300 * time.Millisecond) // past the duplicate window
+
+	n.setStatus(http.StatusOK)
+	startPush(t, f.d)
+	f.event(t, mesh.Event{From: "b", Event: "ask", Text: "sentinel"})
+	if got := n.waitRequests(t, 2); got[1].Title != "b asks" {
+		t.Errorf("after restart: %+v", got)
 	}
 }
 

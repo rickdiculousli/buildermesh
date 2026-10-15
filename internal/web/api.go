@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -16,10 +17,14 @@ import (
 )
 
 const (
-	window    = 24 * time.Hour   // how far back the timeline and instance uses look
-	cacheFor  = 60 * time.Second // spec and kind file reads
-	inboxShow = 50
+	window     = 24 * time.Hour   // how far back the timeline and instance uses look
+	cacheFor   = 60 * time.Second // spec and kind file reads
+	fetchEvery = 60 * time.Second // background fetches of a repo's origin main
+	inboxShow  = 50
 )
+
+// fetchMain is the background fetch of a repo's origin main.
+var fetchMain = spec.FetchMain
 
 // server holds what the JSON endpoints share: the client, the config and
 // the caches.
@@ -29,10 +34,12 @@ type server struct {
 	host  string
 	now   func() time.Time
 	quota *Quota
+	log   *slog.Logger
 
-	mu    sync.Mutex
-	specs map[string]specEntry // by lead path
-	kinds kindEntry
+	mu      sync.Mutex
+	specs   map[string]specEntry // by lead path
+	kinds   kindEntry
+	fetched map[string]time.Time // when each repo's last background fetch started
 }
 
 type specEntry struct {
@@ -65,8 +72,12 @@ func newServer(c *mesh.Client, o Options) *server {
 	if now == nil {
 		now = time.Now
 	}
-	return &server{c: c, cfg: cfg, host: o.Host, now: now, quota: &Quota{Command: cfg.Quota.Command},
-		specs: map[string]specEntry{}}
+	log := o.Log
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	return &server{c: c, cfg: cfg, host: o.Host, now: now, quota: &Quota{Command: cfg.Quota.Command}, log: log,
+		specs: map[string]specEntry{}, fetched: map[string]time.Time{}}
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
@@ -204,7 +215,7 @@ func (s *server) lead(w http.ResponseWriter, r *http.Request) {
 		st = stateOf(nil, path) // the same default as /api/tree
 	}
 	since := s.now().Add(-window)
-	pg := leadPage{Node: n, State: st, Spec: s.spec(n), ConsoleURL: ConsoleURL(s.cfg.Console, s.host, n),
+	pg := leadPage{Node: n, State: st, Spec: s.spec(ctx, n), ConsoleURL: ConsoleURL(s.cfg.Console, s.host, n),
 		Inbox: []mesh.Message{}, Timeline: []frame{}}
 
 	// The inbox has no time limit: the newest inboxShow messages the stream keeps.
@@ -231,10 +242,11 @@ func (s *server) lead(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, pg)
 }
 
-// spec reads n's spec from its repo's main through [repos], cached for a
-// minute per node; nil when the node names no spec, the repo is not
-// configured here or the spec is not on main.
-func (s *server) spec(n mesh.Node) *Spec {
+// spec reads n's spec from its repo's local origin/main (main without an
+// origin) through [repos], never fetching, cached for a minute per node;
+// nil when the node names no spec, the repo is not configured here, the
+// spec is not on main or the read failed (which is not cached).
+func (s *server) spec(ctx context.Context, n mesh.Node) *Spec {
 	if n.Spec == "" {
 		return nil
 	}
@@ -246,26 +258,31 @@ func (s *server) spec(n mesh.Node) *Spec {
 	if ok && e.key == key && now.Sub(e.at) < cacheFor {
 		return e.sp
 	}
-	sp := s.readSpec(n)
-	s.mu.Lock()
-	s.specs[n.Path] = specEntry{key: key, at: now, sp: sp}
-	s.mu.Unlock()
+	sp, ok := s.readSpec(ctx, n)
+	if ok {
+		s.mu.Lock()
+		s.specs[n.Path] = specEntry{key: key, at: now, sp: sp}
+		s.mu.Unlock()
+	}
 	return sp
 }
 
-func (s *server) readSpec(n mesh.Node) *Spec {
+// readSpec reads n's spec without a fetch, then starts a background fetch
+// of the repo; ok is false when the read failed.
+func (s *server) readSpec(ctx context.Context, n mesh.Node) (sp *Spec, ok bool) {
 	if n.Repo == "" {
-		return nil
+		return nil, true
 	}
 	_, repoPath, err := s.cfg.RepoPath(n.Repo)
 	if err != nil {
-		return nil
+		return nil, true
 	}
-	_, text, err := spec.FindOnMain(repoPath, s.cfg.Spec.Glob, n.Spec)
+	_, text, err := spec.FindOnMainLocal(ctx, repoPath, s.cfg.Spec.Glob, n.Spec)
+	s.fetchSoon(repoPath)
 	if err != nil {
-		return nil
+		return nil, spec.IsNotFound(err)
 	}
-	sp := &Spec{ID: n.Spec, Text: text}
+	sp = &Spec{ID: n.Spec, Text: text}
 	if fm, err := spec.Frontmatter(text); err == nil {
 		sp.Title, sp.Status, sp.Merged, sp.Verified = fm["title"], fm["status"], fm["merged"], fm["verified"]
 	}
@@ -277,7 +294,31 @@ func (s *server) readSpec(n mesh.Node) *Spec {
 			}
 		}
 	}
-	return sp
+	return sp, true
+}
+
+// fetchSoon starts a background fetch of repoPath's origin main unless one
+// started in the last fetchEvery, so the local origin/main the lead page
+// reads keeps up; no request waits for it, and a failure is only logged.
+func (s *server) fetchSoon(repoPath string) {
+	now := s.now()
+	s.mu.Lock()
+	last, ok := s.fetched[repoPath]
+	due := !ok || now.Sub(last) >= fetchEvery
+	if due {
+		s.fetched[repoPath] = now
+	}
+	s.mu.Unlock()
+	if !due {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := fetchMain(ctx, repoPath); err != nil {
+			s.log.Warn("map: fetch origin main", "repo", repoPath, "err", err)
+		}
+	}()
 }
 
 // LeaseRow is one bm-leases entry.

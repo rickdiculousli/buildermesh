@@ -142,7 +142,9 @@ func History(ctx context.Context, c *Client, filter string, since time.Time) ([]
 }
 
 // Follow delivers matching messages published from now on. The channel closes
-// when ctx ends.
+// when ctx ends. After a lost connection the consumer resumes past the last
+// message it delivered, so what was published during the gap arrives late
+// as live: Stored.At tells such a backlog apart.
 func Follow(ctx context.Context, c *Client, filter string) (<-chan Stored, error) {
 	cons, err := c.JS.OrderedConsumer(ctx, StreamMesh, jetstream.OrderedConsumerConfig{
 		FilterSubjects: []string{filter},
