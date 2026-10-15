@@ -48,11 +48,15 @@ func levelMain(ctx context.Context, repoPath string) error {
 	return nil
 }
 
-// addWorktree makes wt on a new branch from base; a branch that already
-// exists is refused (exit 3), and a failed add leaves nothing behind.
+// addWorktree makes wt on a new branch from base; a branch or a path that
+// already exists is refused (exit 3, nothing touched), and a failed add
+// leaves nothing behind.
 func addWorktree(ctx context.Context, repoPath, wt, branch, base string) error {
 	if _, err := gitIn(ctx, repoPath, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
 		return fail(exitRefused, "refused: branch %s already exists in %s", branch, repoPath)
+	}
+	if _, err := os.Lstat(wt); err == nil {
+		return fail(exitRefused, "refused: %s already exists; remove it first", wt)
 	}
 	if err := os.MkdirAll(filepath.Dir(wt), 0o755); err != nil {
 		return err

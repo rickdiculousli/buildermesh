@@ -184,7 +184,13 @@ func (a *app) runRound(row config.Repo, repoPath, model string) error {
 			started, err = a.startRemoteChild(ctx, hosts[c], row.Name, n, c, ids[c], threads[c], model)
 		}
 		if err != nil {
-			return fmt.Errorf("round %s: the %s thread did not start: %w", roundPath, c, err)
+			// The round cannot settle without both children: block it,
+			// naming the one that failed, so the mesh shows it closed.
+			why := fmt.Sprintf("the %s thread did not start: %v", c, err)
+			if _, werr := mesh.WriteState(ctx, a.client, roundPath, mesh.State{State: "blocked", Text: why, By: "node"}); werr == nil {
+				_ = mesh.PublishEvent(ctx, a.client, mesh.Event{From: roundPath, Event: "blocked", Text: why})
+			}
+			return fmt.Errorf("round %s: %s", roundPath, why)
 		}
 		out[c] = started
 	}
