@@ -192,7 +192,7 @@ func TestInstallRealBuildInWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	src := filepath.Join(t.TempDir(), "bm")
-	files := strings.Split(strings.TrimRight(tgit(t, root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"), "\x00"), "\x00")
+	files := strings.Split(strings.TrimRight(meshtest.Git(t, root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"), "\x00"), "\x00")
 	for _, f := range files {
 		b, err := os.ReadFile(filepath.Join(root, f))
 		if errors.Is(err, os.ErrNotExist) {
@@ -208,12 +208,12 @@ func TestInstallRealBuildInWorktree(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	tgit(t, src, "init", "-q", "-b", "main")
-	tgit(t, src, "add", "-A")
-	tgit(t, src, "commit", "-q", "-m", "copy")
-	want := tgit(t, src, "rev-parse", "HEAD")
+	meshtest.Git(t, src, "init", "-q", "-b", "main")
+	meshtest.Git(t, src, "add", "-A")
+	meshtest.Git(t, src, "commit", "-q", "-m", "copy")
+	want := meshtest.Git(t, src, "rev-parse", "HEAD")
 	wt := filepath.Join(t.TempDir(), "main")
-	tgit(t, src, "worktree", "add", "-q", "--detach", wt, "main")
+	meshtest.Git(t, src, "worktree", "add", "-q", "--detach", wt, "main")
 
 	exe := filepath.Join(t.TempDir(), "bmesh")
 	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {
@@ -222,7 +222,7 @@ func TestInstallRealBuildInWorktree(t *testing.T) {
 	if err := Install(context.Background(), wt, exe, want); err != nil {
 		t.Fatal(err)
 	}
-	at := tgit(t, src, "show", "-s", "--format=%ct", "HEAD")
+	at := meshtest.Git(t, src, "show", "-s", "--format=%ct", "HEAD")
 	sec, _ := strconv.ParseInt(at, 10, 64)
 	out, err := exec.Command(exe, "version").Output()
 	if w := "bmesh " + want[:8] + " " + time.Unix(sec, 0).UTC().Format(time.RFC3339) + "\n"; err != nil || string(out) != w {
