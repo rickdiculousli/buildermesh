@@ -119,8 +119,11 @@ func cutUTF8(s string, n int) string {
 	return s[:n]
 }
 
-func pushEnabled(n config.NotifyConfig) bool {
-	return (n.Ntfy != "" || n.Command != "") && len(n.Push) > 0
+// pushEnabled: [notify] has somewhere to send, and there is something to
+// push: listed node events, or (with [hosts] enabled) refusals.
+func pushEnabled(c *config.Config) bool {
+	n := c.Notify
+	return (n.Ntfy != "" || n.Command != "") && (len(n.Push) > 0 || c.Hosts.Enabled)
 }
 
 // nodeEvent splits a node event subject bm.<path>.<event>; mesh-internal
@@ -156,7 +159,7 @@ type pushJob struct {
 // claimed push left undelivered is logged and recorded as push-failed with
 // body "shutdown" (the claim stands).
 func pushLoop(ctx context.Context, d Deps) {
-	if !pushEnabled(d.Cfg.Notify) {
+	if !pushEnabled(d.Cfg) {
 		return
 	}
 	d.defaults()
@@ -240,8 +243,8 @@ const liveStale = time.Minute
 // stored over liveStale ago goes through the catch-up rules first: it is
 // dropped when older than [notify] catch_up or when a daemon has claimed it.
 func pushLive(ctx context.Context, d Deps, s mesh.Stored, jobs chan<- pushJob) {
-	path, event, ok := nodeEvent(s.Subject)
-	if !ok || !slices.Contains(d.Cfg.Notify.Push, event) {
+	path, event, ok := pushable(d, s.Subject)
+	if !ok {
 		return
 	}
 	if now := d.Now(); now.Sub(s.At) > liveStale {
@@ -258,6 +261,72 @@ func pushLive(ctx context.Context, d Deps, s mesh.Stored, jobs chan<- pushJob) {
 		}
 	}
 	pushClaim(ctx, d, s, path, event, jobs)
+}
+
+// pushable reports a subject the loop pushes: a node event listed in
+// [notify] push, or (with [hosts] enabled) a daemon's refused, whose path
+// is daemon.<host>.
+func pushable(d Deps, subject string) (path, event string, ok bool) {
+	if host, ok := refusedHost(subject); ok {
+		return "daemon." + host, "refused", d.Cfg.Hosts.Enabled
+	}
+	path, event, ok = nodeEvent(subject)
+	return path, event, ok && slices.Contains(d.Cfg.Notify.Push, event)
+}
+
+// refusedHost is the host of a bm.daemon.<host>.refused subject.
+func refusedHost(subject string) (string, bool) {
+	rest, ok := strings.CutPrefix(subject, "bm.daemon.")
+	if !ok {
+		return "", false
+	}
+	host, ok := strings.CutSuffix(rest, ".refused")
+	return host, ok && host != "" && !strings.Contains(host, ".")
+}
+
+// refusedQuiet is how long a refusal from one sender for one check stays
+// quiet after it was pushed.
+const refusedQuiet = 10 * time.Minute
+
+// pushRefused claims refused event s of daemon path (daemon.<host>) unless
+// a push for the same sender and check (the event's body) was claimed in
+// the last refusedQuiet.
+func pushRefused(ctx context.Context, d Deps, s mesh.Stored, path string, jobs chan<- pushJob) {
+	ev, err := decodeEvent(s.Data)
+	if err != nil || ev.Body == "" {
+		return
+	}
+	key := "refused " + ev.Body
+	hist, err := mesh.History(ctx, d.Client, "bm.daemon.*.push", d.Now().Add(-refusedQuiet))
+	if err != nil {
+		d.Log.Warn("push: read claims", "path", path, "seq", s.Seq, "err", err)
+		return
+	}
+	for _, h := range hist {
+		if c, err := decodeEvent(h.Data); err == nil && c.Body == key {
+			return
+		}
+	}
+	host := strings.TrimPrefix(path, "daemon.")
+	who, check, _ := strings.Cut(ev.Body, " ")
+	req := PushRequest{Headers: Headers{Title: fmt.Sprintf("%s refused %s: %s", host, who, check), Priority: "high",
+		Tags: "warning", Click: d.Cfg.Notify.MapURL}, Body: cutUTF8(ev.Text, pushBodyMax)}
+	claim := mesh.Event{From: d.from(), Event: "push", Text: req.Title, Seq: s.Seq, Body: key,
+		At: d.Now().UTC().Format(time.RFC3339)}
+	dup, err := mesh.PublishEventID(ctx, d.Client, claim, fmt.Sprintf("push-%d", s.Seq))
+	if err != nil {
+		d.Log.Warn("push: claim", "path", path, "seq", s.Seq, "err", err)
+		return
+	}
+	if dup {
+		return
+	}
+	j := pushJob{req: req, path: path, seq: s.Seq}
+	select {
+	case jobs <- j:
+	case <-ctx.Done():
+		pushShutdown(d, j)
+	}
 }
 
 // eventTime is when node event s happened: its at, else its stored time.
@@ -301,8 +370,8 @@ func pushCatchUp(ctx context.Context, d Deps, jobs chan<- pushJob) (last uint64,
 	}
 	for _, s := range hist {
 		last = max(last, s.Seq)
-		path, event, ok := nodeEvent(s.Subject)
-		if !ok || claimed[s.Seq] || !slices.Contains(d.Cfg.Notify.Push, event) {
+		path, event, ok := pushable(d, s.Subject)
+		if !ok || claimed[s.Seq] {
 			continue
 		}
 		if eventTime(s).Before(cutoff) {
@@ -317,6 +386,10 @@ func pushCatchUp(ctx context.Context, d Deps, jobs chan<- pushJob) (last uint64,
 // it for delivery; non-leads, a lost claim race and failures are skipped
 // (failures logged).
 func pushClaim(ctx context.Context, d Deps, s mesh.Stored, path, event string, jobs chan<- pushJob) {
+	if event == "refused" && strings.HasPrefix(path, "daemon.") {
+		pushRefused(ctx, d, s, path, jobs)
+		return
+	}
 	ev, err := decodeEvent(s.Data)
 	if err != nil {
 		d.Log.Warn("push: decode", "subject", s.Subject, "err", err)

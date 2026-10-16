@@ -42,7 +42,10 @@ type Deps struct {
 	PushGrace time.Duration   // how long a push in flight may finish at shutdown; 0 = 10s
 
 	T3Token  string // the T3 sign-in file `bmesh t3 login` writes; "" = no expiry warnings
-	StateDir string // where the daemon's push record lives
+	StateDir string // what survives a restart: the push record, the roster and salt records
+
+	ConfigDir  string        // the config file's directory: host.key and the file store's keys
+	HostsEvery time.Duration // the hosts layer's tick; 0 = a minute
 
 	Revision string // this binary's commit (vcs.revision); "" = unknown
 	Exe      string // the binary's path, which [update] replaces
@@ -116,7 +119,8 @@ func decodeEvent(data []byte) (mesh.Event, error) {
 // Run publishes started (after pushing an update that never started), then
 // starts the activity follower, the poll+wake+rounds and silence loops, the
 // digest and push loops when [notify] has somewhere to send, and, when
-// [repos] names any repo, the routine loop; it returns once ctx ends
+// [repos] names any repo, the routine loop, and with [hosts] enabled the
+// hosts loop; it returns once ctx ends
 // and every loop has stopped.
 func Run(ctx context.Context, d Deps) error {
 	if d.Client == nil || d.Cfg == nil || d.Runner == nil || d.Host == "" {
@@ -159,11 +163,14 @@ func Run(ctx context.Context, d Deps) error {
 	if d.T3Token != "" && (d.Cfg.Notify.Ntfy != "" || d.Cfg.Notify.Command != "") {
 		start(func() { every(ctx, time.Hour, func() { t3LoginOnce(ctx, d) }) })
 	}
-	if pushEnabled(d.Cfg.Notify) {
+	if pushEnabled(d.Cfg) {
 		start(func() { pushLoop(ctx, d) })
 	}
 	if len(d.Cfg.Repos) > 0 {
 		start(func() { routines(ctx, d) })
+	}
+	if d.Cfg.Hosts.Enabled {
+		start(func() { hostsRun(ctx, d) })
 	}
 	<-ctx.Done()
 	wg.Wait()
