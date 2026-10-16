@@ -6,16 +6,28 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
+
+	"github.com/rickdiculousli/buildermesh/internal/runner/t3mcp"
 )
 
 var (
 	ErrNoThread = errors.New("runner: no such thread")
-	ErrTimeout  = errors.New("runner: t3_dispatch timed out")
+	ErrTimeout  = errors.New("runner: t3 timed out")
 )
+
+// SignInError is a T3 sign-in that can't serve the call: missing, expired,
+// for another server, or below [runner] t3_runtime_mode. Its message says
+// what to run; the CLI exits 3 with it.
+type SignInError struct{ Msg string }
+
+func (e *SignInError) Error() string { return e.Msg }
 
 // ExecError is any other non-zero exit of t3_dispatch.py.
 type ExecError struct {
@@ -25,29 +37,172 @@ type ExecError struct {
 
 func (e *ExecError) Error() string { return fmt.Sprintf("t3_dispatch exit %d: %s", e.Code, e.Stderr) }
 
-// T3DefaultTimeout bounds one t3_dispatch.py call.
+// T3DefaultTimeout bounds one t3_dispatch.py call, or one MCP call.
 const T3DefaultTimeout = 120 * time.Second
 
-// T3 runs threads in T3 Code through t3_dispatch.py (`uv run <Dispatch>`;
-// $BMESH_T3_COMMAND, split on spaces, replaces `uv run <Dispatch>` for
-// tests). Dir holds prompt files ("" = <user cache dir>/bmesh/prompts);
-// Timeout bounds each call (0 = 120 s). It never forces, queues or waits:
-// Send refuses a running thread.
+// protocolTTL is how long a server's protocol version is trusted.
+const protocolTTL = time.Minute
+
+// T3 runs threads in T3 Code, by the protocol Server reports at
+// /.well-known/t3/environment (read at most once a minute): protocol 1
+// through t3_dispatch.py (`uv run <Dispatch>`; $BMESH_T3_COMMAND, split on
+// spaces, replaces `uv run <Dispatch>` for tests), protocol 2 through T3's
+// MCP tools with the token Cred gives. Server "" means protocol 1 without
+// asking. Dir holds V1 prompt files ("" = <user cache dir>/bmesh/prompts);
+// Timeout bounds each call (0 = 120 s); RuntimeMode is the mode threads
+// start in ("" = t3_dispatch's default on V1, auto on V2). Send refuses a
+// running thread on both paths. Use it through a pointer: it caches.
 type T3 struct {
-	Dispatch string
-	Dir      string
-	Timeout  time.Duration
+	Dispatch    string
+	Dir         string
+	Timeout     time.Duration
+	Server      string
+	RuntimeMode string
+	Cred        t3mcp.Credential
+	HTTP        *http.Client     // nil = http.DefaultClient
+	Now         func() time.Time // nil = time.Now
+
+	mu       sync.Mutex
+	proto    int
+	protoAt  time.Time
+	mcp      *t3mcp.Client
+	projects map[string]string // repo path -> project id
+	replies  map[string]replyCursor
 }
 
-func (r T3) command() []string { return command("BMESH_T3_COMMAND", "uv", "run", r.Dispatch) }
-
-func (r T3) run(ctx context.Context, args ...string) ([]byte, error) {
-	b := r.command()
-	timeout := r.Timeout
-	if timeout <= 0 {
-		timeout = T3DefaultTimeout
+func (r *T3) now() time.Time {
+	if r.Now != nil {
+		return r.Now()
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	return time.Now()
+}
+
+func (r *T3) timeout() time.Duration {
+	if r.Timeout > 0 {
+		return r.Timeout
+	}
+	return T3DefaultTimeout
+}
+
+// protocol is Server's orchestrationProtocolVersion (1 or 2), cached for a
+// minute; any other version is an error naming it.
+func (r *T3) protocol(ctx context.Context) (int, error) {
+	if r.Server == "" {
+		return 1, nil
+	}
+	r.mu.Lock()
+	if r.proto != 0 && r.now().Sub(r.protoAt) < protocolTTL {
+		p := r.proto
+		r.mu.Unlock()
+		return p, nil
+	}
+	r.mu.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(r.Server, "/")+"/.well-known/t3/environment", nil)
+	if err != nil {
+		return 0, err
+	}
+	hc := r.HTTP
+	if hc == nil {
+		hc = http.DefaultClient
+	}
+	resp, err := hc.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("t3 at %s: %w", r.Server, err)
+	}
+	defer resp.Body.Close()
+	var env struct {
+		ServerVersion string `json:"serverVersion"`
+		Protocol      int    `json:"orchestrationProtocolVersion"`
+	}
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("t3 at %s: environment: HTTP %d", r.Server, resp.StatusCode)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
+		return 0, fmt.Errorf("t3 at %s: environment: %w", r.Server, err)
+	}
+	if env.Protocol != 1 && env.Protocol != 2 {
+		return 0, fmt.Errorf("t3 at %s (T3 %s) speaks orchestration protocol %d; bmesh speaks 1 and 2", r.Server, env.ServerVersion, env.Protocol)
+	}
+	r.mu.Lock()
+	r.proto, r.protoAt = env.Protocol, r.now()
+	r.mu.Unlock()
+	return env.Protocol, nil
+}
+
+// v2Thread reports whether thread is a V2 (MCP) thread id: mcp:<uuid>.
+func v2Thread(thread string) bool { return strings.HasPrefix(thread, "mcp:") }
+
+// path picks the path for an existing thread: 2 for V2, 1 for V1, and
+// ErrNoThread for a thread the server's protocol doesn't have (it stays on
+// the path it started on).
+func (r *T3) path(ctx context.Context, thread string) (int, error) {
+	p, err := r.protocol(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if (p == 2) != v2Thread(thread) {
+		return 0, ErrNoThread
+	}
+	return p, nil
+}
+
+// Status reports whether the thread is mid-turn and its latest reply.
+func (r *T3) Status(ctx context.Context, thread string) (Status, error) {
+	p, err := r.path(ctx, thread)
+	if err != nil {
+		return Status{}, err
+	}
+	if p == 2 {
+		return r.statusV2(ctx, thread)
+	}
+	return r.statusV1(ctx, thread)
+}
+
+// Send messages an idle thread: status first, ErrRunning when it is
+// mid-turn.
+func (r *T3) Send(ctx context.Context, thread, text string) error {
+	p, err := r.path(ctx, thread)
+	if err != nil {
+		return err
+	}
+	if p == 2 {
+		return r.sendV2(ctx, thread, text)
+	}
+	return r.sendV1(ctx, thread, text)
+}
+
+// Start starts a thread on the path the server speaks.
+func (r *T3) Start(ctx context.Context, s StartSpec) (Started, error) {
+	p, err := r.protocol(ctx)
+	if err != nil {
+		return Started{}, err
+	}
+	if p == 2 {
+		return r.startV2(ctx, s)
+	}
+	return r.startV1(ctx, s)
+}
+
+// Interrupt stops the thread's running turn.
+func (r *T3) Interrupt(ctx context.Context, thread string) error {
+	p, err := r.path(ctx, thread)
+	if err != nil {
+		return err
+	}
+	if p == 2 {
+		return r.interruptV2(ctx, thread)
+	}
+	_, err = r.run(ctx, "stop", thread)
+	return err
+}
+
+func (r *T3) command() []string { return command("BMESH_T3_COMMAND", "uv", "run", r.Dispatch) }
+
+func (r *T3) run(ctx context.Context, args ...string) ([]byte, error) {
+	b := r.command()
+	ctx, cancel := context.WithTimeout(ctx, r.timeout())
 	defer cancel()
 	cmd := exec.CommandContext(ctx, b[0], append(append([]string{}, b[1:]...), args...)...)
 	var out, errb bytes.Buffer
@@ -75,8 +230,7 @@ func (r T3) run(ctx context.Context, args ...string) ([]byte, error) {
 	return nil, err
 }
 
-// Status reports whether the thread is mid-turn and its latest reply.
-func (r T3) Status(ctx context.Context, thread string) (Status, error) {
+func (r *T3) statusV1(ctx context.Context, thread string) (Status, error) {
 	out, err := r.run(ctx, "status", thread)
 	if err != nil {
 		return Status{}, err
@@ -103,7 +257,7 @@ func (r T3) Status(ctx context.Context, thread string) (Status, error) {
 	return s, nil
 }
 
-func (r T3) dir() (string, error) {
+func (r *T3) dir() (string, error) {
 	if r.Dir != "" {
 		return r.Dir, nil
 	}
@@ -115,7 +269,7 @@ func (r T3) dir() (string, error) {
 }
 
 // withFile writes text to an owner-only prompt file for the length of f.
-func (r T3) withFile(text string, f func(path string) error) error {
+func (r *T3) withFile(text string, f func(path string) error) error {
 	dir, err := r.dir()
 	if err != nil {
 		return err
@@ -142,10 +296,9 @@ func (r T3) withFile(text string, f func(path string) error) error {
 	return f(fh.Name())
 }
 
-// Send messages an idle thread: status first, ErrRunning when it is mid-turn
-// (and when send itself finds it running, exit 4).
-func (r T3) Send(ctx context.Context, thread, text string) error {
-	st, err := r.Status(ctx, thread)
+// sendV1: when send itself finds the thread running (exit 4), ErrRunning too.
+func (r *T3) sendV1(ctx context.Context, thread, text string) error {
+	st, err := r.statusV1(ctx, thread)
 	if err != nil {
 		return err
 	}
@@ -158,12 +311,12 @@ func (r T3) Send(ctx context.Context, thread, text string) error {
 	})
 }
 
-// Start creates a thread in a fresh T3 worktree with the brief as its prompt,
-// under the caller's thread id so a lost reply can be reconciled. With
-// s.Worktree set the thread runs in that checkout instead (`--worktree`,
-// with s.Branch as its branch), filed under s.Project's T3 project when
-// that is set.
-func (r T3) Start(ctx context.Context, s StartSpec) (Started, error) {
+// startV1 creates a thread in a fresh T3 worktree with the brief as its
+// prompt, under the caller's thread id so a lost reply can be reconciled.
+// With s.Worktree set the thread runs in that checkout instead
+// (`--worktree`, with s.Branch as its branch), filed under s.Project's T3
+// project when that is set.
+func (r *T3) startV1(ctx context.Context, s StartSpec) (Started, error) {
 	project := s.Project
 	if project == "" {
 		project = s.RepoPath
@@ -178,6 +331,9 @@ func (r T3) Start(ctx context.Context, s StartSpec) (Started, error) {
 	}
 	if s.Effort != "" {
 		args = append(args, "--effort", s.Effort)
+	}
+	if r.RuntimeMode != "" {
+		args = append(args, "--runtime-mode", r.RuntimeMode)
 	}
 	out, err := r.run(ctx, args...)
 	if err != nil {
@@ -195,10 +351,4 @@ func (r T3) Start(ctx context.Context, s StartSpec) (Started, error) {
 		return Started{}, errors.New("t3_dispatch start returned no threadId")
 	}
 	return Started{Thread: v.ThreadID, Branch: v.Branch, Worktree: v.WorktreePath}, nil
-}
-
-// Interrupt stops the thread's running turn.
-func (r T3) Interrupt(ctx context.Context, thread string) error {
-	_, err := r.run(ctx, "stop", thread)
-	return err
 }

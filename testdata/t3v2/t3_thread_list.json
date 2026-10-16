@@ -1,0 +1,61 @@
+{
+ "content": [
+  {
+   "type": "text",
+   "text": "{\"projectId\":\"mcp:934f546f-cd9a-4237-8cbf-c9ad12605237\",\"currentThreadId\":null,\"threads\":[{\"threadId\":\"mcp:65b7e1c5-223a-4cc6-a827-1f441d12dc17\",\"title\":\"existing wt probe\",\"createdBy\":\"agent\",\"creationSource\":\"mcp\",\"status\":\"idle\",\"latestRunId\":null,\"providerInstanceId\":\"claudeAgent\",\"model\":\"claude-haiku-5-5\",\"runtimeMode\":\"full-access\",\"interactionMode\":\"default\",\"linkedPullRequest\":null,\"settled\":false,\"settledAt\":null,\"snoozed\":false,\"snoozedUntil\":null,\"parentThreadId\":null,\"relationshipToParent\":null,\"itemCount\":0,\"createdAt\":\"2026-10-16T02:31:04.504Z\",\"updatedAt\":\"2026-10-16T02:31:04.512Z\"},{\"threadId\":\"mcp:dc2e1e58-cced-488a-8f74-02ffd96c9b1d\",\"title\":\"q5 queue probe\",\"createdBy\":\"agent\",\"creationSource\":\"mcp\",\"status\":\"completed\",\"latestRunId\":\"run:thread:mcp%3Adc2e1e58-cced-488a-8f74-02ffd96c9b1d:ordinal:3\",\"providerInstanceId\":\"claudeAgent\",\"model\":\"claude-haiku-5-5\",\"runtimeMode\":\"full-access\",\"interactionMode\":\"default\",\"linkedPullRequest\":null,\"settled\":false,\"settledAt\":null,\"snoozed\":false,\"snoozedUntil\":null,\"parentThreadId\":null,\"relationshipToParent\":null,\"itemCount\":16,\"createdAt\":\"2026-10-16T02:21:56.900Z\",\"updatedAt\":\"2026-10-16T02:22:49.959Z\"}],\"nextCursor\":2,\"total\":4}"
+  }
+ ],
+ "structuredContent": {
+  "projectId": "mcp:934f546f-cd9a-4237-8cbf-c9ad12605237",
+  "currentThreadId": null,
+  "threads": [
+   {
+    "threadId": "mcp:65b7e1c5-223a-4cc6-a827-1f441d12dc17",
+    "title": "existing wt probe",
+    "createdBy": "agent",
+    "creationSource": "mcp",
+    "status": "idle",
+    "latestRunId": null,
+    "providerInstanceId": "claudeAgent",
+    "model": "claude-haiku-5-5",
+    "runtimeMode": "full-access",
+    "interactionMode": "default",
+    "linkedPullRequest": null,
+    "settled": false,
+    "settledAt": null,
+    "snoozed": false,
+    "snoozedUntil": null,
+    "parentThreadId": null,
+    "relationshipToParent": null,
+    "itemCount": 0,
+    "createdAt": "2026-10-16T02:31:04.504Z",
+    "updatedAt": "2026-10-16T02:31:04.512Z"
+   },
+   {
+    "threadId": "mcp:dc2e1e58-cced-488a-8f74-02ffd96c9b1d",
+    "title": "q5 queue probe",
+    "createdBy": "agent",
+    "creationSource": "mcp",
+    "status": "completed",
+    "latestRunId": "run:thread:mcp%3Adc2e1e58-cced-488a-8f74-02ffd96c9b1d:ordinal:3",
+    "providerInstanceId": "claudeAgent",
+    "model": "claude-haiku-5-5",
+    "runtimeMode": "full-access",
+    "interactionMode": "default",
+    "linkedPullRequest": null,
+    "settled": false,
+    "settledAt": null,
+    "snoozed": false,
+    "snoozedUntil": null,
+    "parentThreadId": null,
+    "relationshipToParent": null,
+    "itemCount": 16,
+    "createdAt": "2026-10-16T02:21:56.900Z",
+    "updatedAt": "2026-10-16T02:22:49.959Z"
+   }
+  ],
+  "nextCursor": 2,
+  "total": 4
+ },
+ "isError": false
+}

@@ -123,9 +123,9 @@ func TestIdeateStartsARoundWithTwoChildren(t *testing.T) {
 	ux, _, _ := mesh.GetNode(ctx, c, "demo-round-1.ux")
 	for _, want := range []string{
 		"argv start --repo " + repo + " --provider claude --model prop-model --title [ideate] demo round 1: engineer --prompt-file ",
-		"--thread-id " + eng.Runner.Thread + " --worktree " + eng.Worktree + " --branch demo-round-1-eng --effort xhigh\n",
+		"--thread-id " + eng.Runner.Thread + " --worktree " + eng.Worktree + " --branch demo-round-1-eng --effort xhigh --runtime-mode auto\n",
 		"--title [ideate] demo round 1: UI/UX --prompt-file ",
-		"--thread-id " + ux.Runner.Thread + " --worktree " + ux.Worktree + " --branch demo-round-1-ux --effort xhigh\n",
+		"--thread-id " + ux.Runner.Thread + " --worktree " + ux.Worktree + " --branch demo-round-1-ux --effort xhigh --runtime-mode auto\n",
 	} {
 		if !strings.Contains(string(l), want) {
 			t.Errorf("log lacks %q:\n%s", want, l)
@@ -203,7 +203,7 @@ func TestIdeateEffortFlag(t *testing.T) {
 	if _, errs, code := runCLI(t, nil, "ideate", "demo", "--model", "claude-fable-5-1", "--effort", "max"); code != 0 {
 		t.Fatalf("code %d err %q", code, errs)
 	}
-	if l, _ := os.ReadFile(log); strings.Count(string(l), "--model claude-fable-5-1 ") != 2 || strings.Count(string(l), " --effort max\n") != 2 {
+	if l, _ := os.ReadFile(log); strings.Count(string(l), "--model claude-fable-5-1 ") != 2 || strings.Count(string(l), " --effort max --runtime-mode auto\n") != 2 {
 		t.Fatalf("log:\n%s", l)
 	}
 }

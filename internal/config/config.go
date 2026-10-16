@@ -28,7 +28,9 @@ type ServeConfig struct{ Listen string }
 type RunnerConfig struct {
 	Kind        string
 	T3Dispatch  string `toml:"t3_dispatch"`
-	T3Project   string `toml:"t3_project"` // the repo whose T3 project proposal threads open in; "" = the target repo
+	T3Project   string `toml:"t3_project"`      // the repo whose T3 project proposal threads open in; "" = the target repo (V1 only)
+	T3Server    string `toml:"t3_server"`       // this box's T3: its protocol picks the V1 or V2 path
+	T3Runtime   string `toml:"t3_runtime_mode"` // auto | full-access
 	TmuxSession string `toml:"tmux_session"`
 	Worktrees   string
 	Checkouts   string // routine instances' checkouts
@@ -200,7 +202,7 @@ func defaults() *Config {
 	return &Config{
 		Mesh:  MeshConfig{Domain: "hub", Store: DefaultStore(), Listen: "127.0.0.1:4222"},
 		Serve: ServeConfig{Listen: "127.0.0.1:3774"},
-		Runner: RunnerConfig{Kind: "t3", T3Dispatch: "t3_dispatch.py", TmuxSession: "bmesh",
+		Runner: RunnerConfig{Kind: "t3", T3Dispatch: "t3_dispatch.py", T3Server: "http://127.0.0.1:3773", T3Runtime: "auto", TmuxSession: "bmesh",
 			Worktrees: "~/.bmesh/worktrees", Checkouts: "~/.bmesh/checkouts", Claude: "claude"},
 		Notify:   NotifyConfig{DigestEvery: time.Hour, Push: []string{"ask", "blocked", "done"}, CatchUp: time.Hour},
 		Liveness: LivenessConfig{Grace: 20 * time.Minute, PollEvery: 60 * time.Second, WakeEvery: 10 * time.Minute},
@@ -308,6 +310,9 @@ func Load(path string) (*Config, error) {
 			return nil, fmt.Errorf("config %s: [models] %s: %w", path, key, err)
 		}
 	}
+	if m := c.Runner.T3Runtime; m != "auto" && m != "full-access" {
+		return nil, fmt.Errorf("config %s: [runner] t3_runtime_mode %q: want auto or full-access (approval-required and auto-accept-edits stall an unattended lead)", path, m)
+	}
 	if c.Console.Hosts == nil {
 		c.Console.Hosts = map[string]string{}
 	}
@@ -340,6 +345,26 @@ func Load(path string) (*Config, error) {
 
 // Path is the config file's path as loaded.
 func (c *Config) Path() string { return c.path }
+
+// T3TokenPath is the T3 sign-in `bmesh t3 login` writes: t3-token.json
+// beside the config file (in Dir when no file was read).
+func (c *Config) T3TokenPath() string {
+	d := c.dir
+	if d == "" {
+		d = Dir()
+	}
+	return filepath.Join(d, "t3-token.json")
+}
+
+// StateDir is where the daemon keeps what must survive a restart:
+// $XDG_STATE_HOME/bmesh, else ~/.local/state/bmesh.
+func StateDir() string {
+	if d := os.Getenv("XDG_STATE_HOME"); d != "" {
+		return filepath.Join(d, "bmesh")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".local", "state", "bmesh")
+}
 
 // HostName is [host] name, else the short host name, lowercased.
 func (c *Config) HostName() string {

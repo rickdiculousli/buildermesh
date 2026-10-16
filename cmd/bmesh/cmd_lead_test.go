@@ -30,7 +30,7 @@ func leadSetup(t *testing.T) (*mesh.Client, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	extra := "[runner]\nkind = \"t3\"\n[models]\nlead = \"lead-model\"\nproposer = \"prop-model\"\n"
+	extra := "[runner]\nkind = \"t3\"\nt3_server = \"\"\n[models]\nlead = \"lead-model\"\nproposer = \"prop-model\"\n"
 	if _, err := f.WriteString(extra); err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestLeadStartRegistersNode(t *testing.T) {
 		t.Fatalf("state %s", s)
 	}
 	l, _ := os.ReadFile(log)
-	if !strings.Contains(string(l), "--model lead-model --title [build] demo 012 --prompt-file /dev/null --thread-id "+got.Thread+" --effort high\n") {
+	if !strings.Contains(string(l), "--model lead-model --title [build] demo 012 --prompt-file /dev/null --thread-id "+got.Thread+" --effort high --runtime-mode auto\n") {
 		t.Fatalf("log %q", l)
 	}
 }

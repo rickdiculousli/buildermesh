@@ -1,0 +1,47 @@
+{
+    "environmentId": "7a5973ab-589b-4934-b6ba-0b199643af0b",
+    "label": "k16",
+    "platform": {
+        "os": "linux",
+        "arch": "x64",
+        "machine": "desktop"
+    },
+    "serverVersion": "0.0.45",
+    "orchestrationProtocolVersion": 1,
+    "capabilities": {
+        "repositoryIdentity": true,
+        "connectionProbe": true,
+        "attachmentUploads": true,
+        "questionAttachments": true,
+        "fileAttachments": {
+            "maxUploadBytes": 52428800
+        },
+        "pullRequests": true,
+        "inlineMessageContext": true,
+        "requiredWorktreeBootstrap": true,
+        "threadSettlement": true,
+        "threadAutoSettlement": true,
+        "storageCleanup": true,
+        "projectWorktreeCleanup": true,
+        "threadRestartContinuation": true,
+        "projectSettingsOverrides": true,
+        "threadSnooze": true,
+        "environmentThemes": true,
+        "usageLimitSources": true,
+        "usagePriceOverrides": true,
+        "threadPinning": true,
+        "threadPinReorder": true,
+        "threadActiveReorder": true,
+        "threadAutoSettleOptOut": true,
+        "threadTitleRegeneration": true,
+        "threadPullRequestLinking": true,
+        "threadPullRequests": true,
+        "pullRequestStackActions": true,
+        "serverSelfUpdate": "boot-service",
+        "serverSelfUpdateProgress": true,
+        "serverUpdateThreadContinuation": true,
+        "agentActivityPublishing": false,
+        "projectCloneTracking": true,
+        "environmentIcon": true
+    }
+}

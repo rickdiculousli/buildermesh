@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/runner/t3mcp"
 )
 
 // ErrRunning means the thread is mid-turn, so nothing was sent.
@@ -34,10 +35,15 @@ type Started struct {
 }
 
 // Status is one reading of a session. Known is false when the runner cannot
-// tell whether the session is mid-turn (tmux).
+// tell whether the session is mid-turn (tmux). Waiting is a turn held on a
+// question or approval; UsageLimit a newest turn that failed on a usage
+// limit, LimitResetAt when it resets ("" = unknown). Only T3 V2 sets them.
 type Status struct {
 	Running, Known bool
 	LastReply      string
+	Waiting        bool
+	UsageLimit     bool
+	LimitResetAt   string
 }
 
 // Runner starts and talks to agent sessions.
@@ -53,7 +59,8 @@ type Runner interface {
 func New(cfg *config.Config) (Runner, error) {
 	switch cfg.Runner.Kind {
 	case "t3":
-		r := T3{Dispatch: cfg.Expand(cfg.Runner.T3Dispatch)}
+		r := &T3{Dispatch: cfg.Expand(cfg.Runner.T3Dispatch), Server: cfg.Runner.T3Server,
+			RuntimeMode: cfg.Runner.T3Runtime, Cred: t3mcp.FileCredential{Path: cfg.T3TokenPath()}}
 		if v := os.Getenv("BMESH_T3_TIMEOUT"); v != "" { // test hook
 			d, err := time.ParseDuration(v)
 			if err != nil {
