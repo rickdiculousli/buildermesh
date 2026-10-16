@@ -4,7 +4,7 @@ title: bmesh carries what command-center still does for it
 kind: maintenance
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
@@ -12,6 +12,8 @@ built_by: f41b60d8-c71a-44bf-ba58-d575e87ada5c
 host: k16
 family: buildermesh-build-2
 branch: bmesh/f41b60d8-c71a-44bf-ba58-d575e87ada5c
+verified: verify ok t:98320afb
+merged: e9758a4694a0d6f79d9a949432aea3c7673b8fe0
 ---
 
 ## Opportunity
