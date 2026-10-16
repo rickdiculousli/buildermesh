@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -64,7 +63,7 @@ func (s *supervisor) run(ctx context.Context) error {
 			go func() { done <- cmd.Wait() }()
 			select {
 			case err := <-done:
-				s.logf("serve exited (%s)", exitText(err))
+				s.logf("serve exited (%s)", exitText(err, cmd.ProcessState))
 			case <-ctx.Done():
 				s.stop(cmd, done)
 				return nil
@@ -96,21 +95,23 @@ func (s *supervisor) stop(cmd *exec.Cmd, done <-chan error) {
 	}
 	select {
 	case err := <-done:
-		s.logf("stopped; serve exited (%s)", exitText(err))
+		s.logf("stopped; serve exited (%s)", exitText(err, cmd.ProcessState))
 	case <-time.After(s.grace):
 		cmd.Process.Kill()
-		s.logf("stopped; serve killed after %s (%s)", s.grace, exitText(<-done))
+		err := <-done
+		s.logf("stopped; serve killed after %s (%s)", s.grace, exitText(err, cmd.ProcessState))
 	}
 }
 
-// exitText is how a child's Wait error reads in the log.
-func exitText(err error) string {
-	var ee *exec.ExitError
+// exitText is how a child's end reads in the log: its exit code when it
+// exited, even when Wait also says a process it left held the output past
+// WaitDelay; else Wait's error (a signal, on Unix).
+func exitText(err error, st *os.ProcessState) string {
 	switch {
+	case st != nil && st.Exited():
+		return fmt.Sprintf("exit %d", st.ExitCode())
 	case err == nil:
 		return "exit 0"
-	case errors.As(err, &ee) && ee.Exited():
-		return fmt.Sprintf("exit %d", ee.ExitCode())
 	}
 	return err.Error()
 }
@@ -118,17 +119,24 @@ func exitText(err error) string {
 // childArgs is serve's own command line for the child: --restart and
 // --detach dropped, and a --config given before `serve` put back.
 func childArgs(configPath string, rest []string) []string {
+	var own []string
+	hasConfig := false
+	for _, a := range rest {
+		name, _, _ := strings.Cut(strings.TrimLeft(a, "-"), "=")
+		switch {
+		case !strings.HasPrefix(a, "-"):
+		case name == "restart" || name == "detach":
+			continue
+		case name == "config":
+			hasConfig = true
+		}
+		own = append(own, a)
+	}
 	args := []string{"serve"}
-	if configPath != "" && configArg(rest) == "" {
+	if configPath != "" && !hasConfig {
 		args = append(args, "--config", configPath)
 	}
-	for _, a := range rest {
-		if name, _, _ := strings.Cut(strings.TrimLeft(a, "-"), "="); strings.HasPrefix(a, "-") && (name == "restart" || name == "detach") {
-			continue
-		}
-		args = append(args, a)
-	}
-	return args
+	return append(args, own...)
 }
 
 // lockedWriter serialises writes to w.

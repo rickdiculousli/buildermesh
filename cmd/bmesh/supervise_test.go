@@ -18,6 +18,7 @@ func TestChildArgs(t *testing.T) {
 		{"/c/config.toml", []string{"--restart", "--detach", "--listen", ":1"}, []string{"serve", "--config", "/c/config.toml", "--listen", ":1"}},
 		{"/c/config.toml", []string{"-restart=true", "--config", "/c/config.toml"}, []string{"serve", "--config", "/c/config.toml"}},
 		{"", []string{"--listen=:2", "--restart", "--detach=true"}, []string{"serve", "--listen=:2"}},
+		{"x.toml", []string{"-config=x.toml", "--restart"}, []string{"serve", "-config=x.toml"}},
 	} {
 		if got := childArgs(c.config, c.rest); !slices.Equal(got, c.want) {
 			t.Errorf("childArgs(%q, %q) = %q, want %q", c.config, c.rest, got, c.want)

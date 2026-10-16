@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -137,5 +138,20 @@ func TestSuperviseStopsChildOnSignal(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "stopped; serve exited (exit 0)") {
 		t.Fatalf("output:\n%s", out.String())
+	}
+}
+
+// A child that exited 0 reads as exit 0 even when a process it left held
+// the output past WaitDelay.
+func TestExitTextPrefersTheExitCode(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "sleep 3 & exit 0")
+	cmd.Stdout = &strings.Builder{}
+	cmd.WaitDelay = 100 * time.Millisecond
+	err := cmd.Run()
+	if !errors.Is(err, exec.ErrWaitDelay) {
+		t.Fatalf("Run: %v, want ErrWaitDelay", err)
+	}
+	if got := exitText(err, cmd.ProcessState); got != "exit 0" {
+		t.Fatalf("exitText %q", got)
 	}
 }
