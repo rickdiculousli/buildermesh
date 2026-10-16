@@ -76,7 +76,7 @@ type Outcome struct {
 	Why     string // a refusal's reason, or why an ahead box didn't push
 	Branch  string // the branch levelled ("" for a pinned row)
 	Head    string // HEAD before
-	Target  string // origin's commit (the tag's for a pinned row)
+	Target  string // origin's commit (the tag's for a pinned row); after a push, HEAD
 	Log     string // git log --stat HEAD..target, for a hold or a moved target
 	Plugins []string
 	Err     error // a plugin refresh that failed after the move
@@ -407,7 +407,7 @@ func push(ctx context.Context, req Request, o Outcome) Outcome {
 		}
 		return Outcome{Result: Failed, Why: err.Error()}
 	}
-	o.Result = Pushed
+	o.Result, o.Target = Pushed, o.Head // origin is at HEAD now
 	return o
 }
 

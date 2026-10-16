@@ -48,6 +48,13 @@ commands:
   hosts revoke <name>                      (admin) publish the next roster without the box
   hosts ping [<host>] [--wait D]           ping every roster box (or one); print each answer, or asleep: queued
   hosts replies [--json]                   the replies this box's jobs got, checked
+  hosts held [--json]                      the levels this secure box holds for the operator
+  hosts approve <id>                       show a hold's log, sign the approval with the approve key (the
+                                           announced Keychain dialog) and level; asks again when origin moved
+  hosts deny <id>                          drop a hold, answering its sender
+  sync [--repo R | --all] [--wait 30s]     level this box's checkout (pushing when ahead and allowed), then send
+                                           level with origin's head to every box that has the repo; print each
+                                           answer within --wait, or asleep, queued until <expires>
   repos [--json]                           the registry (repos.toml): name, mode, remote, verify, host, ux_host,
                                            surfaces, pin; --json prints the rows
   repos show <name> [--json]               one row
@@ -268,6 +275,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdUpdate(rest)
 	case "hosts":
 		return a.cmdHosts(rest)
+	case "sync":
+		return a.cmdSync(rest)
 	case "help":
 		fmt.Fprint(a.stdout, usage)
 		return nil
