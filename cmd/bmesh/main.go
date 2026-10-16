@@ -132,7 +132,8 @@ commands:
   executor remove <name> [--force]         remove a merged executor's worktree and branch (exit 3 unmerged)
   serve [--listen ADDR] [--restart [--detach]]
                                            run the daemon and the map (embedded NATS when [mesh] nats is empty);
-                                           with [update] repo, it rebuilds itself when that repo's main moves;
+                                           with [update] repo, it rebuilds itself when what [update] track
+                                           follows on that repo's main moves (a new release, or code head);
                                            else every [update] check_every it writes the notice when behind;
                                            --restart runs it as a child, started again 5s after every exit;
                                            --detach (Windows) starts that with no console window and returns
@@ -146,11 +147,15 @@ commands:
                                            write <config dir>/t3-token.json; lasts 30 days
   t3 login --status                        print the sign-in: <host>: <access>, N days left; server and scopes
   version                                  print this binary's commit: <rev8> <time> [modified], or unknown;
-                                           <release> (<rev8> <time>) when built at or past a release tag
-  update [--repo R]                        build R's main (default [update] repo, else the row this binary's
-                                           module is from; with none, go install the module's main) over this
-                                           binary, keeping it as bmesh.prev; print <old8> -> <new8>, or up to date
-                                           (then the restart this box's daemon needs, when it runs another build)
+                                           <release> (<rev8> <time>) when built at or past a release tag; a
+                                           tagged module install prints its release alone
+  update [--repo R] [--latest]             build what [update] track follows on R's main (the newest vX.Y.Z tag,
+                                           or the code head; --latest: the code head this once) over this binary
+                                           (default [update] repo, else the row this binary's module is from;
+                                           with none, go install it from the module), keeping it as bmesh.prev;
+                                           print <old> -> <new> (v0.1.0 -> v0.2.0), up to date, or ahead of
+                                           <release>, up to date (never back); then the restart this box's daemon
+                                           needs, when it runs another build
   update --notice                          print the daemon's behind-main notice (<state dir>/update.txt), if any
   land [--spec NNN] [--ttl D] [--wait D]   land this worktree's branch on main under the lease land.<repo> (waits
                                            while another lead holds it): print the kinds it requires (a branch

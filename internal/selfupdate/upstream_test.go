@@ -20,7 +20,7 @@ func TestVersionFromPseudoVersion(t *testing.T) {
 		{"v1.2.4-0.20261016043719-ab7e0b543677", "ab7e0b54 2026-10-16T04:37:19Z"},
 		{"v1.2.3-pre.0.20261016043719-ab7e0b543677", "ab7e0b54 2026-10-16T04:37:19Z"},
 		{"v2.0.0-20261016043719-ab7e0b543677+incompatible", "ab7e0b54 2026-10-16T04:37:19Z"},
-		{"v1.2.3", "unknown"},           // a tag names no commit
+		{"v1.2.3", "v1.2.3"},            // a tag names no commit: the release alone
 		{"(devel)", "unknown"},          // a build from a checkout without VCS
 		{"v0.0.0-2026-ab7e", "unknown"}, // not a pseudo-version
 	} {
@@ -66,56 +66,89 @@ func TestSameComparesByPrefix(t *testing.T) {
 	}
 }
 
-// history is a repo whose main has a spec file and landings after base: it
-// returns the repo and base.
-func history(t *testing.T) (dir, base string) {
+// history is a repo whose main has two landed specs, a fix between them,
+// and a landing whose commit it doesn't know, each spec's code commit
+// followed by its `done at` ledger commit. It returns the repo and its
+// commits by name: base, c030, fix, c031 (the code head) and main.
+func history(t *testing.T) (string, map[string]string) {
 	t.Helper()
 	dir, shas := repo(t, "base")
-	commit := func(msg string, files map[string]string) {
-		for name, body := range files {
-			if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(name)), 0o755); err != nil {
+	at := map[string]string{"base": shas[0]}
+	commit := func(name, msg string, files map[string]string) {
+		for file, body := range files {
+			if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(file)), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, file), []byte(body), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			meshtest.Git(t, dir, "add", name)
+			meshtest.Git(t, dir, "add", file)
 		}
 		meshtest.Git(t, dir, "commit", "-q", "--allow-empty", "-m", msg)
+		at[name] = head(t, dir)
 	}
-	commit("Build 030", map[string]string{"docs/proposals/030-quiet.md": "---\nid: 030\ntitle: A quieter map\nstatus: done\n---\n"})
-	commit("030: done at 1a2b3c4d", nil)
-	commit("A fix", map[string]string{"f": "fix"})
-	commit("031: done at 5e6f7a8b", map[string]string{"docs/proposals/031-notice.md": "---\nid: 031\ntitle: The notice\n---\n"})
-	commit("099: done at 00000000", nil) // its spec is not on main
-	return dir, shas[0]
+	commit("c030", "A quieter map", map[string]string{"q": "q"})
+	commit("", "030: done at "+at["c030"][:8], map[string]string{"docs/proposals/030-quiet.md": "---\nid: 030\ntitle: A quieter map\nstatus: done\n---\n"})
+	commit("fix", "A fix", map[string]string{"f": "fix"})
+	commit("c031", "The notice", map[string]string{"n": "n"})
+	commit("", "031: done at "+at["c031"][:8], map[string]string{"docs/proposals/031-notice.md": "---\nid: 031\ntitle: The notice\n---\n"})
+	commit("main", "099: done at 00000000", nil) // a commit this repo doesn't know
+	return dir, at
 }
 
 func TestNoticeCountsAndNamesTheSpecs(t *testing.T) {
-	dir, base := history(t)
-	main := head(t, dir)
-	line, err := Notice(dir, base, main)
-	want := "bmesh: 5 commits behind main (landed since: 030 A quieter map, 031 The notice, 099); run bmesh update, then update the buildermesh plugin"
-	if err != nil || line != want {
-		t.Fatalf("%q %v\nwant %q", line, err, want)
+	dir, at := history(t)
+	latest, err := Follow(dir, "main", TrackLatest, "docs/proposals")
+	if err != nil || latest.Commit != at["c031"] || latest.Tag != "" {
+		t.Fatalf("latest %+v %v", latest, err)
+	}
+	notice := func(own string, tg Target) string {
+		t.Helper()
+		line, err := Notice(dir, own, "main", tg, "docs/proposals")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return line
+	}
+	// Code commits only: the ledger commits between them don't count.
+	want := "bmesh: 3 commits behind main (landed since: 030 A quieter map, 031 The notice, 099); run bmesh update, then update the buildermesh plugin"
+	if got := notice(at["base"], latest); got != want {
+		t.Fatalf("%q\nwant %q", got, want)
 	}
 	// A pseudo-version's 12 hex count the same.
-	if line, err := Notice(dir, base[:12], main); err != nil || line != want {
-		t.Fatalf("12 hex: %q %v", line, err)
+	if got := notice(at["base"][:12], latest); got != want {
+		t.Fatalf("12 hex: %q", got)
 	}
-	one, err := Notice(dir, meshtest.Git(t, dir, "rev-parse", "HEAD~1"), main)
-	if err != nil || one != "bmesh: 1 commit behind main (landed since: 099); run bmesh update, then update the buildermesh plugin" {
-		t.Fatalf("one behind: %q %v", one, err)
+	// A spec whose code the binary has is not named again.
+	if got := notice(at["c030"], latest); got != "bmesh: 2 commits behind main (landed since: 031 The notice, 099); run bmesh update, then update the buildermesh plugin" {
+		t.Fatalf("from 030: %q", got)
 	}
-	two, err := Notice(dir, meshtest.Git(t, dir, "rev-parse", "HEAD~2"), meshtest.Git(t, dir, "rev-parse", "HEAD~1"))
-	if err != nil || two != "bmesh: 1 commit behind main (landed since: 031 The notice); run bmesh update, then update the buildermesh plugin" {
-		t.Fatalf("031 alone: %q %v", two, err)
+	if got := notice(at["fix"], latest); got != "bmesh: 1 commit behind main (landed since: 031 The notice, 099); run bmesh update, then update the buildermesh plugin" {
+		t.Fatalf("one behind: %q", got)
 	}
-	// Current, unknown, or off main's history: nothing.
-	for _, own := range []string{main, main[:12], "", Unknown, strings.Repeat("e", 40)} {
-		if line, err := Notice(dir, own, main); err != nil || line != "" {
-			t.Fatalf("%q: %q %v", own, line, err)
+	// Current, ahead (a ledger commit past the code head), unknown, or off
+	// main's history: nothing.
+	for _, own := range []string{at["c031"], at["c031"][:12], at["main"], "", Unknown, strings.Repeat("e", 40)} {
+		if got := notice(own, latest); got != "" {
+			t.Fatalf("%q: %q", own, got)
 		}
+	}
+
+	// Releases name the tag and what the binary runs.
+	meshtest.Git(t, dir, "tag", "-a", "-m", "v0.1.0", "v0.1.0", at["c030"])
+	meshtest.Git(t, dir, "tag", "-a", "-m", "v0.2.0", "v0.2.0", at["c031"])
+	rel, err := Follow(dir, "main", TrackRelease, "docs/proposals")
+	if err != nil || rel.Commit != at["c031"] || rel.Tag != "v0.2.0" || rel.NoTag {
+		t.Fatalf("release %+v %v", rel, err)
+	}
+	if got := notice(at["c030"], rel); got != "bmesh: v0.2.0 is out (you run v0.1.0: 031, 099); run bmesh update, then update the buildermesh plugin" {
+		t.Fatalf("release: %q", got)
+	}
+	if got, want := notice(at["fix"], rel), "bmesh: v0.2.0 is out (you run v0.1.0+2 ("+at["fix"][:8]+"): 031, 099); run bmesh update, then update the buildermesh plugin"; got != want {
+		t.Fatalf("release past a tag: %q\nwant %q", got, want)
+	}
+	if got := notice(at["main"], rel); got != "" {
+		t.Fatalf("ahead of the release: %q", got)
 	}
 }
 
@@ -170,7 +203,7 @@ func TestFetchUpstreamAndInstallModule(t *testing.T) {
 	// go resolves a tagged commit to its tag, which names no revision: the
 	// stamp names it all the same.
 	t.Setenv("FAKE_GO_TAGGED", "1")
-	if err := InstallModule(context.Background(), dir, "example.com/bm", exe, got); err != nil {
+	if err := InstallModule(context.Background(), dir, "example.com/bm", exe, Target{Commit: got}); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := exec.Command(exe).Output(); err != nil || strings.TrimSpace(string(out)) != "fake bmesh "+got {
@@ -191,7 +224,7 @@ func TestFetchUpstreamAndInstallModule(t *testing.T) {
 
 	// A build naming another commit is refused, the binary kept.
 	t.Setenv("FAKE_GO_REVISION", "eeeeeeee")
-	err = InstallModule(context.Background(), dir, "example.com/bm", exe, shas[0])
+	err = InstallModule(context.Background(), dir, "example.com/bm", exe, Target{Commit: shas[0]})
 	var refused *Refused
 	if !errors.As(err, &refused) || refused.Reported != "eeeeeeee" {
 		t.Fatalf("err %v", err)

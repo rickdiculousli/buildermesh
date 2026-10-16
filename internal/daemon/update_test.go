@@ -174,6 +174,7 @@ func TestUpdateLeavesRollbackAlone(t *testing.T) {
 	meshtest.Git(t, u.repo, "checkout", "-q", "-b", "side")
 	side := u.land(t, "side.txt")
 	meshtest.Git(t, u.repo, "checkout", "-q", "main")
+	u.land(t, "main.txt") // main moved on without it
 	u.d.Revision = side
 	u.start(t)
 	waitFor(t, 20*time.Second, "the rollback logged", func() bool {
@@ -324,16 +325,18 @@ func upstreamSetup(t *testing.T, upstream bool) *ufix {
 
 func (u *ufix) notice() string { return selfupdate.ReadNotice(u.d.StateDir) }
 
-// landSpec lands spec 001 on app's main as a lead would: the spec, then
-// its `001: done at` commit.
+// landSpec lands spec 001 on app's main as a lead would: its code, then
+// the spec with its `001: done at` ledger commit. It returns the code
+// commit, main's code head.
 func (u *ufix) landSpec(t *testing.T) string {
 	t.Helper()
+	code := u.land(t, "first.txt")
 	meshtest.CommitFiles(t, u.repo, map[string]string{"docs/proposals/001-first.md": "---\nid: 001\ntitle: The first\n---\n"})
-	meshtest.Git(t, u.repo, "commit", "-q", "--allow-empty", "-m", "001: done at 1a2b3c4d")
-	return meshtest.Git(t, u.repo, "rev-parse", "HEAD")
+	meshtest.Git(t, u.repo, "commit", "-q", "--allow-empty", "-m", "001: done at "+code[:8])
+	return code
 }
 
-const behindTwo = "bmesh: 2 commits behind main (landed since: 001 The first); run bmesh update, then update the buildermesh plugin"
+const behindOne = "bmesh: 1 commit behind main (landed since: 001 The first); run bmesh update, then update the buildermesh plugin"
 
 func TestNoticeWrittenWhenBehindAndRemovedWhenCurrent(t *testing.T) {
 	u := upstreamSetup(t, false)
@@ -343,7 +346,7 @@ func TestNoticeWrittenWhenBehindAndRemovedWhenCurrent(t *testing.T) {
 	u.start(t)
 	waitFor(t, 20*time.Second, "the stale notice removed", func() bool { return u.notice() == "" })
 	next := u.landSpec(t)
-	waitFor(t, 20*time.Second, "the notice", func() bool { return u.notice() == behindTwo })
+	waitFor(t, 20*time.Second, "the notice", func() bool { return u.notice() == behindOne })
 	// A `bmesh update` swapped in a binary at main: the next check reads it
 	// as current, though this daemon still runs the old one.
 	if err := os.WriteFile(u.exe, []byte("#!/bin/sh\necho bmesh "+next[:8]+" 2026-10-16T00:00:00Z\n"), 0o755); err != nil {
@@ -402,7 +405,7 @@ func TestUpstreamFailedInstallLoggedOnceAndRetried(t *testing.T) {
 	t.Setenv("FAKE_GO_EXIT", "1")
 	u.start(t)
 	u.landSpec(t)
-	waitFor(t, 20*time.Second, "the notice", func() bool { return u.notice() == behindTwo })
+	waitFor(t, 20*time.Second, "the notice", func() bool { return u.notice() == behindOne })
 	waitFor(t, 20*time.Second, "a second try", func() bool { return len(lines(t, u.goLog)) >= 4 })
 	if n := strings.Count(u.log.String(), "update: install failed"); n != 1 {
 		t.Fatalf("logged %d times:\n%s", n, u.log.String())
@@ -420,7 +423,7 @@ func TestUpstreamRefusedOnUnsupervisedWindows(t *testing.T) {
 	u.d.GOOS = "windows"
 	u.start(t)
 	u.landSpec(t)
-	waitFor(t, 20*time.Second, "the notice", func() bool { return u.notice() == behindTwo })
+	waitFor(t, 20*time.Second, "the notice", func() bool { return u.notice() == behindOne })
 	u.noRestart(t, time.Second)
 	if n := strings.Count(u.log.String(), "[update] upstream needs bmesh serve --restart on Windows"); n != 1 {
 		t.Fatalf("logged %d times:\n%s", n, u.log.String())
@@ -461,4 +464,167 @@ func TestUpdateRepoOnSupervisedWindows(t *testing.T) {
 	u.start(t)
 	u.land(t, "a.txt")
 	u.restarted(t, 20*time.Second)
+}
+
+// tag tags commit in app as release name.
+func (u *ufix) tag(t *testing.T, name, commit string) {
+	t.Helper()
+	meshtest.Git(t, u.repo, "tag", "-a", "-m", name, name, commit)
+}
+
+// ledger commits a spec file alone to app's main, as dispatch and done do.
+func (u *ufix) ledger(t *testing.T, name string) string {
+	t.Helper()
+	return meshtest.CommitFiles(t, u.repo, map[string]string{"docs/proposals/" + name + ".md": name})
+}
+
+func (u *ufix) runs(t *testing.T, want string) {
+	t.Helper()
+	if out, err := exec.Command(u.exe).Output(); err != nil || strings.TrimSpace(string(out)) != "fake bmesh "+want {
+		t.Fatalf("binary: %q %v, want %s", out, err, want[:8])
+	}
+}
+
+func TestUpdateFollowsReleases(t *testing.T) {
+	u := updateSetup(t, map[string]string{})
+	u.d.Cfg.Update.Track = "release"
+	u.tag(t, "v0.1.0", u.d.Revision)
+	u.start(t)
+	u.ledger(t, "001-a")
+	u.land(t, "a.txt") // code, but no release
+	u.ledger(t, "002-b")
+	u.noRestart(t, 1500*time.Millisecond) // several scans
+	if l := lines(t, u.goLog); len(l) != 0 {
+		t.Fatalf("built: %v", l)
+	}
+	next := u.land(t, "b.txt")
+	u.tag(t, "v0.2.0", next)
+	u.ledger(t, "003-c") // the ledger after the release
+	u.restarted(t, 20*time.Second)
+	u.runs(t, next)
+	if evs := u.daemonEvents(t, "update"); len(evs) != 1 || evs[0].Text != "v0.1.0 -> v0.2.0" || evs[0].Commit != next {
+		t.Fatalf("update events %+v", evs)
+	}
+	if !strings.Contains(u.log.String(), "update: v0.1.0 -> v0.2.0") || strings.Contains(u.log.String(), "no release tag") {
+		t.Fatalf("log:\n%s", u.log.String())
+	}
+	if l := strings.Join(lines(t, u.goLog), " "); l != "build "+next {
+		t.Fatalf("builds %v", l)
+	}
+}
+
+func TestUpdateLatestTakesCodeNotLedger(t *testing.T) {
+	u := updateSetup(t, map[string]string{})
+	u.d.Cfg.Update.Track = "latest"
+	u.tag(t, "v0.1.0", u.d.Revision)
+	u.start(t)
+	u.ledger(t, "001-a")
+	u.noRestart(t, 1500*time.Millisecond)
+	next := u.land(t, "a.txt")
+	u.ledger(t, "002-b")
+	u.restarted(t, 20*time.Second)
+	u.runs(t, next)
+	if evs := u.daemonEvents(t, "update"); len(evs) != 1 || evs[0].Text != "v0.1.0 -> v0.1.0+2 ("+next[:8]+")" {
+		t.Fatalf("update events %+v", evs)
+	}
+}
+
+// A repo with no release tag follows its code head under release, and says
+// so once.
+func TestUpdateWithoutTagsFollowsCodeHead(t *testing.T) {
+	u := updateSetup(t, map[string]string{})
+	u.d.Cfg.Update.Track = "release"
+	u.start(t)
+	u.ledger(t, "001-a")
+	u.noRestart(t, 1500*time.Millisecond)
+	next := u.land(t, "a.txt")
+	u.restarted(t, 20*time.Second)
+	u.runs(t, next)
+	if n := strings.Count(u.log.String(), "update: no release tag on main yet; following its code head"); n != 1 {
+		t.Fatalf("said %d times:\n%s", n, u.log.String())
+	}
+}
+
+// A binary past the newest release (built from main, or by update
+// --latest) keeps running: it never goes back.
+func TestUpdateNeverMovesBack(t *testing.T) {
+	u := updateSetup(t, map[string]string{})
+	u.d.Cfg.Update.Track = "release"
+	u.tag(t, "v0.1.0", u.d.Revision)
+	u.d.Revision = u.land(t, "a.txt")
+	u.start(t)
+	u.ledger(t, "001-a")
+	u.noRestart(t, 1500*time.Millisecond)
+	if l := lines(t, u.goLog); len(l) != 0 {
+		t.Fatalf("built: %v", l)
+	}
+	if strings.Contains(u.log.String(), "left alone") {
+		t.Fatalf("log:\n%s", u.log.String())
+	}
+}
+
+// A `go install …@v0.1.0` binary names no commit: its tag is resolved on
+// main, and it updates to the next release.
+func TestUpdateTaggedInstallResolvesItsCommit(t *testing.T) {
+	u := updateSetup(t, map[string]string{})
+	u.d.Cfg.Update.Track = "release"
+	u.tag(t, "v0.1.0", u.d.Revision)
+	u.d.Revision, u.d.Tag = "", "v0.1.0"
+	u.start(t)
+	u.noRestart(t, time.Second) // it is v0.1.0
+	next := u.land(t, "a.txt")
+	u.tag(t, "v0.2.0", next)
+	u.restarted(t, 20*time.Second)
+	u.runs(t, next)
+	if evs := u.daemonEvents(t, "update"); len(evs) != 1 || evs[0].Text != "v0.1.0 -> v0.2.0" {
+		t.Fatalf("update events %+v", evs)
+	}
+}
+
+// A tag main doesn't have is said once, never silently left.
+func TestUpdateUnknownTagSaidOnce(t *testing.T) {
+	u := updateSetup(t, map[string]string{})
+	u.d.Revision, u.d.Tag = "", "v9.9.9"
+	u.start(t)
+	u.land(t, "a.txt")
+	waitFor(t, 20*time.Second, "the unknown release logged", func() bool {
+		return strings.Contains(u.log.String(), "update: this binary's release is not on main; left alone")
+	})
+	u.noRestart(t, 1500*time.Millisecond)
+	if n := strings.Count(u.log.String(), "is not on main"); n != 1 || !strings.Contains(u.log.String(), "running=v9.9.9") {
+		t.Fatalf("logged %d times:\n%s", n, u.log.String())
+	}
+}
+
+// The upstream check installs the newest release by its tag.
+func TestUpstreamInstallsTheRelease(t *testing.T) {
+	u := upstreamSetup(t, true)
+	u.tag(t, "v0.1.0", u.d.Revision)
+	u.start(t)
+	u.land(t, "a.txt") // untagged
+	u.noRestart(t, 1500*time.Millisecond)
+	next := u.land(t, "b.txt")
+	u.tag(t, "v0.2.0", next)
+	u.restarted(t, 20*time.Second)
+	if l := strings.Join(lines(t, u.goLog), " "); l != "install example.com/app@v0.2.0" {
+		t.Fatalf("go log %v", l)
+	}
+	if evs := u.daemonEvents(t, "update"); len(evs) != 1 || evs[0].Text != "v0.1.0 -> v0.2.0" || evs[0].Commit != next {
+		t.Fatalf("update events %+v", evs)
+	}
+}
+
+// The notice names the release and the specs it carries.
+func TestNoticeNamesTheRelease(t *testing.T) {
+	u := upstreamSetup(t, false)
+	u.tag(t, "v0.1.0", u.d.Revision)
+	u.start(t)
+	code := u.landSpec(t)
+	u.noRestart(t, time.Second)
+	if u.notice() != "" {
+		t.Fatalf("notice before the release: %q", u.notice())
+	}
+	u.tag(t, "v0.2.0", code)
+	want := "bmesh: v0.2.0 is out (you run v0.1.0: 001); run bmesh update, then update the buildermesh plugin"
+	waitFor(t, 20*time.Second, "the release notice", func() bool { return u.notice() == want })
 }

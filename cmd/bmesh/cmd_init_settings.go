@@ -89,15 +89,19 @@ func settings(c *config.Config, service string) []setting {
 		setting{"leads", modelAt(c.Models.Lead, c.Models.LeadEffort) + ", unless the spec's judge names another", "The session that builds one spec and lands it on main", "[models] lead, lead_effort"},
 		setting{"executors", "chosen by each lead", "Helpers a lead starts for pieces of its spec", "bmesh executor new --model"})
 	every := config.FormatDuration(c.Update.CheckEvery)
+	track, follows, newest := c.Update.Track, "newest release (vX.Y.Z tag) whenever one is cut", "bmesh's newest release"
+	if track == "latest" {
+		follows, newest = "main whenever its code moves", "bmesh's newest code on main"
+	}
 	switch {
 	case c.Update.Repo != "":
-		out = append(out, setting{"updates", "from " + c.Update.Repo, "The daemon rebuilds bmesh from " + c.Update.Repo + "'s main whenever it moves", "[update] repo"})
+		out = append(out, setting{"updates", "from " + c.Update.Repo + ", " + track, "The daemon rebuilds bmesh from " + c.Update.Repo + "'s " + follows, "[update] repo, track"})
 	case c.Update.CheckEvery <= 0:
-		out = append(out, setting{"updates", "off", "The daemon doesn't check for a newer bmesh; bmesh update installs the newest main", "[update] check_every, upstream, repo"})
+		out = append(out, setting{"updates", "off", "The daemon doesn't check for a newer bmesh; bmesh update installs " + newest, "[update] check_every, upstream, repo, track"})
 	case c.Update.Upstream:
-		out = append(out, setting{"updates", "from upstream every " + every, "The daemon installs bmesh's newest main (go install) whenever it moves", "[update] upstream, check_every"})
+		out = append(out, setting{"updates", "from upstream every " + every + ", " + track, "The daemon installs " + newest + " (go install) whenever there is a newer one", "[update] upstream, check_every, track"})
 	default:
-		out = append(out, setting{"updates", "notice every " + every, "The daemon checks bmesh's main and each session says when this binary is behind; bmesh update takes it", "[update] check_every, upstream, repo"})
+		out = append(out, setting{"updates", "notice every " + every + ", " + track, "The daemon checks for " + newest + " and each session says when this binary is behind; bmesh update takes it", "[update] check_every, upstream, repo, track"})
 	}
 	if service == "" {
 		out = append(out, setting{"service", "none", "Run bmesh serve yourself and keep it running, or have the OS do it", "bmesh init --service"})

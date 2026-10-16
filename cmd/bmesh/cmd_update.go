@@ -24,19 +24,22 @@ var (
 // skills name commands only a matching binary has.
 const pluginLine = "update the buildermesh plugin too: claude plugin marketplace update buildermesh && claude plugin update buildermesh@buildermesh (then restart Claude Code)"
 
-// cmdUpdate builds the update repo's main over this binary, as the daemon's
-// [update] does, without a daemon; with no repo to build from it installs
-// the module's main. --notice prints the daemon's notice and nothing else.
+// cmdUpdate builds what [update] track follows on the update repo's main
+// (the newest release, or the code head) over this binary, as the daemon's
+// [update] does, without a daemon; --latest goes to the code head this
+// once. With no repo to build from it installs from the module's main.
+// --notice prints the daemon's notice and nothing else.
 func (a *app) cmdUpdate(args []string) error {
 	fs := a.flags("update")
 	repoFlag := fs.String("repo", "", "registry name of the repo to build from (default [update] repo)")
+	latest := fs.Bool("latest", false, "go to main's code head this once, whatever [update] track says")
 	notice := fs.Bool("notice", false, "print the daemon's notice (<state dir>/update.txt) and never touch the network")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
-	if len(pos) != 0 || (*notice && *repoFlag != "") {
-		return fail(exitUsage, "usage: bmesh update [--repo R] | update --notice")
+	if len(pos) != 0 || (*notice && (*repoFlag != "" || *latest)) {
+		return fail(exitUsage, "usage: bmesh update [--repo R] [--latest] | update --notice")
 	}
 	if *notice {
 		if line := selfupdate.ReadNotice(config.StateDir()); line != "" {
@@ -46,6 +49,10 @@ func (a *app) cmdUpdate(args []string) error {
 	}
 	if err := a.loadConfig(); err != nil {
 		return err
+	}
+	track := a.cfg.Update.Track
+	if *latest {
+		track = selfupdate.TrackLatest
 	}
 	name := *repoFlag
 	if name == "" {
@@ -62,7 +69,7 @@ func (a *app) cmdUpdate(args []string) error {
 		return err
 	}
 	if name == "" {
-		return a.updateUpstream(exe)
+		return a.updateUpstream(exe, track)
 	}
 	if _, ok := a.cfg.Repos[name]; !ok {
 		return fail(exitRefused, "update repo %q is not in the registry (bmesh repos)", name)
@@ -82,36 +89,18 @@ func (a *app) cmdUpdate(args []string) error {
 		return err
 	}
 	defer unlock()
-	head, err := selfupdate.Head(dir)
+	t, err := selfupdate.Follow(dir, "HEAD", track, a.specDir())
 	if err != nil {
 		return err
 	}
-	own := buildVersion().Revision
-	if selfupdate.Same(head, own) {
-		fmt.Fprintln(a.stdout, "up to date")
-		a.restartLine(head)
-		return clearNotice()
-	}
-	if own != "" && !selfupdate.Contains(dir, own, head) {
-		return fail(exitRefused, "%s's main (%s) does not contain this binary's %s; left alone", name,
-			selfupdate.Short(head), selfupdate.Short(own))
-	}
-	var refused *selfupdate.Refused
-	if err := selfupdate.Install(context.Background(), dir, exe, head); errors.As(err, &refused) {
-		return fail(exitRefused, "update: %v", err)
-	} else if err != nil {
-		return err
-	}
-	fmt.Fprintf(a.stdout, "%s -> %s\n", selfupdate.Short(own), selfupdate.Short(head))
-	a.restartLine(head)
-	return clearNotice()
+	return a.updateTo(dir, name, t, false, func() error { return selfupdate.Install(context.Background(), dir, exe, t.Commit) })
 }
 
-// updateUpstream installs the module's main over exe (selfupdate.InstallModule)
-// when no registry row applies: main is fetched into the bare repo the
-// daemon's notice reads, so a main without this binary's revision is
-// refused as a row's is.
-func (a *app) updateUpstream(exe string) error {
+// updateUpstream installs what track follows on the module's main over exe
+// (selfupdate.InstallModule) when no registry row applies: main and its
+// tags are fetched into the bare repo the daemon's notice reads, so a
+// target without this binary's revision is refused as a row's is.
+func (a *app) updateUpstream(exe, track string) error {
 	module := buildModule()
 	if module == "" {
 		return fail(exitRefused, "no repo to update from: pass --repo or set [update] repo")
@@ -121,30 +110,56 @@ func (a *app) updateUpstream(exe string) error {
 		return fmt.Errorf("no cache dir for %s's main: %w", module, err)
 	}
 	dir := selfupdate.UpstreamDir(cache)
-	head, unlock, err := selfupdate.FetchUpstream(dir, module)
+	_, unlock, err := selfupdate.FetchUpstream(dir, module)
 	if err != nil {
 		return fmt.Errorf("read %s's main: %w", module, err)
 	}
 	defer unlock()
-	own := buildVersion().Revision
-	if selfupdate.Same(head, own) {
-		fmt.Fprintln(a.stdout, "up to date")
-		a.restartLine(head)
-		return clearNotice()
+	t, err := selfupdate.Follow(dir, "refs/heads/main", track, a.specDir())
+	if err != nil {
+		return err
 	}
-	if own != "" && !selfupdate.Contains(dir, own, head) {
-		return fail(exitRefused, "%s's main (%s) does not contain this binary's %s; left alone", module,
-			selfupdate.Short(head), selfupdate.Short(own))
+	return a.updateTo(dir, module, t, true, func() error { return selfupdate.InstallModule(context.Background(), dir, module, exe, t) })
+}
+
+// updateTo compares this binary with t in dir and runs install when it is
+// behind (or of unknown commit, a tag dir doesn't know included), printing
+// `<old> -> <new>` (selfupdate.Label); the binary that is t prints `up to
+// date`, one with t in its history `ahead of <t>, up to date`, and one t
+// doesn't contain is refused. plugin adds the plugin line after a swap.
+func (a *app) updateTo(dir, from string, t selfupdate.Target, plugin bool, install func() error) error {
+	tagged := buildVersion().Own()
+	own := selfupdate.OwnCommit(dir, tagged)
+	label := selfupdate.Label(dir, own)
+	if own == "" && tagged != "" {
+		label = tagged
+	}
+	switch selfupdate.Stand(dir, own, t.Commit) {
+	case selfupdate.Current:
+		fmt.Fprintln(a.stdout, "up to date")
+		a.restartLine(t.Commit)
+		return clearNotice()
+	case selfupdate.Ahead:
+		fmt.Fprintf(a.stdout, "ahead of %s, up to date\n", selfupdate.Label(dir, t.Commit))
+		a.restartLine(own)
+		return clearNotice()
+	case selfupdate.Apart:
+		if own != "" {
+			return fail(exitRefused, "%s's main (%s) does not contain this binary's %s; left alone", from,
+				selfupdate.Label(dir, t.Commit), label)
+		}
 	}
 	var refused *selfupdate.Refused
-	if err := selfupdate.InstallModule(context.Background(), dir, module, exe, head); errors.As(err, &refused) {
+	if err := install(); errors.As(err, &refused) {
 		return fail(exitRefused, "update: %v", err)
 	} else if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.stdout, "%s -> %s\n", selfupdate.Short(own), selfupdate.Short(head))
-	fmt.Fprintln(a.stdout, pluginLine)
-	a.restartLine(head)
+	fmt.Fprintf(a.stdout, "%s -> %s\n", label, selfupdate.Label(dir, t.Commit))
+	if plugin {
+		fmt.Fprintln(a.stdout, pluginLine)
+	}
+	a.restartLine(t.Commit)
 	return clearNotice()
 }
 

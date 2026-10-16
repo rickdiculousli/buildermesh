@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
+	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
 // revision is this daemon's revision as published: the full commit, or
@@ -61,7 +63,7 @@ func updateRepo(d Deps) string {
 		return ""
 	case d.Cfg.Repos[repo].Path == "":
 		d.Log.Warn("update: [update] repo is not in the registry; off", "repo", repo)
-	case d.Revision == "":
+	case d.Revision == "" && d.Tag == "":
 		d.Log.Warn("update: this binary has no vcs revision; off", "repo", repo)
 	case d.Exe == "" || d.Restart == nil:
 		d.Log.Warn("update: no binary path to replace; off", "repo", repo)
@@ -73,11 +75,40 @@ func updateRepo(d Deps) string {
 	return ""
 }
 
-// checkUpdate compares main's checkout dir with this binary's revision.
-// When main contains the revision and is ahead it builds main over the
-// binary, publishes update, drains and asks serve to restart; it reports
-// whether it did. Each main commit is acted on once: a failed build or a
-// main without this revision (a rollback) is logged once and left.
+// own is this binary's commit as dir knows it: its revision, or the
+// commit its release tag names there (a tagged module install); "" when
+// neither.
+func (d *Deps) own(dir string) string {
+	if d.Revision != "" {
+		return d.Revision
+	}
+	return selfupdate.OwnCommit(dir, d.Tag)
+}
+
+// specDir is the spec directory as a pathspec: commits that change only it
+// are ledger, never a code head.
+func (d *Deps) specDir() string { return filepath.ToSlash(spec.Dir(d.Cfg.Spec.Glob)) }
+
+// target is what [update] track follows on ref in dir (selfupdate.Follow);
+// a release track with no release tag yet follows the code head, which it
+// logs once.
+func (r *routineSet) target(dir, ref string) (selfupdate.Target, error) {
+	t, err := selfupdate.Follow(dir, ref, r.d.Cfg.Update.Track, r.d.specDir())
+	if err == nil && t.NoTag && !r.noTagSaid {
+		r.noTagSaid = true
+		r.d.Log.Info("update: no release tag on main yet; following its code head", "head", selfupdate.Short(t.Commit))
+	}
+	return t, err
+}
+
+// checkUpdate compares the target [update] track follows in main's
+// checkout dir (the newest release, or the code head) with this binary's
+// revision. When the target has the revision in its history and is ahead
+// it builds the target over the binary, publishes update, drains and asks
+// serve to restart; it reports whether it did. A binary that is the target
+// or has it in its history is current: it never goes back. Each target is
+// acted on once: a failed build or a target without this revision (a
+// rollback) is logged once and left.
 func (r *routineSet) checkUpdate(dir string) bool {
 	// Locked from reading main to the end of the build, so a `bmesh update`
 	// on this box cannot move the checkout in between.
@@ -89,21 +120,29 @@ func (r *routineSet) checkUpdate(dir string) bool {
 	var once sync.Once
 	unlock := func() { once.Do(lockRelease) }
 	defer unlock()
-	head, err := selfupdate.Head(dir)
+	t, err := r.target(dir, "HEAD")
 	if err != nil {
 		r.d.Log.Warn("update: read main", "err", err)
 		return false
 	}
-	if selfupdate.Same(head, r.d.Revision) || head == r.updateSeen {
+	if selfupdate.Same(t.Commit, r.d.Revision) || t.Commit == r.updateSeen {
 		return false
 	}
-	r.updateSeen = head
-	old, next := selfupdate.Short(r.d.Revision), selfupdate.Short(head)
-	if !selfupdate.Contains(dir, r.d.Revision, head) {
-		r.d.Log.Warn("update: main does not contain this revision; left alone", "main", next, "running", old)
+	r.updateSeen = t.Commit
+	own := r.d.own(dir)
+	old, next := selfupdate.Label(dir, own), selfupdate.Label(dir, t.Commit)
+	switch selfupdate.Stand(dir, own, t.Commit) {
+	case selfupdate.Current, selfupdate.Ahead:
+		return false
+	case selfupdate.Apart:
+		if own == "" {
+			r.d.Log.Warn("update: this binary's release is not on main; left alone", "main", next, "running", r.d.Tag)
+		} else {
+			r.d.Log.Warn("update: main does not contain this revision; left alone", "main", next, "running", old)
+		}
 		return false
 	}
-	err = selfupdate.Install(r.ctx, dir, r.d.Exe, head)
+	err = selfupdate.Install(r.ctx, dir, r.d.Exe, t.Commit)
 	unlock()
 	var refused *selfupdate.Refused
 	if errors.As(err, &refused) {
@@ -114,14 +153,13 @@ func (r *routineSet) checkUpdate(dir string) bool {
 		r.d.Log.Warn("update: build failed; keeping this binary", "main", next, "err", err)
 		return false
 	}
-	r.restartInto(head)
+	r.restartInto(t.Commit, old+" -> "+next)
 	return true
 }
 
-// restartInto publishes update for the binary just swapped in at head,
-// drains and asks serve to restart.
-func (r *routineSet) restartInto(head string) {
-	text := selfupdate.Short(r.d.Revision) + " -> " + selfupdate.Short(head)
+// restartInto publishes update, text `<old> -> <new>`, for the binary just
+// swapped in at head, drains and asks serve to restart.
+func (r *routineSet) restartInto(head, text string) {
 	ctx, cancel := r.settleCtx()
 	err := mesh.PublishEvent(ctx, r.d.Client, mesh.Event{From: r.d.from(), Event: "update", Text: text, Commit: head,
 		At: r.d.Now().UTC().Format(time.RFC3339)})
@@ -172,7 +210,7 @@ func (r *routineSet) initCheck() {
 	switch {
 	case d.GOOS == "windows" && !d.Supervised:
 		d.Log.Warn("update: [update] upstream needs bmesh serve --restart on Windows, which starts the new binary (init --service sets it up); notice only")
-	case d.Revision == "":
+	case d.Revision == "" && d.Tag == "":
 		d.Log.Warn("update: this binary has no revision; notice only")
 	case d.Exe == "" || d.Restart == nil:
 		d.Log.Warn("update: no binary path to replace; notice only")
@@ -182,33 +220,30 @@ func (r *routineSet) initCheck() {
 }
 
 // checkMain reads main, from rowDir ([update] repo's main checkout) when
-// set, else from a fetch of the module's main into the bare repo under the
-// cache dir, and compares it with the binary at Exe (this daemon's own
-// revision when that says none, so a `bmesh update` that already swapped
-// it in reads as current). When the binary is behind it writes the notice,
-// or with upstream installs main, publishes update, drains and asks serve
-// to restart, reporting whether it did; a failed install is logged once per
-// main commit and tried again on the next check. A current binary removes
-// the notice.
+// set, else from a fetch of the module's main and its tags into the bare
+// repo under the cache dir, and compares the target [update] track follows
+// there with the binary at Exe (this daemon's own revision, or release
+// tag, when that says none, so a `bmesh update` that already swapped it in
+// reads as current; a tag resolved to its commit there). When the binary
+// is behind it writes the notice, or with upstream installs the target,
+// publishes update, drains and asks serve to restart, reporting whether it
+// did; a failed install is logged once per target and tried again on the
+// next check. A current or newer binary removes the notice.
 func (r *routineSet) checkMain(rowDir string) bool {
 	d := r.d
 	var (
-		dir, head string
-		release   func()
-		err       error
+		dir, ref string
+		release  func()
+		err      error
 	)
 	if rowDir != "" {
-		dir = rowDir
-		if release, err = selfupdate.Lock(dir); err == nil {
-			if head, err = selfupdate.Head(dir); err != nil {
-				release()
-			}
-		}
+		dir, ref = rowDir, "HEAD"
+		release, err = selfupdate.Lock(dir)
 	} else {
 		var cache string
 		if cache, err = config.CacheDir(); err == nil {
-			dir = selfupdate.UpstreamDir(cache)
-			head, release, err = selfupdate.FetchUpstream(dir, d.Module)
+			dir, ref = selfupdate.UpstreamDir(cache), "refs/heads/main"
+			_, release, err = selfupdate.FetchUpstream(dir, d.Module)
 		}
 	}
 	if err != nil {
@@ -218,26 +253,36 @@ func (r *routineSet) checkMain(rowDir string) bool {
 	var once sync.Once
 	unlock := func() { once.Do(release) }
 	defer unlock()
+	t, err := r.target(dir, ref)
+	if err != nil {
+		d.Log.Warn("update: read main", "err", err)
+		return false
+	}
 	own := selfupdate.Installed(r.ctx, d.Exe)
 	if own == "" {
 		own = d.Revision
 	}
-	line, err := selfupdate.Notice(dir, own, head)
+	if own == "" {
+		own = d.Tag
+	}
+	own = selfupdate.OwnCommit(dir, own)
+	line, err := selfupdate.Notice(dir, own, ref, t, d.specDir())
 	if err != nil {
 		d.Log.Warn("update: read main's history", "err", err)
 		return false
 	}
 	if line != "" && r.upstream != "" && rowDir == "" {
-		err := selfupdate.InstallModule(r.ctx, dir, r.upstream, d.Exe, head)
+		text := selfupdate.Label(dir, own) + " -> " + selfupdate.Label(dir, t.Commit)
+		err := selfupdate.InstallModule(r.ctx, dir, r.upstream, d.Exe, t)
 		unlock()
 		if err == nil {
 			d.writeNotice("")
-			r.restartInto(head)
+			r.restartInto(t.Commit, text)
 			return true
 		}
-		if head != r.failedAt {
-			r.failedAt = head
-			d.Log.Warn("update: install failed; keeping this binary", "main", selfupdate.Short(head), "err", err)
+		if t.Commit != r.failedAt {
+			r.failedAt = t.Commit
+			d.Log.Warn("update: install failed; keeping this binary", "main", selfupdate.Label(dir, t.Commit), "err", err)
 		}
 	}
 	d.writeNotice(line)

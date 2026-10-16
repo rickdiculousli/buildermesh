@@ -485,3 +485,79 @@ func TestRevisionHintNamesDaemonRestart(t *testing.T) {
 		}
 	}
 }
+
+// update follows the newest release; --latest goes past it to the code
+// head once, and a later update keeps that newer binary.
+func TestUpdateFollowsReleasesAndLatestOnce(t *testing.T) {
+	exe, shas := updateBox(t)
+	repo := filepath.Join(filepath.Dir(filepath.Dir(exe)), "bm")
+	meshtest.Git(t, repo, "tag", "-a", "-m", "v0.1.0", "v0.1.0", shas[0])
+	code := meshtest.CommitFiles(t, repo, map[string]string{"x.go": "package x\n"})
+	meshtest.CommitFiles(t, repo, map[string]string{"docs/proposals/001-x.md": "x"}) // ledger after it
+
+	withRevision(t, shas[0])
+	if out, errOut, c := runCLI(t, nil, "update"); c != 0 || out != "up to date\n" {
+		t.Fatalf("on the release: code %d out %q err %q", c, out, errOut)
+	}
+	out, errOut, c := runCLI(t, nil, "update", "--latest")
+	if want := "v0.1.0 -> v0.1.0+2 (" + code[:8] + ")\n"; c != 0 || out != want {
+		t.Fatalf("--latest: code %d out %q err %q, want %q", c, out, errOut, want)
+	}
+	if got, err := exec.Command(exe).Output(); err != nil || strings.TrimSpace(string(got)) != "fake bmesh "+code {
+		t.Fatalf("binary: %q %v", got, err)
+	}
+	withRevision(t, code)
+	if out, errOut, c := runCLI(t, nil, "update"); c != 0 || out != "ahead of v0.1.0, up to date\n" {
+		t.Fatalf("ahead: code %d out %q err %q", c, out, errOut)
+	}
+	if got, _ := exec.Command(exe).Output(); strings.TrimSpace(string(got)) != "fake bmesh "+code {
+		t.Fatalf("moved back: %q", got)
+	}
+	// The next release reaches a box still on the last one.
+	meshtest.Git(t, repo, "tag", "-a", "-m", "v0.2.0", "v0.2.0", code)
+	withRevision(t, shas[0])
+	if out, errOut, c := runCLI(t, nil, "update"); c != 0 || out != "v0.1.0 -> v0.2.0\n" {
+		t.Fatalf("release: code %d out %q err %q", c, out, errOut)
+	}
+	if _, _, c := runCLI(t, nil, "update", "--notice", "--latest"); c != exitUsage {
+		t.Fatalf("--notice --latest: code %d", c)
+	}
+}
+
+// withTaggedInstall makes the binary's build info that of `go install
+// <module>/cmd/bmesh@<tag>`: a version and no commit.
+func withTaggedInstall(t *testing.T, module, tag string) {
+	t.Helper()
+	saved := readBuildInfo
+	t.Cleanup(func() { readBuildInfo = saved })
+	readBuildInfo = func() (*debug.BuildInfo, bool) {
+		return &debug.BuildInfo{Main: debug.Module{Path: module, Version: tag}}, true
+	}
+}
+
+// A tagged module install resolves its tag on the module's main and
+// installs the next release by its tag.
+func TestUpdateTaggedModuleInstall(t *testing.T) {
+	exe, goLog, shas := upstreamBox(t)
+	src := os.Getenv("BMESH_UPSTREAM_URL")
+	meshtest.Git(t, src, "tag", "-a", "-m", "v0.1.0", "v0.1.0", shas[0])
+	meshtest.Git(t, src, "tag", "-a", "-m", "v0.2.0", "v0.2.0", shas[1])
+	withTaggedInstall(t, "example.com/up", "v0.1.0")
+	if out, _, c := runCLI(t, nil, "version"); c != 0 || out != "bmesh v0.1.0\n" {
+		t.Fatalf("version: code %d out %q", c, out)
+	}
+	out, errOut, c := runCLI(t, nil, "update")
+	if want := "v0.1.0 -> v0.2.0\n" + pluginLine + "\n"; c != 0 || out != want {
+		t.Fatalf("code %d out %q err %q, want %q", c, out, errOut, want)
+	}
+	if b, _ := os.ReadFile(goLog); strings.TrimSpace(string(b)) != "install example.com/up@v0.2.0" {
+		t.Fatalf("go log %q", b)
+	}
+	if got, err := exec.Command(exe).Output(); err != nil || strings.TrimSpace(string(got)) != "fake bmesh v0.2.0" {
+		t.Fatalf("binary: %q %v", got, err)
+	}
+	withTaggedInstall(t, "example.com/up", "v0.2.0")
+	if out, _, c := runCLI(t, nil, "update"); c != 0 || out != "up to date\n" {
+		t.Fatalf("current: code %d out %q", c, out)
+	}
+}

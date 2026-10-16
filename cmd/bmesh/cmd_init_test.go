@@ -294,7 +294,7 @@ func TestInitPrintsWhatTheBoxIsSetTo(t *testing.T) {
 		"proposers": {c.Models.Proposer + " at " + c.Models.ProposerEffort, "([models] proposer, proposer_effort)"},
 		"leads":     {c.Models.Lead + " at " + c.Models.LeadEffort, "([models] lead, lead_effort)"},
 		"executors": {"(bmesh executor new --model)"},
-		"updates":   {"notice every 6h", "([update] check_every, upstream, repo)"},
+		"updates":   {"notice every 6h, release", "([update] check_every, upstream, repo, track)"},
 		"service":   {"none", "(bmesh init --service)"},
 		"routines":  {"on. This box runs any pushed commit's routine commands for every box on the mesh ([runner] checkouts)"},
 	})
@@ -322,7 +322,7 @@ func TestInitPrintsWhatTheBoxIsSetTo(t *testing.T) {
 		"worktrees": {"T3 keeps its own threads' checkouts"},
 		"map":       {"http://127.0.0.1:9000/"},
 		"leads":     {"claude-sonnet-5-5 at the runner's default effort"},
-		"updates":   {"from app", "([update] repo)"},
+		"updates":   {"from app, release", "([update] repo, track)"},
 		"routines":  {"off", "([runner] checkouts)"},
 	})
 	if strings.Contains(out, "secret") {

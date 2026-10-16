@@ -13,6 +13,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
@@ -95,12 +96,8 @@ func (a *app) heldBy(ctx context.Context, repo, family string) (*buildHold, erro
 // spec directory (ref itself when only specs ever changed), so ledger
 // commits don't count as code: the commit a build verifies and a release
 // tags.
-func (a *app) codeHead(ctx context.Context, repoPath, ref string) (string, error) {
-	sha, err := gitIn(ctx, repoPath, "rev-list", "-1", ref, "--", ".", ":(exclude)"+a.specDir())
-	if err != nil || sha != "" {
-		return sha, err
-	}
-	return gitIn(ctx, repoPath, "rev-parse", "--verify", ref+"^{commit}")
+func (a *app) codeHead(repoPath, ref string) (string, error) {
+	return selfupdate.CodeHead(repoPath, ref, a.specDir())
 }
 
 // specDir is the spec directory, as a git pathspec.

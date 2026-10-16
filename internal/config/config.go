@@ -159,12 +159,18 @@ type ConsoleConfig struct {
 // UpdateConfig is the daemon's self-update: Repo names the registry row
 // whose main it builds itself from ("" = off). Without it, the daemon reads
 // the module's main every CheckEvery (0 = never) and writes the notice when
-// this binary is behind; Upstream also installs it.
+// this binary is behind; Upstream also installs it. Track is what all of
+// them, and `bmesh update`, follow on main: the newest release tag
+// (release, the default) or the code head (latest).
 type UpdateConfig struct {
 	Repo       string
 	CheckEvery time.Duration
 	Upstream   bool
+	Track      string
 }
+
+// Tracks are [update] track's values.
+var Tracks = []string{"release", "latest"}
 
 // HostsConfig is the hosts layer (boxes joined by the admin's roster):
 // nothing of it runs unless Enabled, which only `bmesh init --hosts` sets.
@@ -300,6 +306,7 @@ type file struct {
 		Repo       string
 		CheckEvery duration `toml:"check_every"`
 		Upstream   bool
+		Track      string
 	}
 	Hosts HostsConfig
 }
@@ -320,7 +327,7 @@ func defaults() *Config {
 		Console:  ConsoleConfig{Hosts: map[string]string{}},
 		Status:   StatusConfig{KeepDone: 24 * time.Hour},
 		Routines: RoutinesConfig{KeepResults: 30 * 24 * time.Hour},
-		Update:   UpdateConfig{CheckEvery: 6 * time.Hour},
+		Update:   UpdateConfig{CheckEvery: 6 * time.Hour, Track: "release"},
 	}
 }
 
@@ -414,7 +421,7 @@ func Load(path string) (*Config, error) {
 		Mesh: c.Mesh, Host: c.Host, Hub: c.Hub, Serve: c.Serve, Runner: c.Runner, Spec: c.Spec, Models: c.Models,
 		Quota: c.Quota, Console: c.Console, Hosts: c.Hosts,
 	}
-	f.Update.Repo, f.Update.CheckEvery, f.Update.Upstream = c.Update.Repo, duration(c.Update.CheckEvery), c.Update.Upstream
+	f.Update.Repo, f.Update.CheckEvery, f.Update.Upstream, f.Update.Track = c.Update.Repo, duration(c.Update.CheckEvery), c.Update.Upstream, c.Update.Track
 	f.Notify.DigestEvery = duration(c.Notify.DigestEvery)
 	f.Notify.CatchUp = duration(c.Notify.CatchUp)
 	f.Liveness.Grace = duration(c.Liveness.Grace)
@@ -441,7 +448,10 @@ func Load(path string) (*Config, error) {
 		}
 	}
 	c.Quota, c.Console, c.Hosts = f.Quota, f.Console, f.Hosts
-	c.Update = UpdateConfig{Repo: f.Update.Repo, CheckEvery: time.Duration(f.Update.CheckEvery), Upstream: f.Update.Upstream}
+	c.Update = UpdateConfig{Repo: f.Update.Repo, CheckEvery: time.Duration(f.Update.CheckEvery), Upstream: f.Update.Upstream, Track: f.Update.Track}
+	if !slices.Contains(Tracks, c.Update.Track) {
+		return nil, fmt.Errorf("config %s: [update] track %q: want release or latest", path, c.Update.Track)
+	}
 	if k := c.Hosts.KeyStore; k != "" && k != "keychain" && k != "file" {
 		return nil, fmt.Errorf("config %s: [hosts] key_store %q: want keychain or file", path, k)
 	}

@@ -29,9 +29,10 @@ func UpstreamURL(module string) string {
 // user cache dir.
 func UpstreamDir(cache string) string { return filepath.Join(cache, "bmesh", "update", "upstream") }
 
-// FetchUpstream fetches the module's main into the bare repo dir (made when
-// missing) and returns its commit, with dir under Lock, which the caller
-// releases once it is done reading or building from it.
+// FetchUpstream fetches the module's main and its release tags into the
+// bare repo dir (made when missing) and returns main's commit, with dir
+// under Lock, which the caller releases once it is done reading or
+// building from it.
 func FetchUpstream(dir, module string) (head string, unlock func(), err error) {
 	if module == "" {
 		return "", nil, errors.New("this binary does not say its module")
@@ -48,7 +49,7 @@ func FetchUpstream(dir, module string) (head string, unlock func(), err error) {
 		}
 	}
 	if err == nil {
-		_, err = git(dir, "fetch", "--quiet", "--end-of-options", UpstreamURL(module), "+refs/heads/main:refs/heads/main")
+		_, err = git(dir, "fetch", "--quiet", "--end-of-options", UpstreamURL(module), "+refs/heads/main:refs/heads/main", "+refs/tags/v*:refs/tags/v*")
 	}
 	if err == nil {
 		head, err = git(dir, "rev-parse", "--verify", "refs/heads/main^{commit}")
@@ -60,14 +61,16 @@ func FetchUpstream(dir, module string) (head string, unlock func(), err error) {
 	return head, unlock, nil
 }
 
-// InstallModule builds <module>/cmd/bmesh at head with `go install` into a
-// temporary directory beside exe (GOBIN), stamped with head and its commit
-// time from dir (the fetched main) as Install's build is, so a commit go
-// resolves to a tag still names itself; then it refuses or swaps the build
-// in as Install does.
-func InstallModule(ctx context.Context, dir, module, exe, head string) error {
+// InstallModule builds <module>/cmd/bmesh at t with `go install` into a
+// temporary directory beside exe (GOBIN), `@<tag>` for a release and
+// `@<commit>` for a code head, stamped with t's commit and its commit time
+// from dir (the fetched main) as Install's build is, so a build go
+// resolves to a tag still names its commit; then it refuses or swaps the
+// build in as Install does.
+func InstallModule(ctx context.Context, dir, module, exe string, t Target) error {
 	ctx, cancel := context.WithTimeout(ctx, BuildTimeout)
 	defer cancel()
+	head := t.Commit
 	ldflags, err := stampFlags(dir, head)
 	if err != nil {
 		return err
@@ -77,7 +80,7 @@ func InstallModule(ctx context.Context, dir, module, exe, head string) error {
 		return err
 	}
 	defer os.RemoveAll(tmp)
-	argv := append(goCommand(), "install", "-ldflags", ldflags, module+"/cmd/bmesh@"+head)
+	argv := append(goCommand(), "install", "-ldflags", ldflags, module+"/cmd/bmesh@"+t.Ref())
 	if Scoped() {
 		argv = append([]string{"systemd-run", "--user", "--scope", "--quiet", "--collect", "--"}, argv...)
 	}
@@ -95,13 +98,14 @@ func InstallModule(ctx context.Context, dir, module, exe, head string) error {
 	return swap(ctx, built, exe, head)
 }
 
-// Installed is the revision the binary at exe reports (`<rev8>`), or ""
-// when it reports none.
+// Installed is the revision the binary at exe reports (`<rev8>`), its
+// release when that is all it reports (a tagged module install, for
+// OwnCommit), or "" when it reports neither.
 func Installed(ctx context.Context, exe string) string {
 	if exe == "" {
 		return ""
 	}
-	if r := reports(ctx, exe); hex8.MatchString(r) {
+	if r := reports(ctx, exe); hex8.MatchString(r) || IsRelease(r) {
 		return r
 	}
 	return ""
@@ -110,19 +114,42 @@ func Installed(ctx context.Context, exe string) string {
 var hex8 = regexp.MustCompile(`^[0-9a-f]{8}$`)
 
 // doneAt matches a landing's `NNN: done at <sha8>` subject.
-var doneAt = regexp.MustCompile(`^([0-9]{3,}): done at `)
+var doneAt = regexp.MustCompile(`^([0-9]{3,}): done at ([0-9a-f]{7,40})`)
 
-// Notice is the line a binary at own reads when dir's head is ahead of it:
-// `bmesh: N commits behind main (landed since: NNN <title>, …); run bmesh
-// update, then update the buildermesh plugin`, the specs those of the `NNN:
-// done at` subjects in own..head, oldest first, titled from their files on
-// head. It is "" when own is head, or not in head's history (a binary of
-// another line, or unknown).
-func Notice(dir, own, head string) (string, error) {
-	if Same(own, head) || !Contains(dir, own, head) {
+// Notice is the line a binary at own (a commit in dir) reads when it is
+// behind t, read on ref (main): for a release, `bmesh: v0.2.0 is out (you
+// run v0.1.0: 046, 047); run bmesh update, then update the buildermesh
+// plugin`; for a code head, `bmesh: N commits behind main (landed since:
+// NNN <title>, …); run …`, N the commits in own..t that change anything
+// outside specDir and each spec titled from its file on ref. The specs are
+// those whose `NNN: done at <sha8>` landings in own..ref name a merged
+// commit t has and own hasn't (or one dir doesn't know), oldest first. It
+// is "" when own is not behind t (Stand): current, ahead, or not in its
+// history.
+func Notice(dir, own, ref string, t Target, specDir string) (string, error) {
+	if Stand(dir, own, t.Commit) != Behind {
 		return "", nil
 	}
-	n, err := git(dir, "rev-list", "--count", own+".."+head)
+	all, err := landings(dir, own+".."+ref)
+	if err != nil {
+		return "", err
+	}
+	var ids []string
+	for _, l := range all {
+		if _, err := git(dir, "rev-parse", "--verify", "-q", "--end-of-options", l.at+"^{commit}"); err != nil ||
+			(Contains(dir, l.at, t.Commit) && !Contains(dir, l.at, own)) {
+			ids = append(ids, l.id)
+		}
+	}
+	tail := "; run bmesh update, then update the buildermesh plugin"
+	if t.Tag != "" {
+		line := fmt.Sprintf("bmesh: %s is out (you run %s", t.Tag, Label(dir, own))
+		if len(ids) > 0 {
+			line += ": " + strings.Join(ids, ", ")
+		}
+		return line + ")" + tail, nil
+	}
+	n, err := git(dir, "rev-list", "--count", own+".."+t.Commit, "--", ".", ":(exclude)"+specDir)
 	if err != nil {
 		return "", err
 	}
@@ -130,13 +157,9 @@ func Notice(dir, own, head string) (string, error) {
 	if err != nil || count == 0 {
 		return "", err
 	}
-	ids, err := Landed(dir, own+".."+head)
-	if err != nil {
-		return "", err
-	}
 	var specs []string
 	for _, id := range ids {
-		specs = append(specs, specTitle(dir, head, id))
+		specs = append(specs, specTitle(dir, ref, id))
 	}
 	line := fmt.Sprintf("bmesh: %d commits behind main", count)
 	if count == 1 {
@@ -145,18 +168,33 @@ func Notice(dir, own, head string) (string, error) {
 	if len(specs) > 0 {
 		line += " (landed since: " + strings.Join(specs, ", ") + ")"
 	}
-	return line + "; run bmesh update, then update the buildermesh plugin", nil
+	return line + tail, nil
 }
 
 // Landed is the ids of the specs whose `NNN: done at` subjects are in
 // revs (a git revision range, or a commit and its history), oldest first,
 // each once.
 func Landed(dir, revs string) ([]string, error) {
+	all, err := landings(dir, revs)
+	var ids []string
+	for _, l := range all {
+		ids = append(ids, l.id)
+	}
+	return ids, err
+}
+
+// landing is a spec's `NNN: done at <sha8>` subject: its id and the merged
+// commit it names.
+type landing struct{ id, at string }
+
+// landings is the `NNN: done at` subjects in revs, oldest first, each id
+// once.
+func landings(dir, revs string) ([]landing, error) {
 	subjects, err := git(dir, "log", "--reverse", "--format=%s", "--end-of-options", revs)
 	if err != nil {
 		return nil, err
 	}
-	var ids []string
+	var out []landing
 	seen := map[string]bool{}
 	for _, s := range strings.Split(subjects, "\n") {
 		m := doneAt.FindStringSubmatch(s)
@@ -164,9 +202,9 @@ func Landed(dir, revs string) ([]string, error) {
 			continue
 		}
 		seen[m[1]] = true
-		ids = append(ids, m[1])
+		out = append(out, landing{id: m[1], at: m[2]})
 	}
-	return ids, nil
+	return out, nil
 }
 
 // specTitle is `NNN <title>` from docs/proposals/NNN-*.md on head, or the
