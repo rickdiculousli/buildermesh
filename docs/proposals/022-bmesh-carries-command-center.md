@@ -4,10 +4,13 @@ title: bmesh carries what command-center still does for it
 kind: maintenance
 size: M
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
+built_by: f41b60d8-c71a-44bf-ba58-d575e87ada5c
+host: k16
+family: buildermesh-build-2
 ---
 
 ## Opportunity
