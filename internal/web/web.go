@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
@@ -41,20 +43,32 @@ type frame struct {
 }
 
 // Options is what the handler needs beyond the client: the config, this
-// daemon's host name, the clock (time.Now when nil) and the log (discarded
-// when nil).
+// daemon's host name, the clock (time.Now when nil), the log (discarded
+// when nil) and Dir, a directory to read the page, map.js and map.css from
+// on every request instead of the embedded copies (none when empty).
 type Options struct {
 	Cfg  *config.Config
 	Host string
 	Now  func() time.Time
 	Log  *slog.Logger
+	Dir  string
 }
 
-// asset serves an embedded file with its content type.
-func asset(body []byte, contentType string) http.HandlerFunc {
+// asset serves a page file with its content type: the embedded body, or
+// dir/name read on each request when dir is set.
+func asset(dir, name string, body []byte, contentType string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		b := body
+		if dir != "" {
+			var err error
+			if b, err = os.ReadFile(filepath.Join(dir, name)); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		w.Header().Set("Content-Type", contentType)
-		_, _ = w.Write(body)
+		_, _ = w.Write(b)
 	}
 }
 
@@ -64,9 +78,9 @@ func asset(body []byte, contentType string) http.HandlerFunc {
 func Handler(c *mesh.Client, hist time.Duration, opts Options) http.Handler {
 	s := newServer(c, opts)
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", asset(page, "text/html; charset=utf-8"))
-	mux.HandleFunc("GET /map.js", asset(mapJS, "text/javascript; charset=utf-8"))
-	mux.HandleFunc("GET /map.css", asset(mapCSS, "text/css; charset=utf-8"))
+	mux.HandleFunc("GET /{$}", asset(opts.Dir, "index.html", page, "text/html; charset=utf-8"))
+	mux.HandleFunc("GET /map.js", asset(opts.Dir, "map.js", mapJS, "text/javascript; charset=utf-8"))
+	mux.HandleFunc("GET /map.css", asset(opts.Dir, "map.css", mapCSS, "text/css; charset=utf-8"))
 	mux.HandleFunc("GET /api/nodes", func(w http.ResponseWriter, r *http.Request) { nodes(w, r, c) })
 	mux.HandleFunc("GET /api/tree", s.tree)
 	mux.HandleFunc("GET /api/lead/{path}", s.lead)

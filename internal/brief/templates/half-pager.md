@@ -37,7 +37,7 @@ Judge: <opus, fable or sonnet>, because <one clause>.
 The visible result when it's done.
 
 ## Verification
-Which verify commands prove it; anything new that's needed.
+Which verify commands prove it; anything new that's needed. A UI spec names its browser check: the viewports, and the repo's seed and check scripts where it has them (its README's testing section says).
 
 ## Risks and the alternative considered
 

@@ -178,6 +178,42 @@ func TestAssets(t *testing.T) {
 	}
 }
 
+func TestAssetsFromDir(t *testing.T) {
+	_, c := connect(t)
+	dir := t.TempDir()
+	srv := httptest.NewServer(Handler(c, time.Hour, Options{Dir: dir}))
+	defer srv.Close()
+	get := func(path string) (int, string, string) {
+		resp, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, resp.Header.Get("Content-Type"), string(b)
+	}
+	if code, _, _ := get("/map.js"); code != http.StatusInternalServerError {
+		t.Fatalf("missing map.js: %d", code)
+	}
+	for name, body := range map[string]string{"index.html": "page v1", "map.js": "js v1", "map.css": "css v1"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if code, ct, b := get("/"); code != 200 || ct != "text/html; charset=utf-8" || b != "page v1" {
+		t.Fatalf("/: %d %q %q", code, ct, b)
+	}
+	if code, _, b := get("/map.css"); code != 200 || b != "css v1" {
+		t.Fatalf("/map.css: %d %q", code, b)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "map.js"), []byte("js v2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, b := get("/map.js"); code != 200 || b != "js v2" {
+		t.Fatalf("/map.js after an edit: %d %q", code, b)
+	}
+}
+
 // connect starts a mesh and returns a provisioned client.
 func connect(t *testing.T) (context.Context, *mesh.Client) {
 	t.Helper()
