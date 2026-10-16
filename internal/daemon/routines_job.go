@@ -276,7 +276,7 @@ func (w *worker) handle(dl *delivery) {
 	// box, pushed since) is fetched once before the job is refused.
 	tree, err := gitTree(w.g.repoPath, j.Commit)
 	if err != nil {
-		if ferr := r.fetch(w.g.repoPath); ferr != nil {
+		if ferr := r.fetch(w.g.repo, w.g.repoPath); ferr != nil {
 			r.d.Log.Warn("routines: fetch", "repo", w.g.repoPath, "err", ferr)
 		}
 		tree, err = gitTree(w.g.repoPath, j.Commit)

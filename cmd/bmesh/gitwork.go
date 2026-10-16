@@ -9,6 +9,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/level"
 )
 
 // Git steps shared by ideate, choose-ideas and the landing of a bmesh
@@ -72,8 +75,14 @@ func addWorktree(ctx context.Context, repoPath, wt, branch, base string) error {
 
 // landOnMain fast-forwards main to branch: `merge --ff-only` in the main
 // checkout when it is on main, else `fetch . <branch>:main`, which moves
-// main without touching that checkout.
-func landOnMain(ctx context.Context, repoPath, branch string) error {
+// main without touching that checkout. With [hosts] enabled it holds the
+// repo's lock, so a level of the same checkout never runs at once.
+func (a *app) landOnMain(ctx context.Context, repoPath, branch string) error {
+	unlock, err := a.repoLock(repoPath)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if onMain(ctx, repoPath) {
 		if _, err := gitIn(ctx, repoPath, "merge", "--quiet", "--ff-only", branch); err != nil {
 			return fmt.Errorf("main in %s did not fast-forward: %v", repoPath, err)
@@ -84,6 +93,20 @@ func landOnMain(ctx context.Context, repoPath, branch string) error {
 		return fmt.Errorf("main in %s did not fast-forward: %v", repoPath, err)
 	}
 	return nil
+}
+
+// repoLock takes <state dir>/locks/<repo>.lock (020) for the registered
+// repo at repoPath when [hosts] is enabled; otherwise, or for a path the
+// registry doesn't name, it takes nothing.
+func (a *app) repoLock(repoPath string) (unlock func(), err error) {
+	if a.cfg == nil || !a.cfg.Hosts.Enabled {
+		return func() {}, nil
+	}
+	name, _, err := a.cfg.RepoPath(repoPath)
+	if err != nil || name == "" {
+		return func() {}, nil
+	}
+	return level.Lock(config.StateDir(), name)
 }
 
 // pushMain pushes main to origin when the repo has one.

@@ -285,7 +285,7 @@ func (a *app) recordOnMain(ctx context.Context, name, repoPath, msg string, id i
 	if err != nil {
 		return "", err
 	}
-	if err := landOnMain(ctx, repoPath, branch); err != nil {
+	if err := a.landOnMain(ctx, repoPath, branch); err != nil {
 		return "", fail(exitRefused, "refused: %v; the record is committed on branch %s", err, branch)
 	}
 	landed = true
