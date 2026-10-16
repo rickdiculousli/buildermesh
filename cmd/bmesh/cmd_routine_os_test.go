@@ -145,3 +145,29 @@ func TestStatusShowsInstanceHost(t *testing.T) {
 		t.Fatalf("status json: %d %q", code, out)
 	}
 }
+
+func TestQueueRunsWhereMainSendsIt(t *testing.T) {
+	setup(t)
+	onOS(t, "linux")
+	repo := kindRepo(t, map[string]string{"build": "command = \"make\"\n"})
+	// The working copy alone says darwin: main and the commit run anywhere.
+	if err := os.WriteFile(filepath.Join(repo, ".bmesh", "routines", "build.toml"), []byte("os = \"darwin\"\ncommand = \"make\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, errs, code := runCLI(t, as("app-001"), "routine", "queue", "build")
+	if code != 0 || !strings.HasPrefix(out, "queued ") || strings.Contains(out, "runs on") {
+		t.Fatalf("working copy os: %d %q %q", code, out, errs)
+	}
+	meshtest.Git(t, repo, "checkout", "--", ".")
+	// Main moved build to darwin; a branch from before it still runs on
+	// darwin, through main's feed, so it must be pushed.
+	meshtest.Git(t, repo, "checkout", "-q", "-b", "old")
+	meshtest.Git(t, repo, "checkout", "-q", "main")
+	commitKind(t, repo, "build", "os = \"darwin\"\ncommand = \"make\"\n")
+	meshtest.Git(t, repo, "checkout", "-q", "old")
+	meshtest.CommitFiles(t, repo, map[string]string{"b.txt": "b\n"})
+	_, errs, code = runCLI(t, as("app-001"), "routine", "queue", "build")
+	if code != 3 || errs != "bmesh: push first: build runs on darwin, which fetches the commit from origin\n" {
+		t.Fatalf("main's os: %d %q", code, errs)
+	}
+}
