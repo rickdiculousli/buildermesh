@@ -40,7 +40,10 @@ func (r *Registry) Bytes() []byte {
 	return e.b
 }
 
-func (r *Registry) Sign(admin ed25519.PrivateKey) { r.Type = TagRegistry; r.Sig = sign(admin, r.Bytes()) }
+func (r *Registry) Sign(admin ed25519.PrivateKey) {
+	r.Type = TagRegistry
+	r.Sig = sign(admin, r.Bytes())
+}
 
 // Verify checks the type, that the registry names pinned as its admin
 // key, and the signature.

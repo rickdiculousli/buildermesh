@@ -83,6 +83,9 @@ func TestCheckRevokedSender(t *testing.T) {
 }
 
 func TestCheckAdminOp(t *testing.T) {
+	if !AdminOps["nix"] {
+		t.Fatal("nix is not an admin op")
+	}
 	AdminOps["test-admin"] = true
 	defer delete(AdminOps, "test-admin")
 	r := testRoster(2)

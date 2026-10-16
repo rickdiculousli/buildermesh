@@ -22,7 +22,7 @@ func (h *hostsNode) pruneJob(ctx context.Context, j *hosts.Job) (bool, string) {
 		}
 		apply = true
 	}
-	repos := h.d.Cfg.RepoNames()
+	repos := h.conf().RepoNames()
 	if j.Repo != "" {
 		if _, ok := h.checkoutOf(j.Repo); !ok {
 			return true, fmt.Sprintf("no checkout of %s here", cut(j.Repo, 64))

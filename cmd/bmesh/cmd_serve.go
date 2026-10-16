@@ -34,6 +34,10 @@ var errReexec = errors.New("serve: re-exec for an update")
 
 // cmdServe runs the daemon and the map until SIGTERM or SIGINT, or until an
 // update replaced the binary, which it then re-execs.
+// serveHostsEvery is the daemon's hosts tick (0 = its default, a minute);
+// tests shorten it.
+var serveHostsEvery time.Duration
+
 func (a *app) cmdServe(args []string) error {
 	fs := a.flags("serve")
 	listen := fs.String("listen", "", "HTTP address (default [serve] listen)")
@@ -136,7 +140,7 @@ func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Wri
 		}
 		daemonDone <- daemon.Run(dctx, daemon.Deps{
 			Client: c, Cfg: cfg, Runner: r, Host: host,
-			T3Token: t3Token, StateDir: config.StateDir(), ConfigDir: cfg.ConfigDir(),
+			T3Token: t3Token, StateDir: config.StateDir(), ConfigDir: cfg.ConfigDir(), HostsEvery: serveHostsEvery,
 			Log:       log,
 			Checkouts: cfg.Expand(cfg.Runner.Checkouts), ClaudeBin: claude,
 			Quota:    quota,
