@@ -17,7 +17,7 @@ import (
 
 const specUsage = "usage: bmesh spec list [--repo R] [--status S] [--json] | next-id [--repo R] | " +
 	"set --id NNN --status S [--repo R] [--from A,B] [--field K=V]... | template [--repo R] | " +
-	"verified [--spec NNN] [--write]"
+	"verified [--spec NNN] [--commit C] [--write]"
 
 func (a *app) cmdSpec(args []string) error {
 	if len(args) > 0 {
@@ -417,11 +417,12 @@ func (a *app) latestRanks(ctx context.Context, repo string, specs []*spec.Spec) 
 }
 
 // cmdSpecVerified prints the verified line composed from the results for
-// the cwd repo's HEAD tree; --write sets it in the spec's file in this
-// worktree. The spec defaults to this node's.
+// the cwd repo's HEAD tree, or --commit's; --write sets it in the spec's
+// file in this worktree. The spec defaults to this node's.
 func (a *app) cmdSpecVerified(args []string) error {
 	fs := a.flags("spec verified")
 	id := fs.String("spec", "", "spec id (default this node's spec)")
+	commit := fs.String("commit", "HEAD", "compose from the results for this commit's tree")
 	write := fs.Bool("write", false, "write the line into the spec's frontmatter")
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -443,12 +444,19 @@ func (a *app) cmdSpecVerified(args []string) error {
 	if err != nil {
 		return err
 	}
-	entries, err := spec.ComposeVerified(ctx, a.client, top)
+	tree, err := spec.Tree(top, *commit)
+	if err != nil {
+		return fail(exitUsage, "--commit %q is not a commit in %s", *commit, top)
+	}
+	entries, err := spec.ComposeVerified(ctx, a.client, top, *commit)
 	if err != nil {
 		return err
 	}
-	if len(entries) == 0 {
+	switch {
+	case len(entries) == 0 && *commit == "HEAD":
 		return fail(exitRefused, "%v", spec.ErrNoResults)
+	case len(entries) == 0:
+		return fail(exitRefused, "no results for %s's tree t:%s", *commit, tree[:8])
 	}
 	fmt.Fprintf(a.stdout, "verified: %s\n", spec.FormatVerified(entries))
 	if !*write {

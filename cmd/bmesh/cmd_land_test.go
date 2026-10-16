@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -107,7 +108,8 @@ func TestLandCleanThenDone(t *testing.T) {
 
 	out, errs, code := runCLI(t, as("app-012"), "land")
 	rec := gitOut(t, "rev-parse", "HEAD")
-	want := "lease land.repo\n" +
+	want := "required: verify (the repo's verify kind)\n" +
+		"lease land.repo\n" +
 		"fetch origin/main " + base[:8] + "\n" +
 		"rebase: on " + base[:8] + " already\n" +
 		"verify ok t:" + tree[:8] + " (recorded)\n" +
@@ -234,7 +236,7 @@ func TestLandWaitsForHeldLease(t *testing.T) {
 	}
 	select {
 	case code := <-res:
-		if code != 0 || !strings.HasPrefix(out.String(), "waiting for land.repo (held by app-011)\nlease land.repo\n") ||
+		if code != 0 || !strings.HasPrefix(out.String(), "required: verify (the repo's verify kind)\nwaiting for land.repo (held by app-011)\nlease land.repo\n") ||
 			!strings.Contains(out.String(), "landed ") {
 			t.Fatalf("land: %d\n%s\nerr %q", code, out.String(), errb.String())
 		}
@@ -383,7 +385,8 @@ func TestLandPutsACarriedReviewOnTheLine(t *testing.T) {
 	merged := gitOut(t, "rev-parse", "HEAD~1")
 	tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
 	entry := "review ok t:" + tree[:8] + " m:claude-opus-5-5 c:" + reviewed[:8]
-	if code != 0 || !strings.Contains(out, entry+" (carried from t:"+reviewed[:8]+": the diff is unchanged)\n") ||
+	if code != 0 || !strings.HasPrefix(out, "required: verify (the repo's verify kind), review (t:"+reviewed[:8]+" at HEAD)\n") ||
+		!strings.Contains(out, entry+" (carried from t:"+reviewed[:8]+": the diff is unchanged)\n") ||
 		!strings.Contains(out, "verified: "+entry+"; verify ok t:"+tree[:8]+"\n") {
 		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
 	}
@@ -536,6 +539,7 @@ func TestLandNamesOtherUnreadMail(t *testing.T) {
 	base := r.originMain(t)
 	out, errs, code := runCLI(t, as("app-012"), "land")
 	want := "unread: done from app-012.alpha (branch lead-alpha at 1a2b3c4d); reply to job j1 (review ok); message from app-012.beta\n" +
+		"required: verify (the repo's verify kind)\n" +
 		"lease land.repo\n" + "fetch origin/main " + base[:8] + "\n"
 	if code != 0 || !strings.HasPrefix(out, want) || !strings.Contains(out, "landed ") {
 		t.Fatalf("land: %d\n%s\nwant prefix\n%s\nerr %q", code, out, want, errs)
@@ -581,7 +585,7 @@ func TestLandReadsTheInboxAgainUnderTheLease(t *testing.T) {
 	case code := <-res:
 		// prepare read an empty inbox (it got as far as waiting); the read
 		// under the lease found the message.
-		if code != 3 || out.String() != "waiting for land.repo (held by app-011)\nlease land.repo\n" ||
+		if code != 3 || out.String() != "required: verify (the repo's verify kind)\nwaiting for land.repo (held by app-011)\nlease land.repo\n" ||
 			errb.String() != "bmesh: refused: 1 unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh land again\n" {
 			t.Fatalf("land: %d\n%s\nerr %q", code, out.String(), errb.String())
 		}
@@ -592,4 +596,125 @@ func TestLandReadsTheInboxAgainUnderTheLease(t *testing.T) {
 		t.Fatal("land pushed")
 	}
 	assertNoLeases(t, c, ctx)
+}
+
+// putReview records an ok review with no patch-id for HEAD's tree, as a
+// review routine did before results recorded the diff they read; it
+// returns the tree.
+func putReview(t *testing.T, c *mesh.Client, ctx context.Context) string {
+	t.Helper()
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
+	if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "review", Tree: tree, Commit: gitOut(t, "rev-parse", "HEAD"),
+		OK: true, Model: "claude-opus-5-5", By: "routine.review.x"}); err != nil {
+		t.Fatal(err)
+	}
+	return tree
+}
+
+// A reviewed branch whose land stopped on a conflict and that was then
+// rebased by hand still requires its review: the resolution changed the
+// diff, so land refuses with the --again line and pushes nothing.
+func TestLandRequiresTheReviewAfterAHandRebase(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	writeFile(t, filepath.Join(r.wt, "a.txt"), "ONE\ntwo\nthree\n")
+	meshtest.Git(t, r.wt, "commit", "-qam", "lead a")
+	reviewed := putReview(t, c, ctx)
+	r.pushOther(t, "c.txt", "c\n")
+	moved := r.pushOther(t, "a.txt", "uno\ntwo\nthree\n")
+	if _, errs, code := runCLI(t, as("app-012"), "land"); code != 3 || !strings.Contains(errs, "conflicts in a.txt") {
+		t.Fatalf("first land: %d %q", code, errs)
+	}
+
+	// The lead rebases by hand, keeping its line.
+	if err := gitQuiet(r.wt, "rebase", "origin/main"); err == nil {
+		t.Fatal("rebase did not conflict")
+	}
+	writeFile(t, filepath.Join(r.wt, "a.txt"), "ONE\ntwo\nthree\n")
+	meshtest.Git(t, r.wt, "add", "a.txt")
+	meshtest.Git(t, r.wt, "-c", "core.editor=true", "rebase", "--continue")
+	rebased := gitOut(t, "rev-parse", "HEAD")
+
+	out, errs, code := runCLI(t, as("app-012"), "land")
+	if code != 3 || !strings.HasPrefix(out, "required: verify (the repo's verify kind), review (t:"+reviewed[:8]+" before the rebase at "+rebased[:8]+")\n") ||
+		!strings.Contains(errs, "review has a result for t:"+reviewed[:8]) || !strings.Contains(errs, "bmesh routine queue review --again") {
+		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+	}
+	if r.originMain(t) != moved {
+		t.Fatal("land pushed")
+	}
+	assertNoLeases(t, c, ctx)
+}
+
+// A hand rebase through a conflict whose resolution left the diff as it
+// was carries the review from before it onto the line, and done accepts it.
+func TestLandCarriesTheReviewAcrossAHandRebase(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	if _, errs, code := runCLI(t, as("app-012"), "started"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	// A change to a.txt and its revert: the diff is b.txt alone, and the
+	// rebase still stops on a.txt.
+	writeFile(t, filepath.Join(r.wt, "a.txt"), "ONE\ntwo\nthree\n")
+	meshtest.Git(t, r.wt, "commit", "-qam", "lead a")
+	writeFile(t, filepath.Join(r.wt, "a.txt"), "one\ntwo\nthree\n")
+	meshtest.Git(t, r.wt, "commit", "-qam", "lead a back")
+	reviewed := putReview(t, c, ctx)
+	r.pushOther(t, "a.txt", "uno\ntwo\nthree\n")
+	if _, errs, code := runCLI(t, as("app-012"), "land"); code != 3 || !strings.Contains(errs, "conflicts in a.txt") {
+		t.Fatalf("first land: %d %q", code, errs)
+	}
+	// Resolved by hand for main's side: both a.txt commits fall away.
+	meshtest.Git(t, r.wt, "rebase", "-X", "ours", "origin/main")
+	rebased := gitOut(t, "rev-parse", "HEAD")
+
+	out, errs, code := runCLI(t, as("app-012"), "land")
+	tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+	entry := "review ok t:" + tree[:8] + " m:claude-opus-5-5 c:" + reviewed[:8]
+	if code != 0 || !strings.HasPrefix(out, "required: verify (the repo's verify kind), review (t:"+reviewed[:8]+" before the rebase at "+rebased[:8]+")\n") ||
+		!strings.Contains(out, entry+" (carried from t:"+reviewed[:8]+": the rebase left the diff unchanged)\n") {
+		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+	}
+	if front := r.specOnOrigin(t); !strings.Contains(front, "verified: "+entry+"; verify ok t:"+tree[:8]+"\n") {
+		t.Fatalf("spec on origin:\n%s", front)
+	}
+	rec := gitOut(t, "rev-parse", "HEAD")
+	if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", rec); code != 0 || out != "done app-012 "+rec[:8]+"\n" {
+		t.Fatalf("done: %d %q %q", code, out, errs)
+	}
+}
+
+// A review's findings fixed in a commit on top land on verify alone, the
+// fix's tree having no review, whether the branch is then rebased by hand
+// onto a main that moved or not: the head before the rebase is the fix's.
+func TestLandAFixedReviewOnVerifyAlone(t *testing.T) {
+	for _, rebase := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unrebased", true: "rebased"}[rebase], func(t *testing.T) {
+			c, ctx := setup(t)
+			r := newLandRepo(t)
+			putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+			putReview(t, c, ctx)
+			writeFile(t, filepath.Join(r.wt, "b.txt"), "b fixed\n")
+			meshtest.Git(t, r.wt, "commit", "-qam", "the review's findings")
+			r.pushOther(t, "c.txt", "c\n")
+			if rebase {
+				meshtest.Git(t, r.wt, "fetch", "-q", "origin")
+				meshtest.Git(t, r.wt, "rebase", "-q", "origin/main")
+			}
+			out, errs, code := runCLI(t, as("app-012"), "land")
+			tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+			if code != 0 || !strings.HasPrefix(out, "required: verify (the repo's verify kind)\n") ||
+				!strings.Contains(out, "verified: verify ok t:"+tree[:8]+"\n") {
+				t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+			}
+		})
+	}
+}
+
+// gitQuiet runs git in dir and reports whether it failed.
+func gitQuiet(dir string, args ...string) error {
+	return exec.Command("git", append([]string{"-C", dir}, args...)...).Run()
 }

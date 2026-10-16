@@ -244,4 +244,29 @@ func TestSpecVerifiedComposesAndWrites(t *testing.T) {
 	if _, _, code := runCLI(t, nil, "spec"); code != 2 {
 		t.Fatalf("bare spec: %d", code)
 	}
+
+	// --commit composes from that commit's tree, not HEAD's, and writes into
+	// this worktree's spec file.
+	reviewed := gitOut(t, "rev-parse", "HEAD")
+	meshtest.Git(t, repo, "commit", "-qam", "verified")
+	if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "review", Tree: tree, OK: true, Model: "claude-opus-5-5", By: "h"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, errs, code := runCLI(t, nil, "spec", "verified"); code != 3 || errs != none {
+		t.Fatalf("HEAD has none: %d %q", code, errs)
+	}
+	line = "verified: review ok t:" + tree[:8] + " m:claude-opus-5-5; verify ok t:" + tree[:8] + "\n"
+	out, errs, code = runCLI(t, nil, "spec", "verified", "--spec", "012", "--commit", reviewed[:8], "--write")
+	if code != 0 || out != line+"wrote "+specPath+"\n" {
+		t.Fatalf("--commit: %d %q %q", code, out, errs)
+	}
+	if b, _ := os.ReadFile(specPath); !strings.Contains(string(b), line) {
+		t.Fatalf("file:\n%s", b)
+	}
+	if _, errs, code := runCLI(t, nil, "spec", "verified", "--commit", "HEAD"); code != 3 || errs != none {
+		t.Fatalf("--commit HEAD: %d %q", code, errs)
+	}
+	if _, errs, code := runCLI(t, nil, "spec", "verified", "--commit", "nope"); code != 2 || !strings.Contains(errs, `--commit "nope" is not a commit`) {
+		t.Fatalf("bad commit: %d %q", code, errs)
+	}
 }

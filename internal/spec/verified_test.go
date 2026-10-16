@@ -97,7 +97,7 @@ func TestComposeFromResultsAtHead(t *testing.T) {
 	commitSpec(t, repo, "building", "")
 	tree := headTree(t, repo)
 
-	if got, err := ComposeVerified(ctx, c, repo); err != nil || len(got) != 0 {
+	if got, err := ComposeVerified(ctx, c, repo, "HEAD"); err != nil || len(got) != 0 {
 		t.Fatalf("no results: %+v %v", got, err)
 	}
 	for _, r := range []mesh.Result{
@@ -111,7 +111,7 @@ func TestComposeFromResultsAtHead(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, err := ComposeVerified(ctx, c, repo)
+	got, err := ComposeVerified(ctx, c, repo, "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestComposeFromResultsAtHead(t *testing.T) {
 	if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "review", Tree: tree, Model: "claude-opus-5-5", Args: []string{"y"}, At: "2026-10-04T10:00:00Z", By: "h"}); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := ComposeVerified(ctx, c, repo); len(got) != 2 || got[0].OK {
+	if got, _ := ComposeVerified(ctx, c, repo, "HEAD"); len(got) != 2 || got[0].OK {
 		t.Fatalf("newest wins: %+v", got)
 	}
 }
@@ -176,7 +176,7 @@ func TestComposeCarriesAReviewOfTheSameDiff(t *testing.T) {
 		t.Fatal("the rebase left the tree")
 	}
 	put(mesh.Result{Kind: "verify", Tree: tree, OK: true, At: "2026-10-02T10:00:00Z"})
-	got, err := ComposeVerified(ctx, c, repo)
+	got, err := ComposeVerified(ctx, c, repo, "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,18 +190,18 @@ func TestComposeCarriesAReviewOfTheSameDiff(t *testing.T) {
 
 	// A result at HEAD's own tree wins over a carried one.
 	put(mesh.Result{Kind: "review", Tree: tree, OK: true, Model: "claude-opus-5-5", At: "2026-09-01T10:00:00Z"})
-	if got, _ := ComposeVerified(ctx, c, repo); len(got) != 2 || got[0].Carried != "" || got[0].Tree8 != tree[:8] {
+	if got, _ := ComposeVerified(ctx, c, repo, "HEAD"); len(got) != 2 || got[0].Carried != "" || got[0].Tree8 != tree[:8] {
 		t.Fatalf("own tree wins: %+v", got)
 	}
 
 	// A changed hunk is another diff: nothing carries.
 	meshtest.CommitFiles(t, repo, map[string]string{"a.txt": "ONE\ntwo\nthree\nfour\nfive\nsix\nSEVEN\n"})
-	if got, _ := ComposeVerified(ctx, c, repo); len(got) != 0 {
+	if got, _ := ComposeVerified(ctx, c, repo, "HEAD"); len(got) != 0 {
 		t.Fatalf("changed hunk: %+v", got)
 	}
 	// On main there is no diff to carry a review to.
 	meshtest.Git(t, repo, "checkout", "-q", "main")
-	if got, _ := ComposeVerified(ctx, c, repo); len(got) != 0 {
+	if got, _ := ComposeVerified(ctx, c, repo, "HEAD"); len(got) != 0 {
 		t.Fatalf("on main: %+v", got)
 	}
 }

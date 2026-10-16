@@ -40,12 +40,28 @@ type lander struct {
 	origin   bool
 	base     string // origin/main, or main without an origin
 
-	oldHead, oldTree, oldBase string                 // the branch before land touched it
-	oldResults                map[string]mesh.Result // per kind at oldTree: its newest result, a failing one when any model's newest fails
-	oldNewest                 []mesh.Result          // at oldTree: the newest result per kind and model
-	required                  []string               // the kinds the landed tree must carry
+	before   map[string]*source // per kind with a result before land touched the branch: where it is
+	required []string           // the kinds the landed tree must carry
 
 	landed string // the commit main points at after the push
+}
+
+// source is where a required kind's result was before land touched the
+// branch: HEAD as it stood, or the head a rebase by hand rewrote.
+type source struct {
+	head, tree string
+	base       string        // head's fork point from main, set at the first fetch
+	rebase     string        // the commit the rebase made of head; "" for HEAD as it stood
+	result     mesh.Result   // the kind's newest result at tree, a failing one when any model's newest fails
+	newest     []mesh.Result // the kind's newest result per model at tree
+}
+
+// String says where the result is, for land's required line.
+func (s *source) String() string {
+	if s.rebase == "" {
+		return "t:" + s.tree[:8] + " at HEAD"
+	}
+	return "t:" + s.tree[:8] + " before the rebase at " + s.rebase[:8]
 }
 
 // cmdLand lands the worktree's branch on main under the lease land.<repo>:
@@ -130,8 +146,9 @@ func (a *app) cmdLand(args []string) error {
 }
 
 // acquireWait takes the one place of slot for holder, trying again every
-// landPoll while someone else holds it; it names the holder once per holder
-// and gives up after wait (exit 5).
+// landPoll while someone else holds it (at once when it was released
+// between the try and the look); it names the holder once per holder and
+// gives up after wait (exit 5).
 func (a *app) acquireWait(slot, holder string, ttl, wait time.Duration) (string, error) {
 	deadline := time.Now().Add(wait)
 	said := ""
@@ -144,11 +161,13 @@ func (a *app) acquireWait(slot, holder string, ttl, wait time.Duration) (string,
 		}
 		by := "someone"
 		if leases, err := mesh.ListLeases(ctx, a.client); err == nil {
-			for _, l := range leases {
-				if l.Slot == slot {
-					by = l.Holder
-				}
+			i := slices.IndexFunc(leases, func(l mesh.Lease) bool { return l.Slot == slot })
+			if i < 0 {
+				// Released since the try: try again at once.
+				cancel()
+				continue
 			}
+			by = leases[i].Holder
 		}
 		cancel()
 		if by != said {
@@ -162,9 +181,12 @@ func (a *app) acquireWait(slot, holder string, ttl, wait time.Duration) (string,
 	}
 }
 
-// prepare refuses a worktree land can't start from and reads the branch as
-// it stands: its head, tree and the results recorded there, which name the
-// kinds the landed tree must carry (verify always, when the repo has it).
+// prepare refuses a worktree land can't start from and reads the results
+// recorded for the branch, which name the kinds the landed tree must carry
+// (verify always, when the repo has it): those at HEAD's tree and, when HEAD
+// is a commit a rebase made, those at the tree of the head it rewrote, as if
+// land had done that rebase itself. A kind takes the nearest head with a
+// result for it. It prints the kinds and where each came from.
 func (l *lander) prepare(ctx context.Context) error {
 	if err := refuseDirty(); err != nil {
 		return err
@@ -185,45 +207,74 @@ func (l *lander) prepare(ctx context.Context) error {
 	if l.origin {
 		l.base = "origin/main"
 	}
-	if l.oldHead, err = gitIn(ctx, l.top, "rev-parse", "HEAD"); err != nil {
+	head, err := gitIn(ctx, l.top, "rev-parse", "HEAD")
+	if err != nil {
 		return err
 	}
-	if l.oldTree, err = gitIn(ctx, l.top, "rev-parse", "HEAD^{tree}"); err != nil {
-		return err
-	}
+	heads := append([]source{{head: head}}, rebasedFrom(ctx, l.top, b, head)...)
 	all, err := mesh.ListAllResults(ctx, l.a.client)
 	if err != nil {
 		return err
 	}
-	// The newest result per (kind, model), as spec verified composes them;
-	// a kind is as good as its worst model.
-	type group struct{ kind, model string }
-	newest := map[group]mesh.Result{}
-	for _, r := range all {
-		g := group{r.Kind, r.Model}
-		if old, ok := newest[g]; r.Tree == l.oldTree && (!ok || spec.Newer(r.At, old.At)) {
-			newest[g] = r
+	l.before = map[string]*source{}
+	for _, h := range heads {
+		if h.tree, err = gitIn(ctx, l.top, "rev-parse", h.head+"^{tree}"); err != nil {
+			return err
+		}
+		// The newest result per (kind, model), as spec verified composes
+		// them; a kind is as good as its worst model.
+		type group struct{ kind, model string }
+		newest := map[group]mesh.Result{}
+		for _, r := range all {
+			g := group{r.Kind, r.Model}
+			if old, ok := newest[g]; r.Tree == h.tree && (!ok || spec.Newer(r.At, old.At)) {
+				newest[g] = r
+			}
+		}
+		at := map[string]*source{}
+		for g, r := range newest {
+			if _, ok := l.before[g.kind]; ok {
+				continue
+			}
+			src, ok := at[g.kind]
+			if !ok {
+				src = &source{head: h.head, tree: h.tree, rebase: h.rebase, result: r}
+				at[g.kind] = src
+			}
+			src.newest = append(src.newest, r)
+			if src.result.OK && !r.OK {
+				src.result = r
+			}
+		}
+		for k, src := range at {
+			l.before[k] = src
 		}
 	}
-	l.oldResults = map[string]mesh.Result{}
-	l.oldNewest = nil
-	for g, r := range newest {
-		l.oldNewest = append(l.oldNewest, r)
-		if old, ok := l.oldResults[g.kind]; !ok || old.OK && !r.OK {
-			l.oldResults[g.kind] = r
-		}
-	}
-	for k := range l.oldResults {
+	for k := range l.before {
 		l.required = append(l.required, k)
 	}
 	_, kinds, err := cwdKinds()
 	if err != nil {
 		return err
 	}
-	if slices.ContainsFunc(kinds, func(k kind.Kind) bool { return k.Name == "verify" }) && !slices.Contains(l.required, "verify") {
+	repoVerify := slices.ContainsFunc(kinds, func(k kind.Kind) bool { return k.Name == "verify" })
+	if repoVerify && !slices.Contains(l.required, "verify") {
 		l.required = append(l.required, "verify")
 	}
 	sort.Strings(l.required)
+	var said []string
+	for _, k := range l.required {
+		switch {
+		case k == "verify" && repoVerify:
+			said = slices.Insert(said, 0, "verify (the repo's verify kind)")
+		default:
+			said = append(said, fmt.Sprintf("%s (%s)", k, l.before[k]))
+		}
+	}
+	if len(said) == 0 {
+		said = []string{"nothing"}
+	}
+	fmt.Fprintf(l.a.stdout, "required: %s\n", strings.Join(said, ", "))
 	return nil
 }
 
@@ -256,6 +307,39 @@ func (l *lander) mail(ctx context.Context, say bool) error {
 		fmt.Fprintf(l.a.stdout, "unread: %s\n", strings.Join(others, "; "))
 	}
 	return nil
+}
+
+// rebaseRE matches a reflog entry a finished rebase wrote on the branch
+// (rebase, rebase -i, pull --rebase; "rebase finished" from older git).
+var rebaseRE = regexp.MustCompile(`^(rebase|pull)\b[^:]*\(finish\): |^rebase finished: `)
+
+// rebasedFrom reads the branch's reflog, newest first, for a rebase that
+// finished at head and returns the head it rewrote (the entry just before
+// it), and so on back while that head was itself made by a rebase: the
+// heads land would have rebased itself, nearest first. A head with commits
+// on top of the rebase, or a branch with no reflog, returns none.
+func rebasedFrom(ctx context.Context, dir, branch, head string) []source {
+	out, err := gitIn(ctx, dir, "reflog", "show", "--format=%H%x00%gs", "refs/heads/"+branch, "--")
+	if err != nil {
+		return nil
+	}
+	type entry struct{ sha, subject string }
+	var log []entry
+	for _, line := range strings.Split(out, "\n") {
+		if sha, subject, ok := strings.Cut(line, "\x00"); ok {
+			log = append(log, entry{sha, subject})
+		}
+	}
+	var heads []source
+	for i, cur := 0, head; ; {
+		k := slices.IndexFunc(log[i:], func(e entry) bool { return e.sha == cur && rebaseRE.MatchString(e.subject) })
+		if k < 0 || i+k+1 >= len(log) || log[i+k+1].sha == cur {
+			return heads
+		}
+		i += k + 1
+		heads = append(heads, source{head: log[i].sha, rebase: cur})
+		cur = log[i].sha
+	}
 }
 
 // land runs the steps under the lease, starting again from the fetch once
@@ -304,9 +388,11 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 		return false, err
 	}
 	fmt.Fprintf(out, "fetch %s %s\n", l.base, baseSHA[:8])
-	if l.oldBase == "" {
-		if l.oldBase, err = git("merge-base", l.oldHead, baseSHA); err != nil {
-			return false, err
+	for _, src := range l.before {
+		if src.base == "" {
+			if src.base, err = git("merge-base", src.head, baseSHA); err != nil {
+				return false, err
+			}
 		}
 	}
 
@@ -436,8 +522,8 @@ func (l *lander) mainMoved(ctx context.Context, baseSHA string) bool {
 // inline kind runs (a deterministic one is answered from its record);
 // another must have its own result there or one carried to it by patch-id
 // (spec.ComposeVerified), unless the branch had an ok one before the rebase
-// that recorded no patch-id and the rebase left the diff unchanged, which is
-// said and left off the line. It returns the verified entries for the tree,
+// (land's, or the one by hand its source names) that recorded no patch-id
+// and the rebase left the diff unchanged, which is carried. It returns the verified entries for the tree,
 // refusing a failing one.
 func (l *lander) results(ctx context.Context, merged, tree, baseSHA string) ([]spec.Entry, error) {
 	out := l.a.stdout
@@ -474,7 +560,7 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA string) ([]s
 	}
 	composeCtx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	entries, err := spec.ComposeVerified(composeCtx, l.a.client, l.top)
+	entries, err := spec.ComposeVerified(composeCtx, l.a.client, l.top, "HEAD")
 	if err != nil {
 		return nil, err
 	}
@@ -498,31 +584,34 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA string) ([]s
 		if len(found) > 0 {
 			continue
 		}
-		old := l.oldResults[name]
-		if !old.OK {
+		src := l.before[name]
+		if src == nil {
+			return nil, fail(exitRefused, "refused: %s has no result for t:%s; run it, then run bmesh land again", name, tree[:8])
+		}
+		if !src.result.OK {
 			return nil, fail(exitRefused, "refused: %s failed at t:%s, before the rebase; fix what it found, commit and run bmesh land again",
-				name, l.oldTree[:8])
+				name, src.tree[:8])
 		}
 		// A model's result that recorded the diff it read and did not
 		// carry read another diff than this one, whichever model's result
 		// is the kind's worst.
-		same := !slices.ContainsFunc(l.oldNewest, func(r mesh.Result) bool { return r.Kind == name && r.PatchID != "" })
+		same := !slices.ContainsFunc(src.newest, func(r mesh.Result) bool { return r.PatchID != "" })
 		if same {
-			if same, err = samePatch(ctx, l.top, l.oldBase, l.oldHead, baseSHA, merged); err != nil {
+			if same, err = samePatch(ctx, l.top, src.base, src.head, baseSHA, merged); err != nil {
 				return nil, err
 			}
 		}
 		if !same {
 			return nil, fail(exitRefused, "refused: %s has a result for t:%s but none for t:%s, and the rebase changed the diff: "+
 				"run it again on this tree (for review: bmesh routine queue review --again --go --text \"base: %s\", then routine wait), "+
-				"then run bmesh land again", name, l.oldTree[:8], tree[:8], baseSHA)
+				"then run bmesh land again", name, src.tree[:8], tree[:8], baseSHA)
 		}
-		carried, err := l.carry(ctx, name, tree)
+		carried, err := l.carry(ctx, src, tree)
 		if err != nil {
 			return nil, err
 		}
 		if len(carried) == 0 {
-			fmt.Fprintf(out, "%s ok t:%s carried: the rebase left the diff unchanged (not on the verified line)\n", name, l.oldTree[:8])
+			fmt.Fprintf(out, "%s ok t:%s carried: the rebase left the diff unchanged (not on the verified line)\n", name, src.tree[:8])
 		}
 		for _, e := range carried {
 			fmt.Fprintf(out, "%s (carried from t:%s: the rebase left the diff unchanged)\n", e, e.Carried)
@@ -547,22 +636,22 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA string) ([]s
 	return entries, nil
 }
 
-// carry puts kind's model results at oldTree, which read the diff the
-// rebase left unchanged and recorded no patch-id, on the line for tree as
-// carried entries: each is stored again with the patch-id of the diff it
-// read (the fork point to the old head), so done matches it as it matches
-// any carried entry. A result with no model has nothing for done to match
-// and stays off the line.
-func (l *lander) carry(ctx context.Context, name, tree string) ([]spec.Entry, error) {
+// carry puts a kind's model results at its source's tree, which read the
+// diff the rebase left unchanged and recorded no patch-id, on the line for
+// tree as carried entries: each is stored again with the patch-id of the
+// diff it read (the fork point to the source's head), so done matches it as
+// it matches any carried entry. A result with no model has nothing for done
+// to match and stays off the line.
+func (l *lander) carry(ctx context.Context, src *source, tree string) ([]spec.Entry, error) {
 	var out []spec.Entry
 	patch := ""
-	for _, r := range l.oldNewest {
-		if r.Kind != name || r.Model == "" || !r.OK || r.PatchID != "" {
+	for _, r := range src.newest {
+		if r.Model == "" || !r.OK || r.PatchID != "" {
 			continue
 		}
 		if patch == "" {
 			var err error
-			if patch, err = checkout.PatchID(ctx, l.top, l.oldBase, l.oldHead); err != nil {
+			if patch, err = checkout.PatchID(ctx, l.top, src.base, src.head); err != nil {
 				return nil, err
 			}
 			if patch == "" {
@@ -573,7 +662,7 @@ func (l *lander) carry(ctx context.Context, name, tree string) ([]spec.Entry, er
 		if err := mesh.PutResult(ctx, l.a.client, r); err != nil {
 			return nil, err
 		}
-		out = append(out, spec.Entry{Kind: name, OK: true, Tree8: tree[:8], Model: r.Model, Carried: l.oldTree[:8]})
+		out = append(out, spec.Entry{Kind: r.Kind, OK: true, Tree8: tree[:8], Model: r.Model, Carried: src.tree[:8]})
 	}
 	return out, nil
 }

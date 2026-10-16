@@ -141,9 +141,11 @@ commands:
                                            (then the restart this box's daemon needs, when it runs another build)
   update --notice                          print the daemon's behind-main notice (<state dir>/update.txt), if any
   land [--spec NNN] [--ttl D] [--wait D]   land this worktree's branch on main under the lease land.<repo> (waits
-                                           while another lead holds it): fetch, rebase, run or require the results,
-                                           write verified, set done with merged and branch, commit, push; a push
-                                           main refuses starts again from the fetch once; prints landed <sha8>
+                                           while another lead holds it): print the kinds it requires (a branch
+                                           rebased by hand requires what the head before the rebase had), fetch,
+                                           rebase, run or require the results, write verified, set done with merged
+                                           and branch, commit, push; a push main refuses starts again from the fetch
+                                           once; prints landed <sha8>
   result find <kind> [--commit C] [--model M] [--json] [-- args...]
                                            print the result of kind at the commit's tree, without --model every
                                            model's (exit 3 when none)
@@ -171,8 +173,9 @@ commands:
   spec set --id NNN --status S [--repo R] [--from A,B] [--field K=V]...
                                            set a spec's status and fields (--from refuses another status)
   spec template [--repo R]                 print the half-pager (the repo's .bmesh/briefs/half-pager.md, else embedded)
-  spec verified [--spec NNN] [--write]     print the verified line from the results for HEAD's tree (exit 3 when
-                                           none); --write sets it in the spec's file in this worktree
+  spec verified [--spec NNN] [--commit C] [--write]
+                                           print the verified line from the results for HEAD's tree, or C's (exit 3
+                                           when none); --write sets it in the spec's file in this worktree
 `
 
 // exitErr carries an exit code and the message printed as "bmesh: <msg>".

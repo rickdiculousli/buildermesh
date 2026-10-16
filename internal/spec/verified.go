@@ -121,13 +121,13 @@ func Tree(repoPath, rev string) (string, error) {
 }
 
 // ComposeVerified makes an entry per (kind, model) from the results recorded
-// for the tree of the repo's HEAD, whatever their args; the newest wins. A
-// (kind, model) with none there takes the newest model result recorded with
-// HEAD's patch-id (the diff from its merge-base with main to HEAD) at
-// another tree, as an entry carried from that tree. Entries are sorted by
-// kind, then model.
-func ComposeVerified(ctx context.Context, c *mesh.Client, repoPath string) ([]Entry, error) {
-	tree, err := Tree(repoPath, "HEAD")
+// for the tree of rev (HEAD, or a commit) in the repo, whatever their args;
+// the newest wins. A (kind, model) with none there takes the newest model
+// result recorded with rev's patch-id (the diff from its merge-base with
+// main to rev) at another tree, as an entry carried from that tree. Entries
+// are sorted by kind, then model.
+func ComposeVerified(ctx context.Context, c *mesh.Client, repoPath, rev string) ([]Entry, error) {
+	tree, err := Tree(repoPath, rev)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func ComposeVerified(ctx context.Context, c *mesh.Client, repoPath string) ([]En
 	if err != nil {
 		return nil, err
 	}
-	patch, err := headPatch(ctx, repoPath)
+	patch, err := revPatch(ctx, repoPath, rev)
 	if err != nil {
 		return nil, err
 	}
@@ -173,19 +173,19 @@ func ComposeVerified(ctx context.Context, c *mesh.Client, repoPath string) ([]En
 	return out, nil
 }
 
-// headPatch is the patch-id of the repo's diff from its merge-base with
-// main (origin/main when there is an origin) to HEAD: "" when HEAD is on
-// main or there is no main to measure from.
-func headPatch(ctx context.Context, repoPath string) (string, error) {
+// revPatch is the patch-id of the repo's diff from rev's merge-base with
+// main (origin/main when there is an origin) to rev: "" when rev is on main
+// or there is no main to measure from.
+func revPatch(ctx context.Context, repoPath, rev string) (string, error) {
 	base := "main"
 	if _, err := gitCtx(ctx, repoPath, "remote", "get-url", "origin"); err == nil {
 		base = "origin/main"
 	}
-	mb, err := gitCtx(ctx, repoPath, "merge-base", base, "HEAD")
+	mb, err := gitCtx(ctx, repoPath, "merge-base", base, rev)
 	if err != nil {
 		return "", nil
 	}
-	return checkout.PatchID(ctx, repoPath, strings.TrimSpace(mb), "HEAD")
+	return checkout.PatchID(ctx, repoPath, strings.TrimSpace(mb), rev)
 }
 
 // Newer reports whether At a is later than b, comparing the strings when
