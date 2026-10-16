@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
 // executorSetup is setup plus a git repo that is lead demo-012's worktree
@@ -18,7 +19,7 @@ func executorSetup(t *testing.T) (*mesh.Client, string, string) {
 	t.Helper()
 	c, ctx := setup(t)
 	repo := gitRepo(t)
-	runGit(t, repo, "checkout", "-b", "t3code/lead")
+	meshtest.Git(t, repo, "checkout", "-b", "t3code/lead")
 	root := filepath.Join(t.TempDir(), "worktrees")
 	cfg := os.Getenv("BMESH_CONFIG")
 	f, err := os.OpenFile(cfg, os.O_APPEND|os.O_WRONLY, 0)
@@ -132,7 +133,7 @@ func TestExecutorDoneReportsWorktreeBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, n.Worktree, "branch", "-m", "t3code/renamed")
+	meshtest.Git(t, n.Worktree, "branch", "-m", "t3code/renamed")
 	head := gitLines(t, n.Worktree, "rev-parse", "HEAD")[0]
 	lead, _ := mesh.ParsePath("demo-012")
 	done := func() mesh.Message {
@@ -153,8 +154,8 @@ func TestExecutorDoneReportsWorktreeBranch(t *testing.T) {
 		m.Text != "done from demo-012.alpha: branch t3code/renamed at "+head[:8]+": x" {
 		t.Fatalf("report %+v %+v", m, *m.Report)
 	}
-	runGit(t, n.Worktree, "checkout", "--detach")
-	runGit(t, n.Worktree, "commit", "--allow-empty", "-m", "detached")
+	meshtest.Git(t, n.Worktree, "checkout", "--detach")
+	meshtest.Git(t, n.Worktree, "commit", "--allow-empty", "-m", "detached")
 	head = gitLines(t, n.Worktree, "rev-parse", "HEAD")[0]
 	if err := mesh.ResetState(ctx, c, "demo-012.alpha"); err != nil {
 		t.Fatal(err)
@@ -229,7 +230,7 @@ func TestExecutorNewRollsBackOnWorktreeFailure(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(hooks, "post-checkout"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, repo, "config", "core.hooksPath", hooks)
+	meshtest.Git(t, repo, "config", "core.hooksPath", hooks)
 	out, errs, code = runCLI(t, nil, "executor", "new", "--name", "alpha")
 	if code != 1 || out != "" || !strings.Contains(errs, "git worktree add") {
 		t.Fatalf("hook failure: %d %q %q", code, out, errs)
@@ -240,7 +241,7 @@ func TestExecutorNewRollsBackOnWorktreeFailure(t *testing.T) {
 	if n := worktrees(t, repo); n != 1 || exists(filepath.Join(root, "demo", "demo-012.alpha")) {
 		t.Fatalf("worktree left behind after hook failure: %d", n)
 	}
-	runGit(t, repo, "config", "--unset", "core.hooksPath")
+	meshtest.Git(t, repo, "config", "--unset", "core.hooksPath")
 	if _, errs, code := runCLI(t, nil, "executor", "new", "--name", "alpha", "--json"); code != 0 {
 		t.Fatalf("retry: %d %q", code, errs)
 	}
@@ -265,8 +266,8 @@ func TestExecutorListShowsTree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(wt, "b.txt"), []byte("b\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, wt, "add", "-A")
-	runGit(t, wt, "commit", "-m", "b")
+	meshtest.Git(t, wt, "add", "-A")
+	meshtest.Git(t, wt, "commit", "-m", "b")
 	head := gitLines(t, wt, "rev-parse", "--short", "HEAD")[0]
 	out, errs, code := runCLI(t, nil, "executor", "list")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -300,8 +301,8 @@ func TestExecutorRemoveRefusesUnmerged(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(wt, "b.txt"), []byte("b\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, wt, "add", "-A")
-	runGit(t, wt, "commit", "-m", "b")
+	meshtest.Git(t, wt, "add", "-A")
+	meshtest.Git(t, wt, "commit", "-m", "b")
 	out, errs, code := runCLI(t, nil, "executor", "remove", "alpha")
 	if code != 3 || out != "" || errs != "bmesh: refused: branch t3code/lead-alpha is not merged into t3code/lead; merge it or pass --force\n" {
 		t.Fatalf("unmerged: %d %q %q", code, out, errs)
@@ -309,7 +310,7 @@ func TestExecutorRemoveRefusesUnmerged(t *testing.T) {
 	if !exists(wt) {
 		t.Fatal("worktree removed on refusal")
 	}
-	runGit(t, repo, "merge", "--ff-only", "t3code/lead-alpha")
+	meshtest.Git(t, repo, "merge", "--ff-only", "t3code/lead-alpha")
 	out, errs, code = runCLI(t, nil, "executor", "remove", "alpha")
 	if code != 0 || out != "removed demo-012.alpha\n" {
 		t.Fatalf("merged: %d %q %q", code, out, errs)
@@ -350,8 +351,8 @@ func TestExecutorRemoveRefusesUnmerged(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(wtb, "c.txt"), []byte("c\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, wtb, "add", "-A")
-	runGit(t, wtb, "commit", "-m", "c")
+	meshtest.Git(t, wtb, "add", "-A")
+	meshtest.Git(t, wtb, "commit", "-m", "c")
 	if err := os.WriteFile(filepath.Join(wtb, "d.txt"), []byte("d\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -215,37 +214,11 @@ func getJSON(t *testing.T, srv *httptest.Server, path string, status int, v any)
 	return string(b)
 }
 
-func git(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	full := append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"}, args...)
-	out, err := exec.Command("git", full...).CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, out)
-	}
-	return strings.TrimSpace(string(out))
-}
-
-// commit writes files (relative path to content) into repo and commits them.
-func commit(t *testing.T, repo string, files map[string]string) {
-	t.Helper()
-	for name, content := range files {
-		p := filepath.Join(repo, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		git(t, repo, "add", name)
-	}
-	git(t, repo, "commit", "-q", "-m", "files")
-}
-
 func TestTreeEndpoint(t *testing.T) {
 	ctx, c := connect(t)
 	repo := filepath.Join(t.TempDir(), "app")
-	git(t, filepath.Dir(repo), "init", "-q", "-b", "main", "app")
-	commit(t, repo, map[string]string{
+	meshtest.Git(t, filepath.Dir(repo), "init", "-q", "-b", "main", "app")
+	meshtest.CommitFiles(t, repo, map[string]string{
 		".bmesh/routines/review.toml": "model = \"m\"\nprompt = \"P\"\n",
 		".bmesh/routines/verify.toml": "mode = \"inline\"\ndeterministic = true\ncommand = \"echo ok\"\n",
 	})
@@ -365,11 +338,11 @@ func TestLeadPageReadsSpecFromOrigin(t *testing.T) {
 	// lead's own repo_path is another box's path.
 	root := t.TempDir()
 	origin, clone := filepath.Join(root, "origin"), filepath.Join(root, "clone")
-	git(t, root, "init", "-q", "-b", "main", "origin")
-	commit(t, origin, map[string]string{"docs/proposals/0042-map.md": specV1})
-	git(t, root, "clone", "-q", origin, clone)
+	meshtest.Git(t, root, "init", "-q", "-b", "main", "origin")
+	meshtest.CommitFiles(t, origin, map[string]string{"docs/proposals/0042-map.md": specV1})
+	meshtest.Git(t, root, "clone", "-q", origin, clone)
 	specV2 := strings.Replace(strings.Replace(specV1, "status: active", "status: done", 1), "first", "second", 1)
-	commit(t, origin, map[string]string{"docs/proposals/0042-map.md": specV2})
+	meshtest.CommitFiles(t, origin, map[string]string{"docs/proposals/0042-map.md": specV2})
 
 	later := filepath.Join(root, "later") // configured, but not cloned yet
 	cfg := &config.Config{
@@ -449,7 +422,7 @@ func TestLeadPageReadsSpecFromOrigin(t *testing.T) {
 	// after, from origin/main as the last background fetch left it, which
 	// starts the next one.
 	specV3 := strings.Replace(specV2, "# Map v1", "# Map v3", 1)
-	commit(t, origin, map[string]string{"docs/proposals/0042-map.md": specV3})
+	meshtest.CommitFiles(t, origin, map[string]string{"docs/proposals/0042-map.md": specV3})
 	getJSON(t, srv, "/api/lead/a", 200, &p)
 	if p.Spec == nil || p.Spec.Status != "active" {
 		t.Fatalf("cached spec %+v", p.Spec)
@@ -479,8 +452,8 @@ func TestLeadPageReadsSpecFromOrigin(t *testing.T) {
 		t.Fatalf("spec in a missing repo %+v", pc.Spec)
 	}
 	_ = waitFetch()
-	git(t, root, "init", "-q", "-b", "main", "later")
-	commit(t, later, map[string]string{"docs/proposals/0042-map.md": specV1})
+	meshtest.Git(t, root, "init", "-q", "-b", "main", "later")
+	meshtest.CommitFiles(t, later, map[string]string{"docs/proposals/0042-map.md": specV1})
 	getJSON(t, srv, "/api/lead/c", 200, &pc)
 	if pc.Spec == nil || pc.Spec.Title != "Map v1" {
 		t.Fatalf("spec once the repo exists %+v", pc.Spec)
@@ -511,8 +484,8 @@ func TestLeadPageReadsSpecFromOrigin(t *testing.T) {
 func TestRoutinesEndpointListsLeases(t *testing.T) {
 	ctx, c := connect(t)
 	repo := filepath.Join(t.TempDir(), "app")
-	git(t, filepath.Dir(repo), "init", "-q", "-b", "main", "app")
-	commit(t, repo, map[string]string{
+	meshtest.Git(t, filepath.Dir(repo), "init", "-q", "-b", "main", "app")
+	meshtest.CommitFiles(t, repo, map[string]string{
 		".bmesh/routines/verify.toml": "mode = \"fresh\"\ndeterministic = true\ncommand = \"echo ok\"\n",
 		".bmesh/routines/review.toml": "model = \"m\"\nprompt = \"P\"\n",
 		".bmesh/routines/fmt.toml":    "mode = \"inline\"\ndeterministic = true\ncommand = \"gofmt -l .\"\n",
@@ -585,8 +558,8 @@ func ledgerSpec(id, title, status, by string) string {
 func TestLeadPageChildrenAndRoundSpecs(t *testing.T) {
 	ctx, c := connect(t)
 	repo := filepath.Join(t.TempDir(), "app")
-	git(t, filepath.Dir(repo), "init", "-q", "-b", "main", "app")
-	commit(t, repo, map[string]string{
+	meshtest.Git(t, filepath.Dir(repo), "init", "-q", "-b", "main", "app")
+	meshtest.CommitFiles(t, repo, map[string]string{
 		"docs/proposals/README.md":      "# the lifecycle\n",
 		"docs/proposals/003-other.md":   ledgerSpec("003", "Other round", "done", "th-old"),
 		"docs/proposals/004-broken.md":  "no frontmatter\n",
@@ -594,11 +567,11 @@ func TestLeadPageChildrenAndRoundSpecs(t *testing.T) {
 	})
 	// Only main as it stands counts: 005 left it, 006 is on a branch. A
 	// malformed file is left out.
-	git(t, repo, "checkout", "-q", "-b", "side")
-	commit(t, repo, map[string]string{"docs/proposals/006-side.md": ledgerSpec("006", "Side", "proposed", "th-ux")})
-	git(t, repo, "checkout", "-q", "main")
-	git(t, repo, "rm", "-q", "docs/proposals/005-pending.md")
-	git(t, repo, "commit", "-q", "-m", "drop 005")
+	meshtest.Git(t, repo, "checkout", "-q", "-b", "side")
+	meshtest.CommitFiles(t, repo, map[string]string{"docs/proposals/006-side.md": ledgerSpec("006", "Side", "proposed", "th-ux")})
+	meshtest.Git(t, repo, "checkout", "-q", "main")
+	meshtest.Git(t, repo, "rm", "-q", "docs/proposals/005-pending.md")
+	meshtest.Git(t, repo, "commit", "-q", "-m", "drop 005")
 	cfg := &config.Config{Repos: map[string]config.Repo{"app": {Path: repo}}, Spec: config.SpecConfig{Glob: "docs/proposals/{id}-*.md"}}
 	for _, n := range []mesh.Node{
 		{Path: "a", Role: "lead", Repo: "app"},
@@ -661,7 +634,7 @@ func TestLeadPageChildrenAndRoundSpecs(t *testing.T) {
 
 	// Once they land, the round shows its children's specs by id, read
 	// from main's ledger: cached for a minute, then read again.
-	commit(t, repo, map[string]string{
+	meshtest.CommitFiles(t, repo, map[string]string{
 		"docs/proposals/007-eng.md": ledgerSpec("007", "Faster tests", "proposed", "th-eng"),
 		"docs/proposals/012-ux.md":  ledgerSpec("012", "Clearer map", "accepted", "th-ux"),
 	})

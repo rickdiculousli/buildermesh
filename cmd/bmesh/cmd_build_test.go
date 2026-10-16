@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
 // buildSetup is proposeSetup with the ledger replaced: specs 001 (done),
@@ -38,9 +39,9 @@ func buildSetup(t *testing.T) (*mesh.Client, string, string) {
 			t.Fatal(err)
 		}
 	}
-	runGit(t, repo, "add", "-A")
-	runGit(t, repo, "commit", "-m", "ledger")
-	runGit(t, repo, "push", "origin", "main")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "ledger")
+	meshtest.Git(t, repo, "push", "origin", "main")
 	return c, repo, log
 }
 
@@ -116,8 +117,8 @@ func TestBuildRecordsBuildingThenStartsTheLead(t *testing.T) {
 		t.Fatalf("again: %d %q", code, errs)
 	}
 	runCLI(t, nil, "spec", "set", "--repo", repo, "--id", "002", "--status", "accepted")
-	runGit(t, repo, "commit", "-qam", "reset")
-	runGit(t, repo, "push", "-q", "origin", "main")
+	meshtest.Git(t, repo, "commit", "-qam", "reset")
+	meshtest.Git(t, repo, "push", "-q", "origin", "main")
 	if _, err := mesh.WriteState(ctx, c, "demo-002", mesh.State{State: "working", By: "node"}); err != nil {
 		t.Fatal(err)
 	}
@@ -248,8 +249,8 @@ func TestBuildAcceptedOrdersAndCapsLeads(t *testing.T) {
 		}
 	}
 	runCLI(t, nil, "spec", "set", "--repo", repo, "--id", "002", "--status", "done", "--field", "merged=abc")
-	runGit(t, repo, "commit", "-qam", "002 done")
-	runGit(t, repo, "push", "-q", "origin", "main")
+	meshtest.Git(t, repo, "commit", "-qam", "002 done")
+	meshtest.Git(t, repo, "push", "-q", "origin", "main")
 	out, errs, code = runCLI(t, map[string]string{}, "--json", "build", "--accepted", "demo")
 	if code != 0 {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
@@ -326,8 +327,8 @@ func TestBuildFamilies(t *testing.T) {
 		}
 	}
 	runCLI(t, nil, "spec", "set", "--repo", repo, "--id", "002", "--status", "done", "--field", "merged=abc")
-	runGit(t, repo, "commit", "-qam", "002 done")
-	runGit(t, repo, "push", "-q", "origin", "main")
+	meshtest.Git(t, repo, "commit", "-qam", "002 done")
+	meshtest.Git(t, repo, "push", "-q", "origin", "main")
 	out, errs, code := runCLI(t, nil, "build", "--accepted", "demo")
 	if code != 0 || !strings.Contains(out, "started 003 Spec 003: demo-003 on claude-fable-5-1 (") ||
 		!strings.Contains(out, ", family demo-build-8)\n") || !strings.HasSuffix(out, "\nfamily demo-build-8\n") {

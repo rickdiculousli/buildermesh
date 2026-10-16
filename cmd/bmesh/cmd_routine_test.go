@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
 // kindRepo is gitRepo with kind files committed under .bmesh/routines.
@@ -24,8 +25,8 @@ func kindRepo(t *testing.T, kinds map[string]string) string {
 			t.Fatal(err)
 		}
 	}
-	runGit(t, repo, "add", "-A")
-	runGit(t, repo, "commit", "-m", "kinds")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "kinds")
 	return repo
 }
 
@@ -187,7 +188,7 @@ func TestQueueFromLinkedWorktreeNamesConfiguredRepo(t *testing.T) {
 	c, ctx := setup(t)
 	repo := kindRepo(t, map[string]string{"verify": "command = \"true\"\n"})
 	wt := filepath.Join(t.TempDir(), "thread-1")
-	runGit(t, repo, "worktree", "add", "--detach", wt)
+	meshtest.Git(t, repo, "worktree", "add", "--detach", wt)
 	t.Chdir(wt)
 	// No [repos] entry: the main repo's base name.
 	if got := queuedRepo(t, c, ctx); got != filepath.Base(repo) {
@@ -211,10 +212,10 @@ func TestQueueReviewOncePerBranch(t *testing.T) {
 	c, ctx := setup(t)
 	repo := kindRepo(t, map[string]string{"review": "models = [\"m1\"]\nprompt = \"check\"\n"})
 	landed := gitOut(t, "rev-parse", "HEAD")
-	runGit(t, repo, "checkout", "-q", "-b", "work")
+	meshtest.Git(t, repo, "checkout", "-q", "-b", "work")
 	os.WriteFile(filepath.Join(repo, "b.txt"), []byte("b\n"), 0o644)
-	runGit(t, repo, "add", "-A")
-	runGit(t, repo, "commit", "-qm", "b")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-qm", "b")
 	first := gitOut(t, "rev-parse", "HEAD")
 	// A review of main's commit (another lead's, landed) does not count.
 	if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "review", Tree: "t0", Commit: landed, OK: true, By: "routine.review.m1-1", Model: "m1", At: "2026-01-01T00:00:00Z"}); err != nil {
@@ -229,7 +230,7 @@ func TestQueueReviewOncePerBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.WriteFile(filepath.Join(repo, "b.txt"), []byte("fixed\n"), 0o644)
-	runGit(t, repo, "commit", "-qam", "fix")
+	meshtest.Git(t, repo, "commit", "-qam", "fix")
 	out, errs, code = runCLI(t, as("app-001"), "routine", "queue", "review")
 	if code != 3 || out != "" || !strings.Contains(errs, "this branch already has a review: review.t1.m1 (fail, commit "+first[:8]) ||
 		!strings.Contains(errs, "with --again") {
@@ -243,10 +244,10 @@ func TestQueueReviewOncePerBranch(t *testing.T) {
 		t.Fatalf("--again: %d %q %q", code, out, errs)
 	}
 	// Another branch from main is unreviewed.
-	runGit(t, repo, "checkout", "-q", "-b", "other", "main")
+	meshtest.Git(t, repo, "checkout", "-q", "-b", "other", "main")
 	os.WriteFile(filepath.Join(repo, "c.txt"), []byte("c\n"), 0o644)
-	runGit(t, repo, "add", "-A")
-	runGit(t, repo, "commit", "-qm", "c")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-qm", "c")
 	if out, errs, code := runCLI(t, as("app-001"), "routine", "queue", "review"); code != 0 || !strings.HasPrefix(out, "queued ") {
 		t.Fatalf("other branch: %d %q %q", code, out, errs)
 	}

@@ -4,36 +4,24 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-)
 
-func git(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	full := append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false",
-		"-c", "core.hooksPath=/dev/null"}, args...)
-	cmd := exec.Command("git", full...)
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
-	return strings.TrimSpace(string(out))
-}
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
+)
 
 func TestTmuxStartMakesWorktreeAndWindow(t *testing.T) {
 	log := useFake(t, "BMESH_TMUX_COMMAND", "fake-tmux.sh", "FAKE_TMUX_LOG")
 	t.Setenv("FAKE_TMUX_NO_SESSION", "1")
 	root := t.TempDir()
 	repo := filepath.Join(root, "demo")
-	git(t, root, "init", "-b", "main", repo)
+	meshtest.Git(t, root, "init", "-b", "main", repo)
 	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	git(t, repo, "add", "-A")
-	git(t, repo, "commit", "-m", "one")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "one")
 	brief := filepath.Join(root, "brief.md")
 	if err := os.WriteFile(brief, []byte("do the thing"), 0o644); err != nil {
 		t.Fatal(err)
@@ -47,7 +35,7 @@ func TestTmuxStartMakesWorktreeAndWindow(t *testing.T) {
 	if got != (Started{Thread: "th-9", Branch: "th-9", Worktree: wt}) {
 		t.Fatalf("started %+v", got)
 	}
-	if b := git(t, wt, "rev-parse", "--abbrev-ref", "HEAD"); b != "th-9" {
+	if b := meshtest.Git(t, wt, "rev-parse", "--abbrev-ref", "HEAD"); b != "th-9" {
 		t.Fatalf("worktree branch %q", b)
 	}
 	want := "has-session -t mesh\n" +
@@ -77,12 +65,12 @@ func TestTmuxStartAnswersDialogsBeforeTyping(t *testing.T) {
 	log := useFake(t, "BMESH_TMUX_COMMAND", "fake-tmux.sh", "FAKE_TMUX_LOG")
 	root := t.TempDir()
 	repo := filepath.Join(root, "demo")
-	git(t, root, "init", "-b", "main", repo)
+	meshtest.Git(t, root, "init", "-b", "main", repo)
 	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	git(t, repo, "add", "-A")
-	git(t, repo, "commit", "-m", "one")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "one")
 	brief := filepath.Join(root, "brief.md")
 	if err := os.WriteFile(brief, []byte("go"), 0o644); err != nil {
 		t.Fatal(err)

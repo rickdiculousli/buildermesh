@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
 // ledgerRepoSetup is setup with a repo (bare origin, main pushed) holding
@@ -35,9 +36,9 @@ func ledgerRepoSetup(t *testing.T) (*mesh.Client, context.Context, string) {
 	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("not a spec\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, repo, "add", "-A")
-	runGit(t, repo, "commit", "-m", "specs")
-	runGit(t, repo, "push", "origin", "main")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "specs")
+	meshtest.Git(t, repo, "push", "origin", "main")
 	cfg := os.Getenv("BMESH_CONFIG")
 	f, err := os.OpenFile(cfg, os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
@@ -151,7 +152,7 @@ func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
 	pitchRound(t, c, ctx)
 	// The main checkout is on another branch, so the landing fast-forwards
 	// main through `fetch . <branch>:main`.
-	runGit(t, repo, "checkout", "-q", "-b", "side")
+	meshtest.Git(t, repo, "checkout", "-q", "-b", "side")
 	out, errs, code := runCLI(t, nil, "choose-ideas", "demo", "012 yes on opus, 013 smaller, 014 no, 2 later, 99 yes, hmm")
 	if code != 0 {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
