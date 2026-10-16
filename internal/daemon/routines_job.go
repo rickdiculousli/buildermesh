@@ -293,6 +293,12 @@ func (w *worker) handle(dl *delivery) {
 		fail(err.Error())
 		return
 	}
+	// The commit may move a kind main runs anywhere to another OS: answered,
+	// not NAKed, since a NAK would keep holding one of the kind's places.
+	if !kc.RunsOn(r.d.GOOS) {
+		fail(fmt.Sprintf("kind %s at %.8s runs on %s; this box is %s", kc.Name, j.Commit, kc.OS, r.d.GOOS))
+		return
+	}
 	if kc.IsModel() && !slices.Contains(kc.ModelsList(), w.model) || !kc.IsModel() && w.model != "" {
 		fail("unknown model " + w.model)
 		return

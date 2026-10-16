@@ -1,6 +1,6 @@
 ---
 name: executor
-description: Use when you were started as a buildermesh executor - your prompt begins with "You are executor <path> in buildermesh". You build one piece in your own worktree and branch, report to your lead through the mesh and never merge, rebase onto main or push.
+description: Use when you were started as a buildermesh executor - your prompt begins with "You are executor <path> in buildermesh". You build one piece in your own worktree and branch, report to your lead through the mesh and never merge, rebase onto main or push (save your own branch, to queue a kind whose os is another box's, which always runs elsewhere).
 ---
 
 # Executor
@@ -19,7 +19,7 @@ Run `bmesh --node <path> inbox` at every milestone and before you ask anything: 
 
 ## 3. Routines
 
-The repo's routines are yours to use: `bmesh --node <path> routine list` shows the kinds; `routine run <kind>` runs an inline one in your worktree; `routine queue <kind> --go` then `routine wait <job id>` runs one through the daemon. Commit before queueing: a job names a commit, and a deterministic kind's result is recorded for that commit's tree. When the daemon runs on another box, push the branch first so it can fetch the commit (your lead's brief says whether that applies).
+The repo's routines are yours to use: `bmesh --node <path> routine list` shows the kinds; `routine run <kind>` runs an inline one in your worktree; `routine queue <kind> --go` then `routine wait <job id>` runs one through the daemon. Commit before queueing: a job names a commit, and a deterministic kind's result is recorded for that commit's tree. When the daemon runs on another box, push the branch first so it can fetch the commit (your lead's brief says whether that applies). A kind whose `os` line names another OS than this box's always runs elsewhere: `git push origin HEAD` before queueing it (`queue` refuses an unpushed commit, and prints `queued <id> (runs on <os>)`).
 
 ## 4. Report
 
@@ -36,4 +36,4 @@ Then end your turn with the same line as your final message; the harness tells y
 
 ## 6. Never
 
-Never merge your branch into anyone's, never rebase onto `main`, never push unless your lead's brief says to (for a daemon elsewhere), never edit the spec, never land anything. Your lead owns the branch after you hand it back. (If you fan out yourself with `bmesh executor new`, you are that executor's lead: merge its branch into yours and `executor remove` it before you report.)
+Never merge your branch into anyone's, never rebase onto `main`, never push unless your lead's brief says to (for a daemon elsewhere) or to queue a kind whose `os` is another box's (your own branch only, `git push origin HEAD`), never edit the spec, never land anything. Your lead owns the branch after you hand it back. (If you fan out yourself with `bmesh executor new`, you are that executor's lead: merge its branch into yours and `executor remove` it before you report.)

@@ -206,7 +206,8 @@ func (r *routineSet) discover(repo, repoPath string) (dir string, kinds []kind.K
 	return dir, kinds, err
 }
 
-// rescan reads every repo's kinds and brings the feeds in line. A repo that
+// rescan reads every repo's kinds and brings the feeds in line; a kind whose
+// os is another OS's is left out, so this box never fetches its jobs. A repo that
 // cannot be read keeps what it had; one whose path does not exist on this
 // box has no kinds here and is logged once per daemon start. With [update] on, the update repo's main
 // is then compared with this binary; an update drains the feeds for good.
@@ -251,6 +252,9 @@ func (r *routineSet) rescan() {
 			continue
 		}
 		for _, k := range kinds {
+			if !k.RunsOn(r.d.GOOS) { // another OS's box takes its jobs
+				continue
+			}
 			if want[k.Name] == nil {
 				want[k.Name] = map[string]kind.Kind{}
 			}

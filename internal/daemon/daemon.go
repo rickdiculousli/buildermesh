@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,7 @@ type Deps struct {
 	Cfg    *config.Config
 	Runner runner.Runner
 	Host   string
+	GOOS   string // the OS a routine kind's os is matched against; "" = runtime.GOOS
 	Log    *slog.Logger
 	Now    func() time.Time
 
@@ -61,6 +63,9 @@ func (d *Deps) defaults() {
 	}
 	if d.Now == nil {
 		d.Now = time.Now
+	}
+	if d.GOOS == "" {
+		d.GOOS = runtime.GOOS
 	}
 }
 

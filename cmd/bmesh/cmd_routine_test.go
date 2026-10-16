@@ -122,7 +122,8 @@ func TestWaitReturnsReplyExitByOK(t *testing.T) {
 		t.Fatalf("ok: %d %q %q", code, out, errs)
 	}
 	_, errs, code = runCLI(t, as("app-001"), "routine", "wait", "j-none", "--timeout", "2s")
-	if code != 5 || errs != "bmesh: timed out waiting for j-none\n" {
+	if code != 5 || errs != "bmesh: timed out waiting for j-none; the job may still be queued or running, and its reply stays in the stream "+
+		"for 30 days: run bmesh routine wait j-none again rather than queueing it twice\n" {
 		t.Fatalf("timeout: %d %q", code, errs)
 	}
 	if n, err := mesh.Unread(ctx, c, me); err != nil || n != 1 {

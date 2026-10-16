@@ -40,6 +40,7 @@ var trailingComment = regexp.MustCompile(`(^|\s)#`)
 type Kind struct {
 	Name           string
 	Mode           string // inline | fresh | pooled
+	OS             string // the GOOS a box needs to run it; "" = any box
 	Deterministic  bool
 	Slots          []string
 	Timeout        time.Duration
@@ -63,6 +64,9 @@ func (k Kind) ModelsList() []string {
 	return k.Models
 }
 
+// RunsOn reports whether a box whose GOOS is goos may run the kind.
+func (k Kind) RunsOn(goos string) bool { return k.OS == "" || k.OS == goos }
+
 // IsModel reports whether the kind runs a model rather than a command.
 func (k Kind) IsModel() bool { return k.Model != "" || len(k.Models) > 0 }
 
@@ -79,6 +83,7 @@ func (d *duration) UnmarshalText(b []byte) error {
 
 type kindFile struct {
 	Mode           string
+	OS             string
 	Deterministic  bool
 	Slots          []string
 	Timeout        duration
@@ -120,6 +125,12 @@ func Parse(name string, data []byte) (Kind, error) {
 	default:
 		return Kind{}, fmt.Errorf("kind %s: mode %q: want inline, fresh or pooled", name, f.Mode)
 	}
+	switch {
+	case f.OS != "" && f.OS != "darwin" && f.OS != "linux" && f.OS != "windows":
+		return Kind{}, fmt.Errorf("kind %s: os %q: want darwin, linux or windows (macOS is darwin)", name, f.OS)
+	case f.OS != "" && f.Mode == "inline":
+		return Kind{}, fmt.Errorf("kind %s: os is for fresh and pooled kinds; an inline kind runs in the requester's worktree", name)
+	}
 	f.Command = strings.TrimRight(f.Command, " \t\r\n;")
 	if lines := strings.Split(f.Command, "\n"); trailingComment.MatchString(lines[len(lines)-1]) {
 		return Kind{}, fmt.Errorf(`kind %s: command must not end in a comment: args are appended as "$@"`, name)
@@ -145,7 +156,7 @@ func Parse(name string, data []byte) (Kind, error) {
 		return Kind{}, fmt.Errorf("kind %s: pool must be at least 1", name)
 	}
 	return Kind{
-		Name: name, Mode: f.Mode, Deterministic: f.Deterministic, Slots: f.Slots,
+		Name: name, Mode: f.Mode, OS: f.OS, Deterministic: f.Deterministic, Slots: f.Slots,
 		Timeout: time.Duration(f.Timeout), Command: f.Command, Model: f.Model, Models: f.Models,
 		Prompt: f.Prompt, Allow: f.Allow, Pool: f.Pool, BatchIdle: time.Duration(f.BatchIdle),
 		RecycleIdle: time.Duration(f.RecycleIdle), RecycleUses: f.RecycleUses, RecycleContext: f.RecycleContext,
