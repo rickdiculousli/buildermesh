@@ -302,23 +302,48 @@ func (r *T3) project(ctx context.Context, repo string) (string, error) {
 	return id, nil
 }
 
-// startV2 launches the thread under the repo's own project ([runner]
-// t3_project has no effect on V2: T3 binds only a project's own
-// worktrees), in a new worktree on bmesh/<ThreadID> from s.Branch (else
-// main), or in s.Worktree on s.Branch. Launch has no retry key, so a lost
-// or timed-out reply is reconciled by branch before any error is returned.
-func (r *T3) startV2(ctx context.Context, s StartSpec) (Started, error) {
+// startable checks the sign-in can start a thread in the runtime mode
+// and returns that mode.
+func (r *T3) startable(ctx context.Context) (string, error) {
 	mode := r.RuntimeMode
 	if mode == "" {
 		mode = "auto"
 	}
 	tok, err := r.token(ctx)
 	if err != nil {
-		return Started{}, err
+		return "", err
 	}
 	if t3mcp.RuntimeRank(tok.Access) < t3mcp.RuntimeRank(mode) {
-		return Started{}, &SignInError{fmt.Sprintf("T3 sign-in allows %s, below [runner] t3_runtime_mode %s; run bmesh t3 login and approve %s",
+		return "", &SignInError{fmt.Sprintf("T3 sign-in allows %s, below [runner] t3_runtime_mode %s; run bmesh t3 login and approve %s",
 			tok.Access, mode, mode)}
+	}
+	return mode, nil
+}
+
+// Preflight refuses, before anything is recorded, a start the server or
+// the sign-in can't serve: an unknown protocol, and on V2 a sign-in
+// that is missing, expired, foreign or below the runtime mode.
+func (r *T3) Preflight(ctx context.Context) error {
+	p, err := r.protocol(ctx)
+	if err != nil || p != 2 {
+		return err
+	}
+	_, err = r.startable(ctx)
+	return err
+}
+
+// Protocol is the server's orchestration protocol (1 or 2).
+func (r *T3) Protocol(ctx context.Context) (int, error) { return r.protocol(ctx) }
+
+// startV2 launches the thread under the repo's own project ([runner]
+// t3_project has no effect on V2: T3 binds only a project's own
+// worktrees), in a new worktree on bmesh/<ThreadID> from s.Branch (else
+// main), or in s.Worktree on s.Branch. Launch has no retry key, so a lost
+// or timed-out reply is reconciled by branch before any error is returned.
+func (r *T3) startV2(ctx context.Context, s StartSpec) (Started, error) {
+	mode, err := r.startable(ctx)
+	if err != nil {
+		return Started{}, err
 	}
 	brief, err := os.ReadFile(s.BriefPath)
 	if err != nil {

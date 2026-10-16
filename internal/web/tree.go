@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -192,8 +193,8 @@ func InstanceUsage(hist []mesh.Stored) map[string]Usage {
 
 // ConsoleURL is a lead's thread link: [console] thread_url when it runs on
 // thisHost and that is set, else the [console.hosts] template for its host,
-// with {thread} replaced by its runner thread; "" without a template or a
-// thread.
+// with {thread} replaced by its runner thread, path-escaped (a T3 V2 id's
+// colon too: mcp:x is mcp%3Ax); "" without a template or a thread.
 func ConsoleURL(cfg config.ConsoleConfig, thisHost string, n mesh.Node) string {
 	tmpl := cfg.Hosts[n.Host]
 	if n.Host == thisHost && cfg.ThreadURL != "" {
@@ -202,5 +203,5 @@ func ConsoleURL(cfg config.ConsoleConfig, thisHost string, n mesh.Node) string {
 	if tmpl == "" || n.Runner.Thread == "" {
 		return ""
 	}
-	return strings.ReplaceAll(tmpl, "{thread}", n.Runner.Thread)
+	return strings.ReplaceAll(tmpl, "{thread}", strings.ReplaceAll(url.PathEscape(n.Runner.Thread), ":", "%3A"))
 }

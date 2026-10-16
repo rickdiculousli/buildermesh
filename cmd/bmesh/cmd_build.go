@@ -13,6 +13,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/brief"
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/runner"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
@@ -182,6 +183,13 @@ func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s 
 		return buildStarted{}, err
 	}
 	if _, err := a.leadFree(ctx, p); err != nil {
+		return buildStarted{}, err
+	}
+	r, err := runner.New(a.cfg)
+	if err != nil {
+		return buildStarted{}, err
+	}
+	if err := a.preflight(ctx, r); err != nil {
 		return buildStarted{}, err
 	}
 	thread, err := uuid4()

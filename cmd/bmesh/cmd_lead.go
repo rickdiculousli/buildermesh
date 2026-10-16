@@ -140,6 +140,9 @@ func (a *app) startLead(o leadStart) (leadStarted, error) {
 	if err != nil {
 		return leadStarted{}, err
 	}
+	if err := a.preflight(ctx, r); err != nil {
+		return leadStarted{}, err
+	}
 	if a.configPath != "" {
 		// The runner's session must report to the mesh this CLI was told about.
 		if abs, err := filepath.Abs(a.configPath); err == nil {
@@ -169,6 +172,10 @@ func (a *app) startLead(o leadStart) (leadStarted, error) {
 	if errors.Is(err, runner.ErrTimeout) {
 		return leadStarted{}, fmt.Errorf("start timed out; thread id %s may exist", thread)
 	}
+	var se *runner.SignInError
+	if errors.As(err, &se) {
+		return leadStarted{}, fail(exitRefused, "%s", se.Msg)
+	}
 	if err != nil {
 		return leadStarted{}, fmt.Errorf("runner start (thread id %s): %w", thread, err)
 	}
@@ -180,6 +187,17 @@ func (a *app) startLead(o leadStart) (leadStarted, error) {
 			started.Thread, started.Branch, started.Worktree, err)
 	}
 	return leadStarted{Path: p, Thread: started.Thread, Branch: started.Branch, Worktree: started.Worktree}, nil
+}
+
+// preflight refuses (exit 3) a start runner r says it would refuse, before
+// anything is recorded: on a T3 V2 server, a sign-in that can't serve it.
+func (a *app) preflight(ctx context.Context, r runner.Runner) error {
+	err := runner.Preflight(ctx, r)
+	var se *runner.SignInError
+	if errors.As(err, &se) {
+		return fail(exitRefused, "%s", se.Msg)
+	}
+	return err
 }
 
 // liveLeads counts the leads registered on this host that are not done or

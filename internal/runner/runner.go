@@ -54,6 +54,20 @@ type Runner interface {
 	Interrupt(ctx context.Context, thread string) error
 }
 
+// Preflighter is a runner that can tell, before a start is recorded
+// anywhere, that the start would be refused.
+type Preflighter interface {
+	Preflight(ctx context.Context) error
+}
+
+// Preflight runs r's preflight when it has one.
+func Preflight(ctx context.Context, r Runner) error {
+	if p, ok := r.(Preflighter); ok {
+		return p.Preflight(ctx)
+	}
+	return nil
+}
+
 // New returns the runner [runner] kind names. It takes the whole config so
 // path-valued keys go through Config.Expand.
 func New(cfg *config.Config) (Runner, error) {

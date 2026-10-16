@@ -79,6 +79,11 @@ commands:
   executor remove <name> [--force]         remove a merged executor's worktree and branch (exit 3 unmerged)
   serve [--listen ADDR]                    run the daemon and the map (embedded NATS when [mesh] nats is empty);
                                            with [update] repo, it rebuilds itself when that repo's main moves
+  t3 login [--server URL] [--callback-port 52299] [--timeout D]
+                                           sign bmesh in to this box's T3 0.1.0 (default [runner] t3_server):
+                                           print the authorize URL, take the redirect on localhost or pasted,
+                                           write <config dir>/t3-token.json; lasts 30 days
+  t3 login --status                        print the sign-in: <host>: <access>, N days left; server and scopes
   version                                  print this binary's commit: <rev8> <time> [modified], or unknown
   update [--repo R]                        build R's main (default [update] repo, else the row this binary's
                                            module is from) over this binary, keeping it as bmesh.prev; print
@@ -235,6 +240,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdExecutor(rest)
 	case "node":
 		return a.cmdNode(rest)
+	case "t3":
+		return a.cmdT3(rest)
 	case "version":
 		return a.cmdVersion(rest)
 	case "update":
