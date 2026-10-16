@@ -16,6 +16,9 @@ import (
 type NodeRunner struct {
 	Kind   string `json:"kind"`
 	Thread string `json:"thread"`
+	// Ref is the id bmesh chose for the session when the runner named its
+	// own thread (T3 V2): the briefs' proposed_by and the spec's built_by.
+	Ref string `json:"ref,omitempty"`
 }
 
 // Node is one registered participant.

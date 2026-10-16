@@ -176,7 +176,8 @@ func TestT3V2StartReconcilesALostReplyByBranch(t *testing.T) {
 	fake.Do(func(s *t3fake.Server) { s.HangLaunch, s.LoseLaunch = false, true })
 	_, err = r.Start(context.Background(), StartSpec{RepoPath: repo, Model: "m1", Title: "[build] demo 012",
 		BriefPath: writeBriefFile(t, "b"), ThreadID: "uuid-10"})
-	if !errors.Is(err, ErrTimeout) {
+	var to *StartTimeout
+	if !errors.Is(err, ErrTimeout) || !errors.As(err, &to) || to.Branch != "bmesh/uuid-10" {
 		t.Fatalf("lost launch: %v", err)
 	}
 }

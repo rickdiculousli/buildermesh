@@ -608,7 +608,8 @@ func TestLeadPageChildrenAndRoundSpecs(t *testing.T) {
 		{Path: "b", Role: "lead", Repo: "app"},
 		{Path: "app-round-1", Role: "round", Repo: "app"},
 		{Path: "app-round-1.eng", Role: "engineer", Parent: "app-round-1", Runner: mesh.NodeRunner{Thread: "th-eng"}},
-		{Path: "app-round-1.ux", Role: "engineer", Parent: "app-round-1", Runner: mesh.NodeRunner{Thread: "th-ux"}},
+		// A T3 V2 thread: T3 named it, and its specs carry the id bmesh chose.
+		{Path: "app-round-1.ux", Role: "engineer", Parent: "app-round-1", Runner: mesh.NodeRunner{Thread: "mcp:ux", Ref: "th-ux"}},
 	} {
 		if err := mesh.PutNode(ctx, c, n); err != nil {
 			t.Fatal(err)

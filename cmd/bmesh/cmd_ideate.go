@@ -340,6 +340,10 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 	started, err := r.Start(context.WithoutCancel(ctx), runner.StartSpec{RepoPath: repoPath, Model: model, Effort: effort,
 		Title: fmt.Sprintf("[ideate] %s round %d: %s", row.Name, round, title), BriefPath: briefPath, ThreadID: thread,
 		Branch: branch, Worktree: wt, Project: project})
+	var to *runner.StartTimeout
+	if errors.As(err, &to) {
+		return childStarted{}, fmt.Errorf("start timed out; a thread on branch %s may exist (worktree %s)", to.Branch, wt)
+	}
 	if errors.Is(err, runner.ErrTimeout) {
 		return childStarted{}, fmt.Errorf("start timed out; thread id %s may exist (worktree %s)", thread, wt)
 	}
@@ -354,7 +358,7 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 	}
 	node := mesh.Node{Path: path, Role: "engineer", Parent: roundPath, Repo: row.Name, RepoPath: repoPath,
 		Branch: branch, Worktree: wt, Host: a.cfg.HostName(), Model: model, Effort: effort,
-		Runner:    mesh.NodeRunner{Kind: a.cfg.Runner.Kind, Thread: started.Thread},
+		Runner:    nodeRunner(a.cfg.Runner.Kind, started.Thread, thread),
 		StartedAt: time.Now().UTC().Format(time.RFC3339)}
 	if err := mesh.PutNode(ctx, a.client, node); err != nil {
 		return childStarted{}, fmt.Errorf("thread %s started (worktree %s) but registering %s failed: %w", started.Thread, wt, path, err)

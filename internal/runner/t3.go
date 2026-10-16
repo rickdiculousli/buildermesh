@@ -22,6 +22,15 @@ var (
 	ErrTimeout  = errors.New("runner: t3 timed out")
 )
 
+// StartTimeout is a timed-out start on a runner that names its own
+// threads (T3 V2): a thread it made, if any, is the one on Branch.
+type StartTimeout struct{ Branch string }
+
+func (e *StartTimeout) Error() string {
+	return "runner: t3 start timed out; look for a thread on branch " + e.Branch
+}
+func (e *StartTimeout) Unwrap() error { return ErrTimeout }
+
 // SignInError is a T3 sign-in that can't serve the call: missing, expired,
 // for another server, or below [runner] t3_runtime_mode. Its message says
 // what to run; the CLI exits 3 with it.

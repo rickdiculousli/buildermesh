@@ -336,14 +336,16 @@ func findTree(ts []TreeNode, path string) *TreeNode {
 }
 
 // roundSpecs is the specs on the round's repo's main whose proposed_by is
-// one of its children's threads, by id; [] when there are none or the
-// ledger can't be read.
+// one of its children's threads (or the id bmesh chose for one, its ref),
+// by id; [] when there are none or the ledger can't be read.
 func (s *server) roundSpecs(ctx context.Context, n mesh.Node, children []Child) []RoundSpec {
 	out := []RoundSpec{}
 	threads := map[string]bool{}
 	for _, c := range children {
-		if c.Node.Runner.Thread != "" {
-			threads[c.Node.Runner.Thread] = true
+		for _, id := range []string{c.Node.Runner.Thread, c.Node.Runner.Ref} {
+			if id != "" {
+				threads[id] = true
+			}
 		}
 	}
 	if len(threads) == 0 {

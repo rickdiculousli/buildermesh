@@ -169,6 +169,10 @@ func (a *app) startLead(o leadStart) (leadStarted, error) {
 	cancel()
 	started, err := r.Start(context.Background(), runner.StartSpec{RepoPath: o.RepoPath, Model: o.Model, Effort: o.Effort, Title: o.Title,
 		BriefPath: o.BriefPath, ThreadID: thread})
+	var to *runner.StartTimeout
+	if errors.As(err, &to) {
+		return leadStarted{}, fmt.Errorf("start timed out; a thread on branch %s may exist", to.Branch)
+	}
 	if errors.Is(err, runner.ErrTimeout) {
 		return leadStarted{}, fmt.Errorf("start timed out; thread id %s may exist", thread)
 	}
@@ -181,7 +185,7 @@ func (a *app) startLead(o leadStart) (leadStarted, error) {
 	}
 	ctx, cancel = cmdCtx()
 	defer cancel()
-	if err := a.register(ctx, started, mesh.Node{Path: p, Role: "lead", Repo: o.Name, RepoPath: o.RepoPath, Spec: o.Spec,
+	if err := a.register(ctx, started, thread, mesh.Node{Path: p, Role: "lead", Repo: o.Name, RepoPath: o.RepoPath, Spec: o.Spec,
 		Host: a.cfg.HostName(), Model: o.Model, Effort: o.Effort, Family: o.Family}, prev); err != nil {
 		return leadStarted{}, fmt.Errorf("thread %s started (branch %s, worktree %s) but registering the node failed: %w",
 			started.Thread, started.Branch, started.Worktree, err)
@@ -224,12 +228,13 @@ func (a *app) liveLeads(ctx context.Context) (int, error) {
 	return n, nil
 }
 
-// register records the started session in n and puts it. A fresh path
+// register records the started session in n (with ref, the thread id
+// bmesh chose, when the runner named another) and puts it. A fresh path
 // already reads idle; a reused done or blocked one (prev) is reset to idle.
 // (idle -> idle is not a transition, so nothing is written for it.)
-func (a *app) register(ctx context.Context, started runner.Started, n mesh.Node, prev string) error {
+func (a *app) register(ctx context.Context, started runner.Started, ref string, n mesh.Node, prev string) error {
 	n.Branch, n.Worktree = started.Branch, started.Worktree
-	n.Runner = mesh.NodeRunner{Kind: a.cfg.Runner.Kind, Thread: started.Thread}
+	n.Runner = nodeRunner(a.cfg.Runner.Kind, started.Thread, ref)
 	n.StartedAt = time.Now().UTC().Format(time.RFC3339)
 	if err := mesh.PutNode(ctx, a.client, n); err != nil {
 		return err
@@ -238,6 +243,16 @@ func (a *app) register(ctx context.Context, started runner.Started, n mesh.Node,
 		return mesh.ResetState(ctx, a.client, n.Path)
 	}
 	return nil
+}
+
+// nodeRunner is a node's runner: the thread the runner named and, when
+// that is not the id bmesh chose (ref), the chosen one as Ref.
+func nodeRunner(kind, thread, ref string) mesh.NodeRunner {
+	r := mesh.NodeRunner{Kind: kind, Thread: thread}
+	if ref != thread {
+		r.Ref = ref
+	}
+	return r
 }
 
 // uuid4 returns a random RFC 4122 version 4 UUID.

@@ -384,6 +384,9 @@ func (r *T3) startV2(ctx context.Context, s StartSpec) (Started, error) {
 			out.ThreadID, err = id, nil
 		}
 	}
+	if errors.Is(err, ErrTimeout) {
+		return Started{}, &StartTimeout{Branch: started.Branch}
+	}
 	if err != nil {
 		return Started{}, err
 	}

@@ -179,7 +179,7 @@ func TestLeadStartOnAV2Server(t *testing.T) {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
 	}
 	n, ok, err := mesh.GetNode(t.Context(), c, "demo-012")
-	if err != nil || !ok || !strings.HasPrefix(n.Runner.Thread, "mcp:") || !strings.HasPrefix(n.Branch, "bmesh/") ||
+	if err != nil || !ok || !strings.HasPrefix(n.Runner.Thread, "mcp:") || !uuidRE.MatchString(n.Runner.Ref) || n.Branch != "bmesh/"+n.Runner.Ref ||
 		n.Worktree != filepath.Join("/fake-t3/worktrees", filepath.Base(repo), n.Branch) {
 		t.Fatalf("node %+v %v %v", n, ok, err)
 	}
