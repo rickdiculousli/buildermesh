@@ -99,6 +99,61 @@ func TestEventsStreamReplaysThenFollows(t *testing.T) {
 	stop()
 }
 
+func TestEventsStreamSkipsHostTraffic(t *testing.T) {
+	url := meshtest.Start(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	c, err := mesh.Connect(ctx, url, "", "hub", "test", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if err := mesh.Provision(ctx, c, 0); err != nil {
+		t.Fatal(err)
+	}
+	host := func() {
+		t.Helper()
+		for _, s := range []string{"bm.inbox.host.k16", "bm.hostreply.k16.x"} {
+			if _, err := c.JS.Publish(ctx, s, []byte(`{"text":"host"}`)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	host()
+	if err := mesh.PublishEvent(ctx, c, mesh.Event{From: "app-001", Event: "started", Text: "first"}); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(Handler(c, time.Hour, Options{}))
+	defer srv.Close()
+	reqCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	req, _ := http.NewRequestWithContext(reqCtx, "GET", srv.URL+"/events", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	r := bufio.NewReader(resp.Body)
+	if ev, data := readFrame(t, r); ev != "replay" || !strings.Contains(data, `"subject":"bm.app-001.started"`) {
+		t.Fatalf("first replay frame %q %q", ev, data)
+	}
+	host()
+	if err := mesh.PublishEvent(ctx, c, mesh.Event{From: "app-001", Event: "progress", Text: "second"}); err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan [2]string, 1)
+	go func() { e, d := readFrame(t, r); got <- [2]string{e, d} }()
+	select {
+	case f := <-got:
+		if f[0] != "live" || !strings.Contains(f[1], `"subject":"bm.app-001.progress"`) {
+			t.Fatalf("first live frame %q %q", f[0], f[1])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no live frame within 2 s")
+	}
+	stop()
+}
+
 func TestNodesAndPage(t *testing.T) {
 	url := meshtest.Start(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)

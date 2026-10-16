@@ -123,11 +123,11 @@ func pushEnabled(n config.NotifyConfig) bool {
 	return (n.Ntfy != "" || n.Command != "") && len(n.Push) > 0
 }
 
-// nodeEvent splits a node event subject bm.<path>.<event>; inbox, daemon
-// and feedback subjects are not node events.
+// nodeEvent splits a node event subject bm.<path>.<event>; mesh-internal
+// subjects (mesh.IsMeshInternal) are not node events.
 func nodeEvent(subject string) (path, event string, ok bool) {
 	rest, ok := strings.CutPrefix(subject, "bm.")
-	if !ok || strings.HasPrefix(rest, "inbox.") || strings.HasPrefix(rest, "daemon.") || strings.HasPrefix(rest, "feedback.") {
+	if !ok || mesh.IsMeshInternal(subject) {
 		return "", "", false
 	}
 	i := strings.LastIndexByte(rest, '.')

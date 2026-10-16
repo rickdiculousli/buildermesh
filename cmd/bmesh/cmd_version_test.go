@@ -90,6 +90,31 @@ func TestRevisionHint(t *testing.T) {
 	}
 }
 
+func TestRevisionHintPrefersThisHostsDaemon(t *testing.T) {
+	c, ctx := setup(t)
+	own, newer := strings.Repeat("1a", 20), strings.Repeat("9e", 20)
+	withRevision(t, own)
+	// Only another host has a daemon: the hub's newest is used.
+	if err := mesh.PublishEvent(ctx, c, mesh.Event{From: "daemon.mac", Event: "started", Text: newer}); err != nil {
+		t.Fatal(err)
+	}
+	hint := "bmesh: mac runs 9e9e9e9e, this is 1a1a1a1a; run bmesh update\n"
+	if _, errOut, code := runCLI(t, nil, "mesh-status"); code != 0 || errOut != hint {
+		t.Fatalf("no own daemon: code %d err %q, want %q", code, errOut, hint)
+	}
+	// This host's daemon runs this revision; another host's newer started
+	// differs, and is not this host's business.
+	if err := mesh.PublishEvent(ctx, c, mesh.Event{From: "daemon." + testHost, Event: "started", Text: own}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mesh.PublishEvent(ctx, c, mesh.Event{From: "daemon.mac", Event: "started", Text: newer}); err != nil {
+		t.Fatal(err)
+	}
+	if _, errOut, code := runCLI(t, nil, "mesh-status"); code != 0 || errOut != "" {
+		t.Fatalf("own daemon at this revision: code %d err %q", code, errOut)
+	}
+}
+
 // updateBox is a box with repo "bm" on main (two commits, a go.mod naming
 // example.com/bm), a checkouts root, the fake go, and a binary holding "old".
 func updateBox(t *testing.T) (exe string, shas []string) {

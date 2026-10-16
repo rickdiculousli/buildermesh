@@ -12,7 +12,7 @@ func TestParsePath(t *testing.T) {
 			t.Fatalf("round trip %q -> %q", s, p.String())
 		}
 	}
-	for _, s := range []string{"inbox.x", "routine", "daemon.h", "feedback", "feedback.x", "A.b", "a..b", "", "a.", ".a", "-a", "a b", "a--b", "a.b--c"} {
+	for _, s := range []string{"inbox.x", "routine", "daemon.h", "feedback", "feedback.x", "host", "host.x", "hostreply", "hostreply.x", "A.b", "a..b", "", "a.", ".a", "-a", "a b", "a--b", "a.b--c"} {
 		if _, err := ParsePath(s); err == nil {
 			t.Fatalf("%q: want error", s)
 		}
@@ -73,5 +73,31 @@ func TestSubjects(t *testing.T) {
 	}
 	if got := DaemonSubject("k16", "wake"); got != "bm.daemon.k16.wake" {
 		t.Fatal(got)
+	}
+}
+
+func TestIsMeshInternal(t *testing.T) {
+	for _, s := range []string{"bm.inbox.app", "bm.inbox.host.k16", "bm.daemon.k16.started", "bm.feedback.app", "bm.host.k16", "bm.hostreply.k16.abc"} {
+		if !IsMeshInternal(s) {
+			t.Errorf("%q: want internal", s)
+		}
+	}
+	for _, s := range []string{"bm.app.started", "bm.app.x.progress", "bm.routine.verify.done", "bm.hosts.done", "bm.inboxes.x", "other.inbox.x", "bm.inbox"} {
+		if IsMeshInternal(s) != (s == "bm.inbox") {
+			t.Errorf("%q: IsMeshInternal = %v", s, IsMeshInternal(s))
+		}
+	}
+}
+
+func TestIsHostTraffic(t *testing.T) {
+	for _, s := range []string{"bm.inbox.host.k16", "bm.hostreply.k16.abc"} {
+		if !IsHostTraffic(s) {
+			t.Errorf("%q: want host traffic", s)
+		}
+	}
+	for _, s := range []string{"bm.inbox.app", "bm.inbox.hosts-1", "bm.daemon.k16.started", "bm.app.started", "bm.feedback.app"} {
+		if IsHostTraffic(s) {
+			t.Errorf("%q: not host traffic", s)
+		}
 	}
 }
