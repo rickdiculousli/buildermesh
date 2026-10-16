@@ -91,6 +91,24 @@ func HereLine(self string, r Roster, seen []Seen, now time.Time) string {
 	return line
 }
 
+// HereStaleAfter is how old this-box.txt may be before --here says so: the
+// daemon rewrites it each minute while it runs and reaches the hub.
+const HereStaleAfter = 3 * time.Minute
+
+// HereText is the file's line as --here prints it: as written while fresh,
+// else with "; as of <age> ago, not updated since" (a daemon stopped or cut
+// off from the hub leaves the states and ages it last saw).
+func HereText(line string, written, now time.Time) string {
+	line = strings.TrimRight(line, "\n")
+	if line == "" {
+		return ""
+	}
+	if age := now.Sub(written); age > HereStaleAfter {
+		line += fmt.Sprintf("; as of %s ago, not updated since", ago(age))
+	}
+	return line + "\n"
+}
+
 // ago is d in its largest whole unit: 5m, 2h, 3d.
 func ago(d time.Duration) string {
 	switch {

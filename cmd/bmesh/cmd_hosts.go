@@ -125,7 +125,8 @@ func (a *app) cmdHosts(args []string) error {
 }
 
 // hostsHere prints the session line the daemon last wrote, reading only
-// that file: nothing when [hosts] is off or the file is missing, and never
+// that file (marked with its age when the daemon hasn't rewritten it
+// lately): nothing when [hosts] is off or the file is missing, and never
 // the hub, so a session hook doesn't wait on it.
 func (a *app) hostsHere() error {
 	if err := a.loadConfig(); err != nil {
@@ -134,14 +135,19 @@ func (a *app) hostsHere() error {
 	if !a.cfg.Hosts.Enabled {
 		return nil
 	}
-	b, err := os.ReadFile(hosts.HerePath(config.StateDir()))
+	p := hosts.HerePath(config.StateDir())
+	b, err := os.ReadFile(p)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	_, err = a.stdout.Write(b)
+	st, err := os.Stat(p)
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(a.stdout, hosts.HereText(string(b), st.ModTime(), time.Now()))
 	return err
 }
 

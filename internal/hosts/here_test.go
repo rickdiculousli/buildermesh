@@ -62,3 +62,17 @@ func TestWriteHereReplacesTheFile(t *testing.T) {
 		t.Fatalf("a temporary file was left: %v", entries)
 	}
 }
+
+func TestHereTextMarksAStaleFile(t *testing.T) {
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	line := "this box is k16; secure: no; on the mesh: mac (awake)\n"
+	if got := HereText(line, now.Add(-2*time.Minute), now); got != line {
+		t.Fatalf("fresh: %q", got)
+	}
+	if got, want := HereText(line, now.Add(-2*time.Hour), now), "this box is k16; secure: no; on the mesh: mac (awake); as of 2h ago, not updated since\n"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if HereText("", now.Add(-time.Hour), now) != "" {
+		t.Fatal("an empty file prints nothing")
+	}
+}

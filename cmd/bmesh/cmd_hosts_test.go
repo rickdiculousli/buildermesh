@@ -417,6 +417,13 @@ func TestHostsHereReadsOnlyTheFile(t *testing.T) {
 	if out, errs, code := here(); code != 0 || out != line || errs != "" {
 		t.Fatalf("with the file: %d %q %q", code, out, errs)
 	}
+	old := time.Now().Add(-3 * time.Hour)
+	if err := os.Chtimes(hosts.HerePath(filepath.Join(state, "bmesh")), old, old); err != nil {
+		t.Fatal(err)
+	}
+	if out, _, code := here(); code != 0 || out != strings.TrimSuffix(line, "\n")+"; as of 3h ago, not updated since\n" {
+		t.Fatalf("stale file: %d %q", code, out)
+	}
 	write("")
 	if out, errs, code := here(); code != 0 || out != "" || errs != "" {
 		t.Fatalf("[hosts] off: %d %q %q", code, out, errs)
