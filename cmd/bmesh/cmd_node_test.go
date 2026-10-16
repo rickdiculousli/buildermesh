@@ -224,3 +224,81 @@ func TestNodeForgetWorktreeRebasedExecutor(t *testing.T) {
 		t.Fatalf("forget: %d %q %q", code, out, errs)
 	}
 }
+
+func TestNodeForgetIdle(t *testing.T) {
+	c, _ := leadSetup(t) // the t3 runner, backed by testdata/fake-t3.sh
+	ctx := t.Context()
+	idle := func(path string, n mesh.Node) {
+		n.Path = path
+		if n.Runner.Kind == "" {
+			n.Runner = mesh.NodeRunner{Kind: "t3", Thread: "th-" + path}
+		}
+		putNode(t, c, ctx, n)
+	}
+	forget := func(path string, env map[string]string) (string, string, int) {
+		return runCLI(t, env, "node", "forget", path)
+	}
+
+	// No event of its own (a child's and the daemon's don't count) and a
+	// stopped thread: forgotten.
+	idle("app-001", mesh.Node{})
+	putNode(t, c, ctx, mesh.Node{Path: "app-001.x", Role: "executor", Parent: "app-001"})
+	stateAt(t, c, ctx, "app-001.x", "done", time.Now())
+	for _, ev := range []mesh.Event{{From: "app-001.x", Event: "done"}, {From: "daemon." + testHost, Event: "wake", To: "app-001"}} {
+		if err := mesh.PublishEvent(ctx, c, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if out, errs, code := forget("app-001", nil); code != 0 || out != "forgot app-001\n" {
+		t.Fatalf("stopped: %d %q %q", code, out, errs)
+	}
+	if _, ok, _ := mesh.GetNode(ctx, c, "app-001"); ok {
+		t.Fatal("app-001 still registered")
+	}
+
+	// An event of its own: refused, whatever its thread says.
+	idle("app-002", mesh.Node{})
+	if err := mesh.PublishEvent(ctx, c, mesh.Event{From: "app-002", Event: "progress"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, errs, code := forget("app-002", nil); code != 3 || errs != "bmesh: refused: app-002 is idle but published progress; only an idle node that never reported is forgotten\n" {
+		t.Fatalf("own event: %d %q", code, errs)
+	}
+
+	// Its thread running, or the runner failing: refused.
+	idle("app-003", mesh.Node{})
+	if _, errs, code := forget("app-003", map[string]string{"FAKE_T3_STATUS": "running"}); code != 3 || errs != "bmesh: refused: app-003 is idle and its thread th-app-003 is running; stop it first\n" {
+		t.Fatalf("running: %d %q", code, errs)
+	}
+	if _, errs, code := forget("app-003", map[string]string{"FAKE_T3_STATUS": "idle", "FAKE_T3_MISSING": "1"}); code != 3 || !strings.HasPrefix(errs, "bmesh: refused: app-003 is idle and its thread may be running (") {
+		t.Fatalf("status fails: %d %q", code, errs)
+	}
+
+	// Another host, or another runner kind: refused, naming the host.
+	idle("app-004", mesh.Node{Host: "otherhost"})
+	if _, errs, code := forget("app-004", nil); code != 3 || errs != "bmesh: refused: app-004 is idle and its thread is on otherhost; run it on otherhost\n" {
+		t.Fatalf("other host: %d %q", code, errs)
+	}
+	idle("app-005", mesh.Node{Runner: mesh.NodeRunner{Kind: "tmux", Thread: "w"}})
+	if _, errs, code := forget("app-005", nil); code != 3 || errs != "bmesh: refused: app-005 is idle and its runner is \"tmux\", not this box's t3; run it on "+testHost+"\n" {
+		t.Fatalf("other kind: %d %q", code, errs)
+	}
+
+	// A runner that can't tell (tmux: Known false): refused.
+	cfg := os.Getenv("BMESH_CONFIG")
+	body, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg, []byte(strings.Replace(string(body), "kind = \"t3\"", "kind = \"tmux\"", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, errs, code := forget("app-005", nil); code != 3 || errs != "bmesh: refused: app-005 is idle and its thread may be running; stop it first\n" {
+		t.Fatalf("unknown: %d %q", code, errs)
+	}
+	for _, p := range []string{"app-002", "app-003", "app-004", "app-005"} {
+		if _, ok, _ := mesh.GetNode(ctx, c, p); !ok {
+			t.Fatalf("%s forgotten", p)
+		}
+	}
+}
