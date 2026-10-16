@@ -4,7 +4,7 @@ title: bmesh build holds while the repo's last build run is still going, then ve
 kind: refinement
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
@@ -12,6 +12,8 @@ built_by: 2fd72087-c83f-4ac2-ab8c-8c98496bd94a
 host: k16
 family: buildermesh-build-5
 branch: bmesh/2fd72087-c83f-4ac2-ab8c-8c98496bd94a
+merged: 8e162ba0885517708417bfe24a0ca61bc4e57216
+verified: verify ok t:4bd25eef
 ---
 
 ## Opportunity
