@@ -4,7 +4,7 @@ title: Every command says what it did, and the brief stops the small detours lea
 kind: refinement
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-15
@@ -12,7 +12,9 @@ from_feedback: retrospective of 007-016 and 018 (buildermesh-007, -008, -009, -0
 built_by: c184e544-9943-465a-b943-da1ef21989da
 host: k16
 family: buildermesh-build-1
-branch: t3code/813bdeda
+branch: t3code/leads-quick-fixes
+verified: verify ok t:2be46fcd
+merged: f8d63a1dcf9028817f9061fc1258d270853ecb75
 ---
 
 ## Opportunity
