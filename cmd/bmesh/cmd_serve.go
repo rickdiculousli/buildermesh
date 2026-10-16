@@ -115,6 +115,10 @@ func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Wri
 	}
 	addr := ln.Addr().String()
 	fmt.Fprintf(stderr, "bmesh serve: nats %s (%s), http %s, host %s\n", url, mode, addr, host)
+	webDir := os.Getenv("BMESH_WEB_DIR")
+	if webDir != "" {
+		fmt.Fprintf(stderr, "bmesh serve: map page from %s\n", webDir)
+	}
 
 	claude := os.Getenv("BMESH_CLAUDE_COMMAND")
 	if strings.TrimSpace(claude) == "" {
@@ -142,7 +146,7 @@ func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Wri
 	}()
 
 	srv := &http.Server{
-		Handler: web.Handler(c, serveHistory, web.Options{Cfg: cfg, Host: host, Log: log, Quota: quota}), ReadHeaderTimeout: 10 * time.Second,
+		Handler: web.Handler(c, serveHistory, web.Options{Cfg: cfg, Host: host, Log: log, Quota: quota, Dir: webDir}), ReadHeaderTimeout: 10 * time.Second,
 		// Requests end with ctx, so open event streams don't hold Shutdown.
 		BaseContext: func(net.Listener) context.Context { return ctx },
 	}

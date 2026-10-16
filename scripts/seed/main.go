@@ -1,11 +1,13 @@
 // Command seed fills a scratch mesh (scripts/seed.sh runs it against a
-// throwaway bmesh serve) with two leads, their executors, an orphan, a pooled
-// routine kind with instances in two repos and three spent fresh runs, a
-// queued job, a few events and messages, two leases, a
+// throwaway bmesh serve) with every state the map draws: two live leads and
+// their executors (working, asking, done and one idle), a done lead for the
+// shelf, a silent lead, an orphan, a round and its two engineers (one
+// blocked), a pooled routine kind with instances in two repos and three
+// spent fresh runs, a queued job, a few events and messages, two leases, a
 // result and a daemon digest, and writes the quota fixture the seeded
-// config's quota command reads (-quota). -leads N
-// adds leads up to N in all, each with one working executor, to look at a
-// crowded map (and long names) on a phone.
+// config's quota command reads (-quota). -leads N (default 2) adds N-2
+// working leads, each with one working executor, to look at a crowded map
+// (and long names) on a phone.
 package main
 
 import (
@@ -22,7 +24,7 @@ import (
 func main() {
 	url := flag.String("nats", "nats://127.0.0.1:4222", "the scratch mesh's NATS URL")
 	mapURL := flag.String("map", "http://127.0.0.1:3775/", "the map's URL, printed when done")
-	leads := flag.Int("leads", 2, "how many leads in all (at least the two seeded)")
+	leads := flag.Int("leads", 2, "adds this many working leads less two")
 	quota := flag.String("quota", "", "where to write the quota fixture (none when empty)")
 	flag.Parse()
 	if *quota != "" {
@@ -52,6 +54,8 @@ func seed(ctx context.Context, url string, leads int) error {
 			Runner: mesh.NodeRunner{Kind: "t3", Thread: "thread-0042"}},
 		{Path: "app-0042.api", Role: "executor", Repo: "app", Parent: "app-0042", StartedAt: ago(45)},
 		{Path: "app-0042.web", Role: "executor", Repo: "app", Parent: "app-0042", StartedAt: ago(40)},
+		{Path: "app-0042.e2e", Role: "executor", Repo: "app", Parent: "app-0042", StartedAt: ago(5)},
+		{Path: "app-0039", Role: "lead", Repo: "app", Spec: "0039", StartedAt: ago(80), Branch: "bmesh/app-0039"},
 		{Path: "docs-0007", Role: "lead", Repo: "docs", Spec: "0007", StartedAt: ago(30)},
 		{Path: "docs-0007.guide", Role: "executor", Repo: "docs", Parent: "docs-0007", StartedAt: ago(25)},
 		{Path: "old-0001.fix", Role: "executor", Repo: "app", Parent: "old-0001", StartedAt: ago(90)},
@@ -80,6 +84,8 @@ func seed(ctx context.Context, url string, leads int) error {
 		{"app-0042.web", "started", "", "working"},
 		{"app-0042.web", "ask", "which chart library?", "asking"},
 		{"docs-0007", "started", "", "working"},
+		{"app-0039", "started", "", "working"},
+		{"app-0039", "done", "landed the map's legend", "done"},
 		{"daemon.seed", "silent", "quiet for 25m", "silent"},
 		{"docs-0007.guide", "started", "", "working"},
 		{"docs-0007.guide", "done", "guide drafted", "done"},
@@ -88,6 +94,7 @@ func seed(ctx context.Context, url string, leads int) error {
 		{"app-round-1.eng", "started", "", "working"},
 		{"app-round-1.eng", "progress", "043 landed, writing 044", "working"},
 		{"app-round-1.ux", "started", "", "working"},
+		{"app-round-1.ux", "blocked", "the app will not run", "blocked"},
 		{"routine.review.opus-5-5-1", "started", "", "working"},
 		{"routine.review.opus-5-5-1", "progress", "job seed-j1 ok 4200 ctx 51000", "working"},
 		{"routine.review.f1a2b3c4d", "started", "", "working"},
