@@ -4,7 +4,7 @@ title: bmesh land stops while the lead has an unread message from the operator
 kind: refinement
 size: S
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: 56979e66-321a-467e-9cbc-a2165df787ff
 proposed_on: 2026-10-16
