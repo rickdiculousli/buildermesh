@@ -4,7 +4,7 @@ title: bmesh land keeps a branch's review after the lead rebases by hand
 kind: refinement
 size: S
 judge: opus
-status: adjusting
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
@@ -16,10 +16,8 @@ Spec 032 landed with `verified: verify ok t:bff0a401` although three Opus review
 The same path is the one every conflict takes, so any lead whose landing conflicts loses its review this way. The only repair left is typing the line by hand, which the session's safety classifier rightly blocks as editing an audit record.
 
 ## Proposal
-Adjust (2026-10-16): also add a test for a branch reviewed then fixed then rebased by hand
-Adjust (2026-10-16): with the note: land takes the branch head from just before the newest rebase in the reflog and applies today's rule to that head so a fix commit on top of a reviewed commit still lands on verify alone
 In:
-- **Land finds the branch as it was before a hand rebase.** When HEAD's tree has no result for a kind, `prepare` walks the branch's reflog (`git reflog <branch>`, newest first) for the newest entry whose tree has recorded results and whose commit is not an ancestor of HEAD: the head the lead rewrote. It takes that entry as the old head, its tree as the old tree and its fork point from `main` as the old base, exactly as if land had done the rebase itself. Its kinds join the required ones, and the existing rules apply unchanged: a result whose diff the rebase left unchanged is carried (`c:<old tree8>`), and one whose diff changed is refused with the existing `queue review --again` line. An entry that is an ancestor of HEAD (fixes committed after a review) changes nothing, so the one-pass rule stays: a review's findings are fixed and landed without a second review.
+- **Land finds the branch as it was before a hand rebase.** When HEAD is not the head land last saw, `prepare` reads the branch's reflog (`git reflog <branch>`, newest first) for the newest rebase (a `rebase (finish)` entry, or `rebase -i (finish)`) and takes the entry just before it: the head the lead rewrote. It applies today's rule to that head, as if land had done the rebase itself: its required kinds are verify plus the kinds with a result on its tree, its fork point from `main` is the old base, and the existing rules apply unchanged: a result whose diff the rebase left unchanged is carried (`c:<old tree8>`), and one whose diff changed is refused with the existing `queue review --again` line. Because it is the head before the rebase, not the newest one with results, a fix committed on top of a reviewed commit and then rebased lands as it would have unrebased: the fix's tree has no review, so review isn't required, and the one-pass rule stays (a review's findings are fixed and landed without a second review). A branch with no rebase in its reflog changes nothing.
 - **Land says what it requires.** Before the checks it prints `required: verify (the repo's verify kind), review (t:<tree8> before the rebase at <sha8>)`, so a kind left out is visible in its output.
 - **`bmesh spec verified --commit C`** composes the line from the results for C's tree instead of HEAD's; `--write` still writes into this worktree's spec file. A line can then be rebuilt by the tool for a commit already merged, never typed.
 - **Repair 032's line** with it as part of this build: `bmesh spec verified --spec 032 --commit d842de47 --write` gives `review ok t:bff0a401 m:claude-opus-5-5; verify ok t:bff0a401` from the recorded results, committed on this spec's branch and landed with it.
@@ -36,6 +34,7 @@ A lead's landing that conflicts, is rebased by hand and run again prints `requir
 The repo's verify. New tests in `cmd_land_test.go`:
 - a branch reviewed ok, rebased by hand onto a main that conflicts, then landed: refused with the `--again` line when the diff changed, and carried (`c:`) when the resolution left the diff unchanged;
 - a branch reviewed, then fixed with a commit on top (an ancestor): lands on verify alone, as today;
+- a branch reviewed, then fixed with a commit on top, then rebased by hand onto a main that moved: lands on verify alone, the fix's head being the one before the rebase;
 - the `required:` line names each kind and where it came from;
 - `spec verified --commit` composes the line for that commit's tree.
 
