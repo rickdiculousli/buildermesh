@@ -319,7 +319,13 @@ func TestLandCarriesReviewOnlyForAnUnchangedDiff(t *testing.T) {
 	if code != 3 || !strings.Contains(errs, "review has a result for t:"+reviewed[:8]) || !strings.Contains(errs, "the rebase changed the diff") {
 		t.Fatalf("changed diff: %d %q", code, errs)
 	}
-	reviewed = review() // reviewed again on the rebased tree
+	// Reviewed again on the rebased tree, after a run there that failed:
+	// the newest result counts, as spec verified composes it.
+	if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "review", Tree: gitOut(t, "rev-parse", "HEAD^{tree}"), Args: []string{"x"},
+		OK: false, Model: "claude-opus-5-5", By: "routine.review.x", At: "2026-01-01T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	reviewed = review()
 
 	// Main changes another file: the diff is the same and the review carries.
 	r.pushOther(t, "c.txt", "c\n")

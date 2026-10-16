@@ -40,7 +40,7 @@ type lander struct {
 	base     string // origin/main, or main without an origin
 
 	oldHead, oldTree, oldBase string                 // the branch before land touched it
-	oldResults                map[string]mesh.Result // newest result per kind at oldTree, the last failing one if any fails
+	oldResults                map[string]mesh.Result // per kind at oldTree: its newest result, a failing one when any model's newest fails
 	required                  []string               // the kinds the landed tree must carry
 
 	landed string // the commit main points at after the push
@@ -189,15 +189,20 @@ func (l *lander) prepare(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	l.oldResults = map[string]mesh.Result{}
+	// The newest result per (kind, model), as spec verified composes them;
+	// a kind is as good as its worst model.
+	type group struct{ kind, model string }
+	newest := map[group]mesh.Result{}
 	for _, r := range all {
-		if r.Tree != l.oldTree {
-			continue
+		g := group{r.Kind, r.Model}
+		if old, ok := newest[g]; r.Tree == l.oldTree && (!ok || spec.Newer(r.At, old.At)) {
+			newest[g] = r
 		}
-		old, ok := l.oldResults[r.Kind]
-		switch {
-		case !ok, old.OK && !r.OK, old.OK == r.OK && r.At > old.At:
-			l.oldResults[r.Kind] = r
+	}
+	l.oldResults = map[string]mesh.Result{}
+	for g, r := range newest {
+		if old, ok := l.oldResults[g.kind]; !ok || old.OK && !r.OK {
+			l.oldResults[g.kind] = r
 		}
 	}
 	for k := range l.oldResults {
@@ -234,6 +239,13 @@ func (l *lander) land(ctx context.Context) error {
 func (l *lander) once(ctx context.Context) (moved bool, err error) {
 	out := l.a.stdout
 	git := func(args ...string) (string, error) { return gitIn(ctx, l.top, args...) }
+	// Cleanup runs on its own context: an interrupt or a lost lease cancels
+	// ctx, and the worktree must still be left as land found it.
+	cleanup := func(args ...string) (string, error) {
+		c, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		return gitIn(c, l.top, args...)
+	}
 	if l.origin {
 		if _, err := git("fetch", "--quiet", "origin", "main"); err != nil {
 			return false, err
@@ -257,8 +269,8 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 	if _, err := git("merge-base", "--is-ancestor", baseSHA, "HEAD"); err == nil {
 		fmt.Fprintf(out, "rebase: on %s already\n", baseSHA[:8])
 	} else if _, err := git("rebase", "--quiet", baseSHA); err != nil {
-		files, _ := git("diff", "--name-only", "--diff-filter=U")
-		if _, aerr := git("rebase", "--abort"); aerr != nil {
+		files, _ := cleanup("diff", "--name-only", "--diff-filter=U")
+		if _, aerr := cleanup("rebase", "--abort"); aerr != nil {
 			return false, fmt.Errorf("rebase onto %s failed (%v) and did not abort: %v", baseSHA[:8], err, aerr)
 		}
 		what := "fails"
@@ -306,7 +318,7 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	restore := func() { _, _ = git("checkout", "HEAD", "--", rel) }
+	restore := func() { _, _ = cleanup("checkout", "HEAD", "--", rel) }
 	if _, err := spec.SetStatus(s, "done", []string{"building"},
 		spec.Field{Key: "merged", Value: merged}, spec.Field{Key: "branch", Value: l.branch}); err != nil {
 		restore()
@@ -324,7 +336,7 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 		return false, err
 	}
 	if _, err := git("commit", "--quiet", "-m", msg); err != nil {
-		_, _ = git("reset", "--quiet", "--", rel)
+		_, _ = cleanup("reset", "--quiet", "--", rel)
 		restore()
 		return false, err
 	}
@@ -333,7 +345,7 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 		return false, err
 	}
 	fmt.Fprintf(out, "commit %s %s\n", rec[:8], msg)
-	undo := func() { _, _ = git("reset", "--quiet", "--keep", "HEAD~1") }
+	undo := func() { _, _ = cleanup("reset", "--quiet", "--keep", "HEAD~1") }
 
 	if l.origin {
 		if _, err := git("push", "--quiet", "origin", "HEAD:refs/heads/main"); err != nil {

@@ -125,7 +125,7 @@ func ComposeVerified(ctx context.Context, c *mesh.Client, repoPath string) ([]En
 			continue
 		}
 		g := group{r.Kind, r.Model}
-		if old, ok := newest[g]; !ok || newer(r.At, old.At) {
+		if old, ok := newest[g]; !ok || Newer(r.At, old.At) {
 			newest[g] = r
 		}
 	}
@@ -142,9 +142,9 @@ func ComposeVerified(ctx context.Context, c *mesh.Client, repoPath string) ([]En
 	return out, nil
 }
 
-// newer reports whether At a is later than b, comparing the strings when
+// Newer reports whether At a is later than b, comparing the strings when
 // either does not parse.
-func newer(a, b string) bool {
+func Newer(a, b string) bool {
 	ta, errA := time.Parse(time.RFC3339, a)
 	tb, errB := time.Parse(time.RFC3339, b)
 	if errA != nil || errB != nil {
