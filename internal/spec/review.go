@@ -150,13 +150,14 @@ func parts(clause string) []part {
 	lead, n := leadAt(tokens, i)
 	i += n
 	var nums []string
+	last := -1 // the index of the last number's token
 	for ; i < len(tokens); i++ {
 		if m := numberRE.FindStringSubmatch(tokens[i]); m != nil {
-			nums = append(nums, m[1])
+			nums, last = append(nums, m[1]), i
 			continue
 		}
 		if word(tokens[i]) == "all" {
-			nums = append(nums, "all")
+			nums, last = append(nums, "all"), i
 			continue
 		}
 		if !fillers[word(tokens[i])] {
@@ -178,8 +179,29 @@ func parts(clause string) []part {
 			break
 		}
 	}
+	// "reject 2 and 3 yes", "accept 012 and 3 smaller": a phrase after two
+	// or more numbers is the last number's own, and the verdict said first
+	// covers the rest.
+	if rest := tokens[i:]; len(nums) >= 2 && len(rest) > 0 && splitsOff(lead, rest) {
+		p.text = strings.Join(trimFillers(tokens[:last]), " ")
+		p.nums = nums[:len(nums)-1]
+		p.phrase = lead
+		return []part{p, {text: strings.Join(tokens[last:], " "), nums: nums[len(nums)-1:], phrase: rest}}
+	}
 	p.phrase = append(lead, tokens[i:]...)
 	return []part{p}
+}
+
+// splitsOff reports whether rest, the words after a verdict said first and
+// its numbers, is a phrase of its own rather than the verdict's: after
+// reject, a spoken verdict (anything else is the reason, "reject 2 and 3
+// too big"); after yes or later, anything but "on <judge>", which rides on
+// the verdict ("yes 1 and 3 on opus").
+func splitsOff(lead, rest []string) bool {
+	if noWords[word(lead[0])] {
+		return spokenAt(rest, 0)
+	}
+	return !(len(rest) == 2 && word(rest[0]) == "on" && isJudge(rest[1]))
 }
 
 // leadAt reports whether tokens[i:] opens with a verdict said before the
@@ -267,8 +289,8 @@ func clauses(reply string) []string {
 		inPhrase, numbered := false, false
 		for i := 0; i < len(tokens); i++ {
 			if !inPhrase && !numbered {
-				// "accept 012 and 3 yes": a verdict said first is not a
-				// phrase begun.
+				// "accept 012 and reject 013": a verdict said first is
+				// not a phrase begun (parts reads the rest).
 				if _, n := leadAt(tokens, i); n > 0 {
 					i += n - 1
 					continue

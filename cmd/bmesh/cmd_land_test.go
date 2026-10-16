@@ -453,3 +453,31 @@ func TestDoneMatchesCarriedEntryAtItsTree(t *testing.T) {
 		t.Fatalf("done: %d %q %q", code, out, errs)
 	}
 }
+
+// A model's review that recorded the diff it read and did not carry read
+// another diff: land refuses whatever other model's review has no patch-id,
+// and leaves its recorded patch-id alone.
+func TestLandRefusesToCarryAReviewThatReadAnotherDiff(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	writeFile(t, filepath.Join(r.wt, "a.txt"), "ONE\ntwo\nthree\n")
+	meshtest.Git(t, r.wt, "commit", "-qam", "lead a")
+	tree, commit := gitOut(t, "rev-parse", "HEAD^{tree}"), gitOut(t, "rev-parse", "HEAD")
+	for _, res := range []mesh.Result{
+		{Kind: "review", Tree: tree, Commit: commit, OK: true, Model: "claude-opus-5-5", PatchID: "0123456789abcdef", By: "routine.review.x"},
+		{Kind: "review", Tree: tree, Commit: commit, OK: true, Model: "claude-sonnet-5-5", By: "routine.review.y"},
+	} {
+		if err := mesh.PutResult(ctx, c, res); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.pushOther(t, "c.txt", "c\n")
+	_, errs, code := runCLI(t, as("app-012"), "land")
+	if code != 3 || !strings.Contains(errs, "the rebase changed the diff") {
+		t.Fatalf("land: %d %q", code, errs)
+	}
+	if rec, ok, err := mesh.GetResult(ctx, c, mesh.ResultKey("review", tree, nil, "claude-opus-5-5")); err != nil || !ok || rec.PatchID != "0123456789abcdef" {
+		t.Fatalf("recorded patch-id changed: %+v %v %v", rec, ok, err)
+	}
+}

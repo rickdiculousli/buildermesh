@@ -461,9 +461,10 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA string) ([]s
 			return nil, fail(exitRefused, "refused: %s failed at t:%s, before the rebase; fix what it found, commit and run bmesh land again",
 				name, l.oldTree[:8])
 		}
-		// A result that recorded the diff it read and did not carry read
-		// another diff than this one.
-		same := old.PatchID == ""
+		// A model's result that recorded the diff it read and did not
+		// carry read another diff than this one, whichever model's result
+		// is the kind's worst.
+		same := !slices.ContainsFunc(l.oldNewest, func(r mesh.Result) bool { return r.Kind == name && r.PatchID != "" })
 		if same {
 			if same, err = samePatch(ctx, l.top, l.oldBase, l.oldHead, baseSHA, merged); err != nil {
 				return nil, err
@@ -514,7 +515,7 @@ func (l *lander) carry(ctx context.Context, name, tree string) ([]spec.Entry, er
 	var out []spec.Entry
 	patch := ""
 	for _, r := range l.oldNewest {
-		if r.Kind != name || r.Model == "" || !r.OK {
+		if r.Kind != name || r.Model == "" || !r.OK || r.PatchID != "" {
 			continue
 		}
 		if patch == "" {

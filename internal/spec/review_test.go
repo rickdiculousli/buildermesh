@@ -212,6 +212,12 @@ func TestParseReplyVerdictFirstAllAndBareNumbers(t *testing.T) {
 			"ambiguous 7 (spec 007 or item 7, 008); write the id with three digits (7)",
 			"ambiguous 8 (spec 008 or item 8, 009); write the id with three digits (8)"}},
 		"work on 001, 002, 003, 004, 006, 007, 008 and 009": {Verdicts: acc(1, 2, 3, 4, 6, 7, 8, 9)},
+		"reject 2 and 3 yes":       {Verdicts: []Verdict{{ID: 2, Move: "rejected"}, {ID: 3, Move: "accepted"}}},
+		"accept 012 and 3 smaller": {Verdicts: []Verdict{{ID: 12, Move: "accepted"}, {ID: 3, Move: "adjusting", Note: "smaller"}}},
+		"accept 1 and 3 no":        {Verdicts: []Verdict{{ID: 1, Move: "accepted"}, {ID: 3, Move: "rejected"}}},
+		"accept 1, 2 and 3 no":     {Verdicts: []Verdict{{ID: 1, Move: "accepted"}, {ID: 2, Move: "rejected"}, {ID: 3, Move: "rejected"}}}, // "2 and 3 no" is its own clause
+		"reject 2 and 3 too big":   {Verdicts: []Verdict{{ID: 2, Move: "rejected", Note: "too big"}, {ID: 3, Move: "rejected", Note: "too big"}}},
+		"later 1 and 2 on sonnet":  {Verdicts: []Verdict{{ID: 1, Move: "later", Judge: "sonnet"}, {ID: 2, Move: "later", Judge: "sonnet"}}},
 	} {
 		got := ParseReply(reply, ids, ranks)
 		if !reflect.DeepEqual(got.Verdicts, want.Verdicts) || !reflect.DeepEqual(got.Unmatched, want.Unmatched) {
