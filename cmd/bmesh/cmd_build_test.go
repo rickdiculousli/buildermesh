@@ -89,7 +89,7 @@ func TestBuildRecordsBuildingThenStartsTheLead(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"# Build docs/proposals/002-second.md in demo", "title: Spec 002", "The second, after 001.", "--node demo-002 started",
-		"`npm test`", "`buildermesh:lead`", "pushed to `example/demo`", "bmesh spec set --repo . --id 002 --status done --from building",
+		"`npm test`", "`buildermesh:lead`", "pushed to `example/demo`", "`bmesh --node demo-002 land`", "sets spec 002 `done` with `merged`",
 		"--- end spec -----", "second pass only after a rebase"} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("brief lacks %q", want)
