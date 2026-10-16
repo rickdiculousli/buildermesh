@@ -4,14 +4,10 @@ title: The Quickstart works as written (GitHub issues 1, 2 and 3)
 kind: refinement
 size: M
 judge: opus
-status: building
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
-built_by: a6668bf0-ca8d-445c-86e0-59f4ecd68da9
-host: k16
-family: buildermesh-build-3
-branch: bmesh/a6668bf0-ca8d-445c-86e0-59f4ecd68da9
 ---
 
 ## Opportunity
