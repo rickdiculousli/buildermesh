@@ -123,13 +123,13 @@ func TestBuildRecordsBuildingThenStartsTheLead(t *testing.T) {
 		t.Fatal(err)
 	}
 	head := gitOut(t, "-C", repo, "rev-parse", "main")
-	if _, errs, code := runCLI(t, nil, "build", "demo", "002"); code != 3 || !strings.Contains(errs, "path demo-002 is taken (state working); use --path demo-002-2") {
+	if _, errs, code := runCLI(t, nil, "build", "demo", "002", "--family", got.Family); code != 3 || !strings.Contains(errs, "path demo-002 is taken (state working); use --path demo-002-2") {
 		t.Fatalf("taken: %d %q", code, errs)
 	}
 	if gitOut(t, "-C", repo, "rev-parse", "main") != head {
 		t.Fatal("a refused build recorded on main")
 	}
-	out, errs, code = runCLI(t, nil, "build", "demo", "002", "--path", "demo-002-2", "--model", "claude-sonnet-5-5", "--effort", "medium")
+	out, errs, code = runCLI(t, nil, "build", "demo", "002", "--path", "demo-002-2", "--model", "claude-sonnet-5-5", "--effort", "medium", "--family", got.Family)
 	if code != 0 || !strings.Contains(out, `"path":"demo-002-2"`) || !strings.Contains(out, `"model":"claude-sonnet-5-5"`) {
 		t.Fatalf("--path: %d %q %q", code, out, errs)
 	}
@@ -203,9 +203,10 @@ func TestBuildAFailedStartMovesTheSpecBack(t *testing.T) {
 func TestBuildAcceptedOrdersAndCapsLeads(t *testing.T) {
 	c, repo, _ := buildSetup(t)
 	ctx := t.Context()
-	// Two leads already working on demo, one done, one on another repo.
-	putNode(t, c, ctx, mesh.Node{Path: "demo-020", Repo: "demo", Host: "elsewhere"})
-	putNode(t, c, ctx, mesh.Node{Path: "demo-021", Repo: "demo"})
+	// Two leads of the family already working on demo, one done, one on
+	// another repo.
+	putNode(t, c, ctx, mesh.Node{Path: "demo-020", Repo: "demo", Host: "elsewhere", Family: "demo-build-1"})
+	putNode(t, c, ctx, mesh.Node{Path: "demo-021", Repo: "demo", Family: "demo-build-1"})
 	putNode(t, c, ctx, mesh.Node{Path: "demo-022", Repo: "demo"})
 	putNode(t, c, ctx, mesh.Node{Path: "other-001", Repo: "other"})
 	for _, p := range []string{"demo-020", "demo-021", "other-001"} {
@@ -214,12 +215,13 @@ func TestBuildAcceptedOrdersAndCapsLeads(t *testing.T) {
 		}
 	}
 	meshtest.ForceState(t, c, "demo-022", mesh.State{State: "done", By: "node"})
-	out, errs, code := runCLI(t, nil, "build", "--accepted", "demo")
+	out, errs, code := runCLI(t, nil, "build", "--accepted", "demo", "--family", "demo-build-1")
 	if code != 0 {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	want := []string{
+		"verify: demo defines none",
 		"started 002 Spec 002: demo-002 on claude-opus-5-5 (thread ",
 		"waits 003 Spec 003: on 002 (accepted)",
 		"waits 004 Spec 004: 3 leads working on demo",
@@ -244,7 +246,7 @@ func TestBuildAcceptedOrdersAndCapsLeads(t *testing.T) {
 	runCLI(t, nil, "spec", "set", "--repo", repo, "--id", "002", "--status", "done", "--field", "merged=abc")
 	meshtest.Git(t, repo, "commit", "-qam", "002 done")
 	meshtest.Git(t, repo, "push", "-q", "origin", "main")
-	out, errs, code = runCLI(t, map[string]string{}, "--json", "build", "--accepted", "demo")
+	out, errs, code = runCLI(t, map[string]string{}, "--json", "build", "--accepted", "demo", "--family", "demo-build-1")
 	if code != 0 {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
 	}
@@ -260,8 +262,8 @@ func TestBuildAcceptedOrdersAndCapsLeads(t *testing.T) {
 	}
 	// Nothing accepted is left but 005, which waits for a slot before its
 	// judge is looked at.
-	out, _, _ = runCLI(t, nil, "build", "--accepted", "demo")
-	if out != "waits 005 Spec 005: 3 leads working on demo\n" {
+	out, _, _ = runCLI(t, nil, "build", "--accepted", "demo", "--family", "demo-build-1")
+	if out != "verify: demo defines none\nwaits 005 Spec 005: 3 leads working on demo\n" {
 		t.Fatalf("%q", out)
 	}
 	if _, _, code := runCLI(t, nil, "build", "--accepted", "demo", "002"); code != 2 {
@@ -288,10 +290,10 @@ func TestBuildFamilies(t *testing.T) {
 	if got := build("002"); got.Family != "demo-build-1" {
 		t.Fatalf("%+v", got)
 	}
-	if got := build("004"); got.Family != "demo-build-2" {
+	if got := build("004", "--force"); got.Family != "demo-build-2" {
 		t.Fatalf("%+v", got)
 	}
-	if got := build("009", "--family", "demo-build-1"); got.Family != "demo-build-1" {
+	if got := build("009", "--family", "demo-build-1", "--force"); got.Family != "demo-build-1" {
 		t.Fatalf("%+v", got)
 	}
 	for p, want := range map[string]string{"demo-002": "demo-build-1", "demo-004": "demo-build-2", "demo-009": "demo-build-1"} {
@@ -317,9 +319,164 @@ func TestBuildFamilies(t *testing.T) {
 	runCLI(t, nil, "spec", "set", "--repo", repo, "--id", "002", "--status", "done", "--field", "merged=abc")
 	meshtest.Git(t, repo, "commit", "-qam", "002 done")
 	meshtest.Git(t, repo, "push", "-q", "origin", "main")
-	out, errs, code := runCLI(t, nil, "build", "--accepted", "demo")
+	out, errs, code := runCLI(t, nil, "build", "--accepted", "demo", "--force")
 	if code != 0 || !strings.Contains(out, "started 003 Spec 003: demo-003 on claude-fable-5-1 (") ||
 		!strings.Contains(out, ", family demo-build-8)\n") || !strings.HasSuffix(out, "\nfamily demo-build-8\n") {
 		t.Fatalf("%d %q %q", code, out, errs)
+	}
+}
+
+func TestBuildHoldsWhileAnotherFamilyRuns(t *testing.T) {
+	c, repo, log := buildSetup(t)
+	ctx := t.Context()
+	// Family demo-build-4 has a lead working and one done; another repo's
+	// running family is no concern of demo's.
+	putNode(t, c, ctx, mesh.Node{Path: "demo-030", Repo: "demo", Host: "elsewhere", Family: "demo-build-4"})
+	putNode(t, c, ctx, mesh.Node{Path: "demo-031", Repo: "demo", Family: "demo-build-4"})
+	putNode(t, c, ctx, mesh.Node{Path: "other-001", Repo: "other", Family: "other-build-1"})
+	for _, p := range []string{"demo-030", "other-001"} {
+		if _, err := mesh.WriteState(ctx, c, p, mesh.State{State: "working", By: "node"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	meshtest.ForceState(t, c, "demo-031", mesh.State{State: "done", By: "node"})
+	head := gitOut(t, "-C", repo, "rev-parse", "main")
+	running := "demo-build-4 is still running (demo-030 working); watch it with bmesh watch --nodes demo-030"
+	if _, errs, code := runCLI(t, nil, "build", "demo", "002"); code != 3 || errs != "bmesh: held: "+running+"\n" {
+		t.Fatalf("held: %d %q", code, errs)
+	}
+	// --accepted says it once and starts nothing.
+	if out, errs, code := runCLI(t, nil, "build", "--accepted", "demo"); code != 0 || out != "held demo-build-4: still running (demo-030 working); watch it with bmesh watch --nodes demo-030\n" {
+		t.Fatalf("--accepted: %d %q %q", code, out, errs)
+	}
+	if gitOut(t, "-C", repo, "rev-parse", "main") != head {
+		t.Fatal("a held build recorded on main")
+	}
+	if _, err := os.Stat(log); err == nil {
+		t.Fatal("the runner was called")
+	}
+	// The family's own coordinator is never held by it.
+	if out, errs, code := runCLI(t, nil, "build", "demo", "002", "--family", "demo-build-4"); code != 0 || !strings.Contains(out, `"family":"demo-build-4"`) {
+		t.Fatalf("own family: %d %q %q", code, out, errs)
+	}
+
+	// Done, the family still holds builds while its feedback is pending; a
+	// family of another repo's does not.
+	for _, p := range []string{"demo-030", "demo-002"} {
+		meshtest.ForceState(t, c, p, mesh.State{State: "done", By: "node"})
+	}
+	for _, f := range []string{"demo-build-4", "demo-build-4", "other-build-1"} {
+		if _, err := mesh.PublishFeedback(ctx, c, mesh.Feedback{From: "demo-030", Family: f, Text: "x"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	meshtest.ForceState(t, c, "other-001", mesh.State{State: "done", By: "node"})
+	if _, errs, code := runCLI(t, nil, "build", "demo", "004"); code != 3 ||
+		errs != "bmesh: held: demo-build-4 has 2 feedback pending; drain it with bmesh feedback list/drain demo-build-4\n" {
+		t.Fatalf("feedback: %d %q", code, errs)
+	}
+	if _, errs, code := runCLI(t, nil, "feedback", "drain", "demo-build-4"); code != 0 {
+		t.Fatalf("drain: %d %q", code, errs)
+	}
+	if out, errs, code := runCLI(t, nil, "build", "demo", "004"); code != 0 || !strings.Contains(out, `"family":"demo-build-5"`) {
+		t.Fatalf("drained: %d %q %q", code, out, errs)
+	}
+
+	// --force dispatches beside a running family and says what it passed.
+	out, errs, code := runCLI(t, nil, "build", "demo", "009", "--force")
+	if code != 0 || !strings.Contains(out, `"path":"demo-009"`) ||
+		!strings.Contains(errs, "--force: past held: demo-build-5 is still running (demo-004 idle); watch it with bmesh watch --nodes demo-004\n") {
+		t.Fatalf("--force: %d %q %q", code, out, errs)
+	}
+}
+
+// verifyKind gives the demo repo a verify kind that runs check.sh, which
+// logs each run to $VERIFY_LOG and then does body, committed as msg and
+// pushed. It returns the commit.
+func verifyKind(t *testing.T, repo, body, msg string) string {
+	t.Helper()
+	dir := filepath.Join(repo, ".bmesh", "routines")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "verify.toml"), []byte("mode = \"inline\"\ndeterministic = true\ncommand = \"sh check.sh\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "check.sh"), []byte("echo ran >> \"$VERIFY_LOG\"\n"+body+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-qm", msg)
+	meshtest.Git(t, repo, "push", "-q", "origin", "main")
+	return gitOut(t, "-C", repo, "rev-parse", "main")
+}
+
+func TestBuildVerifiesMainsCodeHead(t *testing.T) {
+	c, repo, _ := buildSetup(t)
+	ctx := t.Context()
+	vlog := filepath.Join(t.TempDir(), "verify.log")
+	t.Setenv("VERIFY_LOG", vlog)
+	runs := func() int {
+		b, _ := os.ReadFile(vlog)
+		return strings.Count(string(b), "ran\n")
+	}
+	green := verifyKind(t, repo, "echo all good", "Add the verify kind")
+	tree := gitOut(t, "-C", repo, "rev-parse", "main^{tree}")
+	out, errs, code := runCLI(t, nil, "build", "demo", "002")
+	if code != 0 || !strings.Contains(errs, "verify main "+green[:8]+": ok t:"+tree[:8]+" (recorded)\n") || runs() != 1 {
+		t.Fatalf("green: %d %q %q runs %d", code, out, errs, runs())
+	}
+	var got buildStarted
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("%q: %v", out, err)
+	}
+	if r, ok, err := mesh.GetResult(ctx, c, mesh.ResultKey("verify", tree, nil, "")); err != nil || !ok || !r.OK || r.Commit != green {
+		t.Fatalf("result %+v %v %v", r, ok, err)
+	}
+	if wts := gitOut(t, "-C", repo, "worktree", "list"); strings.Count(wts, "\n") != 0 {
+		t.Fatalf("worktrees left: %s", wts)
+	}
+	// The dispatch's ledger commits on top leave the code head where it was,
+	// and its record answers.
+	_, errs, code = runCLI(t, nil, "build", "demo", "004", "--family", got.Family)
+	if code != 0 || !strings.Contains(errs, "verify main "+green[:8]+": ok t:"+tree[:8]+" (answered from the record)\n") || runs() != 1 {
+		t.Fatalf("ledger on top: %d %q runs %d", code, errs, runs())
+	}
+
+	// A red main refuses with the tail of the verify's output and records
+	// nothing on main.
+	red := verifyKind(t, repo, "echo '--- FAIL: TestRed'\nexit 1", "Break it")
+	redTree := gitOut(t, "-C", repo, "rev-parse", "main^{tree}")
+	_, errs, code = runCLI(t, nil, "build", "demo", "009", "--family", got.Family)
+	if code != 3 || !strings.Contains(errs, "bmesh: main is red at "+red[:8]+" Break it: verify fail t:"+redTree[:8]+" (recorded)") ||
+		!strings.HasSuffix(errs, "; build its fix with --force\n--- FAIL: TestRed\n") || runs() != 2 {
+		t.Fatalf("red: %d %q runs %d", code, errs, runs())
+	}
+	if gitOut(t, "-C", repo, "rev-parse", "main") != red {
+		t.Fatal("a refused build recorded on main")
+	}
+
+	// --force dispatches past a red main and a running family both, and
+	// runs nothing.
+	out, errs, code = runCLI(t, nil, "build", "demo", "009", "--force")
+	if code != 0 || !strings.Contains(out, `"path":"demo-009"`) || runs() != 2 ||
+		!strings.Contains(errs, "--force: past held: "+got.Family+" is still running (demo-002 idle, demo-004 idle)") ||
+		!strings.Contains(errs, "--force: past main is red at "+red[:8]+" Break it: verify fail t:"+redTree[:8]+" (answered from the record)\n") {
+		t.Fatalf("--force: %d %q %q runs %d", code, out, errs, runs())
+	}
+
+	// Past a code head with no result, --force says so and runs nothing;
+	// without it, --accepted verifies once for the batch.
+	fixed := verifyKind(t, repo, "echo fixed", "Fix it")
+	fixedTree := gitOut(t, "-C", repo, "rev-parse", "main^{tree}")
+	out, errs, code = runCLI(t, nil, "build", "--accepted", "demo", "--force")
+	if code != 0 || !strings.Contains(out, "--force: past verify main "+fixed[:8]+": no result for t:"+fixedTree[:8]+"\n") || runs() != 2 {
+		t.Fatalf("--accepted --force: %d %q %q runs %d", code, out, errs, runs())
+	}
+	meshtest.ForceState(t, c, "demo-009", mesh.State{State: "done", By: "node"})
+	out, errs, code = runCLI(t, nil, "build", "--accepted", "demo", "--family", got.Family)
+	if code != 0 || strings.Count(out, "verify main ") != 2 || !strings.HasPrefix(out, "verify main "+fixed[:8]+": running at t:"+fixedTree[:8]+"\n"+
+		"verify main "+fixed[:8]+": ok t:"+fixedTree[:8]+" (recorded)\nwaits 003") || runs() != 3 {
+		t.Fatalf("--accepted: %d %q %q runs %d", code, out, errs, runs())
 	}
 }

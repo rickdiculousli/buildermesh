@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,7 +18,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
-const buildUsage = "usage: bmesh build <repo> <NNN> [--model M] [--effort E] [--path P] [--family F] | bmesh build --accepted <repo> [--model M] [--effort E] [--family F]"
+const buildUsage = "usage: bmesh build <repo> <NNN> [--model M] [--effort E] [--path P] [--family F] [--force] | bmesh build --accepted <repo> [--model M] [--effort E] [--family F] [--force]"
 
 // buildSlots is how many leads --accepted keeps working on one repo.
 const buildSlots = 3
@@ -48,6 +49,9 @@ type buildStarted struct {
 // that names a lower id after that one is done, at most buildSlots leads
 // working on the repo, and prints what waits. Every lead one invocation
 // starts is in one build family: --family, else a fresh <repo>-build-<N>.
+// Before anything is recorded, both forms hold while another family of
+// the repo's still runs or has feedback pending, then verify main's code
+// head (once for a batch); --force goes past both, saying what it passed.
 func (a *app) cmdBuild(args []string) error {
 	fs := a.flags("build")
 	accepted := fs.Bool("accepted", false, "build every accepted spec, in order, up to three at a time")
@@ -55,6 +59,7 @@ func (a *app) cmdBuild(args []string) error {
 	effort := fs.String("effort", "", "the lead's effort (default [models] lead_effort)")
 	pathFlag := fs.String("path", "", "node path (default <repo>-<NNN>)")
 	familyFlag := fs.String("family", "", "join this build family (default a fresh <repo>-build-<N>)")
+	force := fs.Bool("force", false, "dispatch past another family still running and a red main")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -105,16 +110,53 @@ func (a *app) cmdBuild(args []string) error {
 			return err
 		}
 	}
+	// What the gate says goes to stderr, keeping stdout the command's
+	// result, except in --accepted's lines.
+	note := a.stderr
+	if *accepted && !a.json {
+		note = a.stdout
+	}
+	var s *spec.Spec
+	if !*accepted {
+		n, err := strconv.Atoi(pos[1])
+		if err != nil {
+			return fail(exitUsage, "spec id %q is not a number", pos[1])
+		}
+		var ok bool
+		if s, ok = spec.Find(specs, n); !ok {
+			return fail(exitError, "no spec %03d on main in %s", n, repoPath)
+		}
+		if s.Status() != "accepted" { // its own refusal comes before a hold or a verify
+			return fail(exitRefused, "refused: spec %s is %s, not accepted", s.IDString(), s.Status())
+		}
+	}
+	hold, err := a.heldBy(ctx, row.Name, family)
+	if err != nil {
+		return err
+	}
+	if hold != nil {
+		switch {
+		case *force:
+			fmt.Fprintf(note, "--force: past %s\n", hold.line())
+		case *accepted && a.json:
+			return a.printJSON([]map[string]string{{"state": "held", "family": hold.who, "reason": hold.why}})
+		case *accepted:
+			fmt.Fprintf(a.stdout, "held %s: %s\n", hold.who, hold.why)
+			return nil
+		default:
+			return fail(exitRefused, "%s", hold.line())
+		}
+	}
+	if !*accepted || slices.ContainsFunc(specs, func(s *spec.Spec) bool { return s.Status() == "accepted" }) {
+		if err := a.verifyMain(ctx, row, repoPath, note, *force); err != nil {
+			return err
+		}
+	}
+	// The dispatch gets its own ten minutes, however long the verify ran.
+	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
 	if *accepted {
 		return a.buildAccepted(ctx, row, repoPath, specs, *model, *effort, family)
-	}
-	n, err := strconv.Atoi(pos[1])
-	if err != nil {
-		return fail(exitUsage, "spec id %q is not a number", pos[1])
-	}
-	s, ok := spec.Find(specs, n)
-	if !ok {
-		return fail(exitError, "no spec %03d on main in %s", n, repoPath)
 	}
 	started, err := a.buildOne(ctx, row, repoPath, s, *model, *effort, *pathFlag, family)
 	if err != nil {
