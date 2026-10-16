@@ -4,7 +4,7 @@ title: A self-updated bmesh knows its own revision, so self-update stays on
 kind: refinement
 size: S
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator coordinator (Mac session, 2026-10-16)
 proposed_on: 2026-10-16
@@ -12,6 +12,8 @@ built_by: c267301c-bbf0-4992-9f88-01ee43f84af5
 host: k16
 family: buildermesh-build-2
 branch: bmesh/c267301c-bbf0-4992-9f88-01ee43f84af5
+verified: verify ok t:27fd2ea4
+merged: 6a366f7ecea2d4145876f9e60a128c0b76ba056b
 ---
 
 ## Opportunity
