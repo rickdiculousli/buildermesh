@@ -4,7 +4,7 @@ title: Boxes keep each other level: sync, plugin refresh and approval holds
 kind: feature
 size: L
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
@@ -12,6 +12,8 @@ built_by: 0a58bd7a-3386-4e08-83ff-bcb63b5810d1
 host: k16
 family: buildermesh-build-2
 branch: bmesh/0a58bd7a-3386-4e08-83ff-bcb63b5810d1
+merged: f32687045bc2735e9327485a0503ce7d4a4d2a07
+verified: verify ok t:0eb0c89f
 ---
 
 ## Opportunity
