@@ -183,7 +183,8 @@ func short8(sha string) string {
 // checkSpecDone refuses done unless the node's spec has landed as done with
 // merged on main; a lead's spec must also carry a verified line with no
 // failing entry, every entry matched by a recorded result for the merged
-// commit's tree (any args).
+// commit's tree (any args), or a carried entry by a model result with a
+// patch-id at the tree it names.
 func (a *app) checkSpecDone(ctx context.Context, n mesh.Node) error {
 	d, err := spec.CheckDone(n.RepoPath, a.cfg.Spec.Glob, n.Spec)
 	if err != nil {
@@ -215,15 +216,24 @@ func (a *app) checkSpecDone(ctx context.Context, n mesh.Node) error {
 		if err != nil {
 			return err
 		}
+		// A carried entry is matched at the tree its result was recorded
+		// at, by a model result that recorded the diff it read.
+		at := tree[:8]
+		if e.Carried != "" {
+			at = e.Carried
+		}
 		matched := false
 		for _, r := range rs {
-			if r.Tree == tree && r.OK == e.OK && (e.Model == "" || r.Model == e.Model) {
+			if !strings.HasPrefix(r.Tree, at) || r.OK != e.OK || e.Model != "" && r.Model != e.Model {
+				continue
+			}
+			if e.Carried == "" && r.Tree == tree || e.Carried != "" && r.Model != "" && r.PatchID != "" {
 				matched = true
 				break
 			}
 		}
 		if !matched {
-			return fail(exitRefused, "not done: verified names %s but no result for tree %s", e.Kind, e.Tree8)
+			return fail(exitRefused, "not done: verified names %s but no result for tree %s", e.Kind, at)
 		}
 	}
 	return nil

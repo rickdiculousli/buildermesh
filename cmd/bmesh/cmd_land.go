@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -390,9 +388,10 @@ func (l *lander) mainMoved(ctx context.Context, baseSHA string) bool {
 
 // results makes sure the rebased tree carries every required kind: an
 // inline kind runs (a deterministic one is answered from its record);
-// another must have its own result there, unless the branch had an ok one
-// before the rebase and the rebase left the diff unchanged, which is said
-// and left off the line. It returns the verified entries for the tree,
+// another must have its own result there or one carried to it by patch-id
+// (spec.ComposeVerified), unless the branch had an ok one before the rebase
+// that recorded no patch-id and the rebase left the diff unchanged, which is
+// said and left off the line. It returns the verified entries for the tree,
 // refusing a failing one.
 func (l *lander) results(ctx context.Context, merged, tree, baseSHA string) ([]spec.Entry, error) {
 	out := l.a.stdout
@@ -444,7 +443,11 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA string) ([]s
 			}
 		}
 		for _, e := range found {
-			fmt.Fprintf(out, "%s (recorded)\n", e)
+			if e.Carried != "" {
+				fmt.Fprintf(out, "%s (carried from t:%s: the diff is unchanged)\n", e, e.Carried)
+			} else {
+				fmt.Fprintf(out, "%s (recorded)\n", e)
+			}
 		}
 		if len(found) > 0 {
 			continue
@@ -454,9 +457,13 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA string) ([]s
 			return nil, fail(exitRefused, "refused: %s failed at t:%s, before the rebase; fix what it found, commit and run bmesh land again",
 				name, l.oldTree[:8])
 		}
-		same, err := samePatch(ctx, l.top, l.oldBase, l.oldHead, baseSHA, merged)
-		if err != nil {
-			return nil, err
+		// A result that recorded the diff it read and did not carry read
+		// another diff than this one.
+		same := old.PatchID == ""
+		if same {
+			if same, err = samePatch(ctx, l.top, l.oldBase, l.oldHead, baseSHA, merged); err != nil {
+				return nil, err
+			}
 		}
 		if !same {
 			return nil, fail(exitRefused, "refused: %s has a result for t:%s but none for t:%s, and the rebase changed the diff: "+
@@ -478,32 +485,13 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA string) ([]s
 
 // samePatch reports whether the diff a..b has the patch-id of c..d.
 func samePatch(ctx context.Context, dir, a, b, c, d string) (bool, error) {
-	x, err := patchID(ctx, dir, a, b)
+	x, err := checkout.PatchID(ctx, dir, a, b)
 	if err != nil {
 		return false, err
 	}
-	y, err := patchID(ctx, dir, c, d)
+	y, err := checkout.PatchID(ctx, dir, c, d)
 	if err != nil {
 		return false, err
 	}
 	return x == y, nil
-}
-
-// patchID is `git diff from to | git patch-id --stable`'s id.
-func patchID(ctx context.Context, dir, from, to string) (string, error) {
-	diff, err := exec.CommandContext(ctx, "git", "-C", dir, "diff", "--no-ext-diff", "--no-color", from, to).Output()
-	if err != nil {
-		return "", fmt.Errorf("git diff %s %s: %w", from, to, err)
-	}
-	cmd := exec.CommandContext(ctx, "git", "-C", dir, "patch-id", "--stable")
-	cmd.Stdin = bytes.NewReader(diff)
-	id, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("git patch-id: %w", err)
-	}
-	f := strings.Fields(string(id))
-	if len(f) == 0 {
-		return "", nil
-	}
-	return f[0], nil
 }

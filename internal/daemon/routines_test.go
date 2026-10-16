@@ -18,6 +18,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/nats-io/nuid"
+	"github.com/rickdiculousli/buildermesh/internal/checkout"
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
@@ -639,6 +640,39 @@ batch_idle = "1s"
 	n, ok, err := mesh.GetNode(f.ctx, f.c, "routine.review.m-a-1")
 	if err != nil || !ok || n.Model != "m-a" || n.Role != "routine" {
 		t.Fatalf("m-a node %+v %v %v", n, ok, err)
+	}
+}
+
+// A model's result records the patch-id of the diff its job text's base
+// names; a job with no base records none.
+func TestModelResultRecordsReviewedPatch(t *testing.T) {
+	f := routineSetup(t, map[string]string{".bmesh/routines/review.toml": `
+models = ["m-a"]
+prompt = "P"
+timeout = "30s"
+batch_idle = "1s"
+`})
+	base := meshtest.Git(t, f.repo, "rev-parse", "HEAD")
+	head := meshtest.CommitFiles(t, f.repo, map[string]string{"a.txt": "a\n"})
+	tree := meshtest.Git(t, f.repo, "rev-parse", "HEAD^{tree}")
+	want, err := checkout.PatchID(f.ctx, f.repo, base, head)
+	if err != nil || want == "" {
+		t.Fatalf("patch %q %v", want, err)
+	}
+	t.Setenv("FAKE_RESULT", "VERDICT: ok")
+	f.start(t)
+	key := mesh.ResultKey("review", tree, nil, "m-a")
+	if r := f.reply(t, f.queue(t, mesh.Job{Kind: "review", Go: true, Text: "base: " + base}), 20*time.Second); !r.OK {
+		t.Fatalf("reply %+v", r)
+	}
+	if rec, ok, err := mesh.GetResult(f.ctx, f.c, key); err != nil || !ok || rec.PatchID != want {
+		t.Fatalf("record %+v %v %v, want patch %s", rec, ok, err, want)
+	}
+	if r := f.reply(t, f.queue(t, mesh.Job{Kind: "review", Go: true, Args: []string{"x"}}), 20*time.Second); !r.OK {
+		t.Fatalf("reply %+v", r)
+	}
+	if rec, ok, err := mesh.GetResult(f.ctx, f.c, mesh.ResultKey("review", tree, []string{"x"}, "m-a")); err != nil || !ok || rec.PatchID != "" {
+		t.Fatalf("no base: %+v %v %v", rec, ok, err)
 	}
 }
 

@@ -624,8 +624,14 @@ func (a *app) runInline(ctx context.Context, k kind.Kind, top, head, tree, self,
 	// deterministic kind is answered from its record.
 	putCtx, cancel := cmdCtx() // the run may have outlasted ctx
 	defer cancel()
+	patch := ""
+	if model != "" {
+		if patch, err = checkout.ReviewedPatch(putCtx, top, text, head); err != nil {
+			fmt.Fprintf(a.stderr, "bmesh: %v; recorded without a patch-id\n", err)
+		}
+	}
 	r := mesh.Result{Kind: name, Tree: tree, Commit: head, Args: jobArgs, OK: reply.OK,
-		Output: mesh.Truncate(reply.Output), By: self, Model: model}
+		Output: mesh.Truncate(reply.Output), By: self, Model: model, PatchID: patch}
 	if err := mesh.PutResult(putCtx, a.client, r); err != nil {
 		return false, "", "", err
 	}

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/rickdiculousli/buildermesh/internal/checkout"
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
@@ -15,7 +16,7 @@ import (
 
 const (
 	resultFindUsage   = "usage: bmesh result find <kind> [--commit C] [--model M] [--json] [-- args...]"
-	resultRecordUsage = "usage: bmesh result record <kind> --ok|--fail [--commit C] [--model M] [--output FILE|-] [-- args...]"
+	resultRecordUsage = "usage: bmesh result record <kind> --ok|--fail [--commit C] [--model M [--base B]] [--output FILE|-] [-- args...]"
 	resultUsage       = resultFindUsage + " | " + resultRecordUsage
 )
 
@@ -141,6 +142,7 @@ func (a *app) cmdResultRecord(args []string) error {
 	failed := fs.Bool("fail", false, "the run failed")
 	commit := fs.String("commit", "HEAD", "commit the run checked")
 	model := fs.String("model", "", "the model that ran, for a model kind")
+	base := fs.String("base", "", "the commit the reviewed diff starts at (records its patch-id; needs --model)")
 	outPath := fs.String("output", "", "file holding the run's output (- reads stdin)")
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -155,6 +157,9 @@ func (a *app) cmdResultRecord(args []string) error {
 	}
 	if err := checkModel(*model); err != nil {
 		return err
+	}
+	if *base != "" && *model == "" {
+		return fail(exitUsage, "result record: --base needs --model (a model's review of the diff); "+resultRecordUsage)
 	}
 	sha, err := gitRev("--verify", "--end-of-options", *commit+"^{commit}")
 	if err != nil {
@@ -175,11 +180,24 @@ func (a *app) cmdResultRecord(args []string) error {
 	}
 	ctx, cancel := cmdCtx()
 	defer cancel()
+	patch := ""
+	if *base != "" {
+		baseSHA, err := gitRev("--verify", "--end-of-options", *base+"^{commit}")
+		if err != nil {
+			return err
+		}
+		if patch, err = checkout.PatchID(ctx, ".", baseSHA, sha); err != nil {
+			return err
+		}
+		if patch == "" {
+			return fail(exitRefused, "refused: %s..%s is an empty diff", *base, *commit)
+		}
+	}
 	by, err := a.identityOrHost(ctx, "result")
 	if err != nil {
 		return err
 	}
-	r := mesh.Result{Kind: name, Tree: tree, Commit: sha, Args: jobArgs, OK: *ok, Output: output, By: by, Model: *model}
+	r := mesh.Result{Kind: name, Tree: tree, Commit: sha, Args: jobArgs, OK: *ok, Output: output, By: by, Model: *model, PatchID: patch}
 	if err := mesh.PutResult(ctx, a.client, r); err != nil {
 		return err
 	}
