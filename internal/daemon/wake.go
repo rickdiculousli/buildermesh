@@ -14,8 +14,11 @@ import (
 // pass the once-per-WakeEvery check for one lead before either records it.
 var wakeMu sync.Mutex
 
-// wakeOnce wakes every local lead whose last runner sample is idle, which is
-// not done or blocked, has unread mail and was not woken within WakeEvery.
+// wakeOnce wakes every local lead whose last runner sample is idle, has
+// unread mail and was not woken within WakeEvery. A done or blocked lead is
+// woken only when that mail holds a message sent to it (bmesh send), so the
+// operator can ask a finished lead something; late reports and replies don't
+// wake it.
 func wakeOnce(ctx context.Context, d Deps, act *Activity) {
 	leads, err := localLeads(ctx, d)
 	if err != nil {
@@ -26,17 +29,17 @@ func wakeOnce(ctx context.Context, d Deps, act *Activity) {
 		if ctx.Err() != nil {
 			return
 		}
-		s, ok, err := mesh.GetRunner(ctx, d.Client, n.Path)
-		if err != nil || !ok || !s.Known || s.Running {
-			continue
-		}
 		st, _, err := mesh.ReadState(ctx, d.Client, n.Path)
 		if err != nil {
 			d.Log.Warn("wake: read state", "path", n.Path, "err", err)
 			continue
 		}
-		if st.State == "done" || st.State == "blocked" {
-			continue
+		finished := st.State == "done" || st.State == "blocked"
+		if !finished {
+			s, ok, err := mesh.GetRunner(ctx, d.Client, n.Path)
+			if err != nil || !ok || !s.Known || s.Running {
+				continue
+			}
 		}
 		p, err := mesh.ParsePath(n.Path)
 		if err != nil {
@@ -47,11 +50,33 @@ func wakeOnce(ctx context.Context, d Deps, act *Activity) {
 			d.Log.Warn("wake: unread", "path", n.Path, "err", err)
 			continue
 		}
-		if unread == 0 {
+		if unread == 0 || finished && !hasMessage(ctx, d, p) {
 			continue
+		}
+		// A finished lead is not polled, so its runner is read here.
+		if finished {
+			s, err := d.Runner.Status(ctx, n.Runner.Thread)
+			if err != nil || !s.Known || s.Running {
+				continue
+			}
 		}
 		wake(ctx, d, act, n, unread)
 	}
+}
+
+// hasMessage reports whether p's unread mail holds a `message` (bmesh send).
+func hasMessage(ctx context.Context, d Deps, p mesh.Path) bool {
+	pending, err := mesh.Pending(ctx, d.Client, p)
+	if err != nil {
+		d.Log.Warn("wake: pending", "path", p.String(), "err", err)
+		return false
+	}
+	for _, m := range pending {
+		if m.Kind == "message" {
+			return true
+		}
+	}
+	return false
 }
 
 // wake sends the wake text (the count and what waits, read from the

@@ -148,3 +148,31 @@ func TestWakeOncePer10MinAcrossRestart(t *testing.T) {
 		t.Fatalf("no wake after 11 min: %q", sends)
 	}
 }
+
+// A done or blocked lead is woken for a message sent to it, never for a late
+// report alone.
+func TestWakeFinishedLeadOnlyForMessage(t *testing.T) {
+	f := setup(t)
+	a := NewActivity()
+	f.lead(t, "app-001", "th-1", "done")
+	f.lead(t, "app-002", "th-2", "blocked")
+	rep := mesh.Message{From: "app-001.alpha", To: "app-001", Kind: "report", Text: "done from app-001.alpha: branch b at 1a2b3c4d",
+		Report: &mesh.Report{Event: "done", From: "app-001.alpha", Branch: "b", Commit: "1a2b3c4d5e"}}
+	if _, err := mesh.Send(f.ctx, f.c, rep); err != nil {
+		t.Fatal(err)
+	}
+	f.send(t, "app-002", 1)
+	pollOnce(f.ctx, f.d, a)
+	wakeOnce(f.ctx, f.d, a)
+	if sends := f.sends(t); len(sends) != 1 || sends[0] != "send th-2 bmesh: 1 unread: message from rick. Run `bmesh inbox` now, then continue." {
+		t.Fatalf("sends %q", sends)
+	}
+
+	f.send(t, "app-001", 1)
+	pollOnce(f.ctx, f.d, a)
+	wakeOnce(f.ctx, f.d, a)
+	want := "send th-1 bmesh: 2 unread: done from app-001.alpha (branch b at 1a2b3c4d); message from rick. Run `bmesh inbox` now, then continue."
+	if sends := f.sends(t); len(sends) != 2 || sends[1] != want {
+		t.Fatalf("sends %q", sends)
+	}
+}
