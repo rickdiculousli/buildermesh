@@ -20,6 +20,7 @@ Once 019 through 023, 029 and rickdiculousli-tools' 001 are done, and both boxes
 The operator asked for it to fold completely.
 
 ## Proposal
+Adjust (2026-10-16): also: the nats conf and token sit under ~/.config/command-center only because they predate bmesh. Move them to bmesh's config dir as README Several boxes describes and say so plainly in the
 Adjust (2026-10-16): tweak: the operator is already on the new T3 so drop the wait for both boxes to report protocol version two and remove the V1 path straight away. The operator doesn't use pr-comment or tooling-editor or pr_watch.py: they go to the archive with the repo and the spec no longer waits on rickdiculousli-tools' github plugin spec. On NATS: bmesh embeds a hub only for a single box and a two-box mesh runs its own nats-server
 Runs alone after 023, 029 and rickdiculousli-tools' 001 are `done` and both boxes' T3 are on 0.1.0 (a barrier, like 005). It is a checklist: the lead does the k16 and repo steps, and the Mac's go to the operator.
 
