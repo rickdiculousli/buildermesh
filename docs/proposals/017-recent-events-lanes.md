@@ -4,7 +4,7 @@ title: Recent events draw each node as a coloured chip in its own lane
 kind: ux
 size: S
 judge: opus
-status: building
+status: done
 lens: ux
 proposed_by: 3ac8b8a4-8c59-4284-8f78-728ed0e1a551
 proposed_on: 2026-10-15
@@ -12,6 +12,8 @@ built_by: 4bc987b9-b54f-405f-b020-6cd5b431ffa9
 host: k16
 family: buildermesh-build-2
 branch: bmesh/4bc987b9-b54f-405f-b020-6cd5b431ffa9
+verified: verify ok t:3818439e
+merged: 67317424d0f8d59ced5ff58648819b4466458cb2
 ---
 
 ## Opportunity
