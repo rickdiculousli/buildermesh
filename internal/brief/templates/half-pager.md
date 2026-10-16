@@ -19,8 +19,8 @@ proposed_on: {{date}}
 # built_by: <thread id>       set by dispatch
 # branch: <branch>            set by dispatch, corrected by the build thread if the runner renamed it
 # host: <box>                 set by dispatch
-# merged: <sha>               set by the build thread
-# verified: <entries>         set by the build thread (bmesh spec verified --write)
+# merged: <sha>               set by the build thread (bmesh land)
+# verified: <entries>         set by the build thread (bmesh land)
 # reason: <one line>          rejected or blocked only
 # scope_grew: [<ids>]         set by the build thread when landed specs widened it
 ---
