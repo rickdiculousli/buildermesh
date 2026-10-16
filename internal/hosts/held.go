@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -15,8 +16,13 @@ import (
 // Held is a level waiting for the operator on a secure box (020), in
 // <state dir>/held/<id>.json: the job (a self-level's is the box's own,
 // signed with its host key), the target and git log --stat HEAD..target.
+// A registry proposal (023, Kind HeldRegistry) waits on the admin box the
+// same way: its job's args carry the proposed rows, Base the registry
+// version they were proposed against and Log the row diff.
 type Held struct {
 	ID      string `json:"id"` // the job's id
+	Kind    string `json:"kind,omitempty"`
+	Base    int64  `json:"base,omitempty"`
 	Job     Job    `json:"job"`
 	Self    bool   `json:"self"` // the box's own self-level
 	Repo    string `json:"repo"`
@@ -27,6 +33,27 @@ type Held struct {
 	Commits int    `json:"commits"`
 	Log     string `json:"log"`
 	Created string `json:"created"`
+}
+
+// HeldRegistry is a registry proposal's hold kind; a level's is "".
+const HeldRegistry = "registry"
+
+// ProposeArgs is a propose job's args: the registry version the rows were
+// proposed against, then the rows (repos.toml's text).
+func ProposeArgs(base int64, rows string) []string {
+	return []string{strconv.FormatInt(base, 10), rows}
+}
+
+// ParseProposeArgs reads ProposeArgs.
+func ParseProposeArgs(args []string) (base int64, rows string, err error) {
+	if len(args) != 2 {
+		return 0, "", fmt.Errorf("propose takes 2 args, got %d", len(args))
+	}
+	base, err = strconv.ParseInt(args[0], 10, 64)
+	if err != nil || base < 0 {
+		return 0, "", fmt.Errorf("propose: base %q is not a version", args[0])
+	}
+	return base, args[1], nil
 }
 
 // From is who asked: the job's sender, or self-level.

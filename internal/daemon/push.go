@@ -275,8 +275,9 @@ func pushable(d Deps, subject string) (path, event string, ok bool) {
 }
 
 // hostsEvents are the daemon events of the hosts layer the phone hears:
-// a refused job (019), a hold and a level's unanswered refusal (020).
-var hostsEvents = []string{"refused", "held", "level"}
+// a refused job (019), a hold and a level's unanswered refusal (020), and
+// a registry this binary can't read (023).
+var hostsEvents = []string{"refused", "held", "level", "registry"}
 
 // hostsEvent splits a bm.daemon.<host>.<event> subject of hostsEvents.
 func hostsEvent(subject string) (host, event string, ok bool) {
@@ -333,16 +334,17 @@ func pushRefused(ctx context.Context, d Deps, s mesh.Stored, path string, jobs c
 	}
 }
 
-// pushHostsEvent claims a daemon's held or level event s, once: a hold
-// (title its text, `ricks-macbook holds: pstack-claude +3 commits (k16)`)
-// or a level's refusal or failure no caller waited for.
+// pushHostsEvent claims a daemon's held, level or registry event s, once:
+// a hold (title its text, `ricks-macbook holds: pstack-claude +3 commits
+// (k16)`), a level's refusal or failure no caller waited for, or a
+// registry the box refused.
 func pushHostsEvent(ctx context.Context, d Deps, s mesh.Stored, path, event string, jobs chan<- pushJob) {
 	ev, err := decodeEvent(s.Data)
 	if err != nil || ev.Text == "" {
 		return
 	}
 	h := Headers{Title: cutUTF8(ev.Text, 200), Priority: "default", Tags: "hourglass", Click: d.Cfg.Notify.MapURL}
-	if event == "level" {
+	if event == "level" || event == "registry" {
 		h.Priority, h.Tags = "high", "warning"
 	}
 	req := PushRequest{Headers: h, Body: cutUTF8(ev.Text, pushBodyMax)}
@@ -425,7 +427,7 @@ func pushClaim(ctx context.Context, d Deps, s mesh.Stored, path, event string, j
 		switch event {
 		case "refused":
 			pushRefused(ctx, d, s, path, jobs)
-		case "held", "level":
+		case "held", "level", "registry":
 			pushHostsEvent(ctx, d, s, path, event, jobs)
 		}
 		return

@@ -12,6 +12,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 
+	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/hosts"
 )
 
@@ -70,6 +71,11 @@ func (a *app) cmdHostsHeld(args []string) error {
 	}
 	for _, x := range all {
 		exp, _ := hosts.ParseStamp(x.Job.Expires)
+		if x.Kind == hosts.HeldRegistry {
+			fmt.Fprintf(a.stdout, "%s registry proposal, %d row %s against v%d, from %s, expires %s\n", x.ID, x.Commits,
+				plural(x.Commits, "change"), x.Base, x.From(), exp.Local().Format("Mon 15:04"))
+			continue
+		}
 		fmt.Fprintf(a.stdout, "%s %s +%d %s to %s, from %s, expires %s\n", x.ID, x.Repo, x.Commits, plural(x.Commits, "commit"),
 			short8(x.Target), x.From(), exp.Local().Format("Mon 15:04"))
 	}
@@ -104,6 +110,9 @@ func (a *app) cmdHostsApprove(args []string) error {
 	defer cancel()
 	if err := a.connect(ctx, "hosts-approve"); err != nil {
 		return err
+	}
+	if x.Kind == hosts.HeldRegistry {
+		return a.approveProposal(ctx, b, x)
 	}
 	if err := b.sync(ctx, a); err != nil {
 		fmt.Fprintf(a.stderr, "bmesh: roster: %v (using this box's copy)\n", err)
@@ -178,6 +187,69 @@ func (a *app) sendApproval(ctx context.Context, b *hostsBox, ap hosts.Approve) (
 		return hosts.ApproveAnswer{}, fmt.Errorf("approval answer: %w", err)
 	}
 	return ans, nil
+}
+
+// approveProposal publishes a held registry proposal as the next version,
+// signed with the admin key (the announced Keychain dialog), and answers
+// its sender. A proposal made against an older version than the
+// registry's now is dropped: its rows would undo what came since.
+func (a *app) approveProposal(ctx context.Context, b *hostsBox, x hosts.Held) error {
+	if err := b.sync(ctx, a); err != nil {
+		return fmt.Errorf("roster: %w", err)
+	}
+	drop := func(text string) error {
+		if err := hosts.DropHeld(b.stateDir, x.ID); err != nil {
+			return err
+		}
+		if err := hosts.SendReply(ctx, a.client.JS, hosts.NewReply(b.key, &x.Job, b.host, false, text, time.Now())); err != nil {
+			fmt.Fprintf(a.stderr, "bmesh: reply: %v\n", err)
+		}
+		return fail(exitRefused, "%s: hold %s dropped", text, x.ID)
+	}
+	r := b.local.Roster
+	if sender, ok := r.Host(x.Job.By); !ok || x.Job.Verify(sender.Key) != nil || x.Job.To != b.host {
+		return drop(fmt.Sprintf("refused: the proposal's job from %s doesn't verify against roster v%d", x.Job.By, r.Version))
+	}
+	base, text, err := hosts.ParseProposeArgs(x.Job.Args)
+	if err != nil {
+		return drop("refused: " + err.Error())
+	}
+	rows, err := config.ParseRepos(text)
+	if err != nil {
+		return drop(fmt.Sprintf("refused: the proposed rows don't load here: %v", err))
+	}
+	reg, err := a.registry(ctx, b)
+	if err != nil {
+		return err
+	}
+	if reg.Version != base {
+		return drop(fmt.Sprintf("refused: proposed against registry v%d; it is v%d now: propose again", base, reg.Version))
+	}
+	diff, err := a.printDiff(fmt.Sprintf("%s: registry proposal from %s, v%d -> v%d:", x.ID, x.From(), reg.Version, reg.Version+1), reg, rows)
+	if err != nil {
+		return err
+	}
+	key, err := a.adminKey(b, fmt.Sprintf("publish registry v%d (proposal from %s)", reg.Version+1, x.From()))
+	if err != nil {
+		return err
+	}
+	kv, err := hosts.Bucket(ctx, a.client.JS, hosts.BucketRoster)
+	if err != nil {
+		return err
+	}
+	next, err := hosts.PublishRegistry(ctx, kv, b.stateDir, text, key, time.Now(), a.applyRegistry)
+	if err != nil && next.Version == 0 {
+		return err
+	}
+	if derr := hosts.DropHeld(b.stateDir, x.ID); derr != nil {
+		fmt.Fprintf(a.stderr, "bmesh: drop hold: %v\n", derr)
+	}
+	ans := fmt.Sprintf("approved: registry v%d (%d row %s)", next.Version, len(diff), plural(len(diff), "change"))
+	if rerr := hosts.SendReply(ctx, a.client.JS, hosts.NewReply(b.key, &x.Job, b.host, true, ans, time.Now())); rerr != nil {
+		fmt.Fprintf(a.stderr, "bmesh: reply: %v\n", rerr)
+	}
+	fmt.Fprintf(a.stdout, "registry v%d published: proposal from %s approved\n", next.Version, x.From())
+	return err
 }
 
 // showHold prints what an approval would let in.

@@ -14,6 +14,7 @@ import (
 
 	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/hosts"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
@@ -59,6 +60,11 @@ type hostsNode struct {
 	heldMu    sync.Mutex  // the held store
 	levelling atomic.Bool // a self-level is running
 	wg        sync.WaitGroup
+
+	regMu      sync.Mutex     // one registry sync at a time
+	cfg        *config.Config // the daemon's config with the newest registry's rows; nil = d.Cfg (under mu)
+	cfgVersion int64          // the registry version cfg's rows are from (under mu)
+	regRefused int64          // the last registry version refused and pushed
 }
 
 // hostsRun runs the hosts layer until ctx ends: each minute it notes a
@@ -80,6 +86,11 @@ func hostsRun(ctx context.Context, d Deps) {
 		return
 	}
 	h := &hostsNode{d: d, key: key, local: local, salts: hosts.OpenSalts(d.StateDir)}
+	// The rows read at start are repos.toml's; a registry another process
+	// saves from now on (the admin's publish) is read from registry.json.
+	if reg, ok, err := hosts.LoadRegistry(d.StateDir, local.Pinned); err == nil && ok {
+		h.cfgVersion = reg.Version
+	}
 	if row, ok := local.Roster.Host(d.Host); !ok {
 		d.Log.Warn("hosts: this box isn't in its roster", "host", d.Host, "roster", local.Roster.Version)
 	} else if row.Key != hosts.KeyHex(key.Public().(ed25519.PublicKey)) {
@@ -97,8 +108,8 @@ func hostsRun(ctx context.Context, d Deps) {
 	h.wg.Wait()
 }
 
-// tick is the minute's work: a wake check, the roster, old salt records and
-// presence.
+// tick is the minute's work: a wake check, the roster, the registry, old
+// salt records and presence.
 func (h *hostsNode) tick(ctx context.Context) {
 	now := h.d.Now()
 	h.mu.Lock()
@@ -109,6 +120,9 @@ func (h *hostsNode) tick(ctx context.Context) {
 	}
 	if err := h.syncRoster(ctx); err != nil {
 		h.d.Log.Warn("hosts: roster", "err", err)
+	}
+	if err := h.syncRegistry(ctx); err != nil {
+		h.d.Log.Warn("hosts: registry", "err", err)
 	}
 	if woke && ctx.Err() == nil {
 		h.wg.Add(1)
@@ -176,12 +190,13 @@ func (h *hostsNode) putPresence(ctx context.Context, now time.Time) error {
 	}
 	p := hosts.Presence{Host: h.d.Host, Rev: h.revision(), OS: runtime.GOOS, Routines: h.d.Checkouts != "",
 		Repos: []hosts.PresenceRepo{}, TS: hosts.Stamp(now)}
-	for _, name := range h.d.Cfg.RepoNames() {
-		_, path, err := h.d.Cfg.RepoPath(name)
+	cfg := h.conf()
+	for _, name := range cfg.RepoNames() {
+		_, path, err := cfg.RepoPath(name)
 		if err != nil {
 			continue
 		}
-		p.Repos = append(p.Repos, hosts.PresenceRepo{Name: name, Path: path, Origin: origin(ctx, path, h.d.Cfg.Repos[name].Remote)})
+		p.Repos = append(p.Repos, hosts.PresenceRepo{Name: name, Path: path, Origin: origin(ctx, path, cfg.Repos[name].Remote)})
 	}
 	notes, cut, err := hosts.ReadNotes(h.d.ConfigDir)
 	if err != nil {
