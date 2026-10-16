@@ -4,7 +4,7 @@ title: A spec that changes a repo's verify commands changes its registry row, an
 kind: refinement
 size: S
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: 56979e66-321a-467e-9cbc-a2165df787ff
 proposed_on: 2026-10-16
