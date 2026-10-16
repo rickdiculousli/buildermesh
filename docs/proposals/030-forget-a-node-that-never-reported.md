@@ -4,7 +4,7 @@ title: node forget takes a node that never reported and whose thread isn't runni
 kind: refinement
 size: S
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator coordinator (Mac session, 2026-10-16)
 proposed_on: 2026-10-16
@@ -12,7 +12,9 @@ from_feedback: buildermesh-build-1 (buildermesh-029)
 built_by: c78d70fc-1112-43e5-a4b3-e3a78ba42ae5
 host: k16
 family: buildermesh-build-1
-branch: t3code/edeab50c
+branch: t3code/forget-idle-node-never-reported
+verified: verify ok t:e1852218
+merged: 875602822051c8de337458cfd5f6755357d94331
 ---
 
 ## Opportunity
