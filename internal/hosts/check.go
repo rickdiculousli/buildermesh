@@ -21,7 +21,8 @@ const (
 	// Nak: hand it back for a minute (the box's roster is behind, or the
 	// sender's clock is ahead).
 	Nak
-	// Replay: the job ran already; ack and send the stored reply again.
+	// Replay: the job ran already; ack and send the stored reply again
+	// (logged, not pushed: a lost ack redelivers it too).
 	Replay
 	// Interrupted: a non-idempotent op that started and never finished;
 	// answer `interrupted`, never re-run.

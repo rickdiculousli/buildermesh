@@ -244,12 +244,16 @@ func (h *hostsNode) handle(ctx context.Context, m jetstream.Msg) {
 			h.d.Log.Info("hosts: refused", "job", j.ID, "by", j.By, "op", j.Op, "check", v.Check)
 		}
 	case hosts.Replay:
+		// The job ran: a redelivery (the ack was lost to a crash or a
+		// dropped connection) or a replay of it gets the stored reply and
+		// runs nothing, so it is logged, not pushed. A salt another job
+		// used is refused above as a replay.
+		h.d.Log.Info("hosts: ran already; the stored reply again", "job", j.ID, "by", j.By, "op", j.Op)
 		if v.Record.Reply != nil {
 			if err := hosts.SendReply(ctx, h.d.Client.JS, *v.Record.Reply); err != nil {
 				h.d.Log.Warn("hosts: reply", "job", j.ID, "err", err)
 			}
 		}
-		h.refused(ctx, &j, hosts.CheckReplay)
 	case hosts.Interrupted:
 		h.finish(ctx, &j, false, "interrupted")
 	case hosts.Run, hosts.Resume:

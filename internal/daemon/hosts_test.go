@@ -223,12 +223,17 @@ func TestHostsReplayGetsTheStoredReply(t *testing.T) {
 	if again.Sig != first.Sig || again.Text != first.Text {
 		t.Fatalf("replay answered %+v, want the stored %+v", again, first)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for len(h.refusals(t)) == 0 && time.Now().Before(deadline) {
-		time.Sleep(50 * time.Millisecond)
+	// The same job again is a redelivery as much as a replay: nothing runs,
+	// so nothing is pushed. Another job reusing the salt is refused.
+	thief := j
+	thief.ID = "thief"
+	thief.Sign(hostKey("mac"))
+	h.send(t, thief)
+	if r := h.reply(t, thief, 1); r.OK || r.Text != "refused: replay" {
+		t.Fatalf("a reused salt: %+v", r)
 	}
 	if got := h.refusals(t); len(got) != 1 || got[0] != "mac replay" {
-		t.Fatalf("refused events %q", got)
+		t.Fatalf("refused events %q: want only the reused salt's", got)
 	}
 }
 

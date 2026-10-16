@@ -102,6 +102,38 @@ func TestSyncTakesOnlyAHigherVersionThePinnedKeySigned(t *testing.T) {
 	}
 }
 
+// TestSyncTakesRosterJSONFirst: the admin's CLI saved v4 to roster.json but
+// the hub write failed, while a daemon holds v2 in memory and the hub has
+// v3. The daemon's next sync takes v4 from the file, puts it on the hub,
+// and never writes the hub's v3 over it.
+func TestSyncTakesRosterJSONFirst(t *testing.T) {
+	ctx, c := hub(t)
+	kv := rosterKV(t, ctx, c)
+	dir := t.TempDir()
+	daemon := Local{Pinned: pubFor("admin"), Roster: testRoster(2)}
+	putRaw(t, ctx, kv, testRoster(3))
+	if err := SaveLocal(dir, Local{Pinned: pubFor("admin"), Roster: testRoster(4)}); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := Sync(ctx, kv, dir, &daemon); !ok || err != nil || daemon.Roster.Version != 4 {
+		t.Fatalf("sync: accepted %v err %v v%d", ok, err, daemon.Roster.Version)
+	}
+	if hubVersion(t, ctx, kv) != 4 {
+		t.Error("the saved roster wasn't put on the hub")
+	}
+	if saved, _, _ := LoadLocal(dir); saved.Roster.Version != 4 {
+		t.Errorf("roster.json went back to v%d", saved.Roster.Version)
+	}
+	// A save never goes over a newer file.
+	stale := Local{Pinned: pubFor("admin"), Roster: testRoster(3)}
+	if err := saveNewer(dir, &stale); err != nil || stale.Roster.Version != 4 {
+		t.Fatalf("saveNewer: v%d %v", stale.Roster.Version, err)
+	}
+	if saved, _, _ := LoadLocal(dir); saved.Roster.Version != 4 {
+		t.Errorf("saveNewer wrote v%d over v4", saved.Roster.Version)
+	}
+}
+
 func TestPublishTakesTheVersionFromTheBoxNotTheHub(t *testing.T) {
 	ctx, c := hub(t)
 	kv := rosterKV(t, ctx, c)

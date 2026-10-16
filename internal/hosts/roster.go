@@ -152,26 +152,57 @@ func put(ctx context.Context, kv jetstream.KeyValue, h hubRoster, r Roster) erro
 	return err
 }
 
-// Sync reads the hub's roster: one the pinned key signed with a higher
-// version becomes the box's (saved to roster.json); when the hub's copy is
-// missing, unsigned or lower, the box's own is put back (compare-and-set,
+// Sync first takes a newer roster.json (another process may have written
+// it), then reads the hub's roster: one the pinned key signed with a
+// higher version becomes the box's (saved to roster.json, never over a
+// newer one); when the hub's copy is missing, unsigned or lower, the box's
+// own is put back (compare-and-set,
 // so a concurrent writer wins and the next sync looks again). accepted
 // reports a newer roster taken; err is a hub that can't be read.
 func Sync(ctx context.Context, kv jetstream.KeyValue, stateDir string, l *Local) (accepted bool, err error) {
+	if reload(stateDir, l) {
+		accepted = true
+	}
 	h, err := readHub(ctx, kv)
 	if err != nil {
-		return false, err
+		return accepted, err
 	}
 	if h.parsed && l.Offer(h.roster) {
-		return true, SaveLocal(stateDir, *l)
+		return true, saveNewer(stateDir, l)
 	}
 	valid := h.parsed && h.roster.Verify(l.Pinned) == nil
 	if !h.found || !valid || h.roster.Version < l.Roster.Version {
 		if err := put(ctx, kv, h, l.Roster); err != nil && !isConflict(err) {
-			return false, fmt.Errorf("re-put roster v%d: %w", l.Roster.Version, err)
+			return accepted, fmt.Errorf("re-put roster v%d: %w", l.Roster.Version, err)
 		}
 	}
-	return false, nil
+	return accepted, nil
+}
+
+// reload takes roster.json when another process (the admin's CLI, or init
+// after a fresh invite) wrote a newer roster or a new pin there since l was
+// read; it reports whether l changed. roster.json is the box's own record,
+// so a roster saved there and not yet on the hub is what gets put back.
+func reload(stateDir string, l *Local) bool {
+	disk, ok, err := LoadLocal(stateDir)
+	if err != nil || !ok {
+		return false
+	}
+	if disk.Pinned != l.Pinned {
+		*l = disk
+		return true
+	}
+	return l.Offer(disk.Roster)
+}
+
+// saveNewer writes l to roster.json unless the file already holds the same
+// pin's roster at l's version or higher, which then becomes l.
+func saveNewer(stateDir string, l *Local) error {
+	if disk, ok, err := LoadLocal(stateDir); err == nil && ok && disk.Pinned == l.Pinned && disk.Roster.Version >= l.Roster.Version {
+		*l = disk
+		return nil
+	}
+	return SaveLocal(stateDir, *l)
 }
 
 func isConflict(err error) bool {

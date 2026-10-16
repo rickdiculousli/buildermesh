@@ -287,13 +287,19 @@ func (a *app) cmdHostsInvite(args []string) error {
 	if err != nil {
 		return err
 	}
-	if _, taken := b.local.Roster.Host(name); taken && !*replace {
-		return fail(exitRefused, "%s is already in the roster (invite it again with --replace)", name)
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), hosts.InviteTTL+time.Minute)
 	defer cancel()
 	if err := a.connect(ctx, "hosts-invite"); err != nil {
 		return err
+	}
+	if err := b.sync(ctx, a); err != nil {
+		return fmt.Errorf("roster: %w", err)
+	}
+	if admin, _ := b.local.Roster.Admin(); name == admin.Name {
+		return fail(exitRefused, "%s is the admin box: its row carries the admin key, so no invite replaces it", name)
+	}
+	if _, taken := b.local.Roster.Host(name); taken && !*replace {
+		return fail(exitRefused, "%s is already in the roster (invite it again with --replace)", name)
 	}
 	key, err := a.adminKey(b, "invite "+name)
 	if err != nil {
@@ -309,6 +315,9 @@ func (a *app) cmdHostsInvite(args []string) error {
 		inv.Expires.Local().Format("15:04"), name)
 	var published hosts.Roster
 	_, err = hosts.Serve(ctx, a.client.NC, inv, func(req hosts.JoinRequest) (json.RawMessage, string, error) {
+		if err := b.sync(ctx, a); err != nil {
+			return nil, "", fmt.Errorf("roster: %w", err)
+		}
 		if _, taken := b.local.Roster.Host(req.Name); taken && !inv.Replace {
 			return nil, "", fmt.Errorf("%s is already in the roster", req.Name)
 		}
@@ -359,6 +368,14 @@ func (a *app) cmdHostsSet(args []string) error {
 	if err != nil {
 		return err
 	}
+	ctx, cancel := cmdCtx()
+	defer cancel()
+	if err := a.connect(ctx, "hosts-set"); err != nil {
+		return err
+	}
+	if err := b.sync(ctx, a); err != nil {
+		return fmt.Errorf("roster: %w", err)
+	}
 	row, ok := b.local.Roster.Host(pos[0])
 	if !ok {
 		return fail(exitRefused, "%s is not in the roster", pos[0])
@@ -371,11 +388,6 @@ func (a *app) cmdHostsSet(args []string) error {
 	}
 	if given["accept"] {
 		row.Accept = acceptList(*accept)
-	}
-	ctx, cancel := cmdCtx()
-	defer cancel()
-	if err := a.connect(ctx, "hosts-set"); err != nil {
-		return err
 	}
 	key, err := a.adminKey(b, "set "+row.Name)
 	if err != nil {
@@ -408,16 +420,19 @@ func (a *app) cmdHostsRevoke(args []string) error {
 		return err
 	}
 	name := pos[0]
+	ctx, cancel := cmdCtx()
+	defer cancel()
+	if err := a.connect(ctx, "hosts-revoke"); err != nil {
+		return err
+	}
+	if err := b.sync(ctx, a); err != nil {
+		return fmt.Errorf("roster: %w", err)
+	}
 	if _, ok := b.local.Roster.Host(name); !ok {
 		return fail(exitRefused, "%s is not in the roster", name)
 	}
 	if name == b.host {
 		return fail(exitRefused, "the admin can't revoke itself")
-	}
-	ctx, cancel := cmdCtx()
-	defer cancel()
-	if err := a.connect(ctx, "hosts-revoke"); err != nil {
-		return err
 	}
 	key, err := a.adminKey(b, "revoke "+name)
 	if err != nil {

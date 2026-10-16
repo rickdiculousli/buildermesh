@@ -273,6 +273,10 @@ func TestHostsAdminInviteJoinPingSetRevoke(t *testing.T) {
 	if out, _, code := k16.run(t, "\nn\ny\n"+codeStr+"\n", "init", "--hosts"); code == 0 {
 		t.Fatalf("a used code joined again: %s", out)
 	}
+	// A taken name is refused unless the invite says --replace.
+	if _, errs, code := mac.run(t, "pw\n", "hosts", "invite", "k16"); code != exitRefused || !strings.Contains(errs, "--replace") {
+		t.Fatalf("invite a taken name: %d %s", code, errs)
+	}
 
 	out, errs, code = mac.run(t, "", "hosts", "--json")
 	if code != 0 {
@@ -332,9 +336,9 @@ func TestHostsAdminInviteJoinPingSetRevoke(t *testing.T) {
 		t.Fatalf("k16 roster: v%d %v", l.Roster.Version, err)
 	}
 
-	// A taken name is refused unless the invite says --replace.
-	if _, errs, code := mac.run(t, "pw\n", "hosts", "invite", "mac"); code != exitRefused || !strings.Contains(errs, "--replace") {
-		t.Fatalf("invite a taken name: %d %s", code, errs)
+	// No invite replaces the admin's own row: it carries the admin key.
+	if _, errs, code := mac.run(t, "pw\n", "hosts", "invite", "mac", "--replace"); code != exitRefused || !strings.Contains(errs, "is the admin box") {
+		t.Fatalf("invite the admin's name: %d %s", code, errs)
 	}
 	// k16 rejoins under a fresh invite.
 	codeStr, wait = invite(t, mac, "pw\n", "k16")
