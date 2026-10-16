@@ -130,9 +130,13 @@ func (a *app) cmdBuild(args []string) error {
 			return fail(exitRefused, "refused: spec %s is %s, not accepted", s.IDString(), s.Status())
 		}
 	}
-	hold, err := a.heldBy(ctx, row.Name, family)
-	if err != nil {
-		return err
+	// A batch with nothing accepted has nothing to hold or verify.
+	gate := !*accepted || slices.ContainsFunc(specs, func(s *spec.Spec) bool { return s.Status() == "accepted" })
+	var hold *buildHold
+	if gate {
+		if hold, err = a.heldBy(ctx, row.Name, family); err != nil {
+			return err
+		}
 	}
 	if hold != nil {
 		switch {
@@ -147,7 +151,7 @@ func (a *app) cmdBuild(args []string) error {
 			return fail(exitRefused, "%s", hold.line())
 		}
 	}
-	if !*accepted || slices.ContainsFunc(specs, func(s *spec.Spec) bool { return s.Status() == "accepted" }) {
+	if gate {
 		if err := a.verifyMain(ctx, row, repoPath, note, *force); err != nil {
 			return err
 		}
