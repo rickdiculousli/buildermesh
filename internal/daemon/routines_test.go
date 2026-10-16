@@ -20,6 +20,7 @@ import (
 	"github.com/nats-io/nuid"
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 	"github.com/rickdiculousli/buildermesh/internal/web"
 )
 
@@ -32,34 +33,6 @@ type rfix struct {
 	repo    string
 	replies map[string]mesh.Reply
 	inbox   jetstream.Consumer
-}
-
-func tgit(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	full := append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"}, args...)
-	out, err := exec.Command("git", full...).CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, out)
-	}
-	return strings.TrimSpace(string(out))
-}
-
-// commitFiles writes files (relative path → content) into repo and commits
-// them; it returns the commit.
-func commitFiles(t *testing.T, repo string, files map[string]string) string {
-	t.Helper()
-	for name, content := range files {
-		p := filepath.Join(repo, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		tgit(t, repo, "add", name)
-	}
-	tgit(t, repo, "commit", "-q", "-m", "files")
-	return tgit(t, repo, "rev-parse", "HEAD")
 }
 
 func tune(t *testing.T) {
@@ -81,8 +54,8 @@ func routineSetup(t *testing.T, files map[string]string) *rfix {
 	if err := os.Mkdir(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	tgit(t, repo, "init", "-q", "-b", "main")
-	commitFiles(t, repo, files)
+	meshtest.Git(t, repo, "init", "-q", "-b", "main")
+	meshtest.CommitFiles(t, repo, files)
 	f.d.Cfg.Repos = map[string]config.Repo{"app": {Path: repo}}
 	f.d.Checkouts = filepath.Join(t.TempDir(), "checkouts")
 	fake, err := filepath.Abs(filepath.Join("..", "..", "testdata", "fake-claude.sh"))
@@ -499,12 +472,12 @@ command = "sleep 30"
 func TestJobCommitFetchedFromOrigin(t *testing.T) {
 	f := routineSetup(t, map[string]string{".bmesh/routines/verify.toml": "timeout = \"30s\"\ncommand = \"cat b.txt\"\n"})
 	other := filepath.Join(t.TempDir(), "other")
-	tgit(t, filepath.Dir(other), "clone", "-q", f.repo, other)
-	tgit(t, f.repo, "remote", "add", "origin", other)
-	tgit(t, f.repo, "fetch", "-q", "origin")
+	meshtest.Git(t, filepath.Dir(other), "clone", "-q", f.repo, other)
+	meshtest.Git(t, f.repo, "remote", "add", "origin", other)
+	meshtest.Git(t, f.repo, "fetch", "-q", "origin")
 	f.start(t)
 	f.waitStarted(t, "routine.verify.cmd-1", 1) // the rescan's fetch is over
-	pushed := commitFiles(t, other, map[string]string{"b.txt": "from origin\n"})
+	pushed := meshtest.CommitFiles(t, other, map[string]string{"b.txt": "from origin\n"})
 	if _, err := exec.Command("git", "-C", f.repo, "cat-file", "-e", pushed+"^{commit}").Output(); err == nil {
 		t.Fatal("the daemon's clone already has the commit")
 	}
@@ -513,7 +486,7 @@ func TestJobCommitFetchedFromOrigin(t *testing.T) {
 	if _, err := mesh.Queue(f.ctx, f.c, mesh.Path{requester}, j, other); err != nil {
 		t.Fatal(err)
 	}
-	if r := f.reply(t, id, 20*time.Second); !r.OK || r.Output != "from origin\n" || r.Tree != tgit(t, other, "rev-parse", pushed+"^{tree}") {
+	if r := f.reply(t, id, 20*time.Second); !r.OK || r.Output != "from origin\n" || r.Tree != meshtest.Git(t, other, "rev-parse", pushed+"^{tree}") {
 		t.Fatalf("reply %+v", r)
 	}
 	// A commit no remote has is still refused (sent as is: Queue would
@@ -536,8 +509,8 @@ deterministic = true
 timeout = "30s"
 command = "echo ran >> ` + mark + `; echo fresh-run"
 `})
-	tree := tgit(t, f.repo, "rev-parse", "HEAD^{tree}")
-	commit := tgit(t, f.repo, "rev-parse", "HEAD")
+	tree := meshtest.Git(t, f.repo, "rev-parse", "HEAD^{tree}")
+	commit := meshtest.Git(t, f.repo, "rev-parse", "HEAD")
 	if err := mesh.PutResult(f.ctx, f.c, mesh.Result{Kind: "check", Tree: tree, Commit: commit,
 		OK: false, Output: "from record", By: "someone"}); err != nil {
 		t.Fatal(err)
@@ -564,8 +537,8 @@ command = "echo ran >> ` + mark + `; echo fresh-run"
 
 func TestKindReadFromJobCommit(t *testing.T) {
 	f := routineSetup(t, map[string]string{".bmesh/routines/verify.toml": "timeout = \"30s\"\ncommand = \"echo c1\"\n"})
-	c1 := tgit(t, f.repo, "rev-parse", "HEAD")
-	c2 := commitFiles(t, f.repo, map[string]string{".bmesh/routines/verify.toml": "timeout = \"30s\"\ncommand = \"echo c2\"\n"})
+	c1 := meshtest.Git(t, f.repo, "rev-parse", "HEAD")
+	c2 := meshtest.CommitFiles(t, f.repo, map[string]string{".bmesh/routines/verify.toml": "timeout = \"30s\"\ncommand = \"echo c2\"\n"})
 	f.start(t)
 	if r := f.reply(t, f.queue(t, mesh.Job{Kind: "verify", Commit: c1, Go: true}), 20*time.Second); !r.OK || r.Output != "c1\n" {
 		t.Fatalf("job at c1: %+v", r)
@@ -574,7 +547,7 @@ func TestKindReadFromJobCommit(t *testing.T) {
 		t.Fatalf("job at c2: %+v", r)
 	}
 	// Every run that names a commit records, deterministic or not (R12).
-	tree1 := tgit(t, f.repo, "rev-parse", c1+"^{tree}")
+	tree1 := meshtest.Git(t, f.repo, "rev-parse", c1+"^{tree}")
 	if rec, ok, err := mesh.GetResult(f.ctx, f.c, mesh.ResultKey("verify", tree1, nil, "")); err != nil || !ok || rec.Output != "c1\n" {
 		t.Fatalf("record at c1 %+v %v %v", rec, ok, err)
 	}
@@ -597,7 +570,7 @@ batch_idle = "1s"
 	if r.OK || r.Output != "unknown repo elsewhere" {
 		t.Fatalf("unknown repo reply %+v", r)
 	}
-	tree := tgit(t, f.repo, "rev-parse", "HEAD^{tree}")
+	tree := meshtest.Git(t, f.repo, "rev-parse", "HEAD^{tree}")
 	id := f.queue(t, mesh.Job{Kind: "review", Model: "m-b", Go: true})
 	r = f.reply(t, id, 20*time.Second)
 	key := mesh.ResultKey("review", tree, nil, "m-b")
@@ -669,8 +642,8 @@ func TestRescanForgetsStoppedInstancesAfterKeepDone(t *testing.T) {
 
 	f.start(t)
 	f.waitStarted(t, "routine.verify.cmd-1", 1)
-	tgit(t, f.repo, "rm", "-q", ".bmesh/routines/verify.toml")
-	tgit(t, f.repo, "commit", "-q", "-m", "drop verify")
+	meshtest.Git(t, f.repo, "rm", "-q", ".bmesh/routines/verify.toml")
+	meshtest.Git(t, f.repo, "commit", "-q", "-m", "drop verify")
 	waitFor(t, 10*time.Second, "cmd-1 done", func() bool { return f.state(t, "routine.verify.cmd-1") == "done" })
 
 	present := func(path string) bool {
@@ -702,30 +675,12 @@ func TestRescanForgetsStoppedInstancesAfterKeepDone(t *testing.T) {
 	}
 }
 
-// logBuf is a goroutine-safe log sink.
-type logBuf struct {
-	mu sync.Mutex
-	b  strings.Builder
-}
-
-func (l *logBuf) Write(p []byte) (int, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.b.Write(p)
-}
-
-func (l *logBuf) String() string {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.b.String()
-}
-
 func TestRescanSkipsRepoMissingHereLoggingOnce(t *testing.T) {
 	f := routineSetup(t, map[string]string{".bmesh/routines/verify.toml": "timeout = \"30s\"\ncommand = \"echo ran\"\n"})
 	kindRescan = 200 * time.Millisecond
 	gone := filepath.Join(t.TempDir(), "elsewhere")
 	f.d.Cfg.Repos["gone"] = config.Repo{Path: gone}
-	var log logBuf
+	var log meshtest.SyncBuffer
 	f.d.Log = slog.New(slog.NewTextHandler(&log, nil))
 
 	f.start(t)
@@ -742,7 +697,7 @@ func TestRescanSkipsRepoMissingHereLoggingOnce(t *testing.T) {
 		t.Fatalf("a checkout was made for the missing repo: %v", err)
 	}
 	// The repo that is here still runs its kind.
-	id := f.queue(t, mesh.Job{Kind: "verify", Commit: tgit(t, f.repo, "rev-parse", "HEAD"), Go: true})
+	id := f.queue(t, mesh.Job{Kind: "verify", Commit: meshtest.Git(t, f.repo, "rev-parse", "HEAD"), Go: true})
 	if r := f.reply(t, id, 20*time.Second); !r.OK {
 		t.Fatalf("reply %+v", r)
 	}

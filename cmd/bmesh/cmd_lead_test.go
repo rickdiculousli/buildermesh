@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
 // leadSetup is setup plus a t3 runner backed by testdata/fake-t3.sh and a
@@ -192,10 +193,10 @@ func TestLeadStartClaudeRunner(t *testing.T) {
 	t.Setenv("FAKE_LOG", log)
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(root, "cache")) // the runner's state dir
 	repo := filepath.Join(root, "demo")
-	runGit(t, root, "init", "-b", "main", repo)
+	meshtest.Git(t, root, "init", "-b", "main", repo)
 	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644)
-	runGit(t, repo, "add", "-A")
-	runGit(t, repo, "commit", "-m", "one")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "one")
 	brief := filepath.Join(root, "brief.md")
 	os.WriteFile(brief, []byte("build it"), 0o644)
 	f, err := os.OpenFile(os.Getenv("BMESH_CONFIG"), os.O_APPEND|os.O_WRONLY, 0)

@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -108,7 +107,7 @@ func TestServeUpdatesAndAsksForReexec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var stderr syncWriter
+	var stderr meshtest.SyncBuffer
 	res := make(chan error, 1)
 	go func() { res <- serve(context.Background(), cfg, "127.0.0.1:0", &stderr, nil, exe) }()
 	select {
@@ -125,22 +124,4 @@ func TestServeUpdatesAndAsksForReexec(t *testing.T) {
 	if b, _ := os.ReadFile(exe); !strings.Contains(string(b), "fake bmesh "+shas[1]) {
 		t.Fatalf("binary %q", b)
 	}
-}
-
-// syncWriter is a bytes.Buffer safe for serve's goroutines and the test.
-type syncWriter struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (w *syncWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.b.Write(p)
-}
-
-func (w *syncWriter) String() string {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.b.String()
 }

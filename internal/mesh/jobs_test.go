@@ -9,31 +9,18 @@ import (
 	"time"
 
 	. "github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
 // gitRepo makes a repo with one commit and returns its path.
 func gitRepo(t *testing.T) string {
 	t.Helper()
 	repo := filepath.Join(t.TempDir(), "demo")
-	git := func(args ...string) string {
-		full := append([]string{"-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"}, args...)
-		cmd := exec.Command("git", full...)
-		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
-		out, err := cmd.Output()
-		if err != nil {
-			t.Fatalf("git %v: %v", args, err)
-		}
-		return strings.TrimSpace(string(out))
-	}
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	git("init", "-b", "main")
-	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	git("add", "-A")
-	git("commit", "-m", "a")
+	meshtest.Git(t, repo, "init", "-b", "main")
+	meshtest.CommitFiles(t, repo, map[string]string{"a.txt": "a\n"})
 	return repo
 }
 

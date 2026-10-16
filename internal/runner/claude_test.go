@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
 // claudeRepo makes a repo with one commit on main and a Claude runner whose
@@ -16,13 +18,13 @@ func claudeRepo(t *testing.T) (Claude, string, string) {
 	t.Helper()
 	root := t.TempDir()
 	repo := filepath.Join(root, "demo")
-	git(t, root, "init", "-b", "main", repo)
+	meshtest.Git(t, root, "init", "-b", "main", repo)
 	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	git(t, repo, "add", "-A")
-	git(t, repo, "commit", "-m", "one")
-	git(t, repo, "checkout", "-b", "other")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "one")
+	meshtest.Git(t, repo, "checkout", "-b", "other")
 	brief := filepath.Join(root, "brief.md")
 	if err := os.WriteFile(brief, []byte("do the thing"), 0o644); err != nil {
 		t.Fatal(err)
@@ -68,10 +70,10 @@ func TestClaudeStartRunsFirstTurn(t *testing.T) {
 	if got != (Started{Thread: "th-1", Branch: "th-1", Worktree: wt}) {
 		t.Fatalf("started %+v", got)
 	}
-	if b := git(t, wt, "rev-parse", "--abbrev-ref", "HEAD"); b != "th-1" {
+	if b := meshtest.Git(t, wt, "rev-parse", "--abbrev-ref", "HEAD"); b != "th-1" {
 		t.Fatalf("worktree branch %q", b)
 	}
-	if git(t, wt, "rev-parse", "HEAD") != git(t, repo, "rev-parse", "main") {
+	if meshtest.Git(t, wt, "rev-parse", "HEAD") != meshtest.Git(t, repo, "rev-parse", "main") {
 		t.Fatal("worktree not branched from main")
 	}
 	until(t, "turn 1 to end", idle(t, r, "th-1"))

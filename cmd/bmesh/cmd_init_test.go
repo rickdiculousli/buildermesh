@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
 // runInit runs the CLI with stdin lines, config at cfg, from dir.
@@ -26,8 +27,8 @@ func TestInitSingleBoxWritesConfigRepoAndFlag(t *testing.T) {
 	root := t.TempDir()
 	cfg := filepath.Join(root, "cfg", "config.toml")
 	repo := filepath.Join(root, "app")
-	runGit(t, root, "init", "-b", "main", repo)
-	runGit(t, repo, "remote", "add", "origin", "git@github.com:owner/app.git")
+	meshtest.Git(t, root, "init", "-b", "main", repo)
+	meshtest.Git(t, repo, "remote", "add", "origin", "git@github.com:owner/app.git")
 	// Every answer is the default: single box, register the repo.
 	out, errs, code := runInit(t, cfg, repo, "", "init", "--runner", "claude")
 	if code != 0 {
@@ -77,7 +78,7 @@ func TestInitSkipsUnregisterableDirectory(t *testing.T) {
 	root := t.TempDir()
 	cfg := filepath.Join(root, "config.toml")
 	repo := filepath.Join(root, "my repo")
-	runGit(t, root, "init", "-b", "main", repo)
+	meshtest.Git(t, root, "init", "-b", "main", repo)
 	out, errs, code := runInit(t, cfg, repo, "", "init", "--runner", "claude")
 	if code != 0 || !strings.Contains(out, "not registering "+repo) {
 		t.Fatalf("%d %q %q", code, out, errs)

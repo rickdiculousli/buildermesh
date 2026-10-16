@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -119,16 +118,6 @@ func TestEventsMoveState(t *testing.T) {
 	}
 }
 
-func runGit(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	full := append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"}, args...)
-	cmd := exec.Command("git", full...)
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
-}
-
 // specRepo makes a repo with a bare origin whose main holds spec 012 with
 // the given status and merged, pushed.
 func specRepo(t *testing.T, status, merged string) string {
@@ -136,9 +125,9 @@ func specRepo(t *testing.T, status, merged string) string {
 	root := t.TempDir()
 	origin := filepath.Join(root, "origin.git")
 	repo := filepath.Join(root, "repo")
-	runGit(t, root, "init", "--bare", origin)
-	runGit(t, root, "init", "-b", "main", repo)
-	runGit(t, repo, "remote", "add", "origin", origin)
+	meshtest.Git(t, root, "init", "--bare", origin)
+	meshtest.Git(t, root, "init", "-b", "main", repo)
+	meshtest.Git(t, repo, "remote", "add", "origin", origin)
 	dir := filepath.Join(repo, "docs", "proposals")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -147,9 +136,9 @@ func specRepo(t *testing.T, status, merged string) string {
 	if err := os.WriteFile(filepath.Join(dir, "012-thing.md"), []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, repo, "add", "-A")
-	runGit(t, repo, "commit", "-m", "spec")
-	runGit(t, repo, "push", "origin", "main")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "spec")
+	meshtest.Git(t, repo, "push", "origin", "main")
 	return repo
 }
 
@@ -237,7 +226,7 @@ func TestGlobalFlagsAfterSubcommand(t *testing.T) {
 func TestIdentityFromWorktree(t *testing.T) {
 	c, ctx := setup(t)
 	wt := t.TempDir()
-	runGit(t, wt, "init", "-b", "main")
+	meshtest.Git(t, wt, "init", "-b", "main")
 	real, err := filepath.EvalSymlinks(wt)
 	if err != nil {
 		t.Fatal(err)

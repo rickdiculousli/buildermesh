@@ -1,38 +1,19 @@
 package daemon
 
 import (
-	"bytes"
 	"encoding/json"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 )
-
-// syncBuf is a log sink the daemon's goroutines and the test share.
-type syncBuf struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuf) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *syncBuf) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
-}
 
 // ufix is a routine fixture whose repo "app" is also the [update] repo: the
 // binary is a file holding "old" at revision (app's main when set up), and
@@ -40,7 +21,7 @@ func (s *syncBuf) String() string {
 type ufix struct {
 	*rfix
 	exe       string
-	log       *syncBuf
+	log       *meshtest.SyncBuffer
 	goLog     string
 	restarts  chan struct{}
 	onRestart func()
@@ -55,7 +36,7 @@ func updateSetup(t *testing.T, files map[string]string) *ufix {
 	if err != nil {
 		t.Fatal(err)
 	}
-	u := &ufix{rfix: f, log: &syncBuf{}, goLog: filepath.Join(t.TempDir(), "go.log"), restarts: make(chan struct{}, 4)}
+	u := &ufix{rfix: f, log: &meshtest.SyncBuffer{}, goLog: filepath.Join(t.TempDir(), "go.log"), restarts: make(chan struct{}, 4)}
 	t.Setenv("BMESH_GO_COMMAND", "sh "+fake)
 	t.Setenv("FAKE_GO_LOG", u.goLog)
 	t.Setenv("FAKE_GO_EXIT", "")
@@ -69,7 +50,7 @@ func updateSetup(t *testing.T, files map[string]string) *ufix {
 		t.Fatal(err)
 	}
 	f.d.Cfg.Update.Repo = "app"
-	f.d.Revision = tgit(t, f.repo, "rev-parse", "HEAD")
+	f.d.Revision = meshtest.Git(t, f.repo, "rev-parse", "HEAD")
 	f.d.Exe = u.exe
 	f.d.Log = slog.New(slog.NewTextHandler(u.log, nil))
 	f.d.Restart = func() {
@@ -84,7 +65,7 @@ func updateSetup(t *testing.T, files map[string]string) *ufix {
 // land commits a change to app's main and returns it.
 func (u *ufix) land(t *testing.T, name string) string {
 	t.Helper()
-	return commitFiles(t, u.repo, map[string]string{name: name})
+	return meshtest.CommitFiles(t, u.repo, map[string]string{name: name})
 }
 
 func (u *ufix) restarted(t *testing.T, d time.Duration) {
@@ -189,9 +170,9 @@ func TestUpdateRefusedBuildKeepsBinary(t *testing.T) {
 func TestUpdateLeavesRollbackAlone(t *testing.T) {
 	u := updateSetup(t, map[string]string{})
 	// This binary was built from a commit main does not hold.
-	tgit(t, u.repo, "checkout", "-q", "-b", "side")
+	meshtest.Git(t, u.repo, "checkout", "-q", "-b", "side")
 	side := u.land(t, "side.txt")
-	tgit(t, u.repo, "checkout", "-q", "main")
+	meshtest.Git(t, u.repo, "checkout", "-q", "main")
 	u.d.Revision = side
 	u.start(t)
 	waitFor(t, 20*time.Second, "the rollback logged", func() bool {

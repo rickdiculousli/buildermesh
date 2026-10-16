@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
 // proposeSetup is leadSetup with a real repo (a bare origin, main pushed,
@@ -31,9 +32,9 @@ func proposeSetup(t *testing.T, row string) (*mesh.Client, string, string) {
 			t.Fatal(err)
 		}
 	}
-	runGit(t, repo, "add", "-A")
-	runGit(t, repo, "commit", "-m", "specs")
-	runGit(t, repo, "push", "origin", "main")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "specs")
+	meshtest.Git(t, repo, "push", "origin", "main")
 	addRunnerKeys(t, "worktrees = \""+filepath.Join(t.TempDir(), "wt")+"\"\n")
 	writeRepos(t, "[repos.demo]\npath = \""+repo+"\"\nremote = \"example/demo\"\nverify = [\"npm test\"]\nsurfaces = [\"phone / at 390x844\"]\n"+row)
 	fake, err := filepath.Abs(filepath.Join("..", "..", "testdata", "fake-ssh.sh"))
@@ -232,9 +233,9 @@ func TestIdeateRefusesFiveProposedAndNonShip(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	runGit(t, repo, "add", "-A")
-	runGit(t, repo, "commit", "-m", "more")
-	runGit(t, repo, "push", "origin", "main")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "more")
+	meshtest.Git(t, repo, "push", "origin", "main")
 	_, errs, code := runCLI(t, nil, "ideate", "demo")
 	if code != 3 || !strings.Contains(errs, "5 proposed specs") || !strings.Contains(errs, "012, 013, 014, 015, 016") {
 		t.Fatalf("code %d err %q", code, errs)

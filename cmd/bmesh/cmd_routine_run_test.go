@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
 // marker points $MARK at a file outside the repo, so a command can show it
@@ -106,7 +107,7 @@ func TestInlineRefusesDirtyTree(t *testing.T) {
 	}
 
 	// An inline run runs HEAD; any other commit is refused.
-	runGit(t, repo, "checkout", "a.txt")
+	meshtest.Git(t, repo, "checkout", "a.txt")
 	_, errs, code := runCLI(t, nil, "routine", "run", "verify", "--commit", "HEAD~1")
 	if code != 3 || errs != "bmesh: inline runs run HEAD; check out HEAD~1 or queue the job\n" || exists(mark) {
 		t.Fatalf("other commit: %d %q", code, errs)
@@ -167,8 +168,8 @@ func TestInlineHoldsSlotLease(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, ".bmesh", "config.toml"), []byte("[slots]\ngame = 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, repo, "add", "-A")
-	runGit(t, repo, "commit", "-m", "slots")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "slots")
 	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 	mark := marker(t)
 	goFile := filepath.Join(t.TempDir(), "go")
