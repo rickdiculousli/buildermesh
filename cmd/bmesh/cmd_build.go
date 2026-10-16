@@ -126,10 +126,10 @@ func (a *app) cmdBuild(args []string) error {
 // nextFamily is <repo>-build-<N>, N one past the highest family of that
 // shape registered in bm-nodes (as rounds are numbered) or still holding
 // feedback, so a family whose nodes were forgotten before its drain is not
-// joined by a new build. A dot in the repo's name, which a subject token
-// can't hold, is written as -.
+// joined by a new build. The repo's name is written as its path token
+// (mesh.RepoToken): a subject token holds no capital, dot or underscore.
 func nextFamily(ctx context.Context, c *mesh.Client, repo string) (string, error) {
-	base := strings.ReplaceAll(repo, ".", "-")
+	base := mesh.RepoToken(repo)
 	nodes, err := mesh.ListNodes(ctx, c)
 	if err != nil {
 		return "", err
@@ -252,7 +252,7 @@ func (a *app) recordOnMain(ctx context.Context, name, repoPath, msg string, id i
 	if err != nil {
 		return "", err
 	}
-	branch := name + "-build-" + tag
+	branch := mesh.RepoToken(name) + "-build-" + tag
 	wt := filepath.Join(a.cfg.Expand(a.cfg.Runner.Worktrees), name, branch)
 	if err := addWorktree(ctx, repoPath, wt, branch, "main"); err != nil {
 		return "", err

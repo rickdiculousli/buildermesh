@@ -77,11 +77,11 @@ type leadStarted struct {
 }
 
 // leadPath is the node path a lead start registers: --path, else
-// <repo>-<spec>. It refuses the routine pool's paths.
+// <repo token>-<spec> (mesh.RepoToken). It refuses the routine pool's paths.
 func leadPath(name, spec, flag string) (string, error) {
 	p := flag
 	if p == "" {
-		p = name + "-" + spec
+		p = mesh.RepoToken(name) + "-" + spec
 	}
 	pp, err := mesh.ParsePath(p)
 	if err != nil {

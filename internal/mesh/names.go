@@ -131,3 +131,16 @@ func ModelShort(model string) string {
 	}
 	return strings.Trim(s, "-")
 }
+
+// RepoToken is a registry name as a path token: lower case, with the . and _
+// a directory name may hold (and a token can't) written as -, runs of -
+// collapsed to one (a token holds no --) and a trailing - trimmed. Node
+// paths, families and branches that start with a repo's name start with
+// this; node.Repo and worktree directories keep the registry name.
+func RepoToken(name string) string {
+	s := strings.NewReplacer(".", "-", "_", "-").Replace(strings.ToLower(name))
+	for strings.Contains(s, "--") {
+		s = strings.ReplaceAll(s, "--", "-")
+	}
+	return strings.Trim(s, "-")
+}
