@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,9 +50,28 @@ func TestRevisionHint(t *testing.T) {
 	if err := mesh.PublishEvent(ctx, c, mesh.Event{From: "daemon.k16", Event: "started", Text: daemonRev}); err != nil {
 		t.Fatal(err)
 	}
+	hint := "bmesh: k16 runs 1a1a1a1a, this is 9e9e9e9e; run bmesh update\n"
 	_, errOut, code := runCLI(t, nil, "mesh-status")
-	if want := "bmesh: k16 runs 1a1a1a1a, this is 9e9e9e9e; run bmesh update\n"; code != 0 || errOut != want {
-		t.Fatalf("code %d err %q, want %q", code, errOut, want)
+	if code != 0 || errOut != hint {
+		t.Fatalf("code %d err %q, want %q", code, errOut, hint)
+	}
+	// On one stream (2>&1), the hint comes once, after the command's output
+	// and its error, and leaves the exit code alone.
+	both := func(args ...string) (string, int) {
+		t.Helper()
+		var b bytes.Buffer
+		code := run(args, strings.NewReader(""), &b, &b)
+		return b.String(), code
+	}
+	if err := mesh.PutNode(ctx, c, mesh.Node{Path: "app-001", Role: "lead", Host: "testhost"}); err != nil {
+		t.Fatal(err)
+	}
+	if out, code := both("--node", "app-001", "inbox"); code != 0 || out != "inbox: empty\n"+hint {
+		t.Fatalf("inbox: code %d out %q", code, out)
+	}
+	t.Chdir(t.TempDir()) // no node here
+	if out, code := both("inbox"); code != exitUsage || out != "bmesh: no node for this directory; pass --node or set BMESH_NODE\n"+hint {
+		t.Fatalf("refused inbox: code %d out %q", code, out)
 	}
 	// Commands that reach no hub get none.
 	if _, errOut, _ := runCLI(t, nil, "version"); errOut != "" {

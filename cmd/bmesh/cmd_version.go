@@ -34,10 +34,10 @@ func (a *app) cmdVersion(args []string) error {
 // hintWait bounds the read behind the revision hint.
 const hintWait = 2 * time.Second
 
-// versionHint prints one stderr line when the newest daemon to start runs
-// another revision than this binary. Nothing is printed when either side
-// does not know its revision or the read fails: it is a hint, never a
-// refusal.
+// versionHint sets the one stderr line run prints after the command's own
+// output when the newest daemon to start runs another revision than this
+// binary. There is none when either side does not know its revision or the
+// read fails: it is a hint, never a refusal, and never changes the exit code.
 func (a *app) versionHint(ctx context.Context) {
 	own := buildVersion().Revision
 	if own == "" {
@@ -54,6 +54,6 @@ func (a *app) versionHint(ctx context.Context) {
 		return
 	}
 	host := strings.TrimSuffix(strings.TrimPrefix(s.Subject, "bm.daemon."), ".started")
-	fmt.Fprintf(a.stderr, "bmesh: %s runs %s, this is %s; run bmesh update\n", host,
+	a.hint = fmt.Sprintf("bmesh: %s runs %s, this is %s; run bmesh update", host,
 		selfupdate.Short(ev.Text), selfupdate.Short(own))
 }

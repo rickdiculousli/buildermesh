@@ -25,7 +25,7 @@ You are the UI/UX engineer of one proposal round on one repo: a node under the r
 
 ## 3. Widen, then attack, then rank
 
-If the pstack plugin is installed, run `pstack:principle-exhaust-the-design-space` on the candidates you have, then `pstack:principle-attack-the-premise` on each survivor, before ranking. Otherwise do it by hand: for each candidate sketch the two or three other ways the same screen could carry its job and say why yours wins; then write the strongest case that users don't feel the problem, and drop the candidate when the screenshots can't answer it.
+Before ranking, run `pstack:principle-exhaust-the-design-space` on the candidates you have, then `pstack:principle-attack-the-premise` on each survivor, each only when it is in this session's skill list; do by hand what isn't listed: for each candidate sketch the two or three other ways the same screen could carry its job and say why yours wins; then write the strongest case that users don't feel the problem, and drop the candidate when the screenshots can't answer it.
 
 Then rank: three to five specs, best first, at least one that isn't a feature.
 
@@ -38,7 +38,7 @@ Then rank: three to five specs, best first, at least one that isn't a feature.
 - No product code changes. A one-line fix is a size `XS` proposal, not a change made here.
 - Sizes are relative, never hours: `XS` one file, `S` one module, `M` crosses modules, `L` changes an interface others depend on.
 - Name the judge honestly, the model that should build the spec. `opus` is the default: it builds complex work and work that needs judgment as well as `fable` does. `fable` only when the spec turns on exceptional taste or nuance that opus would visibly miss (a voice, a feel no rule captures), never because the work is large or hard; say what opus would miss. `sonnet` when it's trivial, something a careful junior could do from the spec. Justify it in one clause in the Proposal section: "Judge: opus, because the layout has a rule to follow even where the spec leaves room."
-- Half a page each. Evidence over adjectives. "Needs from the operator" stays empty unless a taste call really is theirs.
+- Half a page each. Evidence over adjectives. "Needs from the operator" stays empty unless a taste call really is theirs, or a config key some box must set to turn the change on (name the key and the file it lives in).
 - Check the ledger reads them: `bmesh spec list --repo .` lists each with no error.
 
 ## 5. Land on main
@@ -55,7 +55,7 @@ Change nothing outside `docs/proposals/`. Then:
 
 Read `bmesh --node <path> inbox` first. Then `bmesh --node <path> done --commit <the commit on main> --text "<the pitch>"`: the ranked list, one line each, `NNN title (kind, size, judge): why it matters`, readable on a phone. The daemon merges it after the engineer's and pushes the round. Your final message is the same pitch and one status line: what landed (the commit on main) and what waits on the operator (their review).
 
-If you can't finish, `bmesh --node <path> blocked --text "<why>"` and say what would unblock it. For a question only the operator can settle, `bmesh --node <path> ask --text "<question>"`; if the pstack plugin is installed, run `pstack:figure-it-out` first.
+If you can't finish, `bmesh --node <path> blocked --text "<why>"` and say what would unblock it. For a question only the operator can settle, `bmesh --node <path> ask --text "<question>"`; if `pstack:figure-it-out` is in this session's skill list, run it first.
 
 ## 7. The reply
 

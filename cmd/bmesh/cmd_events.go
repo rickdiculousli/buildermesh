@@ -4,7 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
@@ -15,7 +18,10 @@ import (
 // lead's done is checked against its spec; an executor's or an engineer's
 // (a round's thread) needs only --commit. An executor's ask, done and blocked
 // are also sent to its parent's inbox, since the operator reads only leads'
-// events and the lead acts on its executors' from there.
+// events and the lead acts on its executors' from there. Each prints one
+// line on success: `<event> <path>`, or `done <path> <sha8>`; a done for the
+// commit a node is already done at prints `already done at <sha8>` and
+// publishes nothing.
 func (a *app) cmdEvent(name string, args []string) error {
 	fs := a.flags(name)
 	text := fs.String("text", "", "what to say")
@@ -38,6 +44,20 @@ func (a *app) cmdEvent(name string, args []string) error {
 		return err
 	}
 	path := p.String()
+	cur, _, err := mesh.ReadState(ctx, a.client, path)
+	if err != nil {
+		return err
+	}
+	if name == "done" && cur.State == "done" {
+		if at, ok, err := lastDone(ctx, a.client, p); err != nil {
+			return err
+		} else if ok && sameCommit(at, *commit) {
+			fmt.Fprintf(a.stdout, "already done at %s\n", short8(at))
+			return nil
+		} else if ok {
+			return fail(exitRefused, "refused: %s is already done at %s, not %s", path, short8(at), short8(*commit))
+		}
+	}
 	var n mesh.Node
 	if name == "done" || name == "ask" || name == "blocked" {
 		var ok bool
@@ -53,10 +73,6 @@ func (a *app) cmdEvent(name string, args []string) error {
 				return err
 			}
 		}
-	}
-	cur, _, err := mesh.ReadState(ctx, a.client, path)
-	if err != nil {
-		return err
 	}
 	if !mesh.Legal(cur.State, to) {
 		return fail(exitRefused, "refused: %v", mesh.ErrIllegalTransition{From: cur.State, To: to})
@@ -85,7 +101,35 @@ func (a *app) cmdEvent(name string, args []string) error {
 		}
 		return err
 	}
+	if name == "done" {
+		fmt.Fprintf(a.stdout, "done %s %s\n", path, short8(*commit))
+	} else {
+		fmt.Fprintf(a.stdout, "%s %s\n", name, path)
+	}
 	return nil
+}
+
+// lastDone is the commit of the node's newest done event.
+func lastDone(ctx context.Context, c *mesh.Client, p mesh.Path) (string, bool, error) {
+	s, ok, err := mesh.Last(ctx, c, mesh.EventSubject(p, "done"))
+	if err != nil || !ok {
+		return "", false, err
+	}
+	var ev mesh.Event
+	if err := json.Unmarshal(s.Data, &ev); err != nil || ev.Commit == "" {
+		return "", false, nil
+	}
+	return ev.Commit, true, nil
+}
+
+// sameCommit reports whether two spellings of a commit name the same one:
+// equal, or one an abbreviation (7 or more characters) of the other.
+func sameCommit(a, b string) bool {
+	a, b = strings.ToLower(a), strings.ToLower(b)
+	if len(a) > len(b) {
+		a, b = b, a
+	}
+	return a == b && a != "" || len(a) >= 7 && strings.HasPrefix(b, a)
 }
 
 // executorMessage is what an executor's ask, done or blocked puts in its

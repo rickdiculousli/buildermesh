@@ -2,13 +2,45 @@
 # seed.sh: run a throwaway bmesh serve (embedded NATS on a free loopback
 # port, routines and ntfy off) with a seeded mesh, to look at the map. It
 # prints the map URL and a CLI config for poking the mesh, and keeps serve
-# running until Ctrl-C. State lives under ~/.cache/bmesh-scratch/seed and is
-# wiped on each run. Arguments go to the seeder (scripts/seed), e.g. -leads 6.
+# running until Ctrl-C or `seed.sh stop`. State lives under
+# ~/.cache/bmesh-scratch/seed and is wiped on each run; seed.pid there holds
+# this script's pid and serve's. A run stops the previous one first. Other
+# arguments go to the seeder (scripts/seed), e.g. -leads 6.
 set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 dir=${BMESH_SEED_DIR:-$HOME/.cache/bmesh-scratch/seed}
 http=${BMESH_SEED_HTTP:-127.0.0.1:3775}
+pidfile="$dir/seed.pid"
+
+# stop kills the pids in the pidfile (this script's, then serve's) that
+# still run a seed command line, and waits for them to go; never pkill -f,
+# which matches the caller's own shell.
+stop() {
+	[ -f "$pidfile" ] || return 0
+	pids=
+	for p in $(cat "$pidfile"); do
+		case $(ps -o args= -p "$p" 2>/dev/null) in
+		*seed*) pids="$pids $p" ;;
+		esac
+	done
+	for p in $pids; do kill "$p" 2>/dev/null || true; done
+	i=0
+	for p in $pids; do
+		while kill -0 "$p" 2>/dev/null && [ "$i" -lt 50 ]; do
+			i=$((i + 1))
+			sleep 0.1
+		done
+	done
+	rm -f "$pidfile"
+}
+
+if [ "${1:-}" = stop ]; then
+	stop
+	echo "seed.sh: stopped"
+	exit 0
+fi
+stop
 
 rm -rf "$dir/jetstream" "$dir/serve.log" "$dir/cli.toml" "$dir/app" "$dir/quota.json"
 mkdir -p "$dir/app/docs/proposals" "$dir/app/.bmesh/routines"
@@ -100,7 +132,8 @@ TOML
 (cd "$root" && go build -o "$dir/bmesh" ./cmd/bmesh)
 BMESH_CONFIG="$dir/serve.toml" "$dir/bmesh" serve >"$dir/serve.log" 2>&1 &
 pid=$!
-trap 'kill "$pid" 2>/dev/null || true' EXIT
+echo "$$ $pid" >"$pidfile"
+trap 'kill "$pid" 2>/dev/null || true; rm -f "$pidfile"' EXIT
 trap 'exit 130' INT TERM
 
 # serve logs "bmesh serve: nats <url> (embedded), http <addr>, ..." once both listen.
@@ -122,6 +155,6 @@ name = "seed"
 TOML
 
 (cd "$root" && go run ./scripts/seed -nats "$url" -map "http://$http/" -quota "$dir/quota.json" "$@")
-printf 'cli: BMESH_CONFIG=%s %s --node app-0042 send app-0042.api hi\nserving until Ctrl-C (log: %s)\n' \
-	"$dir/cli.toml" "$dir/bmesh" "$dir/serve.log"
+printf 'cli: BMESH_CONFIG=%s %s --node app-0042 send app-0042.api hi\nserving until Ctrl-C or %s stop (log: %s)\n' \
+	"$dir/cli.toml" "$dir/bmesh" "$0" "$dir/serve.log"
 wait "$pid"

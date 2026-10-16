@@ -37,12 +37,14 @@ func TestInlineRunsAndRecords(t *testing.T) {
 	head := gitOut(t, "rev-parse", "HEAD")
 	key := mesh.ResultKey("verify", tree, []string{"a", "b"}, "")
 
+	// The run's output, then its verdict line, which is not recorded.
+	ran := "ran " + tree + " " + testHost + " a b\n"
 	out, errs, code := runCLI(t, nil, "routine", "run", "verify", "--", "a", "b")
-	if code != 0 || out != "ran "+tree+" "+testHost+" a b\n" || errs != "recorded "+key+"\n" {
+	if code != 0 || out != ran+"verify ok t:"+tree[:8]+" (recorded)\n" || errs != "" {
 		t.Fatalf("run: %d %q %q", code, out, errs)
 	}
 	r, ok, err := mesh.GetResult(ctx, c, key)
-	if err != nil || !ok || !r.OK || r.Output != out || r.By != testHost || r.Commit != head ||
+	if err != nil || !ok || !r.OK || r.Output != ran || r.By != testHost || r.Commit != head ||
 		r.Tree != tree || !slices.Equal(r.Args, []string{"a", "b"}) {
 		t.Fatalf("result %+v %v %v", r, ok, err)
 	}
@@ -51,7 +53,7 @@ func TestInlineRunsAndRecords(t *testing.T) {
 	}
 
 	out, errs, code = runCLI(t, nil, "routine", "run", "broken")
-	if code != 1 || out != "nope\n" || errs != "recorded broken."+tree+"\n" {
+	if code != 1 || out != "nope\nbroken fail t:"+tree[:8]+" (recorded)\n" || errs != "" {
 		t.Fatalf("broken: %d %q %q", code, out, errs)
 	}
 	if r, ok, err := mesh.GetResult(ctx, c, "broken."+tree); err != nil || !ok || r.OK || r.Output != "nope\n" {
@@ -61,7 +63,7 @@ func TestInlineRunsAndRecords(t *testing.T) {
 	// A non-deterministic kind records too, and a second run replaces the
 	// record rather than being answered from it.
 	out, errs, code = runCLI(t, nil, "routine", "run", "notes")
-	if code != 0 || out != "hi\n" || errs != "recorded notes."+tree+"\n" {
+	if code != 0 || out != "hi\nnotes ok t:"+tree[:8]+" (recorded)\n" || errs != "" {
 		t.Fatalf("notes: %d %q %q", code, out, errs)
 	}
 	rs, err := mesh.ListResults(ctx, c, "notes")
@@ -71,7 +73,7 @@ func TestInlineRunsAndRecords(t *testing.T) {
 	first := rs[0].At
 	time.Sleep(1100 * time.Millisecond) // At has one-second resolution
 	out, errs, code = runCLI(t, nil, "routine", "run", "notes")
-	if code != 0 || out != "hi\n" || errs != "recorded notes."+tree+"\n" {
+	if code != 0 || out != "hi\nnotes ok t:"+tree[:8]+" (recorded)\n" || errs != "" {
 		t.Fatalf("notes again: %d %q %q", code, out, errs)
 	}
 	if rs, err := mesh.ListResults(ctx, c, "notes"); err != nil || len(rs) != 1 || rs[0].At == first {
@@ -125,11 +127,11 @@ func TestInlineAnswersFromRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	out, errs, code := runCLI(t, nil, "routine", "run", "verify")
-	if code != 1 || out != "broke\n" || errs != "answered from result verify."+tree+"\n" || exists(mark) {
+	if code != 1 || out != "broke\nverify fail t:"+tree[:8]+" (answered from the record)\n" || errs != "" || exists(mark) {
 		t.Fatalf("answered: %d %q %q ran=%v", code, out, errs, exists(mark))
 	}
 	out, errs, code = runCLI(t, nil, "routine", "run", "verify", "--rerun")
-	if code != 0 || out != "fixed\n" || errs != "recorded verify."+tree+"\n" || !exists(mark) {
+	if code != 0 || out != "fixed\nverify ok t:"+tree[:8]+" (recorded)\n" || errs != "" || !exists(mark) {
 		t.Fatalf("rerun: %d %q %q", code, out, errs)
 	}
 	if r, ok, err := mesh.GetResult(ctx, c, "verify."+tree); err != nil || !ok || !r.OK || r.By != testHost {
@@ -206,7 +208,7 @@ func TestInlineHoldsSlotLease(t *testing.T) {
 	}
 	select {
 	case r := <-res:
-		if r[0] != 0 || r[1] != "played\n" || r[2] != "recorded game."+tree+"\n" {
+		if r[0] != 0 || r[1] != "played\ngame ok t:"+tree[:8]+" (recorded)\n" || r[2] != "" {
 			t.Fatalf("run: %v", r)
 		}
 	case <-time.After(10 * time.Second):
@@ -231,7 +233,7 @@ func TestInlineModelKindThroughFake(t *testing.T) {
 	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 
 	out, errs, code := runCLI(t, nil, "routine", "run", "review", "--model", "m2", "--text", "look at it")
-	if code != 0 || out != "looks fine\nVERDICT: ok\n" || errs != "recorded review."+tree+".m2\n" {
+	if code != 0 || out != "looks fine\nVERDICT: ok\nreview ok t:"+tree[:8]+" m:m2 (recorded)\n" || errs != "" {
 		t.Fatalf("run: %d %q %q", code, out, errs)
 	}
 	if r, ok, err := mesh.GetResult(ctx, c, "review."+tree+".m2"); err != nil || !ok || !r.OK || r.Model != "m2" {

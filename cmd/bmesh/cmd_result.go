@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,8 +13,11 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
 
-const resultUsage = "usage: bmesh result find <kind> [--commit C] [--model M] [--json] [-- args...] | " +
-	"bmesh result record <kind> --ok|--fail [--commit C] [--model M] [--output FILE|-] [-- args...]"
+const (
+	resultFindUsage   = "usage: bmesh result find <kind> [--commit C] [--model M] [--json] [-- args...]"
+	resultRecordUsage = "usage: bmesh result record <kind> --ok|--fail [--commit C] [--model M] [--output FILE|-] [-- args...]"
+	resultUsage       = resultFindUsage + " | " + resultRecordUsage
+)
 
 func (a *app) cmdResult(args []string) error {
 	if len(args) > 0 {
@@ -59,15 +61,17 @@ func checkEffort(effort string) error {
 	return nil
 }
 
-// kindArg checks the kind positional; the rest are the job args.
-func kindArg(pos []string) (string, []string, error) {
+// kindArg checks the kind positional; the rest are the job args. usage is
+// the subcommand's.
+func kindArg(pos []string, usage string) (string, []string, error) {
 	if len(pos) == 0 || !kind.NameRE.MatchString(pos[0]) {
-		return "", nil, fail(exitUsage, resultUsage)
+		return "", nil, fail(exitUsage, "%s", usage)
 	}
 	return pos[0], pos[1:], nil
 }
 
-// cmdResultFind prints the result of a kind at the commit's tree.
+// cmdResultFind prints the result of a kind at the commit's tree; without
+// --model, every model's result there (a command kind's has none).
 func (a *app) cmdResultFind(args []string) error {
 	fs := a.flags("result find")
 	commit := fs.String("commit", "HEAD", "commit whose tree to look up")
@@ -76,7 +80,7 @@ func (a *app) cmdResultFind(args []string) error {
 	if err != nil {
 		return err
 	}
-	name, jobArgs, err := kindArg(pos)
+	name, jobArgs, err := kindArg(pos, resultFindUsage)
 	if err != nil {
 		return err
 	}
@@ -89,27 +93,42 @@ func (a *app) cmdResultFind(args []string) error {
 	if err := a.connect(ctx, "result"); err != nil {
 		return err
 	}
-	key := mesh.ResultKey(name, tree, jobArgs, *model)
-	r, ok, err := mesh.GetResult(ctx, a.client, key)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fail(exitRefused, "no result for %s", key)
-	}
-	if a.json {
-		b, err := json.Marshal(r)
+	var found []mesh.Result
+	if *model != "" {
+		r, ok, err := mesh.GetResult(ctx, a.client, mesh.ResultKey(name, tree, jobArgs, *model))
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(a.stdout, "%s\n", b)
-		return nil
+		if ok {
+			found = append(found, r)
+		}
+	} else {
+		rs, err := mesh.ListResults(ctx, a.client, name)
+		if err != nil {
+			return err
+		}
+		for _, r := range rs {
+			if r.Tree == tree && mesh.ResultKey(name, tree, r.Args, r.Model) == mesh.ResultKey(name, tree, jobArgs, r.Model) {
+				found = append(found, r)
+			}
+		}
 	}
-	verdict := "fail"
-	if r.OK {
-		verdict = "ok"
+	if len(found) == 0 {
+		return fail(exitRefused, "no result for %s", mesh.ResultKey(name, tree, jobArgs, *model))
 	}
-	fmt.Fprintf(a.stdout, "%s %s %s %s\n", verdict, r.Tree, r.At, r.By)
+	for _, r := range found {
+		if a.json {
+			if err := a.printJSON(r); err != nil {
+				return err
+			}
+			continue
+		}
+		line := fmt.Sprintf("%s %s %s %s", okWord(r.OK), r.Tree, r.At, r.By)
+		if r.Model != "" {
+			line += " m:" + r.Model
+		}
+		fmt.Fprintln(a.stdout, line)
+	}
 	return nil
 }
 
@@ -127,12 +146,12 @@ func (a *app) cmdResultRecord(args []string) error {
 	if err != nil {
 		return err
 	}
-	name, jobArgs, err := kindArg(pos)
+	name, jobArgs, err := kindArg(pos, resultRecordUsage)
 	if err != nil {
 		return err
 	}
 	if *ok == *failed {
-		return fail(exitUsage, "result record: exactly one of --ok and --fail")
+		return fail(exitUsage, "result record: exactly one of --ok and --fail; "+resultRecordUsage)
 	}
 	if err := checkModel(*model); err != nil {
 		return err

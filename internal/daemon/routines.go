@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"os/exec"
 	"slices"
 	"sort"
@@ -55,6 +57,8 @@ type routineSet struct {
 	worktreeMu sync.Mutex
 
 	fetchMu sync.Mutex // serializes fetches, which lock a repo's refs
+
+	missing map[string]bool // registered repos with no path on this box, logged once; rescan's own
 
 	updateRepo string // [update] repo when the update can run, else ""
 	updateSeen string // the main commit the update last acted on
@@ -128,7 +132,7 @@ func routines(ctx context.Context, d Deps) {
 		return
 	}
 	r := &routineSet{d: d, ctx: ctx, root: d.Checkouts, claude: d.ClaudeBin,
-		feeds: map[string]*feed{}, paths: map[string]chan struct{}{}, updateRepo: updateRepo(d)}
+		feeds: map[string]*feed{}, paths: map[string]chan struct{}{}, missing: map[string]bool{}, updateRepo: updateRepo(d)}
 	if strings.TrimSpace(r.claude) == "" {
 		r.claude = "claude"
 	}
@@ -173,7 +177,8 @@ func (r *routineSet) discover(repoPath string) (dir string, kinds []kind.Kind, e
 }
 
 // rescan reads every repo's kinds and brings the feeds in line. A repo that
-// cannot be read keeps what it had. With [update] on, the update repo's main
+// cannot be read keeps what it had; one whose path does not exist on this
+// box has no kinds here and is logged once per daemon start. With [update] on, the update repo's main
 // is then compared with this binary; an update drains the feeds for good.
 func (r *routineSet) rescan() {
 	if r.isDrained() {
@@ -195,6 +200,14 @@ func (r *routineSet) rescan() {
 		_, path, err := r.d.Cfg.RepoPath(name)
 		if err != nil {
 			r.d.Log.Warn("routines: repo", "repo", name, "err", err)
+			continue
+		}
+		if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+			// Registered for other boxes: nothing to read here.
+			if !r.missing[name] {
+				r.missing[name] = true
+				r.d.Log.Info("routines: repo has no checkout on this box; skipped", "repo", name, "path", path)
+			}
 			continue
 		}
 		repoPaths[name] = path

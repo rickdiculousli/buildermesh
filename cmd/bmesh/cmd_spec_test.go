@@ -99,7 +99,7 @@ func TestDoneRequiresVerifiedMatchingResults(t *testing.T) {
 
 	landSpec(t, repo, front+verified)
 	put(mesh.Result{Kind: "review", OK: true, Model: "claude-opus-5-5"})
-	if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", merged, "--text", "shipped"); code != 0 {
+	if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", merged, "--text", "shipped"); code != 0 || out != "done app-012 "+merged[:8]+"\n" {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
 	}
 	hist, err := mesh.History(ctx, c, "bm.app-012.done", time.Time{})
@@ -108,6 +108,20 @@ func TestDoneRequiresVerifiedMatchingResults(t *testing.T) {
 	}
 	if got := stateOf(t, c, ctx, "app-012"); got != "done" {
 		t.Fatalf("state %s", got)
+	}
+	// done again for the same commit, full or abbreviated, is calm and
+	// publishes nothing; another commit is still refused.
+	for _, again := range []string{merged, merged[:10]} {
+		if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", again); code != 0 || out != "already done at "+merged[:8]+"\n" || errs != "" {
+			t.Fatalf("done again with %s: %d %q %q", again, code, out, errs)
+		}
+	}
+	if _, errs, code := runCLI(t, as("app-012"), "done", "--commit", "0123456789ab"); code != 3 ||
+		errs != "bmesh: refused: app-012 is already done at "+merged[:8]+", not 01234567\n" {
+		t.Fatalf("done for another commit: %d %q", code, errs)
+	}
+	if hist, err := mesh.History(ctx, c, "bm.app-012.done", time.Time{}); err != nil || len(hist) != 1 {
+		t.Fatalf("done events after the repeats: %d %v", len(hist), err)
 	}
 	// A lead's done is its own event: no inbox hears of it.
 	if hist, err := mesh.History(ctx, c, "bm.inbox.>", time.Time{}); err != nil || len(hist) != 0 {

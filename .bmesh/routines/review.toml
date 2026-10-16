@@ -8,6 +8,8 @@ allow = ["Bash(git diff:*)", "Bash(git log:*)"]
 prompt = """
 Review the change at this commit for correctness bugs.
 The job text carries `base: <sha>`: review `git diff <base>..HEAD`.
+The verify routine already ran the tests, vet and formatting at this commit;
+don't try to run them (only git diff and git log are allowed): read the code.
 Report each finding as a section headed `### <severity>: <what breaks>`,
 followed by the file, the failing input and the wrong result.
 End your reply with a final line `VERDICT: ok` or `VERDICT: fail`.
