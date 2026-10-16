@@ -11,6 +11,7 @@ proposed_on: 2026-10-16
 built_by: ae866914-0010-40e5-b884-1c7dd2b2cf00
 host: k16
 family: buildermesh-build-3
+branch: bmesh/ae866914-0010-40e5-b884-1c7dd2b2cf00
 ---
 
 ## North star
