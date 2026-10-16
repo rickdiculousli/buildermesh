@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"slices"
@@ -402,6 +403,9 @@ func (a *app) connect(ctx context.Context, name string) error {
 	domain := a.cfg.Mesh.Domain
 	if embedded {
 		domain = "hub" // the embedded server's domain, as serve dials it
+		if _, port, err := net.SplitHostPort(a.cfg.Mesh.Listen); err == nil && port == "0" {
+			return fail(exitError, "[mesh] listen %s lets bmesh serve pick a port, which the CLI can't know: give it one, or set [mesh] nats", a.cfg.Mesh.Listen)
+		}
 	}
 	c, err := mesh.Connect(ctx, url, token, domain, "bmesh/"+name, false)
 	if embedded && errors.Is(err, nats.ErrNoServers) {

@@ -57,4 +57,9 @@ func TestCLISaysNoHubWhenServeIsNotRunning(t *testing.T) {
 	if code == 0 || !strings.Contains(errOut, want) {
 		t.Fatalf("code %d, stderr %q, want %q", code, errOut, want)
 	}
+	// A port serve picks can't be dialled: say so rather than "no hub".
+	singleBox(t, "127.0.0.1:0")
+	if _, errOut, code := runCLI(t, nil, "mesh-status"); code == 0 || !strings.Contains(errOut, "[mesh] listen 127.0.0.1:0 lets bmesh serve pick a port") {
+		t.Fatalf("port 0: code %d, stderr %q", code, errOut)
+	}
 }
