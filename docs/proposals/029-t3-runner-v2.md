@@ -4,14 +4,16 @@ title: The t3 runner speaks T3 Code 0.1.0 (Orchestrator V2) through its MCP tool
 kind: maintenance
 size: L
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
 built_by: fd3f7036-36cb-4063-af8b-be51e212d54e
 host: k16
 family: buildermesh-build-1
-branch: t3code/d0e5302b
+branch: t3code/t3-runner-orchestrator-v2
+verified: verify ok t:1c3322ee
+merged: f590bf90a68e9ba9f13955bda4c93cfb4cb66364
 ---
 
 ## Opportunity
