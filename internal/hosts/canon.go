@@ -403,4 +403,3 @@ func (p *Presence) Verify(pubHex string) error {
 	}
 	return verify(pubHex, p.Sig, p.Bytes())
 }
-
