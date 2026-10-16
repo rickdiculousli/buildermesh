@@ -100,7 +100,7 @@ func TestBuildRecordsBuildingThenStartsTheLead(t *testing.T) {
 	}
 	l, _ := os.ReadFile(log)
 	if !strings.Contains(string(l), "--model claude-opus-5-5 --title [build] demo 002: Spec 002 --prompt-file ") ||
-		!strings.Contains(string(l), "--thread-id "+got.Thread+" --effort high\n") {
+		!strings.Contains(string(l), "--thread-id "+got.Thread+" --effort high --runtime-mode auto\n") {
 		t.Fatalf("log:\n%s", l)
 	}
 	// Main's worktrees and branches are left as they were.

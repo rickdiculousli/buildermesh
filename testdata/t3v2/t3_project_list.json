@@ -1,0 +1,29 @@
+{
+ "content": [
+  {
+   "type": "text",
+   "text": "{\"projects\":[{\"id\":\"mcp:934f546f-cd9a-4237-8cbf-c9ad12605237\",\"title\":\"scratch\",\"workspaceRoot\":\"/home/rick/.cache/t3-v2-scratch/repo\",\"repositoryIdentity\":null,\"faviconPath\":null,\"projectIcon\":null,\"defaultModelSelection\":null,\"defaultThreadEnvMode\":null,\"autoPull\":false,\"scripts\":[],\"createdAt\":\"2026-10-16T02:21:04.966Z\",\"updatedAt\":\"2026-10-16T02:21:04.966Z\",\"deletedAt\":null}],\"nextCursor\":null}"
+  }
+ ],
+ "structuredContent": {
+  "projects": [
+   {
+    "id": "mcp:934f546f-cd9a-4237-8cbf-c9ad12605237",
+    "title": "scratch",
+    "workspaceRoot": "/home/rick/.cache/t3-v2-scratch/repo",
+    "repositoryIdentity": null,
+    "faviconPath": null,
+    "projectIcon": null,
+    "defaultModelSelection": null,
+    "defaultThreadEnvMode": null,
+    "autoPull": false,
+    "scripts": [],
+    "createdAt": "2026-10-16T02:21:04.966Z",
+    "updatedAt": "2026-10-16T02:21:04.966Z",
+    "deletedAt": null
+   }
+  ],
+  "nextCursor": null
+ },
+ "isError": false
+}

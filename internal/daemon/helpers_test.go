@@ -55,7 +55,7 @@ func setup(t *testing.T) *fixture {
 	f := &fixture{ctx: ctx, c: c, now: time.Now(), log: log}
 	f.d = Deps{
 		Client: c, Cfg: cfg, Host: testHost,
-		Runner: runner.T3{Dispatch: "t3_dispatch.py", Dir: t.TempDir()},
+		Runner: &runner.T3{Dispatch: "t3_dispatch.py", Dir: t.TempDir()},
 		Now:    func() time.Time { return f.now },
 	}
 	f.d.defaults()
