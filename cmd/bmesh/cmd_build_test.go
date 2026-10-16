@@ -208,14 +208,12 @@ func TestBuildAcceptedOrdersAndCapsLeads(t *testing.T) {
 	putNode(t, c, ctx, mesh.Node{Path: "demo-021", Repo: "demo"})
 	putNode(t, c, ctx, mesh.Node{Path: "demo-022", Repo: "demo"})
 	putNode(t, c, ctx, mesh.Node{Path: "other-001", Repo: "other"})
-	for _, p := range []string{"demo-020", "demo-021", "demo-022", "other-001"} {
+	for _, p := range []string{"demo-020", "demo-021", "other-001"} {
 		if _, err := mesh.WriteState(ctx, c, p, mesh.State{State: "working", By: "node"}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := mesh.WriteState(ctx, c, "demo-022", mesh.State{State: "done", By: "node"}); err != nil {
-		t.Fatal(err)
-	}
+	meshtest.ForceState(t, c, "demo-022", mesh.State{State: "done", By: "node"})
 	out, errs, code := runCLI(t, nil, "build", "--accepted", "demo")
 	if code != 0 {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
@@ -241,12 +239,7 @@ func TestBuildAcceptedOrdersAndCapsLeads(t *testing.T) {
 	// no id, 005 is above it, 007 is rejected), 005 is refused for its judge,
 	// 009 starts (008, later, is not waited on).
 	for _, p := range []string{"demo-002", "demo-021", "demo-020"} {
-		if _, err := mesh.WriteState(ctx, c, p, mesh.State{State: "working", By: "node"}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := mesh.WriteState(ctx, c, p, mesh.State{State: "done", By: "node"}); err != nil {
-			t.Fatal(err)
-		}
+		meshtest.ForceState(t, c, p, mesh.State{State: "done", By: "node"})
 	}
 	runCLI(t, nil, "spec", "set", "--repo", repo, "--id", "002", "--status", "done", "--field", "merged=abc")
 	meshtest.Git(t, repo, "commit", "-qam", "002 done")
@@ -319,12 +312,7 @@ func TestBuildFamilies(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, p := range []string{"demo-002", "demo-004", "demo-009"} {
-		if _, err := mesh.WriteState(ctx, c, p, mesh.State{State: "working", By: "node"}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := mesh.WriteState(ctx, c, p, mesh.State{State: "done", By: "node"}); err != nil {
-			t.Fatal(err)
-		}
+		meshtest.ForceState(t, c, p, mesh.State{State: "done", By: "node"})
 	}
 	runCLI(t, nil, "spec", "set", "--repo", repo, "--id", "002", "--status", "done", "--field", "merged=abc")
 	meshtest.Git(t, repo, "commit", "-qam", "002 done")

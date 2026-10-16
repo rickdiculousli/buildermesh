@@ -492,9 +492,7 @@ func TestJobCommitFetchedFromOrigin(t *testing.T) {
 	// A commit no remote has is still refused (sent as is: Queue would
 	// refuse it first).
 	bad := mesh.Job{ID: nextID(), Kind: "verify", Repo: "app", Commit: strings.Repeat("ab", 20), Args: []string{}, Go: true}
-	if _, err := mesh.Send(f.ctx, f.c, mesh.Message{ID: bad.ID, Kind: "job", From: requester, To: "routine.verify", Job: &bad}); err != nil {
-		t.Fatal(err)
-	}
+	meshtest.QueueJob(t, f.c, "verify", requester, bad)
 	r := f.reply(t, bad.ID, 20*time.Second)
 	if r.OK || !strings.Contains(r.Output, "not a commit") {
 		t.Fatalf("unknown commit reply %+v", r)

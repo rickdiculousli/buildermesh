@@ -271,17 +271,8 @@ func TestTreeEndpoint(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, st := range []string{"working", "done"} {
-		if _, err := mesh.WriteState(ctx, c, "routine.review.fabc12345", mesh.State{State: st}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := mesh.KindConsumer(ctx, c, "review", 1, time.Minute); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := mesh.Send(ctx, c, mesh.Message{From: "a", To: "routine.review", Kind: "job", Text: "review"}); err != nil {
-		t.Fatal(err)
-	}
+	meshtest.ForceState(t, c, "routine.review.fabc12345", mesh.State{State: "done"})
+	meshtest.QueueJob(t, c, "review", "a", mesh.Job{Text: "review"})
 	if err := mesh.PutRunner(ctx, c, "a", mesh.RunnerSample{Running: true, Known: true}); err != nil {
 		t.Fatal(err)
 	}
