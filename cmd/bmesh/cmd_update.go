@@ -134,7 +134,7 @@ func (a *app) updateUpstream(exe string) error {
 			selfupdate.Short(head), selfupdate.Short(own))
 	}
 	var refused *selfupdate.Refused
-	if err := selfupdate.InstallModule(context.Background(), module, exe, head); errors.As(err, &refused) {
+	if err := selfupdate.InstallModule(context.Background(), dir, module, exe, head); errors.As(err, &refused) {
 		return fail(exitRefused, "update: %v", err)
 	} else if err != nil {
 		return err

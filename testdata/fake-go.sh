@@ -6,20 +6,28 @@
 # "bmesh <rev8>" for `version` and "fake bmesh <commit>" otherwise. <rev8> is
 # $FAKE_GO_REVISION when set, else the stampRevision in the flags (unknown
 # without one).
-# `install <module>/cmd/bmesh@<commit>` appends "install <module>@<commit>"
-# to $FAKE_GO_LOG and, with the same $FAKE_GO_EXIT and $FAKE_GO_REVISION,
-# writes $GOBIN/bmesh printing "bmesh <commit8>" for `version` and "fake
-# bmesh <commit>" otherwise.
+# `install [-ldflags <flags>] <module>/cmd/bmesh@<commit>` appends "install
+# <module>@<commit>" to $FAKE_GO_LOG and, with the same $FAKE_GO_EXIT, writes
+# $GOBIN/bmesh printing "bmesh <rev8>" for `version` and "fake bmesh
+# <commit>" otherwise, <rev8> being $FAKE_GO_REVISION, else the stamp, else
+# the commit as a pseudo-version names it (unknown with $FAKE_GO_TAGGED set:
+# go resolved the commit to a tag, which names none).
 if [ "$1" = install ]; then
-  pkg=${2%@*}
-  commit=${2##*@}
+  shift
+  flags=
+  if [ "$1" = -ldflags ]; then flags=$2; shift 2; fi
+  pkg=${1%@*}
+  commit=${1##*@}
   [ -n "$FAKE_GO_LOG" ] && echo "install ${pkg%/cmd/bmesh}@$commit" >> "$FAKE_GO_LOG"
   if [ -n "$FAKE_GO_EXIT" ] && [ "$FAKE_GO_EXIT" != 0 ]; then
     echo "fake install failed" >&2
     exit "$FAKE_GO_EXIT"
   fi
   [ -n "$GOBIN" ] || { echo "fake go: no GOBIN" >&2; exit 2; }
-  rev=$(printf '%.8s' "${FAKE_GO_REVISION:-$commit}")
+  stamped=$(printf '%s\n' "$flags" | sed -n 's/.*stampRevision=\([0-9a-f]*\).*/\1/p')
+  named=$commit
+  [ -n "$FAKE_GO_TAGGED" ] && named=unknown
+  rev=$(printf '%.8s' "${FAKE_GO_REVISION:-${stamped:-$named}}")
   printf '#!/bin/sh\n[ "$1" = version ] && { echo "bmesh %s 2026-10-16T00:00:00Z"; exit 0; }\necho fake bmesh %s\n' "$rev" "$commit" > "$GOBIN/bmesh"
   chmod +x "$GOBIN/bmesh"
   exit 0

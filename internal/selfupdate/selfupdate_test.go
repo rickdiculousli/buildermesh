@@ -47,6 +47,7 @@ func fakeGo(t *testing.T) (log string) {
 	t.Setenv("FAKE_GO_LOG", log)
 	t.Setenv("FAKE_GO_EXIT", "")
 	t.Setenv("FAKE_GO_REVISION", "")
+	t.Setenv("FAKE_GO_TAGGED", "")
 	t.Setenv("INVOCATION_ID", "")
 	return log
 }
