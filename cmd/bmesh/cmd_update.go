@@ -89,6 +89,7 @@ func (a *app) cmdUpdate(args []string) error {
 	own := buildVersion().Revision
 	if selfupdate.Same(head, own) {
 		fmt.Fprintln(a.stdout, "up to date")
+		a.restartLine(head)
 		return clearNotice()
 	}
 	if own != "" && !selfupdate.Contains(dir, own, head) {
@@ -102,6 +103,7 @@ func (a *app) cmdUpdate(args []string) error {
 		return err
 	}
 	fmt.Fprintf(a.stdout, "%s -> %s\n", selfupdate.Short(own), selfupdate.Short(head))
+	a.restartLine(head)
 	return clearNotice()
 }
 
@@ -127,6 +129,7 @@ func (a *app) updateUpstream(exe string) error {
 	own := buildVersion().Revision
 	if selfupdate.Same(head, own) {
 		fmt.Fprintln(a.stdout, "up to date")
+		a.restartLine(head)
 		return clearNotice()
 	}
 	if own != "" && !selfupdate.Contains(dir, own, head) {
@@ -141,6 +144,7 @@ func (a *app) updateUpstream(exe string) error {
 	}
 	fmt.Fprintf(a.stdout, "%s -> %s\n", selfupdate.Short(own), selfupdate.Short(head))
 	fmt.Fprintln(a.stdout, pluginLine)
+	a.restartLine(head)
 	return clearNotice()
 }
 

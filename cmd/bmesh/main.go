@@ -138,6 +138,7 @@ commands:
   update [--repo R]                        build R's main (default [update] repo, else the row this binary's
                                            module is from; with none, go install the module's main) over this
                                            binary, keeping it as bmesh.prev; print <old8> -> <new8>, or up to date
+                                           (then the restart this box's daemon needs, when it runs another build)
   update --notice                          print the daemon's behind-main notice (<state dir>/update.txt), if any
   land [--spec NNN] [--ttl D] [--wait D]   land this worktree's branch on main under the lease land.<repo> (waits
                                            while another lead holds it): fetch, rebase, run or require the results,
