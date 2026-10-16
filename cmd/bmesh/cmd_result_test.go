@@ -46,7 +46,7 @@ func TestResultRecordAndFind(t *testing.T) {
 		t.Fatalf("find before record: %d %q", code, errs)
 	}
 	// Each subcommand's usage error names its own flags.
-	if _, errs, code := runCLI(t, nil, "result", "record", "verify"); code != 2 || !strings.Contains(errs, "--ok|--fail [--commit C] [--model M] [--output FILE|-]") {
+	if _, errs, code := runCLI(t, nil, "result", "record", "verify"); code != 2 || !strings.Contains(errs, "--ok|--fail [--commit C] [--model M [--base B]] [--output FILE|-]") {
 		t.Fatalf("record without --ok/--fail: %d %q", code, errs)
 	}
 	if _, errs, code := runCLI(t, nil, "result", "record"); code != 2 || errs != "bmesh: "+resultRecordUsage+"\n" {
