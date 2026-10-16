@@ -4,7 +4,7 @@ title: The map's browser check and test fixtures are in the repo
 kind: maintenance
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
@@ -13,6 +13,8 @@ built_by: 461c7934-b80b-413c-9546-e47b933666f2
 host: k16
 family: buildermesh-build-2
 branch: bmesh/461c7934-b80b-413c-9546-e47b933666f2
+verified: review ok t:1c63452e m:claude-opus-5-5; verify ok t:1c63452e
+merged: de5cf45049c2f9b572007bd8b3628bc8dac09ddc
 ---
 
 ## Opportunity
