@@ -360,10 +360,11 @@ func (a *app) cmdRoutineQueue(args []string) error {
 			return nil
 		}
 	}
-	if err := refuseCommitOS(ctx, top, name, *commit); err != nil {
+	runsOn, err := jobOS(ctx, top, name, *commit)
+	if err != nil {
 		return err
 	}
-	elsewhere := !k.RunsOn(hostOS)
+	elsewhere := runsOn != "" && runsOn != hostOS
 	if elsewhere {
 		// The box that runs it fetches the commit from origin.
 		sha, err := gitIn(ctx, top, "rev-parse", "--verify", "--end-of-options", *commit+"^{commit}")
@@ -375,7 +376,7 @@ func (a *app) cmdRoutineQueue(args []string) error {
 			return err
 		}
 		if on == "" {
-			return fail(exitRefused, "push first: %s runs on %s, which fetches the commit from origin", name, k.OS)
+			return fail(exitRefused, "push first: %s runs on %s, which fetches the commit from origin", name, runsOn)
 		}
 	}
 	repo, err := a.repoName(ctx, self, top)
@@ -394,44 +395,46 @@ func (a *app) cmdRoutineQueue(args []string) error {
 	}
 	where := ""
 	if elsewhere {
-		where = " (runs on " + k.OS + ")"
+		where = " (runs on " + runsOn + ")"
 	}
 	fmt.Fprintf(a.stdout, "%s %s%s\n", verb, j.ID, where)
 	return nil
 }
 
-// refuseCommitOS refuses (exit 3) a job whose commit gives the kind an os
-// that main doesn't: which boxes take the kind's jobs is read from main
-// (origin/main when the repo has an origin), so such a job could reach a box
-// that can't run it. A commit without an os, or without the kind, runs
-// anywhere and is not checked.
-func refuseCommitOS(ctx context.Context, top, name, commit string) error {
+// jobOS is the OS a job of the kind at commit runs on ("" for any box):
+// the os the commit gives the kind, else main's (origin/main when the repo
+// has an origin), whose definition the daemon falls back to without one and
+// which decides the boxes that take the kind's jobs. A commit that gives the
+// kind an os main doesn't is refused (exit 3), since its job could reach a
+// box that can't run it; so is one whose main lacks the kind or can't be
+// read. A commit without an os, where main can't say, runs anywhere.
+func jobOS(ctx context.Context, top, name, commit string) (string, error) {
 	at, err := kind.LoadAt(top, commit, name)
-	if errors.Is(err, kind.ErrNotFound) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if at.OS == "" {
-		return nil
+	if err != nil && !errors.Is(err, kind.ErrNotFound) {
+		return "", err
 	}
 	ref := "main"
 	if hasOrigin(ctx, top) {
 		ref = "origin/main"
 	}
-	onMain, err := kind.LoadAt(top, ref, name)
+	onMain, mainErr := kind.LoadAt(top, ref, name)
+	if at.OS == "" {
+		if mainErr != nil {
+			return "", nil
+		}
+		return onMain.OS, nil
+	}
 	switch {
-	case errors.Is(err, kind.ErrNotFound):
-		return fail(exitRefused, "%s is not on main: land it first", name)
-	case err != nil:
-		return fail(exitRefused, "cannot read kind %s on %s: %v", name, ref, err)
+	case errors.Is(mainErr, kind.ErrNotFound):
+		return "", fail(exitRefused, "%s is not on main: land it first", name)
+	case mainErr != nil:
+		return "", fail(exitRefused, "cannot read kind %s on %s: %v", name, ref, mainErr)
 	case onMain.OS == at.OS:
-		return nil
+		return at.OS, nil
 	}
 	sha, err := gitIn(ctx, top, "rev-parse", "--verify", "--end-of-options", commit+"^{commit}")
 	if err != nil {
-		return err
+		return "", err
 	}
 	mainSays, box := "anywhere", "a box that isn't "+at.OS
 	switch {
@@ -440,7 +443,7 @@ func refuseCommitOS(ctx context.Context, top, name, commit string) error {
 	case hostOS != at.OS:
 		box = "a " + hostOS + " box"
 	}
-	return fail(exitRefused, "%s runs on %s at %.8s but %s on main, so a job could reach %s: "+
+	return "", fail(exitRefused, "%s runs on %s at %.8s but %s on main, so a job could reach %s: "+
 		"land the os change first, or give it a kind name of its own", name, at.OS, sha, mainSays, box)
 }
 
