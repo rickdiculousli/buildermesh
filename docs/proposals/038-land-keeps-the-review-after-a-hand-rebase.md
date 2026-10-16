@@ -4,7 +4,7 @@ title: bmesh land keeps a branch's review after the lead rebases by hand
 kind: refinement
 size: S
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
@@ -12,6 +12,8 @@ built_by: 0fa53451-6558-40b2-b602-c1c5c53f007a
 host: k16
 family: buildermesh-build-5
 branch: bmesh/0fa53451-6558-40b2-b602-c1c5c53f007a
+merged: 0f743d6ff2ba039a5feb5e0340e89996ae4445c9
+verified: verify ok t:26274907
 ---
 
 ## Opportunity
