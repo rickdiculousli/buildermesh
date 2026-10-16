@@ -20,7 +20,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/hosts"
 )
 
-const hostsUsage = "usage: bmesh hosts [--json] | hosts invite <name> [--secure] [--accept a,b] [--replace] | " +
+const hostsUsage = "usage: bmesh hosts [--json] | hosts --here | hosts --notes | hosts invite <name> [--secure] [--accept a,b] [--replace] | " +
 	"hosts set <name> [--secure=true|false] [--accept a,b] | hosts revoke <name> | hosts ping [<host>] [--wait D] | hosts replies [--json]"
 
 // defaultAccept is what a box accepts when the admin names nothing: ping,
@@ -53,12 +53,17 @@ func (a *app) cmdHosts(args []string) error {
 		return fail(exitUsage, hostsUsage)
 	}
 	fs := a.flags("hosts")
+	here := fs.Bool("here", false, "print this box's session line (<state dir>/this-box.txt) and never dial the hub")
+	notes := fs.Bool("notes", false, "print every box's verified notes")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
-	if len(pos) != 0 {
+	if len(pos) != 0 || (*here && *notes) {
 		return fail(exitUsage, hostsUsage)
+	}
+	if *here {
+		return a.hostsHere()
 	}
 	box, err := a.hostsBox()
 	if err != nil {
@@ -82,6 +87,9 @@ func (a *app) cmdHosts(args []string) error {
 		return err
 	}
 	admin, _ := r.Admin()
+	if *notes {
+		return a.printNotes(seen)
+	}
 	if a.json {
 		return a.printJSON(map[string]any{"roster_version": r.Version, "admin": admin.Name,
 			"fingerprint": hosts.Fingerprint(r.AdminKey), "hosts": seen})
@@ -104,7 +112,7 @@ func (a *app) cmdHosts(args []string) error {
 			}
 			line += fmt.Sprintf(" %s %s %s, %d repos", p.OS, p.Rev, routines, len(p.Repos))
 			if p.Notes != "" {
-				line += ", " + p.Notes
+				line += ", notes"
 			}
 		}
 		line += "  accept " + strings.Join(s.Host.Accept, ",")
@@ -112,6 +120,64 @@ func (a *app) cmdHosts(args []string) error {
 			line += "  seen " + s.At
 		}
 		fmt.Fprintln(a.stdout, strings.TrimRight(line, " "))
+	}
+	return nil
+}
+
+// hostsHere prints the session line the daemon last wrote, reading only
+// that file: nothing when [hosts] is off or the file is missing, and never
+// the hub, so a session hook doesn't wait on it.
+func (a *app) hostsHere() error {
+	if err := a.loadConfig(); err != nil {
+		return err
+	}
+	if !a.cfg.Hosts.Enabled {
+		return nil
+	}
+	b, err := os.ReadFile(hosts.HerePath(config.StateDir()))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, err = a.stdout.Write(b)
+	return err
+}
+
+// printNotes prints each box's notes under a "## <host>" heading (--json:
+// {host: notes}); an unverified box's are withheld, and a box with none is
+// left out.
+func (a *app) printNotes(seen []hosts.Seen) error {
+	out := map[string]string{}
+	for _, s := range seen {
+		if s.State != hosts.Unverified && s.Presence.Notes != "" {
+			out[s.Host.Name] = s.Presence.Notes
+		}
+	}
+	if a.json {
+		return a.printJSON(out)
+	}
+	if len(out) == 0 {
+		fmt.Fprintln(a.stdout, "no notes")
+		return nil
+	}
+	first := true
+	for _, s := range seen {
+		n, ok := out[s.Host.Name]
+		if !ok {
+			continue
+		}
+		if !first {
+			fmt.Fprintln(a.stdout)
+		}
+		first = false
+		fmt.Fprintf(a.stdout, "## %s (%s)\n\n%s\n", s.Host.Name, s.State, n)
+	}
+	for _, s := range seen {
+		if s.State == hosts.Unverified {
+			fmt.Fprintf(a.stderr, "bmesh: %s: unverified, notes withheld\n", s.Host.Name)
+		}
 	}
 	return nil
 }

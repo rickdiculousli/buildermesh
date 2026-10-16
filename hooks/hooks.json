@@ -1,0 +1,16 @@
+{
+  "description": "Opens every session with one line saying which box it runs on and who else is on the mesh (bmesh hosts --here: one file the daemon writes, never the hub). Silent without bmesh, without [hosts], or before the daemon's first minute.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v bmesh >/dev/null 2>&1 && bmesh hosts --here; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

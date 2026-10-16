@@ -389,3 +389,61 @@ func TestHostsOffIsRefused(t *testing.T) {
 		t.Fatalf("%d %s", code, errs)
 	}
 }
+
+func TestHostsHereReadsOnlyTheFile(t *testing.T) {
+	dir := t.TempDir()
+	state := filepath.Join(dir, "state")
+	t.Setenv("XDG_STATE_HOME", state)
+	cfg := filepath.Join(dir, "config.toml")
+	// The hub named here doesn't exist: --here must never dial it.
+	write := func(body string) {
+		if err := os.WriteFile(cfg, []byte("[mesh]\nnats = \"nats://127.0.0.1:1\"\n"+body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	here := func() (string, string, int) {
+		var out, errb bytes.Buffer
+		code := run([]string{"--config", cfg, "hosts", "--here"}, strings.NewReader(""), &out, &errb)
+		return out.String(), errb.String(), code
+	}
+	write("[hosts]\nenabled = true\n")
+	if out, errs, code := here(); code != 0 || out != "" || errs != "" {
+		t.Fatalf("no file: %d %q %q", code, out, errs)
+	}
+	line := "this box is k16; secure: no; on the mesh: ricks-macbook (asleep 2h, secure, admin)\n"
+	if err := hosts.WriteHere(filepath.Join(state, "bmesh"), strings.TrimSuffix(line, "\n")); err != nil {
+		t.Fatal(err)
+	}
+	if out, errs, code := here(); code != 0 || out != line || errs != "" {
+		t.Fatalf("with the file: %d %q %q", code, out, errs)
+	}
+	write("")
+	if out, errs, code := here(); code != 0 || out != "" || errs != "" {
+		t.Fatalf("[hosts] off: %d %q %q", code, out, errs)
+	}
+	// A box never set up (no config.toml, no setup flag) is quiet too, not refused.
+	var out, errb bytes.Buffer
+	if code := run([]string{"--config", filepath.Join(dir, "absent", "config.toml"), "hosts", "--here"}, strings.NewReader(""), &out, &errb); code != 0 || out.Len() != 0 || errb.Len() != 0 {
+		t.Fatalf("not set up: %d %q %q", code, out.String(), errb.String())
+	}
+}
+
+func TestHostsNotesPrintsVerifiedNotes(t *testing.T) {
+	var out, errb bytes.Buffer
+	a := &app{stdout: &out, stderr: &errb}
+	seen := []hosts.Seen{
+		{Host: hosts.Host{Name: "k16"}, State: hosts.Awake, Presence: hosts.Presence{Notes: "k16 notes"}},
+		{Host: hosts.Host{Name: "pi"}, State: hosts.Absent},
+		{Host: hosts.Host{Name: "mac"}, State: hosts.Asleep, Presence: hosts.Presence{Notes: "mac notes"}},
+		{Host: hosts.Host{Name: "evil"}, State: hosts.Unverified},
+	}
+	if err := a.printNotes(seen); err != nil {
+		t.Fatal(err)
+	}
+	if want := "## k16 (awake)\n\nk16 notes\n\n## mac (asleep)\n\nmac notes\n"; out.String() != want {
+		t.Fatalf("got %q, want %q", out.String(), want)
+	}
+	if errb.String() != "bmesh: evil: unverified, notes withheld\n" {
+		t.Fatalf("stderr %q", errb.String())
+	}
+}
