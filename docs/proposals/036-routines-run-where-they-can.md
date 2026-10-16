@@ -4,7 +4,7 @@ title: A routine kind can say it needs a Mac, and only a Mac takes its jobs
 kind: feature
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
@@ -12,6 +12,8 @@ built_by: ae866914-0010-40e5-b884-1c7dd2b2cf00
 host: k16
 family: buildermesh-build-3
 branch: bmesh/ae866914-0010-40e5-b884-1c7dd2b2cf00
+merged: cd9d1b8ab878596fe218195464660c5e2d4c45a4
+verified: review ok t:0e40bd7a m:claude-opus-5-5 c:481af471; verify ok t:0e40bd7a
 ---
 
 ## North star
