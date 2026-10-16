@@ -4,11 +4,14 @@ title: node forget takes a node that never reported and whose thread isn't runni
 kind: refinement
 size: S
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: operator coordinator (Mac session, 2026-10-16)
 proposed_on: 2026-10-16
 from_feedback: buildermesh-build-1 (buildermesh-029)
+built_by: c78d70fc-1112-43e5-a4b3-e3a78ba42ae5
+host: k16
+family: buildermesh-build-1
 ---
 
 ## Opportunity
