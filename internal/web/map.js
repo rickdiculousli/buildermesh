@@ -720,8 +720,9 @@ function setHover(p) {
 
 // unpin drops the pin; the mouse still on that chip doesn't relight it.
 function unpin() {
+  if (recentFocus.hover === recentFocus.pin) recentFocus.hover = "";
   recentFocus.mute = recentFocus.pin;
-  recentFocus.pin = recentFocus.hover = "";
+  recentFocus.pin = "";
   focusRecent();
 }
 
