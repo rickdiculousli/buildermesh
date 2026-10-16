@@ -10,7 +10,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,21 +29,30 @@ type Version struct {
 	Modified bool   // built from a tree with uncommitted changes
 }
 
-// FromBuildInfo reads the vcs.* settings of bi (nil or !ok: none).
+// stampRevision and stampTime are the commit and its time Install stamps
+// into a build with -ldflags -X, since go writes no VCS stamp in a git
+// worktree such as the daemon's main checkout.
+var stampRevision, stampTime string
+
+// FromBuildInfo reads the vcs.* settings of bi (nil or !ok: none); a build
+// without vcs.revision falls back to Install's stamp, and one with neither
+// is unknown.
 func FromBuildInfo(bi *debug.BuildInfo, ok bool) Version {
 	var v Version
-	if !ok || bi == nil {
-		return v
-	}
-	for _, s := range bi.Settings {
-		switch s.Key {
-		case "vcs.revision":
-			v.Revision = s.Value
-		case "vcs.time":
-			v.Time = s.Value
-		case "vcs.modified":
-			v.Modified = s.Value == "true"
+	if ok && bi != nil {
+		for _, s := range bi.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				v.Revision = s.Value
+			case "vcs.time":
+				v.Time = s.Value
+			case "vcs.modified":
+				v.Modified = s.Value == "true"
+			}
 		}
+	}
+	if v.Revision == "" {
+		v = Version{Revision: stampRevision, Time: stampTime}
 	}
 	return v
 }
@@ -192,12 +203,63 @@ func Scoped() bool {
 	return err == nil
 }
 
-// Install builds ./cmd/bmesh in dir to a temporary file beside exe, then
-// moves exe to Prev(exe) and the build to exe. A failed build leaves exe as
-// it was; so does a failed swap, as far as the file system allows.
-func Install(ctx context.Context, dir, exe string) error {
+// Refused is Install's error when the build does not report the commit it
+// was built from; exe is left as it was.
+type Refused struct{ Reported, Head string }
+
+func (e *Refused) Error() string {
+	return fmt.Sprintf("built binary reports %s, not %s; keeping this binary", e.Reported, Short(e.Head))
+}
+
+// stampFlags is the -ldflags value that stamps head and its commit time
+// (UTC, as go writes vcs.time) into the build.
+func stampFlags(dir, head string) (string, error) {
+	ct, err := git(dir, "show", "-s", "--format=%ct", "--end-of-options", head)
+	if err != nil {
+		return "", err
+	}
+	sec, err := strconv.ParseInt(ct, 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("commit time of %s: %q", Short(head), ct)
+	}
+	pkg := reflect.TypeOf(Version{}).PkgPath()
+	return fmt.Sprintf("-X %s.stampRevision=%s -X %s.stampTime=%s",
+		pkg, head, pkg, time.Unix(sec, 0).UTC().Format(time.RFC3339)), nil
+}
+
+// versionTimeout bounds the built binary's `version`.
+const versionTimeout = 30 * time.Second
+
+// reports is the revision bin's `version` prints: `<rev8>`, `unknown`, or
+// its output (or error) when that is not `bmesh <rev8> ...`.
+func reports(ctx context.Context, bin string) string {
+	ctx, cancel := context.WithTimeout(ctx, versionTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, "version")
+	cmd.WaitDelay = 5 * time.Second
+	out, err := cmd.Output()
+	f := strings.Fields(string(out))
+	switch {
+	case err != nil:
+		return fmt.Sprintf("%q (%v)", tail(string(out)), err)
+	case len(f) < 2 || f[0] != "bmesh":
+		return strconv.Quote(tail(string(out)))
+	}
+	return f[1]
+}
+
+// Install builds ./cmd/bmesh in dir, which is at head, to a temporary file
+// beside exe, stamped with head and its commit time; it refuses the build
+// (Refused) unless its `version` names head, then moves exe to Prev(exe)
+// and the build to exe. A failed or refused build leaves exe as it was; so
+// does a failed swap, as far as the file system allows.
+func Install(ctx context.Context, dir, exe, head string) error {
 	ctx, cancel := context.WithTimeout(ctx, BuildTimeout)
 	defer cancel()
+	ldflags, err := stampFlags(dir, head)
+	if err != nil {
+		return err
+	}
 	f, err := os.CreateTemp(filepath.Dir(exe), ".bmesh-update-*")
 	if err != nil {
 		return err
@@ -206,7 +268,7 @@ func Install(ctx context.Context, dir, exe string) error {
 	f.Close()
 	os.Remove(tmp) // go build writes it whole
 	defer os.Remove(tmp)
-	argv := append(goCommand(), "build", "-o", tmp, "./cmd/bmesh")
+	argv := append(goCommand(), "build", "-ldflags", ldflags, "-o", tmp, "./cmd/bmesh")
 	if Scoped() {
 		argv = append([]string{"systemd-run", "--user", "--scope", "--quiet", "--collect", "--"}, argv...)
 	}
@@ -218,6 +280,9 @@ func Install(ctx context.Context, dir, exe string) error {
 	}
 	if err := os.Chmod(tmp, 0o755); err != nil {
 		return err
+	}
+	if got := reports(ctx, tmp); got != Short(head) {
+		return &Refused{Reported: got, Head: head}
 	}
 	prev := Prev(exe)
 	if err := os.Remove(prev); err != nil && !errors.Is(err, os.ErrNotExist) {

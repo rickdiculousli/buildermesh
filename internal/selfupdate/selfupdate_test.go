@@ -2,10 +2,12 @@ package selfupdate
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -52,6 +54,7 @@ func fakeGo(t *testing.T) (log string) {
 	t.Setenv("BMESH_GO_COMMAND", "sh "+fake)
 	t.Setenv("FAKE_GO_LOG", log)
 	t.Setenv("FAKE_GO_EXIT", "")
+	t.Setenv("FAKE_GO_REVISION", "")
 	t.Setenv("INVOCATION_ID", "")
 	return log
 }
@@ -76,6 +79,25 @@ func TestVersionFromBuildInfo(t *testing.T) {
 	if s := FromBuildInfo(nil, false).String(); s != "unknown" || Short("") != "unknown" {
 		t.Fatalf("no build info: %q", s)
 	}
+	// A stamped build: vcs settings win, the stamp stands in without them.
+	stamp(t, "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432", "2026-10-16T08:00:00Z")
+	bi.Settings[2].Value = "true"
+	if s := FromBuildInfo(bi, true).String(); s != "1a2b3c4d 2026-10-15T09:00:00Z modified" {
+		t.Fatalf("vcs over stamp: %q", s)
+	}
+	for _, v := range []Version{FromBuildInfo(&debug.BuildInfo{}, true), FromBuildInfo(nil, false)} {
+		if v.String() != "9f8e7d6c 2026-10-16T08:00:00Z" || v.Revision != stampRevision {
+			t.Fatalf("stamp only: %+v", v)
+		}
+	}
+}
+
+// stamp sets what Install's -ldflags would, for the test.
+func stamp(t *testing.T, rev, at string) {
+	t.Helper()
+	savedRev, savedTime := stampRevision, stampTime
+	t.Cleanup(func() { stampRevision, stampTime = savedRev, savedTime })
+	stampRevision, stampTime = rev, at
 }
 
 func TestInstallSwapsAndKeepsPrev(t *testing.T) {
@@ -85,12 +107,15 @@ func TestInstallSwapsAndKeepsPrev(t *testing.T) {
 	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := Install(context.Background(), dir, exe); err != nil {
+	if err := Install(context.Background(), dir, exe, shas[0]); err != nil {
 		t.Fatal(err)
 	}
 	out, err := exec.Command(exe).Output()
 	if err != nil || strings.TrimSpace(string(out)) != "fake bmesh "+shas[0] {
 		t.Fatalf("new binary: %q %v", out, err)
+	}
+	if out, _ := exec.Command(exe, "version").Output(); !strings.HasPrefix(string(out), "bmesh "+shas[0][:8]+" ") {
+		t.Fatalf("new binary's version: %q", out)
 	}
 	if b, _ := os.ReadFile(Prev(exe)); string(b) != "old" || Prev(exe) != filepath.Join(filepath.Dir(exe), "bmesh.prev") {
 		t.Fatalf("prev %q at %s", b, Prev(exe))
@@ -111,7 +136,7 @@ func TestInstallFailedBuildLeavesBinary(t *testing.T) {
 	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	err := Install(context.Background(), dir, exe)
+	err := Install(context.Background(), dir, exe, head(t, dir))
 	if err == nil || !strings.Contains(err.Error(), "fake build failed") {
 		t.Fatalf("err %v", err)
 	}
@@ -123,6 +148,93 @@ func TestInstallFailedBuildLeavesBinary(t *testing.T) {
 	}
 	if left, _ := filepath.Glob(filepath.Join(filepath.Dir(exe), ".bmesh-update-*")); len(left) != 0 {
 		t.Fatalf("temporary files left: %v", left)
+	}
+}
+
+func head(t *testing.T, dir string) string {
+	t.Helper()
+	h, err := Head(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return h
+}
+
+func TestInstallRefusesWrongRevision(t *testing.T) {
+	fakeGo(t)
+	t.Setenv("FAKE_GO_REVISION", "eeeeeeee")
+	dir, shas := repo(t, "one")
+	exe := filepath.Join(t.TempDir(), "bmesh")
+	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := Install(context.Background(), dir, exe, shas[0])
+	var refused *Refused
+	if !errors.As(err, &refused) || err.Error() != "built binary reports eeeeeeee, not "+shas[0][:8]+"; keeping this binary" {
+		t.Fatalf("err %v", err)
+	}
+	if b, _ := os.ReadFile(exe); string(b) != "old" {
+		t.Fatalf("binary %q", b)
+	}
+	if _, err := os.Stat(Prev(exe)); !os.IsNotExist(err) {
+		t.Fatalf("prev written: %v", err)
+	}
+	if left, _ := filepath.Glob(filepath.Join(filepath.Dir(exe), ".bmesh-update-*")); len(left) != 0 {
+		t.Fatalf("temporary files left: %v", left)
+	}
+}
+
+// TestInstallRealBuildInWorktree builds this module, copied into a repo of
+// its own, from a detached git worktree of it, where go writes no VCS stamp.
+func TestInstallRealBuildInWorktree(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short: no real build")
+	}
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no go on PATH")
+	}
+	t.Setenv("BMESH_GO_COMMAND", "")
+	t.Setenv("INVOCATION_ID", "")
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(t.TempDir(), "bm")
+	files := strings.Split(strings.TrimRight(tgit(t, root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"), "\x00"), "\x00")
+	for _, f := range files {
+		b, err := os.ReadFile(filepath.Join(root, f))
+		if errors.Is(err, os.ErrNotExist) {
+			continue // deleted, not yet committed
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(src, filepath.Dir(f)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(src, f), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tgit(t, src, "init", "-q", "-b", "main")
+	tgit(t, src, "add", "-A")
+	tgit(t, src, "commit", "-q", "-m", "copy")
+	want := tgit(t, src, "rev-parse", "HEAD")
+	wt := filepath.Join(t.TempDir(), "main")
+	tgit(t, src, "worktree", "add", "-q", "--detach", wt, "main")
+
+	exe := filepath.Join(t.TempDir(), "bmesh")
+	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := Install(context.Background(), wt, exe, want); err != nil {
+		t.Fatal(err)
+	}
+	at := tgit(t, src, "show", "-s", "--format=%ct", "HEAD")
+	sec, _ := strconv.ParseInt(at, 10, 64)
+	out, err := exec.Command(exe, "version").Output()
+	if w := "bmesh " + want[:8] + " " + time.Unix(sec, 0).UTC().Format(time.RFC3339) + "\n"; err != nil || string(out) != w {
+		t.Fatalf("version %q %v, want %q", out, err, w)
 	}
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -81,7 +82,10 @@ func (a *app) cmdUpdate(args []string) error {
 		return fail(exitRefused, "%s's main (%s) does not contain this binary's %s; left alone", name,
 			selfupdate.Short(head), selfupdate.Short(own))
 	}
-	if err := selfupdate.Install(context.Background(), dir, exe); err != nil {
+	var refused *selfupdate.Refused
+	if err := selfupdate.Install(context.Background(), dir, exe, head); errors.As(err, &refused) {
+		return fail(exitRefused, "update: %v", err)
+	} else if err != nil {
 		return err
 	}
 	fmt.Fprintf(a.stdout, "%s -> %s\n", selfupdate.Short(own), selfupdate.Short(head))
