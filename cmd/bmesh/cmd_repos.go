@@ -8,10 +8,22 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/config"
 )
 
-const reposUsage = "usage: bmesh repos [--json] | bmesh repos show <name> [--json]"
+const reposUsage = "usage: bmesh repos [--json] | bmesh repos show <name> [--json] | repos publish | repos propose [--wait D] | " +
+	"repos remove <name> [--checkouts [--ignored-ok]] [--apply] [--wait D]"
 
-// cmdRepos prints the registry (repos.toml): the table, or one row.
+// cmdRepos prints the registry (repos.toml): the table, or one row; or it
+// publishes, proposes or removes rows of the admin's registry (023).
 func (a *app) cmdRepos(args []string) error {
+	if len(args) > 0 {
+		switch args[0] {
+		case "publish":
+			return a.cmdReposPublish(args[1:])
+		case "propose":
+			return a.cmdReposPropose(args[1:])
+		case "remove":
+			return a.cmdReposRemove(args[1:])
+		}
+	}
 	fs := a.flags("repos")
 	pos, err := parse(fs, args)
 	if err != nil {

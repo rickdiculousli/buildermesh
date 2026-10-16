@@ -22,10 +22,11 @@ const approveTimeout = 5 * time.Minute
 // checkoutOf is repo's checkout on this box: its row, and its path when
 // the path exists.
 func (h *hostsNode) checkoutOf(repo string) (path string, ok bool) {
-	if _, ok := h.d.Cfg.Repos[repo]; !ok {
+	cfg := h.conf()
+	if _, ok := cfg.Repos[repo]; !ok {
 		return "", false
 	}
-	_, path, err := h.d.Cfg.RepoPath(repo)
+	_, path, err := cfg.RepoPath(repo)
 	if err != nil {
 		return "", false
 	}
@@ -54,7 +55,7 @@ func (h *hostsNode) held(ctx context.Context, repo, path string) bool {
 
 // request is a level of repo at path, as this box's config says.
 func (h *hostsNode) request(ctx context.Context, repo, path string) level.Request {
-	row := h.d.Cfg.Repos[repo]
+	row := h.conf().Repos[repo]
 	return level.Request{Repo: repo, Path: path, Mode: row.Mode, Pin: row.Pin, StateDir: h.d.StateDir,
 		PushModes: h.d.Cfg.Hosts.PushModes, Hold: h.held(ctx, repo, path), Now: h.d.Now}
 }
@@ -101,7 +102,7 @@ func (h *hostsNode) selfLevel(ctx context.Context) {
 	defer h.levelling.Store(false)
 	n := 0
 	defer func() { h.d.Log.Info("hosts: self-level done", "repos", n) }()
-	for _, repo := range h.d.Cfg.RepoNames() {
+	for _, repo := range h.conf().RepoNames() {
 		if ctx.Err() != nil {
 			return
 		}
@@ -247,6 +248,9 @@ func (h *hostsNode) approve(ctx context.Context, a hosts.Approve) hosts.ApproveA
 	}
 	if !ok {
 		return no("no hold %s", cut(a.JobID, 32))
+	}
+	if x.Kind != "" {
+		return no("refused: hold %s is a %s proposal, which `bmesh hosts approve` publishes itself", x.ID, x.Kind)
 	}
 	now := h.d.Now()
 	if x.Expired(now) {
