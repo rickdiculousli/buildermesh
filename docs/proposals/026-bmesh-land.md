@@ -4,11 +4,14 @@ title: bmesh land: rebase, record and fast-forward under a main lease
 kind: feature
 size: M
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
 from_feedback: retrospective of 007-016 and 018 (buildermesh-008, -016)
+built_by: b66fe69a-78b7-42f5-92cd-a5c227725f9f
+host: k16
+family: buildermesh-build-2
 ---
 
 ## Opportunity
