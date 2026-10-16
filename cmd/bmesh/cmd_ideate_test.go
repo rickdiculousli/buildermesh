@@ -12,16 +12,19 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
+	"github.com/rickdiculousli/buildermesh/internal/runner/t3mcp/t3fake"
 )
 
 // proposeSetup is leadSetup with a real repo (a bare origin, main pushed,
 // specs 012 and 013 proposed) registered as demo with surfaces, the fake
 // ssh, bmesh worktrees and the cache dir under the test's temp dir. It
-// returns the client, the repo path and the fake t3's log.
-func proposeSetup(t *testing.T, row string) (*mesh.Client, string, string) {
+// returns the client, the repo path and the fake T3, where the repo is a
+// project.
+func proposeSetup(t *testing.T, row string) (*mesh.Client, string, *t3fake.Server) {
 	t.Helper()
-	c, log := leadSetup(t)
+	c, fake := leadSetup(t)
 	repo, _, _ := landedRepo(t)
+	addT3Project(fake, repo)
 	dir := filepath.Join(repo, "docs", "proposals")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -37,16 +40,16 @@ func proposeSetup(t *testing.T, row string) (*mesh.Client, string, string) {
 	meshtest.Git(t, repo, "push", "origin", "main")
 	addRunnerKeys(t, "worktrees = \""+filepath.Join(t.TempDir(), "wt")+"\"\n")
 	writeRepos(t, "[repos.demo]\npath = \""+repo+"\"\nremote = \"example/demo\"\nverify = [\"npm test\"]\nsurfaces = [\"phone / at 390x844\"]\n"+row)
-	fake, err := filepath.Abs(filepath.Join("..", "..", "testdata", "fake-ssh.sh"))
+	ssh, err := filepath.Abs(filepath.Join("..", "..", "testdata", "fake-ssh.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("BMESH_SSH_COMMAND", "sh "+fake)
+	t.Setenv("BMESH_SSH_COMMAND", "sh "+ssh)
 	t.Setenv("FAKE_SSH_LOG", filepath.Join(t.TempDir(), "ssh.log"))
 	t.Setenv("FAKE_SSH_EXIT", "0")
 	t.Setenv("FAKE_SSH_OUTPUT", "")
 	t.Setenv("BMESH_CACHE_DIR", t.TempDir())
-	return c, repo, log
+	return c, repo, fake
 }
 
 // addRunnerKeys adds keys to the test config's [runner] table (leadSetup
@@ -70,7 +73,7 @@ func addRunnerKeys(t *testing.T, keys string) {
 var uuidRE = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 func TestIdeateStartsARoundWithTwoChildren(t *testing.T) {
-	c, repo, log := proposeSetup(t, "")
+	c, repo, fake := proposeSetup(t, "")
 	ctx := t.Context()
 	out, errs, code := runCLI(t, nil, "ideate", "demo")
 	if code != 0 {
@@ -85,7 +88,7 @@ func TestIdeateStartsARoundWithTwoChildren(t *testing.T) {
 		t.Fatalf("%q: %v", out, err)
 	}
 	if got.Path != "demo-round-1" || got.Round != 1 || got.Eng.Path != "demo-round-1.eng" || got.UX.Path != "demo-round-1.ux" ||
-		!uuidRE.MatchString(got.Eng.Thread) || !uuidRE.MatchString(got.UX.Thread) || got.Eng.Thread == got.UX.Thread ||
+		!strings.HasPrefix(got.Eng.Thread, "mcp:") || !strings.HasPrefix(got.UX.Thread, "mcp:") || got.Eng.Thread == got.UX.Thread ||
 		got.Eng.Host != testHost || got.UX.Host != testHost {
 		t.Fatalf("%+v", got)
 	}
@@ -103,7 +106,7 @@ func TestIdeateStartsARoundWithTwoChildren(t *testing.T) {
 		}
 		wantBranch := "demo-round-1-" + child
 		if n.Role != "engineer" || n.Parent != "demo-round-1" || n.Branch != wantBranch || n.Repo != "demo" || n.RepoPath != repo ||
-			n.Runner.Kind != "t3" || !uuidRE.MatchString(n.Runner.Thread) || n.Model != "prop-model" || n.Effort != "xhigh" || n.Host != testHost {
+			n.Runner.Kind != "t3" || !strings.HasPrefix(n.Runner.Thread, "mcp:") || !uuidRE.MatchString(n.Runner.Ref) || n.Model != "prop-model" || n.Effort != "xhigh" || n.Host != testHost {
 			t.Fatalf("%s: %+v", child, n)
 		}
 		if filepath.Base(n.Worktree) != wantBranch || filepath.Base(filepath.Dir(n.Worktree)) != "demo" {
@@ -119,17 +122,19 @@ func TestIdeateStartsARoundWithTwoChildren(t *testing.T) {
 			t.Fatalf("%s state %s", child, s)
 		}
 	}
-	l, _ := os.ReadFile(log)
 	eng, _, _ := mesh.GetNode(ctx, c, "demo-round-1.eng")
 	ux, _, _ := mesh.GetNode(ctx, c, "demo-round-1.ux")
-	for _, want := range []string{
-		"argv start --repo " + repo + " --provider claude --model prop-model --title [ideate] demo round 1: engineer --prompt-file ",
-		"--thread-id " + eng.Runner.Thread + " --worktree " + eng.Worktree + " --branch demo-round-1-eng --effort xhigh --runtime-mode auto\n",
-		"--title [ideate] demo round 1: UI/UX --prompt-file ",
-		"--thread-id " + ux.Runner.Thread + " --worktree " + ux.Worktree + " --branch demo-round-1-ux --effort xhigh --runtime-mode auto\n",
-	} {
-		if !strings.Contains(string(l), want) {
-			t.Errorf("log lacks %q:\n%s", want, l)
+	// Both threads open in the target repo's own T3 project.
+	l := launches(fake)
+	if len(l) != 2 {
+		t.Fatalf("launches %s", jsonOf(l))
+	}
+	for i, n := range []mesh.Node{eng, ux} {
+		title := map[string]string{"demo-round-1.eng": "[ideate] demo round 1: engineer", "demo-round-1.ux": "[ideate] demo round 1: UI/UX"}[n.Path]
+		ws := `{"branch":"` + n.Branch + `","type":"existing_worktree","worktreePath":"` + n.Worktree + `"}`
+		if l[i]["projectId"] != "mcp:p2" || l[i]["title"] != title || l[i]["runtimeMode"] != "auto" || jsonOf(l[i]["workspaceStrategy"]) != ws ||
+			jsonOf(l[i]["modelSelection"]) != `{"model":"prop-model","options":{"effort":"xhigh"},"provider":"claudeAgent"}` {
+			t.Errorf("launch %d: %s", i, jsonOf(l[i]))
 		}
 	}
 	briefs := filepath.Join(os.Getenv("BMESH_CACHE_DIR"), "bmesh", "briefs")
@@ -141,13 +146,13 @@ func TestIdeateStartsARoundWithTwoChildren(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"number yours from 014", "`proposed_by`: `" + eng.Runner.Thread + "`", "--node demo-round-1.eng",
+	for _, want := range []string{"number yours from 014", "`proposed_by`: `" + eng.Runner.Ref + "`", "--node demo-round-1.eng",
 		"cd " + eng.Worktree + " &&", "`npm test`", "`buildermesh:ideate-engineer`", "# Engineer: proposal round 1 for demo"} {
 		if !strings.Contains(string(engBrief), want) {
 			t.Errorf("eng brief lacks %q", want)
 		}
 	}
-	for _, want := range []string{"number yours from 019", "`proposed_by`: `" + ux.Runner.Thread + "`", "--node demo-round-1.ux",
+	for _, want := range []string{"number yours from 019", "`proposed_by`: `" + ux.Runner.Ref + "`", "--node demo-round-1.ux",
 		"phone / at 390x844", "`buildermesh:ideate-ux`"} {
 		if !strings.Contains(string(uxBrief), want) {
 			t.Errorf("ux brief lacks %q", want)
@@ -198,15 +203,21 @@ func TestIdeateCarriesTheOperatorsContext(t *testing.T) {
 }
 
 func TestIdeateEffortFlag(t *testing.T) {
-	_, _, log := proposeSetup(t, "")
+	_, _, fake := proposeSetup(t, "")
 	if _, errs, code := runCLI(t, nil, "ideate", "demo", "--effort", "huge"); code != 2 || !strings.Contains(errs, `effort "huge"`) {
 		t.Fatalf("code %d err %q", code, errs)
 	}
 	if _, errs, code := runCLI(t, nil, "ideate", "demo", "--model", "claude-fable-5-1", "--effort", "max"); code != 0 {
 		t.Fatalf("code %d err %q", code, errs)
 	}
-	if l, _ := os.ReadFile(log); strings.Count(string(l), "--model claude-fable-5-1 ") != 2 || strings.Count(string(l), " --effort max --runtime-mode auto\n") != 2 {
-		t.Fatalf("log:\n%s", l)
+	l := launches(fake)
+	for _, a := range l {
+		if jsonOf(a["modelSelection"]) != `{"model":"claude-fable-5-1","options":{"effort":"max"},"provider":"claudeAgent"}` {
+			t.Fatalf("launch %s", jsonOf(a))
+		}
+	}
+	if len(l) != 2 {
+		t.Fatalf("launches %s", jsonOf(l))
 	}
 }
 
@@ -258,7 +269,7 @@ func TestIdeateRefusesFiveProposedAndNonShip(t *testing.T) {
 }
 
 func TestIdeateRemoteChildGoesThroughSSH(t *testing.T) {
-	c, repo, log := proposeSetup(t, "ux_host = \"other\"\n")
+	c, repo, fake := proposeSetup(t, "ux_host = \"other\"\n")
 	ctx := t.Context()
 	t.Setenv("FAKE_SSH_OUTPUT", `{"path":"demo-round-1.ux","thread":"t-remote","branch":"demo-round-1-ux","worktree":"/other/wt","host":"other"}`)
 	out, errs, code := runCLI(t, nil, "ideate", "demo")
@@ -283,8 +294,8 @@ func TestIdeateRemoteChildGoesThroughSSH(t *testing.T) {
 		t.Fatal("the local child was not registered")
 	}
 	// Only the local child ran through this box's runner.
-	if tl, _ := os.ReadFile(log); strings.Count(string(tl), "argv start") != 1 {
-		t.Fatalf("t3 log:\n%s", tl)
+	if l := launches(fake); len(l) != 1 {
+		t.Fatalf("launches %s", jsonOf(l))
 	}
 	_ = repo
 }
@@ -313,7 +324,7 @@ func TestIdeateBlocksTheRoundWhenAChildDoesNotStart(t *testing.T) {
 }
 
 func TestIdeateStartsTheOtherChildWhenTheFirstFails(t *testing.T) {
-	c, repo, log := proposeSetup(t, "")
+	c, repo, fake := proposeSetup(t, "")
 	ctx := t.Context()
 	// The engineer's host is unreachable only when its child starts: ssh
 	// answers the reachability check and then prints no JSON.
@@ -326,8 +337,8 @@ func TestIdeateStartsTheOtherChildWhenTheFirstFails(t *testing.T) {
 	if _, ok, _ := mesh.GetNode(ctx, c, "demo-round-1.ux"); !ok {
 		t.Fatal("the ux thread was not started after the eng failure")
 	}
-	if tl, _ := os.ReadFile(log); strings.Count(string(tl), "argv start") != 1 {
-		t.Fatalf("t3 log:\n%s", tl)
+	if l := launches(fake); len(l) != 1 {
+		t.Fatalf("launches %s", jsonOf(l))
 	}
 	st, _, _ := mesh.ReadState(ctx, c, "demo-round-1")
 	if st.State != "blocked" || !strings.HasPrefix(st.Text, "eng blocked: did not start") {
@@ -356,7 +367,7 @@ func TestIdeateRefusesAnExistingWorktreePathUntouched(t *testing.T) {
 }
 
 func TestIdeateRefusesAnUnreachableHostBeforeStartingAnything(t *testing.T) {
-	c, repo, log := proposeSetup(t, "host = \"far\"\n")
+	c, repo, fake := proposeSetup(t, "host = \"far\"\n")
 	t.Setenv("FAKE_SSH_EXIT", "255")
 	_, errs, code := runCLI(t, nil, "ideate", "demo")
 	if code != 3 || !strings.Contains(errs, "host far (the eng thread's) is unreachable from "+testHost) || !strings.Contains(errs, "no route") {
@@ -365,8 +376,8 @@ func TestIdeateRefusesAnUnreachableHostBeforeStartingAnything(t *testing.T) {
 	if nodes, _ := mesh.ListNodes(t.Context(), c); len(nodes) != 0 {
 		t.Fatalf("nodes registered: %+v", nodes)
 	}
-	if _, err := os.Stat(log); err == nil {
-		t.Fatal("the runner was called")
+	if calls := fake.ToolCalls(); len(calls) != 0 {
+		t.Fatalf("the runner was called: %v", calls)
 	}
 	if out := gitOut(t, "-C", repo, "worktree", "list"); strings.Count(out, "\n") != 0 {
 		t.Fatalf("worktrees made: %s", out)
@@ -382,11 +393,11 @@ func TestIdeateChildForm(t *testing.T) {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
 	}
 	var got childStarted
-	if err := json.Unmarshal([]byte(out), &got); err != nil || got.Path != "demo-round-3.eng" || got.Thread != thread || got.Branch != "demo-round-3-eng" {
+	if err := json.Unmarshal([]byte(out), &got); err != nil || got.Path != "demo-round-3.eng" || !strings.HasPrefix(got.Thread, "mcp:") || got.Branch != "demo-round-3-eng" {
 		t.Fatalf("%q %v", out, err)
 	}
 	n, ok, _ := mesh.GetNode(ctx, c, "demo-round-3.eng")
-	if !ok || n.Model != "m-1" || n.Parent != "demo-round-3" {
+	if !ok || n.Model != "m-1" || n.Parent != "demo-round-3" || n.Runner.Thread != got.Thread || n.Runner.Ref != thread {
 		t.Fatalf("%+v", n)
 	}
 	b, err := os.ReadFile(filepath.Join(os.Getenv("BMESH_CACHE_DIR"), "bmesh", "briefs", "demo-round-3-eng.md"))
@@ -399,20 +410,6 @@ func TestIdeateChildForm(t *testing.T) {
 	}
 	if _, _, code := runCLI(t, nil, "ideate", "demo", "--child", "both", "--round", "3", "--next-id", "7", "--thread-id", thread); code != 2 {
 		t.Fatalf("code %d", code)
-	}
-}
-
-func TestIdeateUsesT3ProjectForTheThread(t *testing.T) {
-	_, repo, log := proposeSetup(t, "")
-	bm := t.TempDir()
-	writeRepos(t, "[repos.demo]\npath = \""+repo+"\"\n[repos.bm]\npath = \""+bm+"\"\n")
-	addRunnerKeys(t, "t3_project = \"bm\"\n")
-	if _, errs, code := runCLI(t, nil, "ideate", "demo"); code != 0 {
-		t.Fatal(code, errs)
-	}
-	l, _ := os.ReadFile(log)
-	if !strings.Contains(string(l), "argv start --repo "+bm+" --provider") || strings.Contains(string(l), "argv start --repo "+repo+" ") {
-		t.Fatalf("log:\n%s", l)
 	}
 }
 

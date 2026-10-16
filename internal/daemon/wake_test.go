@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/runner"
 )
 
 func TestWakeTextIsExact(t *testing.T) {
@@ -98,7 +99,7 @@ func TestWakeRetriesWhenRunnerBecomesRunning(t *testing.T) {
 	f.lead(t, "app-001", "th-1", "working")
 	f.send(t, "app-001", 1)
 
-	t.Setenv("FAKE_T3_SEND_EXIT", "4")
+	f.rn.failSends(runner.ErrRunning)
 	pollOnce(f.ctx, f.d, a)
 	wakeOnce(f.ctx, f.d, a)
 	if evs := f.daemonEvents(t, "wake"); len(evs) != 0 {
@@ -108,12 +109,12 @@ func TestWakeRetriesWhenRunnerBecomesRunning(t *testing.T) {
 		t.Fatal("undelivered wake recorded")
 	}
 
-	t.Setenv("FAKE_T3_SEND_EXIT", "0")
+	f.rn.failSends(nil)
 	f.now = f.now.Add(time.Minute)
 	pollOnce(f.ctx, f.d, a)
 	wakeOnce(f.ctx, f.d, a)
 	sends := f.sends(t)
-	if len(sends) != 2 || sends[1] != wakeLine("th-1", 1) {
+	if len(sends) != 1 || sends[0] != wakeLine("th-1", 1) {
 		t.Fatalf("sends %q", sends)
 	}
 	if evs := f.daemonEvents(t, "wake"); len(evs) != 1 || evs[0].To != "app-001" {

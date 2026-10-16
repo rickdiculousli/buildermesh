@@ -184,3 +184,21 @@ func TestLeadStartOnAV2Server(t *testing.T) {
 		t.Fatalf("node %+v %v %v", n, ok, err)
 	}
 }
+
+// A config that still sets the keys of the t3 runner before T3 0.1.0 runs,
+// saying once per key to delete it.
+func TestOldT3KeysAreIgnoredOnce(t *testing.T) {
+	setup(t)
+	cfg := os.Getenv("BMESH_CONFIG")
+	f, err := os.OpenFile(cfg, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString("[runner]\nt3_dispatch = \"~/repos/command-center/tools/t3_dispatch.py\"\n")
+	f.Close()
+	out, errs, code := runCLI(t, nil, "mesh-status")
+	line := "bmesh: [runner] t3_dispatch is ignored (T3 0.1.0 needs no script); delete it from " + cfg + "\n"
+	if code != 0 || strings.Count(errs, line) != 1 || strings.Contains(errs, "t3_project") {
+		t.Fatalf("code %d out %q err %q", code, out, errs)
+	}
+}

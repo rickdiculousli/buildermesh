@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/rickdiculousli/buildermesh/internal/runner/t3mcp/t3fake"
 )
 
 // useFake points BMESH_<kind>_COMMAND at testdata/<script> and returns the log path.
@@ -31,87 +34,46 @@ func readLog(t *testing.T, path string) string {
 	return string(b)
 }
 
-func TestT3SendRefusesRunning(t *testing.T) {
-	log := useFake(t, "BMESH_T3_COMMAND", "fake-t3.sh", "FAKE_T3_LOG")
-	t.Setenv("FAKE_T3_STATUS", "running")
-	r := T3{Dispatch: "t3_dispatch.py", Dir: t.TempDir()}
-	err := r.Send(context.Background(), "th-1", "hello")
-	if !errors.Is(err, ErrRunning) {
-		t.Fatalf("err %v, want ErrRunning", err)
+// A T3 before 0.1.0 is refused at start, status and send, before any
+// tool call; a thread id from before 0.1.0 is no such thread.
+func TestT3RefusesProtocol1(t *testing.T) {
+	r, fake, _ := v2Setup(t, "auto", "auto")
+	now := time.Now()
+	r.Now = func() time.Time { return now }
+	fake.Do(func(s *t3fake.Server) { s.Protocol = 1 })
+	want := "T3 0.0.45 at " + fake.URL + " speaks protocol 1; bmesh needs T3 0.1.0 or later"
+	ctx := context.Background()
+	_, err := r.Start(ctx, StartSpec{RepoPath: t.TempDir(), Model: "m1", Title: "t", BriefPath: writeBriefFile(t, "b"), ThreadID: "u"})
+	if err == nil || err.Error() != want {
+		t.Fatalf("start: %v", err)
 	}
-	got := readLog(t, log)
-	if !strings.Contains(got, "argv status th-1") || strings.Contains(got, "send") {
-		t.Fatalf("log %q", got)
+	if _, err := r.Status(ctx, "mcp:t"); err == nil || err.Error() != want {
+		t.Fatalf("status: %v", err)
 	}
-	// Idle: the send goes through with the text in a prompt file.
-	t.Setenv("FAKE_T3_STATUS", "idle")
-	if err := r.Send(context.Background(), "th-1", "hello"); err != nil {
+	if err := r.Send(ctx, "mcp:t", "hello"); err == nil || err.Error() != want {
+		t.Fatalf("send: %v", err)
+	}
+	if err := r.Preflight(ctx); err == nil || err.Error() != want {
+		t.Fatalf("preflight: %v", err)
+	}
+	if calls := fake.ToolCalls(); len(calls) != 0 {
+		t.Fatalf("tool calls on a protocol-1 server: %v", calls)
+	}
+	// Protocol 2 is trusted for a minute.
+	fake.Do(func(s *t3fake.Server) { s.Protocol = 2 })
+	fake.AddThread(&t3fake.Thread{ID: "mcp:t"})
+	if _, err := r.Status(ctx, "mcp:t"); err != nil {
 		t.Fatal(err)
 	}
-	if got := readLog(t, log); !strings.Contains(got, "send th-1 hello\n") {
-		t.Fatalf("log %q", got)
+	if _, err := r.Status(ctx, "th-1"); !errors.Is(err, ErrNoThread) {
+		t.Fatalf("pre-0.1.0 id: %v", err)
 	}
-	// Exit 4 from send (became running in between) is ErrRunning too.
-	t.Setenv("FAKE_T3_SEND_EXIT", "4")
-	if err := r.Send(context.Background(), "th-1", "again"); !errors.Is(err, ErrRunning) {
-		t.Fatalf("exit 4: %v", err)
+	fake.Do(func(s *t3fake.Server) { s.Protocol = 3 })
+	if _, err := r.Status(ctx, "mcp:t"); err != nil {
+		t.Fatalf("cached: %v", err)
 	}
-	st, err := r.Status(context.Background(), "th-1")
-	if err != nil || st.Running || !st.Known {
-		t.Fatalf("status %+v %v", st, err)
-	}
-	t.Setenv("FAKE_T3_MISSING", "1")
-	if _, err := r.Status(context.Background(), "th-1"); !errors.Is(err, ErrNoThread) {
-		t.Fatalf("missing: %v", err)
-	}
-}
-
-func TestT3StartPassesThreadIDAndPromptFile(t *testing.T) {
-	log := useFake(t, "BMESH_T3_COMMAND", "fake-t3.sh", "FAKE_T3_LOG")
-	brief := filepath.Join(t.TempDir(), "brief.md")
-	if err := os.WriteFile(brief, []byte("build spec 012"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	r := T3{Dispatch: "t3_dispatch.py", Dir: t.TempDir()}
-	got, err := r.Start(context.Background(), StartSpec{RepoPath: "/r/demo", Model: "m1", Title: "[build] demo 012",
-		BriefPath: brief, ThreadID: "uuid-1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != (Started{Thread: "uuid-1", Branch: "t3code/uuid-1", Worktree: "/wt/uuid-1"}) {
-		t.Fatalf("started %+v", got)
-	}
-	want := "argv start --repo /r/demo --provider claude --model m1 --title [build] demo 012 --prompt-file " + brief +
-		" --thread-id uuid-1\nstart build spec 012\n"
-	if l := readLog(t, log); l != want {
-		t.Fatalf("log %q\nwant %q", l, want)
-	}
-	if err := r.Interrupt(context.Background(), "uuid-1"); err != nil {
-		t.Fatal(err)
-	}
-	if l := readLog(t, log); !strings.HasSuffix(l, "stop uuid-1\n") {
-		t.Fatalf("log %q", l)
-	}
-}
-
-func TestT3StartInAnExistingWorktreeUnderAProject(t *testing.T) {
-	log := useFake(t, "BMESH_T3_COMMAND", "fake-t3.sh", "FAKE_T3_LOG")
-	brief := filepath.Join(t.TempDir(), "brief.md")
-	if err := os.WriteFile(brief, []byte("propose"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	r := T3{Dispatch: "t3_dispatch.py", Dir: t.TempDir()}
-	got, err := r.Start(context.Background(), StartSpec{RepoPath: "/r/demo", Model: "m1", Title: "[ideate] demo round 1: engineer",
-		BriefPath: brief, ThreadID: "uuid-2", Branch: "demo-round-1-eng", Worktree: "/bm/wt/demo/demo-round-1-eng", Project: "/r/bm", Effort: "xhigh"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != (Started{Thread: "uuid-2", Branch: "demo-round-1-eng", Worktree: "/bm/wt/demo/demo-round-1-eng"}) {
-		t.Fatalf("started %+v", got)
-	}
-	want := "argv start --repo /r/bm --provider claude --model m1 --title [ideate] demo round 1: engineer --prompt-file " + brief +
-		" --thread-id uuid-2 --worktree /bm/wt/demo/demo-round-1-eng --branch demo-round-1-eng --effort xhigh\n"
-	if l := readLog(t, log); !strings.HasPrefix(l, want) {
-		t.Fatalf("log %q\nwant prefix %q", l, want)
+	now = now.Add(61 * time.Second)
+	if _, err := r.Status(ctx, "mcp:t"); err == nil || !strings.Contains(err.Error(), "protocol 3") {
+		t.Fatalf("protocol 3: %v", err)
 	}
 }

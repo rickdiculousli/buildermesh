@@ -2,9 +2,9 @@ package daemon
 
 import (
 	"context"
-	"os"
+	"errors"
 	"path/filepath"
-	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,14 +16,49 @@ import (
 
 const testHost = "testhost"
 
-// fixture is a provisioned server, a t3 runner backed by testdata/fake-t3.sh
-// and Deps whose clock the test moves.
+// fixture is a provisioned server, a fake runner and Deps whose clock the
+// test moves.
 type fixture struct {
 	ctx context.Context
 	c   *mesh.Client
 	d   Deps
 	now time.Time // what d.Now returns
-	log string    // the fake t3's call log
+	rn  *fakeRunner
+}
+
+// fakeRunner is a runner whose threads are all idle; it records each send
+// it accepts as "send <thread> <text>" and refuses every send with sendErr
+// while that is set.
+type fakeRunner struct {
+	mu      sync.Mutex
+	sendErr error
+	sent    []string
+}
+
+func (r *fakeRunner) Start(context.Context, runner.StartSpec) (runner.Started, error) {
+	return runner.Started{}, errors.New("fakeRunner: no start")
+}
+
+func (r *fakeRunner) Status(context.Context, string) (runner.Status, error) {
+	return runner.Status{Known: true}, nil
+}
+
+func (r *fakeRunner) Send(_ context.Context, thread, text string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.sendErr != nil {
+		return r.sendErr
+	}
+	r.sent = append(r.sent, "send "+thread+" "+text)
+	return nil
+}
+
+func (r *fakeRunner) Interrupt(context.Context, string) error { return nil }
+
+func (r *fakeRunner) failSends(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sendErr = err
 }
 
 func setup(t *testing.T) *fixture {
@@ -39,23 +74,14 @@ func setup(t *testing.T) *fixture {
 	if err := mesh.Provision(ctx, c, 0); err != nil {
 		t.Fatal(err)
 	}
-	fake, err := filepath.Abs(filepath.Join("..", "..", "testdata", "fake-t3.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("BMESH_T3_COMMAND", "sh "+fake)
-	log := filepath.Join(t.TempDir(), "t3.log")
-	t.Setenv("FAKE_T3_LOG", log)
-	t.Setenv("FAKE_T3_STATUS", "idle")
-	t.Setenv("FAKE_T3_SEND_EXIT", "0")
 	cfg, err := config.Load(filepath.Join(t.TempDir(), "absent.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &fixture{ctx: ctx, c: c, now: time.Now(), log: log}
+	f := &fixture{ctx: ctx, c: c, now: time.Now(), rn: &fakeRunner{}}
 	f.d = Deps{
 		Client: c, Cfg: cfg, Host: testHost,
-		Runner: &runner.T3{Dispatch: "t3_dispatch.py", Dir: t.TempDir()},
+		Runner: f.rn,
 		Now:    func() time.Time { return f.now },
 	}
 	f.d.defaults()
@@ -89,20 +115,12 @@ func (f *fixture) send(t *testing.T, to string, n int) {
 	}
 }
 
-// sends returns the fake t3's "send" lines.
+// sends returns the sends the runner accepted.
 func (f *fixture) sends(t *testing.T) []string {
 	t.Helper()
-	b, err := os.ReadFile(f.log)
-	if err != nil && !os.IsNotExist(err) {
-		t.Fatal(err)
-	}
-	var out []string
-	for _, l := range strings.Split(string(b), "\n") {
-		if strings.HasPrefix(l, "send ") {
-			out = append(out, l)
-		}
-	}
-	return out
+	f.rn.mu.Lock()
+	defer f.rn.mu.Unlock()
+	return append([]string{}, f.rn.sent...)
 }
 
 // daemonEvents returns the decoded daemon events of one kind.

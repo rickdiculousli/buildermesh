@@ -21,7 +21,7 @@ func TestLoadMissingFileIsDefaults(t *testing.T) {
 	if c.Mesh.Listen != "127.0.0.1:4222" || c.Liveness.PollEvery != 60*time.Second ||
 		c.Liveness.WakeEvery != 10*time.Minute || c.Notify.DigestEvery != time.Hour ||
 		c.Spec.Glob != "docs/proposals/{id}-*.md" || c.Models != (ModelsConfig{Lead: "claude-opus-5-5", LeadEffort: "high", Proposer: "claude-opus-5-5", ProposerEffort: "xhigh"}) ||
-		c.Runner.TmuxSession != "bmesh" || c.Runner.T3Dispatch != "t3_dispatch.py" ||
+		c.Runner.TmuxSession != "bmesh" || c.Runner.T3Server != "http://127.0.0.1:3773" ||
 		c.Runner.Checkouts != "~/.bmesh/checkouts" || c.Runner.Claude != "claude" {
 		t.Fatalf("defaults wrong: %+v", c)
 	}
@@ -69,8 +69,7 @@ func TestLoadFixture(t *testing.T) {
 		"host":        {c.Host.Name, "Box-One"},
 		"serve":       {c.Serve.Listen, "127.0.0.1:3999"},
 		"kind":        {c.Runner.Kind, "tmux"},
-		"t3":          {c.Runner.T3Dispatch, "~/bin/t3_dispatch.py"},
-		"t3_project":  {c.Runner.T3Project, "bm"},
+		"t3_server":   {c.Runner.T3Server, "http://box-one:3773"},
 		"tmux":        {c.Runner.TmuxSession, "mesh"},
 		"worktrees":   {c.Runner.Worktrees, "~/wt"},
 		"checkouts":   {c.Runner.Checkouts, "~/co"},
@@ -97,6 +96,31 @@ func TestLoadFixture(t *testing.T) {
 	if c.Notify.DigestEvery != 30*time.Minute || c.Notify.CatchUp != 2*time.Hour || c.Liveness.Grace != 5*time.Minute ||
 		c.Liveness.PollEvery != 15*time.Second || c.Liveness.WakeEvery != 2*time.Minute {
 		t.Errorf("durations wrong: %+v %+v", c.Notify, c.Liveness)
+	}
+}
+
+// The V1 keys load, each with a line saying to delete it; an empty
+// t3_server, which meant V1 without asking, doesn't.
+func TestLoadDroppedT3Keys(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	os.WriteFile(p, []byte("[runner]\nt3_dispatch = \"~/x/t3_dispatch.py\"\nt3_project = \"bm\"\n"), 0o644)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"bmesh: [runner] t3_dispatch is ignored (T3 0.1.0 needs no script); delete it from " + p,
+		"bmesh: [runner] t3_project is ignored (T3 0.1.0 needs no script); delete it from " + p,
+	}
+	if fmt.Sprint(c.Ignored()) != fmt.Sprint(want) || c.Runner.T3Server != "http://127.0.0.1:3773" {
+		t.Fatalf("ignored %q server %q", c.Ignored(), c.Runner.T3Server)
+	}
+	if c, err := Load("../../testdata/config.toml"); err != nil || len(c.Ignored()) != 0 {
+		t.Fatalf("fixture: %v %q", err, c.Ignored())
+	}
+	os.WriteFile(p, []byte("[runner]\nt3_server = \"\"\n"), 0o644)
+	if _, err := Load(p); err == nil || !strings.Contains(err.Error(), "[runner] t3_server is empty") {
+		t.Fatalf("empty t3_server: %v", err)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
+	"github.com/rickdiculousli/buildermesh/internal/runner/t3mcp/t3fake"
 )
 
 // stateAt puts path in state, dated at.
@@ -221,12 +222,13 @@ func TestNodeForgetWorktreeRebasedExecutor(t *testing.T) {
 }
 
 func TestNodeForgetIdle(t *testing.T) {
-	c, _ := leadSetup(t) // the t3 runner, backed by testdata/fake-t3.sh
+	c, fake := leadSetup(t) // the t3 runner, on a fake T3
 	ctx := t.Context()
 	idle := func(path string, n mesh.Node) {
 		n.Path = path
 		if n.Runner.Kind == "" {
-			n.Runner = mesh.NodeRunner{Kind: "t3", Thread: "th-" + path}
+			n.Runner = mesh.NodeRunner{Kind: "t3", Thread: "mcp:th-" + path}
+			fake.AddThread(&t3fake.Thread{ID: n.Runner.Thread})
 		}
 		putNode(t, c, ctx, n)
 	}
@@ -262,10 +264,15 @@ func TestNodeForgetIdle(t *testing.T) {
 
 	// Its thread running, or the runner failing: refused.
 	idle("app-003", mesh.Node{})
-	if _, errs, code := forget("app-003", map[string]string{"FAKE_T3_STATUS": "running"}); code != 3 || errs != "bmesh: refused: app-003 is idle and its thread th-app-003 is running; stop it first\n" {
+	fake.Do(func(s *t3fake.Server) {
+		s.Threads["mcp:th-app-003"].ActiveRunID = "r1"
+		s.Threads["mcp:th-app-003"].Runs = []t3fake.Run{{ID: "r1", Status: "running"}}
+	})
+	if _, errs, code := forget("app-003", nil); code != 3 || errs != "bmesh: refused: app-003 is idle and its thread mcp:th-app-003 is running; stop it first\n" {
 		t.Fatalf("running: %d %q", code, errs)
 	}
-	if _, errs, code := forget("app-003", map[string]string{"FAKE_T3_STATUS": "idle", "FAKE_T3_MISSING": "1"}); code != 3 || !strings.HasPrefix(errs, "bmesh: refused: app-003 is idle and its thread may be running (") {
+	fake.Do(func(s *t3fake.Server) { delete(s.Threads, "mcp:th-app-003") })
+	if _, errs, code := forget("app-003", nil); code != 3 || !strings.HasPrefix(errs, "bmesh: refused: app-003 is idle and its thread may be running (") {
 		t.Fatalf("status fails: %d %q", code, errs)
 	}
 
