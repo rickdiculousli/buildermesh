@@ -92,12 +92,19 @@ func (a *app) cmdSync(args []string) error {
 		repo string
 		job  hosts.Job
 	}
-	var jobs []sent
-	until := hosts.Stamp(time.Now().Add(*wait))
+	heads := map[string]level.Outcome{}
 	for _, name := range names {
 		path, _ := b.checkout(name)
 		o := a.levelHere(ctx, b, name, path)
 		fmt.Fprintf(a.stdout, "%s%s: %s\n", prefix(name), b.host, o.Text())
+		heads[name] = o
+	}
+	// The wait starts once this box's own levels are done: until tells a
+	// receiving box whether anyone still waits for its answer.
+	var jobs []sent
+	until := hosts.Stamp(time.Now().Add(*wait))
+	for _, name := range names {
+		o := heads[name]
 		if o.Target == "" {
 			continue // origin's head is unknown here: nothing to send
 		}

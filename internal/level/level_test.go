@@ -107,6 +107,9 @@ func TestLevelRefusals(t *testing.T) {
 			r.Branch = "main"
 			o := Level(ctx, r)
 			want(t, o, Refused, "refused: "+tc.why)
+			if top := meshtest.Git(t, b.origin, "rev-parse", "main"); o.Target != top || o.Branch != "main" {
+				t.Fatalf("a refusal lost origin's head: target %q branch %q, want %s main", o.Target, o.Branch, top)
+			}
 			if tc.name != "diverged" && head(t, b.box) != before {
 				t.Fatal("a refused level moved the checkout")
 			}

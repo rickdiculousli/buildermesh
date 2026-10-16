@@ -257,22 +257,28 @@ func level(ctx context.Context, req Request) Outcome {
 			return refuse("no " + onto)
 		}
 	}
+	// From here a refusal keeps the target and branch: origin's head is
+	// known, so `bmesh sync` still sends it to the other boxes.
 	o.Target = target
+	refuseKeeping := func(why string) Outcome {
+		o.Result, o.Why = Refused, why
+		return o
+	}
 	if req.Sha != "" && !ancestor(ctx, dir, req.Sha, target) {
-		return refuse(fmt.Sprintf("%s not on %s", short(req.Sha), onto))
+		return refuseKeeping(fmt.Sprintf("%s not on %s", short(req.Sha), onto))
 	}
 	if inProgress(gitDir) {
-		return refuse("in progress")
+		return refuseKeeping("in progress")
 	}
 	status, err := git(ctx, dir, "status", "--porcelain")
 	if err != nil {
 		return failed(err)
 	}
 	if status != "" {
-		return refuse("dirty")
+		return refuseKeeping("dirty")
 	}
 	if req.Pin == "" && current != o.Branch {
-		return refuse("other branch")
+		return refuseKeeping("other branch")
 	}
 	if req.Pin != "" {
 		return pinned(ctx, req, o)
