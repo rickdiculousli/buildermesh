@@ -105,7 +105,8 @@ func SurfacesText(surfaces []string) string {
 
 // sizedText sizes a change's review by its spec's size: XS and S land on
 // verify alone; M and up get one Opus review, harder the larger the change.
-const sizedText = "its spec's `size`, or an XS or S whose scope grew to M; at medium effort for M, high for L or larger"
+const sizedText = "its spec's `size` as built: a change whose scope grew is sized by what it grew to, and work with no spec is sized as a spec would be " +
+	"(XS one file, S one module, M crosses modules, L changes an interface others depend on); at medium effort for M, high for L or larger"
 
 // PlainWords is how a thread's report names things, so the operator can
 // read it without looking anything up; the done rule and every closing end

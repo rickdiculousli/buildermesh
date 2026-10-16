@@ -102,6 +102,27 @@ func TestQueueDedupeIsModelAware(t *testing.T) {
 	}
 }
 
+func TestQueueCarriesItsEffort(t *testing.T) {
+	c, ctx := setup(t)
+	kindRepo(t, map[string]string{
+		"review": "models = [\"m1\"]\nprompt = \"check\"\n",
+		"verify": "command = \"true\"\n",
+	})
+	if out, errs, code := runCLI(t, as("app-001"), "routine", "queue", "review", "--effort", "high"); code != 0 || !strings.HasPrefix(out, "queued ") {
+		t.Fatalf("queue: %d %q %q", code, out, errs)
+	}
+	msgs, err := mesh.Fetch(ctx, c, mesh.RoutinePath("review"), false)
+	if err != nil || len(msgs) != 1 || msgs[0].Job == nil || msgs[0].Job.Effort != "high" {
+		t.Fatalf("job %+v %v: want effort high", msgs, err)
+	}
+	if _, errs, code := runCLI(t, as("app-001"), "routine", "queue", "review", "--effort", "huge"); code != 2 || !strings.Contains(errs, `effort "huge"`) {
+		t.Fatalf("queue --effort huge: %d %q", code, errs)
+	}
+	if _, errs, code := runCLI(t, as("app-001"), "routine", "queue", "verify", "--effort", "high"); code != 2 || !strings.Contains(errs, "--effort is for a model kind") {
+		t.Fatalf("effort on a command kind: %d %q", code, errs)
+	}
+}
+
 func TestWaitReturnsReplyExitByOK(t *testing.T) {
 	c, ctx := setup(t)
 	me, _ := mesh.ParsePath("app-001")
