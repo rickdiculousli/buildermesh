@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -480,4 +481,115 @@ func TestLandRefusesToCarryAReviewThatReadAnotherDiff(t *testing.T) {
 	if rec, ok, err := mesh.GetResult(ctx, c, mesh.ResultKey("review", tree, nil, "claude-opus-5-5")); err != nil || !ok || rec.PatchID != "0123456789abcdef" {
 		t.Fatalf("recorded patch-id changed: %+v %v %v", rec, ok, err)
 	}
+}
+
+// sendTo puts m in to's inbox.
+func sendTo(t *testing.T, c *mesh.Client, ctx context.Context, to string, m mesh.Message) {
+	t.Helper()
+	m.To = to
+	if _, err := mesh.Send(ctx, c, m); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// An unread message from the operator refuses the landing and stays unread;
+// once the inbox is read, the same command lands.
+func TestLandRefusesOnUnreadOperatorMail(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	if _, errs, code := runCLI(t, as("app-012"), "send", "app-012", "two reviews before landing", "--node", "operator"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	work := gitOut(t, "rev-parse", "HEAD")
+	base := r.originMain(t)
+	out, errs, code := runCLI(t, as("app-012"), "land")
+	if code != 3 || out != "" || errs != "bmesh: refused: 1 unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh land again\n" {
+		t.Fatalf("land: %d %q %q", code, out, errs)
+	}
+	if r.originMain(t) != base || gitOut(t, "rev-parse", "HEAD") != work {
+		t.Fatal("refused land moved origin or the branch")
+	}
+	assertNoLeases(t, c, ctx)
+	p, _ := mesh.ParsePath("app-012")
+	if n, err := mesh.Unread(ctx, c, p); err != nil || n != 1 {
+		t.Fatalf("unread after the refusal: %d %v", n, err)
+	}
+	if out, errs, code := runCLI(t, as("app-012"), "inbox"); code != 0 || !strings.Contains(out, "operator: two reviews before landing") {
+		t.Fatalf("inbox: %d %q %q", code, out, errs)
+	}
+	if out, errs, code := runCLI(t, as("app-012"), "land"); code != 0 || strings.Contains(out, "unread:") || !strings.Contains(out, "landed ") {
+		t.Fatalf("land after inbox: %d\n%s\nerr %q", code, out, errs)
+	}
+}
+
+// Reports, replies and other nodes' messages don't stop a landing; they are
+// named on one line before it goes on.
+func TestLandNamesOtherUnreadMail(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	sendTo(t, c, ctx, "app-012", mesh.Message{From: "app-012.alpha", Kind: "report", Text: "done from app-012.alpha: branch lead-alpha at 1a2b3c4d",
+		Report: &mesh.Report{Event: "done", From: "app-012.alpha", Branch: "lead-alpha", Commit: "1a2b3c4d5e6f"}})
+	sendTo(t, c, ctx, "app-012", mesh.Message{From: "routine.review", Kind: "reply", Reply: &mesh.Reply{Job: "j1", Kind: "review", OK: true}})
+	sendTo(t, c, ctx, "app-012", mesh.Message{From: "app-012.beta", Kind: "message", Text: "ask from app-012.beta: which file?"})
+	base := r.originMain(t)
+	out, errs, code := runCLI(t, as("app-012"), "land")
+	want := "unread: done from app-012.alpha (branch lead-alpha at 1a2b3c4d); reply to job j1 (review ok); message from app-012.beta\n" +
+		"lease land.repo\n" + "fetch origin/main " + base[:8] + "\n"
+	if code != 0 || !strings.HasPrefix(out, want) || !strings.Contains(out, "landed ") {
+		t.Fatalf("land: %d\n%s\nwant prefix\n%s\nerr %q", code, out, want, errs)
+	}
+	if r.originMain(t) == base {
+		t.Fatal("nothing pushed")
+	}
+}
+
+// Land run outside a node has no inbox to read.
+func TestLandWithNoNodeSkipsTheInbox(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	sendTo(t, c, ctx, "app-012", mesh.Message{From: "operator", Kind: "message", Text: "hold"})
+	out, errs, code := runCLI(t, nil, "land", "--spec", "012")
+	if code != 0 || strings.Contains(out, "unread:") || !strings.Contains(out, "landed ") {
+		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+	}
+}
+
+// An operator message that arrives while land waits for the lease refuses
+// it once the lease is taken, before the fetch.
+func TestLandReadsTheInboxAgainUnderTheLease(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	key, err := mesh.AcquireLease(ctx, c, "land.repo", "app-011", time.Minute, 1, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := r.originMain(t)
+	t.Setenv("BMESH_NODE", "app-012")
+	var out, errb bytes.Buffer
+	res := make(chan int, 1)
+	go func() { res <- run([]string{"land"}, strings.NewReader(""), &out, &errb) }()
+	time.Sleep(300 * time.Millisecond)
+	sendTo(t, c, ctx, "app-012", mesh.Message{From: "operator", Kind: "message", Text: "hold"})
+	if err := mesh.ReleaseLease(ctx, c, key, "app-011"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case code := <-res:
+		// prepare read an empty inbox (it got as far as waiting); the read
+		// under the lease found the message.
+		if code != 3 || out.String() != "waiting for land.repo (held by app-011)\nlease land.repo\n" ||
+			errb.String() != "bmesh: refused: 1 unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh land again\n" {
+			t.Fatalf("land: %d\n%s\nerr %q", code, out.String(), errb.String())
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("land never took the released lease")
+	}
+	if r.originMain(t) != base {
+		t.Fatal("land pushed")
+	}
+	assertNoLeases(t, c, ctx)
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/checkout"
+	"github.com/rickdiculousli/buildermesh/internal/daemon"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
@@ -30,10 +31,11 @@ var landRepoRE = regexp.MustCompile(`^[A-Za-z0-9_-][A-Za-z0-9_.-]*$`)
 // lander is one `bmesh land`: a lead's worktree landing its spec on main.
 type lander struct {
 	a        *app
-	top      string // the lead's worktree
-	repoPath string // the main checkout
-	id       int    // the spec
-	holder   string // the node (or host) holding the lease and recording results
+	top      string    // the lead's worktree
+	repoPath string    // the main checkout
+	id       int       // the spec
+	holder   string    // the node (or host) holding the lease and recording results
+	node     mesh.Path // the landing node, whose inbox is read; nil outside a node
 	branch   string
 	origin   bool
 	base     string // origin/main, or main without an origin
@@ -82,6 +84,7 @@ func (a *app) cmdLand(args []string) error {
 	repo := a.repoNameAt(top)
 	if p != nil {
 		l.holder = p.String()
+		l.node = p
 		if repo, err = a.repoName(ctx, p, top); err != nil {
 			return err
 		}
@@ -174,6 +177,9 @@ func (l *lander) prepare(ctx context.Context) error {
 		return fail(exitRefused, "refused: land runs on a lead's branch, not %s", dash(b))
 	}
 	l.branch = b
+	if err := l.mail(ctx, true); err != nil {
+		return err
+	}
 	l.origin = hasOrigin(ctx, l.top)
 	l.base = "main"
 	if l.origin {
@@ -221,6 +227,37 @@ func (l *lander) prepare(ctx context.Context) error {
 	return nil
 }
 
+// mail peeks the node's inbox, holding and acking nothing: a message the
+// operator sent with bmesh send refuses the landing, since it may change
+// what landing needs; anything else (a report, a reply, another node's
+// message) is named on one line when say, so the lead sees it before the
+// push. Land run outside a node has no inbox and skips it.
+func (l *lander) mail(ctx context.Context, say bool) error {
+	if l.node == nil {
+		return nil
+	}
+	pending, err := mesh.Pending(ctx, l.a.client, l.node)
+	if err != nil {
+		return err
+	}
+	operator := 0
+	var others []string
+	for _, m := range pending {
+		if m.Kind == "message" && m.From == "operator" {
+			operator++
+			continue
+		}
+		others = append(others, daemon.WakeItem(m))
+	}
+	if operator > 0 {
+		return fail(exitRefused, "refused: %d unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh land again", operator)
+	}
+	if say && len(others) > 0 {
+		fmt.Fprintf(l.a.stdout, "unread: %s\n", strings.Join(others, "; "))
+	}
+	return nil
+}
+
 // land runs the steps under the lease, starting again from the fetch once
 // when main moved before the push.
 func (l *lander) land(ctx context.Context) error {
@@ -247,6 +284,11 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 		c, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 		return gitIn(c, l.top, args...)
+	}
+	// Read again under the lease: the operator may have written while land
+	// waited for it.
+	if err := l.mail(ctx, false); err != nil {
+		return false, err
 	}
 	if l.origin {
 		if _, err := git("fetch", "--quiet", "origin", "main"); err != nil {

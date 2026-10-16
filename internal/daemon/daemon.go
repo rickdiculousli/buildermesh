@@ -91,7 +91,7 @@ func WakeText(unread int, pending []mesh.Message) string {
 			items = append(items, fmt.Sprintf("and %d more", len(pending)-wakeItems))
 			break
 		}
-		items = append(items, wakeItem(m))
+		items = append(items, WakeItem(m))
 	}
 	head := fmt.Sprintf("bmesh: %d unread", unread)
 	if len(items) > 0 {
@@ -100,10 +100,10 @@ func WakeText(unread int, pending []mesh.Message) string {
 	return head + ". Run `bmesh inbox` now, then continue."
 }
 
-// wakeItem names one pending message: a report by its event and, for done,
+// WakeItem names one pending message: a report by its event and, for done,
 // branch and commit; a reply by its job and verdict; anything else by its
 // kind and sender.
-func wakeItem(m mesh.Message) string {
+func WakeItem(m mesh.Message) string {
 	switch {
 	case m.Kind == "report" && m.Report != nil && m.Report.Event == "done":
 		c := m.Report.Commit
