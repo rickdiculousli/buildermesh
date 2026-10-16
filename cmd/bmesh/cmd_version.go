@@ -35,7 +35,8 @@ func (a *app) cmdVersion(args []string) error {
 const hintWait = 2 * time.Second
 
 // versionHint sets the one stderr line run prints after the command's own
-// output when the newest daemon to start runs another revision than this
+// output when this host's daemon (its newest started), or the hub's newest
+// daemon to start when this host runs none, runs another revision than this
 // binary. There is none when either side does not know its revision or the
 // read fails: it is a hint, never a refusal, and never changes the exit code.
 func (a *app) versionHint(ctx context.Context) {
@@ -45,9 +46,15 @@ func (a *app) versionHint(ctx context.Context) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, hintWait)
 	defer cancel()
-	s, ok, err := mesh.Last(ctx, a.client, "bm.daemon.*.started")
-	if err != nil || !ok {
+	s, ok, err := mesh.Last(ctx, a.client, mesh.DaemonSubject(a.cfg.HostName(), "started"))
+	if err != nil {
 		return
+	}
+	if !ok {
+		s, ok, err = mesh.Last(ctx, a.client, "bm.daemon.*.started")
+		if err != nil || !ok {
+			return
+		}
 	}
 	var ev mesh.Event
 	if json.Unmarshal(s.Data, &ev) != nil || ev.Text == "" || ev.Text == selfupdate.Unknown || ev.Text == own {

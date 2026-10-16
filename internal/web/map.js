@@ -510,6 +510,8 @@ function liveState(path, state, text, since) {
 function apply(f) {
   const rest = f.subject.replace(/^bm\./, "");
   const p = f.payload && typeof f.payload === "object" ? f.payload : {};
+  // The hosts layer's jobs and replies: mirrors mesh.IsHostTraffic.
+  if (rest.startsWith("inbox.host.") || rest.startsWith("hostreply.")) return;
   if (rest.startsWith("inbox.")) {
     const to = rest.slice(6);
     flash(String(p.from || ""), to, String(p.kind || "message"));

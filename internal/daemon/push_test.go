@@ -516,3 +516,14 @@ func TestPushEmptyListDisables(t *testing.T) {
 		t.Errorf("requests = %+v", r)
 	}
 }
+
+func TestNodeEventRefusesMeshInternal(t *testing.T) {
+	for _, s := range []string{"bm.inbox.app", "bm.daemon.k16.started", "bm.feedback.app.x", "bm.hostreply.k16.abc", "bm.inbox.host.k16"} {
+		if p, e, ok := nodeEvent(s); ok {
+			t.Errorf("%s: node event %q %q", s, p, e)
+		}
+	}
+	if p, e, ok := nodeEvent("bm.app.x.done"); !ok || p != "app.x" || e != "done" {
+		t.Fatalf("bm.app.x.done: %q %q %v", p, e, ok)
+	}
+}

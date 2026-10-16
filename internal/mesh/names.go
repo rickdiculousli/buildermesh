@@ -20,7 +20,37 @@ const (
 
 var pathRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*$`)
 
-var reserved = map[string]bool{"inbox": true, "routine": true, "daemon": true, "feedback": true}
+// internal are the first tokens under bm. whose subjects are not a node's
+// events: inboxes, daemon events, feedback queues and the hosts layer's
+// jobs (bm.inbox.host.<host>) and replies (bm.hostreply.<caller>.<id>).
+var internal = map[string]bool{"inbox": true, "daemon": true, "feedback": true, "host": true, "hostreply": true}
+
+// reserved are the first tokens no node path may start with: the internal
+// ones and routine (whose routine.<kind> exception ParsePath allows).
+var reserved = func() map[string]bool {
+	m := map[string]bool{"routine": true}
+	for t := range internal {
+		m[t] = true
+	}
+	return m
+}()
+
+// IsMeshInternal reports whether subject is under bm. with a first token
+// that is not a node's: inbox, daemon, feedback, host or hostreply.
+func IsMeshInternal(subject string) bool {
+	rest, ok := strings.CutPrefix(subject, "bm.")
+	if !ok {
+		return false
+	}
+	first, _, _ := strings.Cut(rest, ".")
+	return internal[first]
+}
+
+// IsHostTraffic reports whether subject is one of the hosts layer's
+// carriers, bm.inbox.host.* or bm.hostreply.*, which the map and watch skip.
+func IsHostTraffic(subject string) bool {
+	return strings.HasPrefix(subject, "bm.inbox.host.") || strings.HasPrefix(subject, "bm.hostreply.")
+}
 
 // Path names a node: dot-separated tokens, the first of which is its lead.
 type Path []string

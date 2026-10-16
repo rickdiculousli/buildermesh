@@ -302,3 +302,22 @@ func TestQuotaRemindTopic(t *testing.T) {
 		}
 	}
 }
+
+func TestStateDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	saved := goos
+	t.Cleanup(func() { goos = saved })
+	for _, tc := range []struct{ os, xdg, want string }{
+		{"linux", "", filepath.Join(home, ".local", "state", "bmesh")},
+		{"darwin", "", filepath.Join(home, "Library", "Application Support", "bmesh", "state")},
+		{"linux", "/x/state", "/x/state/bmesh"},
+		{"darwin", "/x/state", "/x/state/bmesh"},
+	} {
+		goos = tc.os
+		t.Setenv("XDG_STATE_HOME", tc.xdg)
+		if got := StateDir(); got != tc.want {
+			t.Errorf("%s xdg %q: %q, want %q", tc.os, tc.xdg, got, tc.want)
+		}
+	}
+}

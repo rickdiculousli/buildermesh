@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -374,13 +375,21 @@ func (c *Config) T3TokenPath() string {
 	return filepath.Join(d, "t3-token.json")
 }
 
+// goos is runtime.GOOS; tests set it.
+var goos = runtime.GOOS
+
 // StateDir is where the daemon keeps what must survive a restart:
-// $XDG_STATE_HOME/bmesh, else ~/.local/state/bmesh.
+// $XDG_STATE_HOME/bmesh on any OS, else ~/Library/Application
+// Support/bmesh/state on macOS and ~/.local/state/bmesh elsewhere. Never the
+// cache dir, which macOS purges.
 func StateDir() string {
 	if d := os.Getenv("XDG_STATE_HOME"); d != "" {
 		return filepath.Join(d, "bmesh")
 	}
 	home, _ := os.UserHomeDir()
+	if goos == "darwin" {
+		return filepath.Join(home, "Library", "Application Support", "bmesh", "state")
+	}
 	return filepath.Join(home, ".local", "state", "bmesh")
 }
 

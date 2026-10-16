@@ -526,3 +526,23 @@ func TestExecutorDoneNeedsCommitSkipsSpec(t *testing.T) {
 		t.Fatalf("done event %v %v", hist, err)
 	}
 }
+
+func TestWatchPrinterSkipsInternalSubjects(t *testing.T) {
+	var b bytes.Buffer
+	a := &app{stdout: &b}
+	leads := map[string]bool{"app": true, "host": true, "hostreply": true, "inbox": true, "feedback": true}
+	ev := func(to string) []byte { return []byte(`{"at":"2026-10-16T09:00:00Z","to":"` + to + `","text":"t"}`) }
+	for _, s := range []string{"bm.inbox.host.k16", "bm.hostreply.k16.abc", "bm.host.k16.x", "bm.inbox.app", "bm.feedback.app.x"} {
+		a.printEvent(mesh.Stored{Subject: s, Data: ev("app")}, leads)
+	}
+	if b.Len() != 0 {
+		t.Fatalf("printed %q", b.String())
+	}
+	a.printEvent(mesh.Stored{Subject: "bm.daemon.k16.silent", Data: ev("app")}, leads)
+	a.printEvent(mesh.Stored{Subject: "bm.daemon.k16.silent", Data: ev("other")}, leads)
+	a.printEvent(mesh.Stored{Subject: "bm.app.progress", Data: ev("")}, leads)
+	want := "2026-10-16T09:00:00Z daemon.k16 silent app t\n2026-10-16T09:00:00Z app progress t\n"
+	if b.String() != want {
+		t.Fatalf("got %q, want %q", b.String(), want)
+	}
+}
