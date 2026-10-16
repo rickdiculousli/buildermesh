@@ -4,10 +4,13 @@ title: Windows keeps bmesh serve running, and comes back after an update
 kind: feature
 size: M
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
+built_by: c9a5e9ed-8005-447b-aad4-a691e3d25099
+host: k16
+family: buildermesh-build-3
 ---
 
 ## Opportunity
