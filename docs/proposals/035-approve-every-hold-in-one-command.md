@@ -4,7 +4,7 @@ title: One command approves every hold, and the push names it
 kind: refinement
 size: S
 judge: opus
-status: proposed
+status: accepted
 lens: ux
 proposed_by: operator
 proposed_on: 2026-10-15
