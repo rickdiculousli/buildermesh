@@ -16,4 +16,4 @@ The mesh is the record; read it and summarise, never guess from the runner.
    A node with unread messages is noted (the count) so the operator knows a reply is waiting on it.
 3. **Keep it short.** One line per node, the asks first; a quiet mesh is one line.
 
-End with one line: what is running, and what waits on the operator (the asks and blocks, by path).
+End with one line: what is running, and what waits on the operator (the asks and blocks, by path). Say what each thing in it is in plain words (a spec or issue by what it does, its number after it in brackets if at all): the line is final and reads on its own, with nothing the operator has to look up.

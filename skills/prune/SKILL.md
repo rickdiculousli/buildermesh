@@ -13,4 +13,4 @@ description: Use when the operator says "clean up worktrees", "prune worktrees",
 4. **Apply.** Run the same command with `--apply`. Removing a merged, clean worktree loses nothing that isn't on a branch or a remote, so the dry run shown is the check; when the dry run removed nothing, skip this step.
 5. **Report per box**: what was removed, what was kept and why, and which boxes are still to answer.
 
-End with one line: how many worktrees and branches were removed on how many boxes, and what waits on the operator (a box asleep, a refusal, a worktree kept for a reason only they can settle, such as uncommitted work).
+End with one line: how many worktrees and branches were removed on how many boxes, and what waits on the operator (a box asleep, a refusal, a worktree kept for a reason only they can settle, such as uncommitted work). Say what each thing in it is in plain words (a spec or issue by what it does, its number after it in brackets if at all): the line is final and reads on its own, with nothing the operator has to look up.

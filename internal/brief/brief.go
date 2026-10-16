@@ -110,6 +110,11 @@ const (
 	roteText = "a rename, config values, wording, a mechanical edit across a few files that verify covers"
 )
 
+// PlainWords is how a thread's report names things, so the operator can
+// read it without looking anything up; the done rule and every closing end
+// with it.
+const PlainWords = "Say what each thing is: the first time a message names a spec, issue, PR, commit, job or numbered item, it says in plain words what that is, with the number after it in brackets if at all, so the operator never has to look anything up. The last line is final: it reads on its own, names nothing not explained above it, and says in plain words what waits on the operator and what they'd do about it."
+
 // Closing is the standard closing for a thread on this repo, a blockquote:
 // finish the work by the definition of done rather than leaving it on a
 // branch.
@@ -117,7 +122,7 @@ func Closing(verify []string) string {
 	return "> When it works, finish it: run the repo's verify commands (" + VerifyText(verify) +
 		") until they pass; when the change carries risk verify can't catch (" + riskText + "), have a model that didn't write it review it once and fix what it finds, while a rote change (" + roteText + ") lands on verify alone; " +
 		"rebase onto `main` and re-run verify; merge fast-forward to `main`, landing the branch your worktree is on (`git branch --show-current`), never the name in your brief; and push where the repo has a remote. " +
-		"It isn't done while it sits on a branch. End with one line: what's on `main` (the commit), its push state from a fresh fetch (pushed, with the commit `origin/main` is at and that it contains yours; not pushed and why; or local only, for a repo with no remote), and what, if anything, waits on the operator."
+		"It isn't done while it sits on a branch. End with one line: what's on `main` (the commit), its push state from a fresh fetch (pushed, with the commit `origin/main` is at and that it contains yours; not pushed and why; or local only, for a repo with no remote), and what, if anything, waits on the operator. " + PlainWords
 }
 
 // DoneRule is the repo's definition of done, from its row: what must hold
