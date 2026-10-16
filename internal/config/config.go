@@ -296,12 +296,12 @@ func DefaultStore() string {
 }
 
 // CacheDir is where bmesh keeps what it writes for reading later (briefs,
-// prompts, a claude session's files): $XDG_CACHE_HOME when it is an
-// absolute path, on every OS, else os.UserCacheDir. Tests set
-// XDG_CACHE_HOME to keep out of the box's own cache, which on macOS
-// os.UserCacheDir would not.
+// prompts, a claude session's files): os.UserCacheDir, or
+// $BMESH_CACHE_DIR when it is an absolute path. Tests set it to keep out of
+// the box's own cache, which on macOS os.UserCacheDir always is (it ignores
+// XDG_CACHE_HOME there, and a box's CLI and daemon rely on agreeing).
 func CacheDir() (string, error) {
-	if d := os.Getenv("XDG_CACHE_HOME"); filepath.IsAbs(d) {
+	if d := os.Getenv("BMESH_CACHE_DIR"); filepath.IsAbs(d) {
 		return d, nil
 	}
 	return os.UserCacheDir()

@@ -7,7 +7,8 @@ import (
 	"testing"
 )
 
-// TestMain keeps every test off the box's real tools. On macOS the key
+// TestMain keeps every test off the box's real tools and cache. Briefs,
+// prompts and runner state go under a temp BMESH_CACHE_DIR. On macOS the key
 // store defaults to the Keychain, whose security command opens a dialog:
 // the default here is the file store, as on Linux, which the hosts tests
 // are written for, and a test that names keychain gets
@@ -29,6 +30,7 @@ func TestMain(m *testing.M) {
 		defer os.RemoveAll(dir)
 		for k, v := range map[string]string{
 			"BMESH_KEY_STORE":        "file",
+			"BMESH_CACHE_DIR":        filepath.Join(dir, "cache"),
 			"BMESH_SECURITY_COMMAND": "sh " + filepath.Join(testdata, "fake-security.sh"),
 			"BMESH_CLAUDE_COMMAND":   "sh " + filepath.Join(testdata, "fake-claude-plugin.sh"),
 			"BMESH_CODEX_COMMAND":    "sh " + filepath.Join(testdata, "fake-codex.sh"),

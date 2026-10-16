@@ -85,7 +85,7 @@ func TestBuildRecordsBuildingThenStartsTheLead(t *testing.T) {
 		t.Fatalf("node %+v %v %v", n, ok, err)
 	}
 	// The brief came from the binary, with the spec, the node and the row's facts.
-	b, err := os.ReadFile(filepath.Join(os.Getenv("XDG_CACHE_HOME"), "bmesh", "briefs", "demo-002.md"))
+	b, err := os.ReadFile(filepath.Join(os.Getenv("BMESH_CACHE_DIR"), "bmesh", "briefs", "demo-002.md"))
 	if err != nil {
 		t.Fatal(err)
 	}

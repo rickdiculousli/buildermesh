@@ -45,7 +45,7 @@ func proposeSetup(t *testing.T, row string) (*mesh.Client, string, string) {
 	t.Setenv("FAKE_SSH_LOG", filepath.Join(t.TempDir(), "ssh.log"))
 	t.Setenv("FAKE_SSH_EXIT", "0")
 	t.Setenv("FAKE_SSH_OUTPUT", "")
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("BMESH_CACHE_DIR", t.TempDir())
 	return c, repo, log
 }
 
@@ -132,7 +132,7 @@ func TestIdeateStartsARoundWithTwoChildren(t *testing.T) {
 			t.Errorf("log lacks %q:\n%s", want, l)
 		}
 	}
-	briefs := filepath.Join(os.Getenv("XDG_CACHE_HOME"), "bmesh", "briefs")
+	briefs := filepath.Join(os.Getenv("BMESH_CACHE_DIR"), "bmesh", "briefs")
 	engBrief, err := os.ReadFile(filepath.Join(briefs, "demo-round-1-eng.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -187,7 +187,7 @@ func TestIdeateCarriesTheOperatorsContext(t *testing.T) {
 	if out, errs, code := runCLI(t, nil, "ideate", "demo", "--context", "  the map's flow  "); code != 0 {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
 	}
-	b, err := os.ReadFile(filepath.Join(os.Getenv("XDG_CACHE_HOME"), "bmesh", "briefs", "demo-round-1-eng.md"))
+	b, err := os.ReadFile(filepath.Join(os.Getenv("BMESH_CACHE_DIR"), "bmesh", "briefs", "demo-round-1-eng.md"))
 	if err != nil || !strings.HasPrefix(string(b), "# mine for demo\n\n## The operator's focus\n") || !strings.HasSuffix(string(b), "\n\nthe map's flow\n") {
 		t.Fatalf("%v %q", err, b)
 	}
@@ -219,7 +219,7 @@ func TestIdeateChildFormReadsContextFromStdin(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code %d err %q", code, errb.String())
 	}
-	b, err := os.ReadFile(filepath.Join(os.Getenv("XDG_CACHE_HOME"), "bmesh", "briefs", "demo-round-2-ux.md"))
+	b, err := os.ReadFile(filepath.Join(os.Getenv("BMESH_CACHE_DIR"), "bmesh", "briefs", "demo-round-2-ux.md"))
 	if err != nil || !strings.Contains(string(b), "## The operator's focus") || !strings.Contains(string(b), "routines first\n\n## Closing") {
 		t.Fatalf("%v %s", err, b)
 	}
@@ -389,7 +389,7 @@ func TestIdeateChildForm(t *testing.T) {
 	if !ok || n.Model != "m-1" || n.Parent != "demo-round-3" {
 		t.Fatalf("%+v", n)
 	}
-	b, err := os.ReadFile(filepath.Join(os.Getenv("XDG_CACHE_HOME"), "bmesh", "briefs", "demo-round-3-eng.md"))
+	b, err := os.ReadFile(filepath.Join(os.Getenv("BMESH_CACHE_DIR"), "bmesh", "briefs", "demo-round-3-eng.md"))
 	if err != nil || !strings.Contains(string(b), "number yours from 007") {
 		t.Fatalf("%v %s", err, b)
 	}

@@ -183,7 +183,7 @@ func TestLeadStartClaudeRunner(t *testing.T) {
 	root := t.TempDir()
 	log := filepath.Join(root, "claude.log")
 	t.Setenv("FAKE_LOG", log)
-	t.Setenv("XDG_CACHE_HOME", filepath.Join(root, "cache")) // the runner's state dir
+	t.Setenv("BMESH_CACHE_DIR", filepath.Join(root, "cache")) // the runner's state dir
 	repo := filepath.Join(root, "demo")
 	meshtest.Git(t, root, "init", "-b", "main", repo)
 	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644)
