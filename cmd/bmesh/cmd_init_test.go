@@ -253,7 +253,8 @@ func settingsLines(t *testing.T, out string) map[string]string {
 // in effect: what init wrote, and the defaults it didn't.
 func TestInitPrintsWhatTheBoxIsSetTo(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "xdg")) // no service file
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "xdg")) // no service file: Linux's
+	t.Setenv("HOME", filepath.Join(root, "home"))           // and macOS's, under ~/Library
 	cfg := filepath.Join(root, "cfg", "config.toml")
 	repo := filepath.Join(root, "app")
 	meshtest.Git(t, root, "init", "-b", "main", repo)
