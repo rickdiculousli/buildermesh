@@ -4,7 +4,7 @@ title: A review carries across a rebase that leaves the diff unchanged
 kind: refinement
 size: S
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
@@ -13,6 +13,8 @@ built_by: 29ae067a-1fd3-4374-9962-bddd11163c0c
 host: k16
 family: buildermesh-build-2
 branch: bmesh/29ae067a-1fd3-4374-9962-bddd11163c0c
+verified: verify ok t:fb0dc579
+merged: e1eacaea4eb77f699c4c724ec14723f17617cc3e
 ---
 
 ## Opportunity
