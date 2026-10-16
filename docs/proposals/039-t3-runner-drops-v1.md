@@ -4,7 +4,7 @@ title: The t3 runner speaks only T3 0.1.0; the V1 path and t3_dispatch.py go
 kind: maintenance
 size: S
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16

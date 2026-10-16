@@ -4,7 +4,7 @@ title: bmesh hub runs a mesh's NATS hub or leaf itself, so several boxes need no
 kind: feature
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
