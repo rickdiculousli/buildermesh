@@ -415,17 +415,50 @@ func TestUpstreamFailedInstallLoggedOnceAndRetried(t *testing.T) {
 	u.restarted(t, 20*time.Second)
 }
 
-func TestUpstreamRefusedOnWindows(t *testing.T) {
+func TestUpstreamRefusedOnUnsupervisedWindows(t *testing.T) {
 	u := upstreamSetup(t, true)
 	u.d.GOOS = "windows"
 	u.start(t)
 	u.landSpec(t)
 	waitFor(t, 20*time.Second, "the notice", func() bool { return u.notice() == behindTwo })
 	u.noRestart(t, time.Second)
-	if n := strings.Count(u.log.String(), "[update] upstream is refused on Windows"); n != 1 {
+	if n := strings.Count(u.log.String(), "[update] upstream needs bmesh serve --restart on Windows"); n != 1 {
 		t.Fatalf("logged %d times:\n%s", n, u.log.String())
 	}
 	if l := lines(t, u.goLog); len(l) != 0 {
 		t.Fatalf("installed on Windows: %v", l)
 	}
+}
+
+func TestUpstreamInstallsOnSupervisedWindows(t *testing.T) {
+	u := upstreamSetup(t, true)
+	u.d.GOOS, u.d.Supervised = "windows", true
+	u.start(t)
+	u.landSpec(t)
+	u.restarted(t, 20*time.Second)
+	if strings.Contains(u.log.String(), "needs bmesh serve --restart") {
+		t.Fatalf("refused:\n%s", u.log.String())
+	}
+}
+
+func TestUpdateRepoRefusedOnUnsupervisedWindows(t *testing.T) {
+	u := updateSetup(t, map[string]string{})
+	u.d.GOOS = "windows"
+	u.start(t)
+	u.land(t, "a.txt")
+	u.noRestart(t, 1500*time.Millisecond) // several scans
+	if n := strings.Count(u.log.String(), "[update] repo needs bmesh serve --restart on Windows"); n != 1 {
+		t.Fatalf("logged %d times:\n%s", n, u.log.String())
+	}
+	if l := lines(t, u.goLog); len(l) != 0 {
+		t.Fatalf("built on Windows: %v", l)
+	}
+}
+
+func TestUpdateRepoOnSupervisedWindows(t *testing.T) {
+	u := updateSetup(t, map[string]string{})
+	u.d.GOOS, u.d.Supervised = "windows", true
+	u.start(t)
+	u.land(t, "a.txt")
+	u.restarted(t, 20*time.Second)
 }

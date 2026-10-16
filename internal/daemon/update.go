@@ -65,6 +65,8 @@ func updateRepo(d Deps) string {
 		d.Log.Warn("update: this binary has no vcs revision; off", "repo", repo)
 	case d.Exe == "" || d.Restart == nil:
 		d.Log.Warn("update: no binary path to replace; off", "repo", repo)
+	case d.GOOS == "windows" && !d.Supervised:
+		d.Log.Warn("update: [update] repo needs bmesh serve --restart on Windows, which starts the new binary (init --service sets it up); off", "repo", repo)
 	default:
 		return repo
 	}
@@ -168,8 +170,8 @@ func (r *routineSet) initCheck() {
 		return
 	}
 	switch {
-	case d.GOOS == "windows":
-		d.Log.Warn("update: [update] upstream is refused on Windows, where the restart needs a service manager init --service doesn't write; notice only")
+	case d.GOOS == "windows" && !d.Supervised:
+		d.Log.Warn("update: [update] upstream needs bmesh serve --restart on Windows, which starts the new binary (init --service sets it up); notice only")
 	case d.Revision == "":
 		d.Log.Warn("update: this binary has no revision; notice only")
 	case d.Exe == "" || d.Restart == nil:
