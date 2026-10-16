@@ -16,6 +16,9 @@ import (
 	"time"
 )
 
+// ErrRefused is a sign-in the operator (or T3) refused.
+var ErrRefused = errors.New("T3 sign-in refused")
+
 // Metadata is the part of a server's OAuth authorization server document
 // the login uses.
 type Metadata struct {
@@ -142,7 +145,7 @@ func ParseRedirect(raw, state string) (code, iss string, err error) {
 		if d := q.Get("error_description"); d != "" {
 			e += ": " + d
 		}
-		return "", "", fmt.Errorf("T3 sign-in refused: %s", e)
+		return "", "", fmt.Errorf("%w: %s", ErrRefused, e)
 	}
 	if q.Get("state") != state {
 		return "", "", errors.New("redirect URL: state does not match this login (an old link?)")

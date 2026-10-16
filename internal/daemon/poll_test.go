@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/runner"
 )
 
 func gitT(t *testing.T, dir string, args ...string) {
@@ -78,5 +79,21 @@ func TestPollLeavesBranchOnDetachedOrMissingWorktree(t *testing.T) {
 	pollOnce(f.ctx, f.d, nil)
 	if b := f.nodeBranch(t, "demo-007"); b != "t3code/bbbb" {
 		t.Fatalf("missing worktree changed the branch to %q", b)
+	}
+}
+
+func TestNoteRunnerLogsEachChangeOnce(t *testing.T) {
+	var buf bytes.Buffer
+	d := Deps{Log: slog.New(slog.NewTextHandler(&buf, nil))}
+	path := "note-" + t.Name()
+	noteRunner(d, path, runner.Status{Running: true, Waiting: true})
+	noteRunner(d, path, runner.Status{Running: true, Waiting: true})
+	noteRunner(d, path, runner.Status{UsageLimit: true, LimitResetAt: "2026-10-16T09:00:00Z"})
+	noteRunner(d, path, runner.Status{})
+	noteRunner(d, path, runner.Status{Running: true, Waiting: true})
+	got := buf.String()
+	if strings.Count(got, "t3: "+path+" waits on a question or approval") != 2 ||
+		strings.Count(got, "t3: "+path+" hit a usage limit; it resets at 2026-10-16T09:00:00Z") != 1 {
+		t.Fatalf("log:\n%s", got)
 	}
 }

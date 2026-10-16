@@ -184,7 +184,9 @@ func TestT3V2StartReconcilesALostReplyByBranch(t *testing.T) {
 func TestT3V2StartInAnExistingWorktree(t *testing.T) {
 	r, fake, _ := v2Setup(t, "auto", "auto")
 	repo := t.TempDir()
-	fake.Do(func(s *t3fake.Server) { s.Projects = append(s.Projects, t3fake.Project{ID: "mcp:p1", WorkspaceRoot: repo}) })
+	fake.Do(func(s *t3fake.Server) {
+		s.Projects = append(s.Projects, t3fake.Project{ID: "mcp:p1", WorkspaceRoot: repo})
+	})
 	got, err := r.Start(context.Background(), StartSpec{RepoPath: repo, Model: "m1", Title: "[ideate] demo round 1: engineer",
 		BriefPath: writeBriefFile(t, "propose"), ThreadID: "uuid-2", Branch: "demo-round-1-eng",
 		Worktree: "/bm/wt/demo/demo-round-1-eng", Project: "/r/bm", Effort: "xhigh"})
@@ -340,7 +342,9 @@ func TestT3V2InterruptAnIdleThread(t *testing.T) {
 func TestT3V2SignIn(t *testing.T) {
 	r, fake, path := v2Setup(t, "auto", "full-access")
 	repo := t.TempDir()
-	fake.Do(func(s *t3fake.Server) { s.Projects = append(s.Projects, t3fake.Project{ID: "mcp:p1", WorkspaceRoot: repo}) })
+	fake.Do(func(s *t3fake.Server) {
+		s.Projects = append(s.Projects, t3fake.Project{ID: "mcp:p1", WorkspaceRoot: repo})
+	})
 	spec := StartSpec{RepoPath: repo, Model: "m", Title: "t", BriefPath: writeBriefFile(t, "b"), ThreadID: "u"}
 	var se *SignInError
 	_, err := r.Start(context.Background(), spec)

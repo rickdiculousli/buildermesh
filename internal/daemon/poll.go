@@ -5,10 +5,50 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/runner"
 )
+
+// notes holds each lead's last logged runner note, so a note is logged
+// when it changes, not every poll.
+var notes sync.Map // path -> string
+
+// noteRunner logs a thread that waits on a question or approval, or whose
+// newest turn hit a usage limit, once per change.
+func noteRunner(d Deps, path string, s runner.Status) {
+	note := ""
+	switch {
+	case s.Waiting:
+		note = "t3: " + path + " waits on a question or approval"
+	case s.UsageLimit && s.LimitResetAt != "":
+		note = "t3: " + path + " hit a usage limit; it resets at " + s.LimitResetAt
+	case s.UsageLimit:
+		note = "t3: " + path + " hit a usage limit"
+	}
+	if prev, _ := notes.Swap(path, note); prev != note && note != "" {
+		d.Log.Info(note)
+	}
+}
+
+// t3ProjectNoted is set once the daemon has said [runner] t3_project has
+// no effect on this box's V2 server.
+var t3ProjectNoted atomic.Bool
+
+// noteT3Project logs, once, that [runner] t3_project is ignored by a V2
+// server: there a round's threads file under the target repo's project.
+func noteT3Project(ctx context.Context, d Deps) {
+	t3, ok := d.Runner.(*runner.T3)
+	if !ok || d.Cfg.Runner.T3Project == "" || t3ProjectNoted.Load() {
+		return
+	}
+	if p, err := t3.Protocol(ctx); err == nil && p == 2 && t3ProjectNoted.CompareAndSwap(false, true) {
+		d.Log.Info("t3: [runner] t3_project has no effect on a V2 server; a round's threads are filed under the target repo's T3 project")
+	}
+}
 
 // threaded reports whether a node is a session the daemon polls and wakes:
 // a lead, or an engineer (a round's thread).
@@ -64,6 +104,7 @@ func syncBranch(ctx context.Context, d Deps, n mesh.Node) {
 // the sample in bm-runner; it also keeps the lead's recorded branch level
 // with its worktree's.
 func pollOnce(ctx context.Context, d Deps, _ *Activity) {
+	noteT3Project(ctx, d)
 	leads, err := localLeads(ctx, d)
 	if err != nil {
 		d.Log.Warn("poll: list nodes", "err", err)
@@ -82,6 +123,7 @@ func pollOnce(ctx context.Context, d Deps, _ *Activity) {
 			d.Log.Warn("poll: runner status", "path", n.Path, "thread", n.Runner.Thread, "err", err)
 			continue
 		}
+		noteRunner(d, n.Path, s)
 		sample := mesh.RunnerSample{Running: s.Running, Known: s.Known, LastReply: s.LastReply,
 			At: d.Now().UTC().Format(time.RFC3339)}
 		if err := mesh.PutRunner(ctx, d.Client, n.Path, sample); err != nil {

@@ -206,6 +206,9 @@ func TestConsoleURL(t *testing.T) {
 		{config.ConsoleConfig{}, lead("box-a", "th-1"), ""},
 		// No thread_url: this host's [console.hosts] entry is the fallback.
 		{config.ConsoleConfig{Hosts: cfg.Hosts}, lead("box-a", "th-1"), "http://unused/t/th-1"},
+		// A T3 V2 id is escaped, its colon too; a V1 uuid is unchanged.
+		{cfg, lead("box-a", "mcp:65b7e1c5-223a-4cc6-a827-1f441d12dc17"), "http://here/t/mcp%3A65b7e1c5-223a-4cc6-a827-1f441d12dc17"},
+		{cfg, lead("box-a", "7122b3cd-db02-471c-934e-f876d898b306"), "http://here/t/7122b3cd-db02-471c-934e-f876d898b306"},
 	} {
 		if got := ConsoleURL(c.cfg, "box-a", c.n); got != c.want {
 			t.Errorf("ConsoleURL(%+v, %s/%s) = %q, want %q", c.cfg, c.n.Host, c.n.Runner.Thread, got, c.want)

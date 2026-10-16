@@ -141,6 +141,15 @@ func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string) e
 			}
 		}
 	}
+	if hosts["eng"] == me || hosts["ux"] == me {
+		r, err := runner.New(a.cfg)
+		if err != nil {
+			return err
+		}
+		if err := a.preflight(ctx, r); err != nil {
+			return err
+		}
+	}
 	if err := levelMain(ctx, repoPath); err != nil {
 		return fail(exitRefused, "refused: %v", err)
 	}
@@ -251,6 +260,11 @@ func nextRound(ctx context.Context, c *mesh.Client, repo string) (int, error) {
 // starts it through this box's runner and registers its node.
 func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, round int, child string, nextID int,
 	thread, model, effort, focus string) (childStarted, error) {
+	if r, err := runner.New(a.cfg); err != nil {
+		return childStarted{}, err
+	} else if err := a.preflight(ctx, r); err != nil {
+		return childStarted{}, err
+	}
 	if err := levelMain(ctx, repoPath); err != nil {
 		return childStarted{}, fail(exitRefused, "refused: %v", err)
 	}
@@ -328,6 +342,11 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 		Branch: branch, Worktree: wt, Project: project})
 	if errors.Is(err, runner.ErrTimeout) {
 		return childStarted{}, fmt.Errorf("start timed out; thread id %s may exist (worktree %s)", thread, wt)
+	}
+	var se *runner.SignInError
+	if errors.As(err, &se) {
+		undo()
+		return childStarted{}, fail(exitRefused, "%s", se.Msg)
 	}
 	if err != nil {
 		undo()
