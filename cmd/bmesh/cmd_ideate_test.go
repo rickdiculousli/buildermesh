@@ -414,3 +414,36 @@ func TestIdeateUsesT3ProjectForTheThread(t *testing.T) {
 		t.Fatalf("log:\n%s", l)
 	}
 }
+
+func TestIdeateRefusesWhileARoundIsOpen(t *testing.T) {
+	c, _, _ := proposeSetup(t, "")
+	ctx := t.Context()
+	if _, errs, code := runCLI(t, nil, "ideate", "demo"); code != 0 {
+		t.Fatalf("round 1: %d %q", code, errs)
+	}
+	if _, err := mesh.WriteState(ctx, c, "demo-round-1.eng", mesh.State{State: "working", By: "node"}); err != nil {
+		t.Fatal(err)
+	}
+	_, errs, code := runCLI(t, nil, "ideate", "demo")
+	if code != 3 || errs != "bmesh: refused: demo-round-1 is still open (eng working); wait for it, or pass --force to start another\n" {
+		t.Fatalf("second round: %d %q", code, errs)
+	}
+	if _, ok, _ := mesh.GetNode(ctx, c, "demo-round-2"); ok {
+		t.Fatal("a refused round was registered")
+	}
+	if _, err := mesh.WriteState(ctx, c, "demo-round-1", mesh.State{State: "done", Text: "012 a", By: "node"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, errs, code := runCLI(t, nil, "ideate", "demo"); code != 0 {
+		t.Fatalf("after round 1 settled: %d %q", code, errs)
+	}
+	if _, errs, code := runCLI(t, nil, "ideate", "demo"); code != 3 || !strings.Contains(errs, "demo-round-2 is still open") {
+		t.Fatalf("round 2 open: %d %q", code, errs)
+	}
+	if _, errs, code := runCLI(t, nil, "ideate", "demo", "--force"); code != 0 {
+		t.Fatalf("--force: %d %q", code, errs)
+	}
+	if _, ok, _ := mesh.GetNode(ctx, c, "demo-round-3"); !ok {
+		t.Fatal("--force started no round 3")
+	}
+}

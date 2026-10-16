@@ -20,6 +20,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/rickdiculousli/buildermesh/internal/checkout"
+	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/level"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
@@ -630,12 +631,27 @@ func (r *routineSet) route(f *feed, m jetstream.Msg, msg mesh.Message) {
 		dl.ack()
 	}
 	if _, ok := r.d.Cfg.Repos[j.Repo]; !ok {
-		refuse("unknown repo " + j.Repo)
+		refuse(unknownRepo(r.d.Cfg, r.d.Host, j.Repo))
 		return
 	}
 	if text := r.handOff(f, dl); text != "" {
 		refuse(text)
 	}
+}
+
+// unknownRepo is the refusal of a job for a repo the daemon's registry
+// lacks. The daemon reads repos.toml once, when serve starts, so a row on
+// disk now but not then is named as such: a restart takes it.
+func unknownRepo(cfg *config.Config, host, repo string) string {
+	text := fmt.Sprintf("unknown repo %s to bmesh serve on %s", repo, host)
+	if cfg.Path() != "" {
+		if rows, err := config.LoadRepos(config.ReposPath(cfg.Path())); err == nil {
+			if _, ok := rows[repo]; ok {
+				return text + ": repos.toml has it now, but serve read the registry when it started; restart bmesh serve"
+			}
+		}
+	}
+	return text + "; serve reads repos.toml only when it starts, so restart it after changing the registry"
 }
 
 // handOff passes dl to its repo's pool for its model, or starts a fresh run;

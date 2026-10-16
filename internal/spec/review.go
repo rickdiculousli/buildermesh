@@ -61,90 +61,202 @@ func spokenAt(tokens []string, i int) bool {
 // is one (so "1 and 3 yes" to a pitch of 012 to 016 means its first and
 // third items), and a spec id when there is none. A short number that is
 // both a pitched id and a different position (6 to a pitch of 001-003 and
-// 006-010) is reported as ambiguous, not guessed. A clause is its leading numbers
-// (joined by "and" or the like) and the phrase after them, whose first
-// word decides: yes/accept to accepted, no/reject to rejected with the rest
-// as the reason, later to later, "on <judge>" alone to a judge note, and
-// any other first word makes the whole phrase an instruction: the spec
-// becomes adjusting with it as its note. Reasons and instructions are kept
-// as written, so a verdict word or a number inside one is just a word.
-// "on <judge>" right after yes or later sets the judge as well. A clause
-// with no number, no phrase, or a number that matches nothing is reported,
-// not guessed at.
+// 006-010) is reported as ambiguous, not guessed. "all" names every pitched
+// spec. A clause is its leading numbers (joined by "and" or the like) and
+// the phrase after them, whose first word decides: yes/accept to accepted,
+// no/reject to rejected with the rest as the reason, later to later, "on
+// <judge>" alone to a judge note, and any other first word makes the whole
+// phrase an instruction: the spec becomes adjusting with it as its note.
+// Reasons and instructions are kept as written, so a verdict word or a
+// number inside one is just a word. "on <judge>" right after yes or later
+// sets the judge as well. A verdict may also come first ("accept 012",
+// "reject 2 too big", "work on 1, 2 and 3", "all yes"): it then carries to
+// the clauses of bare numbers after it. A clause of bare numbers otherwise
+// takes the verdict of the clause right after it that has one ("1, 2 and 3
+// yes"); a clause with no number in between ends both. A clause with no
+// number, numbers no verdict reaches, or a number that matches nothing is
+// reported, not guessed at.
 func ParseReply(reply string, ids map[int]bool, ranks []int) Review {
 	var r Review
 	pitched := map[int]bool{}
 	for _, id := range ranks {
 		pitched[id] = true
 	}
-	for _, clause := range clauses(reply) {
-		tokens := strings.Fields(clause)
-		var nums []string
-		i := 0
-		for ; i < len(tokens); i++ {
-			if m := numberRE.FindStringSubmatch(tokens[i]); m != nil {
-				nums = append(nums, m[1])
-				continue
-			}
-			if !fillers[word(tokens[i])] {
-				break
-			}
-		}
-		if len(nums) == 0 {
-			r.Unmatched = append(r.Unmatched, clause)
-			continue
-		}
-		var targets []int
-		var noSpec, noPosition, ambiguous []string
-		for _, digits := range nums {
-			n, _ := strconv.Atoi(digits)
-			switch {
-			case len(digits) >= 3 || len(ranks) == 0:
-				if ids[n] {
-					targets = append(targets, n)
-				} else {
-					noSpec = append(noSpec, digits)
-				}
-			case pitched[n] && n <= len(ranks) && ranks[n-1] != n:
-				// "6" to a pitch of 001-003 and 006-010: spec 006, or the
-				// sixth item (009)? Neither is guessed.
-				ambiguous = append(ambiguous, fmt.Sprintf("%s (spec %03d or item %s, %03d)", digits, n, digits, ranks[n-1]))
-			case pitched[n]:
-				targets = append(targets, n)
-			case n >= 1 && n <= len(ranks):
-				targets = append(targets, ranks[n-1])
-			default:
-				noPosition = append(noPosition, digits)
-			}
-		}
-		if len(noSpec) > 0 {
-			r.Unmatched = append(r.Unmatched, "no spec "+strings.Join(noSpec, ", ")+" ("+clause+")")
-		}
-		if len(noPosition) > 0 {
-			r.Unmatched = append(r.Unmatched, "no position "+strings.Join(noPosition, ", ")+" in the pitch; a spec id has three digits ("+clause+")")
-		}
-		if len(ambiguous) > 0 {
-			r.Unmatched = append(r.Unmatched, "ambiguous "+strings.Join(ambiguous, ", ")+"; write the id with three digits ("+clause+")")
-		}
-		if len(targets) == 0 {
-			continue
-		}
-		v, ok := verdictOf(tokens[i:])
-		if !ok {
-			r.Unmatched = append(r.Unmatched, clause)
-			continue
-		}
+	apply := func(v Verdict, targets []int) {
 		for _, id := range targets {
 			v.ID = id
 			r.Verdicts = append(r.Verdicts, v)
 		}
 	}
+	var carry *Verdict   // a verdict said first, for the bare clauses after it
+	var pending []int    // bare clauses' specs, waiting for the next verdict
+	var waiting []string // those clauses, reported when no verdict comes
+	for _, clause := range clauses(reply) {
+		for _, p := range parts(clause) {
+			if len(p.nums) == 0 {
+				r.Unmatched = append(r.Unmatched, waiting...)
+				r.Unmatched = append(r.Unmatched, p.text)
+				pending, waiting, carry = nil, nil, nil
+				continue
+			}
+			targets := resolve(&r, p, ids, ranks, pitched)
+			if len(p.phrase) == 0 {
+				switch {
+				case carry != nil:
+					apply(*carry, targets)
+				case len(targets) > 0:
+					pending = append(pending, targets...)
+					waiting = append(waiting, p.text)
+				}
+				continue
+			}
+			v, ok := verdictOf(p.phrase)
+			if !ok {
+				r.Unmatched = append(r.Unmatched, waiting...)
+				r.Unmatched = append(r.Unmatched, p.text)
+				pending, waiting, carry = nil, nil, nil
+				continue
+			}
+			apply(v, pending)
+			pending, waiting = nil, nil
+			apply(v, targets)
+			carry = nil
+			if p.lead {
+				carry = &v
+			}
+		}
+	}
+	r.Unmatched = append(r.Unmatched, waiting...)
 	return r
 }
 
+// part is one clause read: its numbers ("all" for every pitched spec) and
+// its phrase, the verdict's words first when the verdict was said first.
+type part struct {
+	text   string
+	nums   []string
+	phrase []string
+	lead   bool
+}
+
+// parts reads a clause. A verdict said first ("accept 012 and reject 013")
+// ends its phrase where another verdict said first begins.
+func parts(clause string) []part {
+	tokens := strings.Fields(clause)
+	i := 0
+	for i < len(tokens) && fillers[word(tokens[i])] {
+		i++
+	}
+	lead, n := leadAt(tokens, i)
+	i += n
+	var nums []string
+	for ; i < len(tokens); i++ {
+		if m := numberRE.FindStringSubmatch(tokens[i]); m != nil {
+			nums = append(nums, m[1])
+			continue
+		}
+		if word(tokens[i]) == "all" {
+			nums = append(nums, "all")
+			continue
+		}
+		if !fillers[word(tokens[i])] {
+			break
+		}
+	}
+	p := part{text: clause, nums: nums, phrase: tokens[i:]}
+	if lead == nil {
+		return []part{p}
+	}
+	p.lead = true
+	for j := i; j < len(tokens); j++ {
+		if _, n := leadAt(tokens, j); n > 0 && (j == i || fillers[word(tokens[j-1])]) {
+			p.text = strings.Join(trimFillers(tokens[:j]), " ")
+			p.phrase = append(lead, trimFillers(tokens[i:j])...)
+			return append([]part{p}, parts(strings.Join(tokens[j:], " "))...)
+		}
+		if !fillers[word(tokens[j])] {
+			break
+		}
+	}
+	p.phrase = append(lead, tokens[i:]...)
+	return []part{p}
+}
+
+// leadAt reports whether tokens[i:] opens with a verdict said before the
+// numbers it is about ("accept 012", "reject 2", "work on 1", "yes to
+// all"): the verdict as a phrase verdictOf reads, and how many tokens it
+// takes. A number or "all" must follow it.
+func leadAt(tokens []string, i int) ([]string, int) {
+	if i >= len(tokens) {
+		return nil, 0
+	}
+	var verdict []string
+	n := 0
+	switch w := word(tokens[i]); {
+	case w == "work" && i+1 < len(tokens) && word(tokens[i+1]) == "on":
+		verdict, n = []string{"yes"}, 2
+	case yesWords[w] || noWords[w] || w == "later":
+		verdict, n = []string{tokens[i]}, 1
+	default:
+		return nil, 0
+	}
+	if i+n < len(tokens) && word(tokens[i+n]) == "to" {
+		n++
+	}
+	if i+n < len(tokens) && (isNumber(tokens[i+n]) || word(tokens[i+n]) == "all") {
+		return verdict, n
+	}
+	return nil, 0
+}
+
+// resolve turns a part's numbers into spec ids, reporting the ones that
+// name nothing or could name two.
+func resolve(r *Review, p part, ids map[int]bool, ranks []int, pitched map[int]bool) []int {
+	var targets []int
+	var noSpec, noPosition, ambiguous []string
+	for _, digits := range p.nums {
+		if digits == "all" {
+			if len(ranks) == 0 {
+				r.Unmatched = append(r.Unmatched, "all: there is no pitch to answer; name the specs ("+p.text+")")
+			}
+			targets = append(targets, ranks...)
+			continue
+		}
+		n, _ := strconv.Atoi(digits)
+		switch {
+		case len(digits) >= 3 || len(ranks) == 0:
+			if ids[n] {
+				targets = append(targets, n)
+			} else {
+				noSpec = append(noSpec, digits)
+			}
+		case pitched[n] && n <= len(ranks) && ranks[n-1] != n:
+			// "6" to a pitch of 001-003 and 006-010: spec 006, or the
+			// sixth item (009)? Neither is guessed.
+			ambiguous = append(ambiguous, fmt.Sprintf("%s (spec %03d or item %s, %03d)", digits, n, digits, ranks[n-1]))
+		case pitched[n]:
+			targets = append(targets, n)
+		case n >= 1 && n <= len(ranks):
+			targets = append(targets, ranks[n-1])
+		default:
+			noPosition = append(noPosition, digits)
+		}
+	}
+	if len(noSpec) > 0 {
+		r.Unmatched = append(r.Unmatched, "no spec "+strings.Join(noSpec, ", ")+" ("+p.text+")")
+	}
+	if len(noPosition) > 0 {
+		r.Unmatched = append(r.Unmatched, "no position "+strings.Join(noPosition, ", ")+" in the pitch; a spec id has three digits ("+p.text+")")
+	}
+	if len(ambiguous) > 0 {
+		r.Unmatched = append(r.Unmatched, "ambiguous "+strings.Join(ambiguous, ", ")+"; write the id with three digits ("+p.text+")")
+	}
+	return targets
+}
+
 // clauses splits a reply at commas, semicolons and line breaks, and inside
-// one of those, once its phrase has begun, at a number that a spoken
-// verdict follows ("3 yes and 4 no" and "11 smaller and 12 no" are two
+// one of those, once its phrase has begun (a verdict said before its
+// numbers has not begun it), at a number that a spoken verdict follows ("3 yes and 4 no" and "11 smaller and 12 no" are two
 // clauses each; "4 no because 5 covers it" is one). A filler left dangling
 // before the cut ("and") is dropped.
 func clauses(reply string) []string {
@@ -152,13 +264,22 @@ func clauses(reply string) []string {
 	for _, clause := range clauseSep.Split(strings.TrimSpace(reply), -1) {
 		tokens := strings.Fields(clause)
 		start := 0
-		inPhrase := false
+		inPhrase, numbered := false, false
 		for i := 0; i < len(tokens); i++ {
+			if !inPhrase && !numbered {
+				// "accept 012 and 3 yes": a verdict said first is not a
+				// phrase begun.
+				if _, n := leadAt(tokens, i); n > 0 {
+					i += n - 1
+					continue
+				}
+			}
 			if isNumber(tokens[i]) {
 				if inPhrase && opensClause(tokens, i) {
 					out = append(out, strings.Join(trimFillers(tokens[start:i]), " "))
 					start, inPhrase = i, false
 				}
+				numbered = true
 				continue
 			}
 			if !fillers[word(tokens[i])] {

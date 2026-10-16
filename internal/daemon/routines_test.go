@@ -609,8 +609,16 @@ batch_idle = "1s"
 		t.Fatalf("unknown model reply %+v", r)
 	}
 	r = f.reply(t, f.queue(t, mesh.Job{Kind: "review", Repo: "elsewhere", Go: true}), 20*time.Second)
-	if r.OK || r.Output != "unknown repo elsewhere" {
+	if r.OK || r.Output != "unknown repo elsewhere to bmesh serve on "+testHost+"; serve reads repos.toml only when it starts, so restart it after changing the registry" {
 		t.Fatalf("unknown repo reply %+v", r)
+	}
+	// A row added to repos.toml after serve started is named as such.
+	if err := os.WriteFile(config.ReposPath(f.d.Cfg.Path()), []byte("[repos.elsewhere]\npath = \"/x\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r = f.reply(t, f.queue(t, mesh.Job{Kind: "review", Repo: "elsewhere", Go: true}), 20*time.Second)
+	if r.OK || !strings.HasSuffix(r.Output, ": repos.toml has it now, but serve read the registry when it started; restart bmesh serve") {
+		t.Fatalf("unknown repo added since start %+v", r)
 	}
 	tree := meshtest.Git(t, f.repo, "rev-parse", "HEAD^{tree}")
 	id := f.queue(t, mesh.Job{Kind: "review", Model: "m-b", Go: true})

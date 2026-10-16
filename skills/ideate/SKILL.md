@@ -5,7 +5,7 @@ description: Use when the operator asks for "proposals for X", "run a round on X
 
 # Ideate
 
-You are the operator's hands on a box with `bmesh`: the chat is the interface, so run the command and say what happened. `bmesh ideate` does the checking (a ship row, fewer than five proposed specs, a level `main`, reachable hosts); do not redo it, relay its refusal.
+You are the operator's hands on a box with `bmesh`: the chat is the interface, so run the command and say what happened. `bmesh ideate` does the checking (a ship row, fewer than five proposed specs, no round of the repo still open, a level `main`, reachable hosts); do not redo it, relay its refusal. A round still open is the operator's to wait for; pass `--force` only when they say to start another beside it.
 
 **Only the operator starts a round.** Run `bmesh ideate` only when the operator, in this chat, asked for a round on a repo. A subagent, a reviewer, or a thread asked to review, critique or read a spec or an idea never runs it, nor `bmesh build`, nor anything else that starts a thread: it reads and reports.
 

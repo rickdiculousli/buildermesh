@@ -295,13 +295,16 @@ func TestLandRefusesMainAheadOfOrigin(t *testing.T) {
 	assertNoLeases(t, c, ctx)
 }
 
-// A review recorded before the rebase with no patch-id carries when the
-// rebase leaves the diff unchanged, off the line, and stops land when it
-// changed it.
+// A review recorded before the rebase with no patch-id carries onto the
+// line when the rebase leaves the diff unchanged, and done accepts it; it
+// stops land when the rebase changed the diff.
 func TestLandCarriesReviewOnlyForAnUnchangedDiff(t *testing.T) {
 	c, ctx := setup(t)
 	r := newLandRepo(t)
 	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	if _, errs, code := runCLI(t, as("app-012"), "started"); code != 0 {
+		t.Fatal(code, errs)
+	}
 	writeFile(t, filepath.Join(r.wt, "a.txt"), "ONE\ntwo\nthree\n")
 	meshtest.Git(t, r.wt, "commit", "-qam", "lead a")
 	review := func() string {
@@ -332,11 +335,17 @@ func TestLandCarriesReviewOnlyForAnUnchangedDiff(t *testing.T) {
 	// Main changes another file: the diff is the same and the review carries.
 	r.pushOther(t, "c.txt", "c\n")
 	out, errs, code := runCLI(t, as("app-012"), "land")
-	if code != 0 || !strings.Contains(out, "review ok t:"+reviewed[:8]+" carried: the rebase left the diff unchanged (not on the verified line)\n") {
+	tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+	entry := "review ok t:" + tree[:8] + " m:claude-opus-5-5 c:" + reviewed[:8]
+	if code != 0 || !strings.Contains(out, entry+" (carried from t:"+reviewed[:8]+": the rebase left the diff unchanged)\n") {
 		t.Fatalf("same diff: %d\n%s\nerr %q", code, out, errs)
 	}
-	if front := r.specOnOrigin(t); !strings.Contains(front, "verified: verify ok t:") || strings.Contains(front, "review") {
+	if front := r.specOnOrigin(t); !strings.Contains(front, "verified: "+entry+"; verify ok t:"+tree[:8]+"\n") {
 		t.Fatalf("spec on origin:\n%s", front)
+	}
+	rec := gitOut(t, "rev-parse", "HEAD")
+	if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", rec); code != 0 || out != "done app-012 "+rec[:8]+"\n" {
+		t.Fatalf("done: %d %q %q", code, out, errs)
 	}
 }
 

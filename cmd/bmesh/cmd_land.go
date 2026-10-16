@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -39,6 +40,7 @@ type lander struct {
 
 	oldHead, oldTree, oldBase string                 // the branch before land touched it
 	oldResults                map[string]mesh.Result // per kind at oldTree: its newest result, a failing one when any model's newest fails
+	oldNewest                 []mesh.Result          // at oldTree: the newest result per kind and model
 	required                  []string               // the kinds the landed tree must carry
 
 	landed string // the commit main points at after the push
@@ -198,7 +200,9 @@ func (l *lander) prepare(ctx context.Context) error {
 		}
 	}
 	l.oldResults = map[string]mesh.Result{}
+	l.oldNewest = nil
 	for g, r := range newest {
+		l.oldNewest = append(l.oldNewest, r)
 		if old, ok := l.oldResults[g.kind]; !ok || old.OK && !r.OK {
 			l.oldResults[g.kind] = r
 		}
@@ -470,8 +474,21 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA string) ([]s
 				"run it again on this tree (for review: bmesh routine queue review --again --go --text \"base: %s\", then routine wait), "+
 				"then run bmesh land again", name, l.oldTree[:8], tree[:8], baseSHA)
 		}
-		fmt.Fprintf(out, "%s ok t:%s carried: the rebase left the diff unchanged (not on the verified line)\n", name, l.oldTree[:8])
+		carried, err := l.carry(ctx, name, tree)
+		if err != nil {
+			return nil, err
+		}
+		if len(carried) == 0 {
+			fmt.Fprintf(out, "%s ok t:%s carried: the rebase left the diff unchanged (not on the verified line)\n", name, l.oldTree[:8])
+		}
+		for _, e := range carried {
+			fmt.Fprintf(out, "%s (carried from t:%s: the rebase left the diff unchanged)\n", e, e.Carried)
+		}
+		entries = append(entries, carried...)
 	}
+	slices.SortFunc(entries, func(a, b spec.Entry) int {
+		return cmp.Or(strings.Compare(a.Kind, b.Kind), strings.Compare(a.Model, b.Model))
+	})
 	if len(entries) == 0 {
 		return nil, fail(exitRefused, "refused: %v", spec.ErrNoResults)
 	}
@@ -485,6 +502,37 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA string) ([]s
 		}
 	}
 	return entries, nil
+}
+
+// carry puts kind's model results at oldTree, which read the diff the
+// rebase left unchanged and recorded no patch-id, on the line for tree as
+// carried entries: each is stored again with the patch-id of the diff it
+// read (the fork point to the old head), so done matches it as it matches
+// any carried entry. A result with no model has nothing for done to match
+// and stays off the line.
+func (l *lander) carry(ctx context.Context, name, tree string) ([]spec.Entry, error) {
+	var out []spec.Entry
+	patch := ""
+	for _, r := range l.oldNewest {
+		if r.Kind != name || r.Model == "" || !r.OK {
+			continue
+		}
+		if patch == "" {
+			var err error
+			if patch, err = checkout.PatchID(ctx, l.top, l.oldBase, l.oldHead); err != nil {
+				return nil, err
+			}
+			if patch == "" {
+				return nil, nil
+			}
+		}
+		r.PatchID = patch
+		if err := mesh.PutResult(ctx, l.a.client, r); err != nil {
+			return nil, err
+		}
+		out = append(out, spec.Entry{Kind: name, OK: true, Tree8: tree[:8], Model: r.Model, Carried: l.oldTree[:8]})
+	}
+	return out, nil
 }
 
 // samePatch reports whether the diff a..b has the patch-id of c..d.

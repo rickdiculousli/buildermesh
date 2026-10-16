@@ -23,7 +23,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
-const ideateUsage = "usage: bmesh ideate <repo> [--model M] [--effort E] [--context <text|->]"
+const ideateUsage = "usage: bmesh ideate <repo> [--model M] [--effort E] [--context <text|->] [--force]"
 
 // proposedCap is how many proposed specs a repo may hold before a round is
 // refused: they are waiting on the operator's review.
@@ -45,7 +45,8 @@ type childStarted struct {
 }
 
 // cmdIdeate runs a proposal round on a ship repo: bmesh ideate <repo>
-// [--model M] [--effort E] [--context <text|->]. It refuses five or more proposed specs, levels main, picks
+// [--model M] [--effort E] [--context <text|->] [--force]. It refuses five or more proposed specs and,
+// without --force, a round of the repo's that is still open; levels main, picks
 // the next round number from the nodes bucket, registers the round node
 // and starts the two children through the runner on the row's host and
 // ux_host (a remote host runs this command's child form over ssh). The
@@ -61,6 +62,7 @@ func (a *app) cmdIdeate(args []string) error {
 	nextID := fs.Int("next-id", 0, "child form: the first spec id")
 	thread := fs.String("thread-id", "", "child form: the thread's UUID")
 	focus := fs.String("context", "", "the operator's words for both briefs (- reads stdin)")
+	force := fs.Bool("force", false, "start a round while another of the repo's is still open")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -119,11 +121,11 @@ func (a *app) cmdIdeate(args []string) error {
 		}
 		return a.printJSON(started)
 	}
-	return a.runRound(row, repoPath, *model, *effort, *focus)
+	return a.runRound(row, repoPath, *model, *effort, *focus, *force)
 }
 
 // runRound is the full form.
-func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string) error {
+func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string, force bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	me := a.cfg.HostName()
@@ -170,6 +172,15 @@ func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string) e
 	next := spec.NextID(specs)
 	if err := a.connect(ctx, "ideate"); err != nil {
 		return err
+	}
+	if !force {
+		open, err := openRound(ctx, a.client, row.Name)
+		if err != nil {
+			return err
+		}
+		if open != "" {
+			return fail(exitRefused, "refused: %s; wait for it, or pass --force to start another", open)
+		}
 	}
 	n, err := nextRound(ctx, a.client, row.Name)
 	if err != nil {
@@ -254,6 +265,47 @@ func nextRound(ctx context.Context, c *mesh.Client, repo string) (int, error) {
 		}
 	}
 	return n + 1, nil
+}
+
+// openRound describes the repo's newest round that is not settled (its
+// state neither done nor blocked) with its children's states, or is "" when
+// every round of the repo is settled. A second round from the same main
+// would number its specs from the same id and run the same tests at once.
+func openRound(ctx context.Context, c *mesh.Client, repo string) (string, error) {
+	nodes, err := mesh.ListNodes(ctx, c)
+	if err != nil {
+		return "", err
+	}
+	states, err := mesh.ReadAllStates(ctx, c)
+	if err != nil {
+		return "", err
+	}
+	open, newest := "", 0
+	for _, node := range nodes {
+		m := roundRE.FindStringSubmatch(node.Path)
+		if m == nil || m[1] != repo {
+			continue
+		}
+		k, err := strconv.Atoi(m[2])
+		if err != nil || k <= newest {
+			continue
+		}
+		switch states[node.Path].State {
+		case "", "done", "blocked":
+			continue
+		}
+		var kids []string
+		for _, child := range children {
+			if st := states[node.Path+"."+child].State; st != "" {
+				kids = append(kids, child+" "+st)
+			}
+		}
+		open, newest = node.Path+" is still open", k
+		if len(kids) > 0 {
+			open += " (" + strings.Join(kids, ", ") + ")"
+		}
+	}
+	return open, nil
 }
 
 // startChild makes one child's bmesh worktree from main, renders its brief,

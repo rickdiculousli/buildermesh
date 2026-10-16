@@ -2,6 +2,7 @@ package spec
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -177,5 +178,47 @@ func TestRanksAndAdjustNote(t *testing.T) {
 	}
 	if got := AdjustNote("no headings", "d", "n"); got != "no headings\n\nAdjust (d): n\n" {
 		t.Fatalf("%q", got)
+	}
+}
+
+// The replies the choose-ideas skill's description gives as examples, and
+// the ones GitHub issue 5 found unmatched, all parse.
+func TestParseReplyVerdictFirstAllAndBareNumbers(t *testing.T) {
+	ids := map[int]bool{1: true, 2: true, 3: true, 4: true, 6: true, 7: true, 8: true, 9: true, 12: true, 13: true}
+	ranks := []int{1, 2, 3, 4, 6, 7, 8, 9}
+	acc := func(ids ...int) []Verdict {
+		var out []Verdict
+		for _, id := range ids {
+			out = append(out, Verdict{ID: id, Move: "accepted"})
+		}
+		return out
+	}
+	for reply, want := range map[string]Review{
+		"accept 012":                     {Verdicts: acc(12)},
+		"reject 2":                       {Verdicts: []Verdict{{ID: 2, Move: "rejected"}}},
+		"reject 2 too big":               {Verdicts: []Verdict{{ID: 2, Move: "rejected", Note: "too big"}}},
+		"all yes":                        {Verdicts: acc(ranks...)},
+		"yes to all":                     {Verdicts: acc(ranks...)},
+		"all later on opus":              {Verdicts: []Verdict{{ID: 1, Move: "later", Judge: "opus"}, {ID: 2, Move: "later", Judge: "opus"}, {ID: 3, Move: "later", Judge: "opus"}, {ID: 4, Move: "later", Judge: "opus"}, {ID: 6, Move: "later", Judge: "opus"}, {ID: 7, Move: "later", Judge: "opus"}, {ID: 8, Move: "later", Judge: "opus"}, {ID: 9, Move: "later", Judge: "opus"}}},
+		"1, 2 and 3 yes":                 {Verdicts: acc(1, 2, 3)},
+		"accept 012 and reject 013":      {Verdicts: []Verdict{{ID: 12, Move: "accepted"}, {ID: 13, Move: "rejected"}}},
+		"build 1, 2, 4 no":               {Verdicts: []Verdict{{ID: 1, Move: "accepted"}, {ID: 2, Move: "accepted"}, {ID: 4, Move: "rejected"}}},
+		"yes 1 and 3 on opus":            {Verdicts: []Verdict{{ID: 1, Move: "accepted", Judge: "opus"}, {ID: 3, Move: "accepted", Judge: "opus"}}},
+		"1, 2, do it later, 3 yes":       {Verdicts: acc(3), Unmatched: []string{"1", "2", "do it later"}},
+		"approve 1, 2 later, 3":          {Verdicts: []Verdict{{ID: 1, Move: "accepted"}, {ID: 2, Move: "later"}}, Unmatched: []string{"3"}},
+		"1 smaller and 2 no, accept 004": {Verdicts: []Verdict{{ID: 1, Move: "adjusting", Note: "smaller"}, {ID: 2, Move: "rejected"}, {ID: 4, Move: "accepted"}}},
+		"Work on 1, 2, 3, 4, 6, 7, 8, and 9.": {Verdicts: acc(1, 2, 3, 4, 9), Unmatched: []string{
+			"ambiguous 6 (spec 006 or item 6, 007); write the id with three digits (6)",
+			"ambiguous 7 (spec 007 or item 7, 008); write the id with three digits (7)",
+			"ambiguous 8 (spec 008 or item 8, 009); write the id with three digits (8)"}},
+		"work on 001, 002, 003, 004, 006, 007, 008 and 009": {Verdicts: acc(1, 2, 3, 4, 6, 7, 8, 9)},
+	} {
+		got := ParseReply(reply, ids, ranks)
+		if !reflect.DeepEqual(got.Verdicts, want.Verdicts) || !reflect.DeepEqual(got.Unmatched, want.Unmatched) {
+			t.Errorf("%q:\n got %+v\nwant %+v", reply, got, want)
+		}
+	}
+	if r := ParseReply("all yes", ids, nil); len(r.Verdicts) != 0 || len(r.Unmatched) != 1 || !strings.Contains(r.Unmatched[0], "no pitch") {
+		t.Fatalf("all without a pitch: %+v", r)
 	}
 }
