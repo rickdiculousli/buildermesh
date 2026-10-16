@@ -4,10 +4,11 @@ title: One command approves every hold, and the push names it
 kind: refinement
 size: S
 judge: opus
-status: accepted
+status: rejected
 lens: ux
 proposed_by: operator
 proposed_on: 2026-10-15
+reason: moot: the Mac is no longer marked secure, so nothing it is asked is held
 ---
 
 ## Opportunity
