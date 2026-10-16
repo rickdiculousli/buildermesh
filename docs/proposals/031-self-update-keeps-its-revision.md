@@ -4,10 +4,13 @@ title: A self-updated bmesh knows its own revision, so self-update stays on
 kind: refinement
 size: S
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: operator coordinator (Mac session, 2026-10-16)
 proposed_on: 2026-10-16
+built_by: c267301c-bbf0-4992-9f88-01ee43f84af5
+host: k16
+family: buildermesh-build-2
 ---
 
 ## Opportunity
