@@ -4,10 +4,13 @@ title: Boxes update to the newest release, and any box can go to the latest code
 kind: refinement
 size: L
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
+built_by: d6b8c608-8215-44b7-ba93-8a7487704bd7
+host: k16
+family: buildermesh-build-5
 ---
 
 ## Opportunity
