@@ -20,4 +20,5 @@ require (
 	github.com/nats-io/nkeys v0.4.16 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
