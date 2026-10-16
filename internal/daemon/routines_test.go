@@ -863,3 +863,22 @@ func TestOSKindRunsOnlyOnItsOS(t *testing.T) {
 		t.Fatalf("verify depth %d %v: the answer is acked", n, err)
 	}
 }
+
+func TestRescanLogsAKindReadFailureOncePerCommit(t *testing.T) {
+	f := routineSetup(t, map[string]string{".bmesh/routines/verify.toml": "timeout = \"30s\"\ncommand = \"echo ran\"\n"})
+	kindRescan = 200 * time.Millisecond
+	master := t.TempDir()
+	meshtest.Git(t, master, "init", "-q", "-b", "master")
+	meshtest.CommitFiles(t, master, map[string]string{"README": "x\n"})
+	f.d.Cfg.Repos["old"] = config.Repo{Path: master}
+	var log meshtest.SyncBuffer
+	f.d.Log = slog.New(slog.NewTextHandler(&log, nil))
+
+	f.start(t)
+	f.waitStarted(t, "routine.verify.cmd-1", 1)
+	f.poll(t, time.Second) // several rescans
+	out := log.String()
+	if n := strings.Count(out, "routines: read kinds"); n != 1 || !strings.Contains(out, "repo=old") {
+		t.Fatalf("read kinds logged %d times:\n%s", n, out)
+	}
+}
