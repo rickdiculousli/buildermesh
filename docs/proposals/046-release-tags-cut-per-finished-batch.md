@@ -4,7 +4,7 @@ title: A finished build batch cuts a release tag, starting at v0.1.0
 kind: feature
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
