@@ -4,7 +4,7 @@ title: bmesh land keeps a branch's review after the lead rebases by hand
 kind: refinement
 size: S
 judge: opus
-status: proposed
+status: adjusting
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
@@ -16,6 +16,7 @@ Spec 032 landed with `verified: verify ok t:bff0a401` although three Opus review
 The same path is the one every conflict takes, so any lead whose landing conflicts loses its review this way. The only repair left is typing the line by hand, which the session's safety classifier rightly blocks as editing an audit record.
 
 ## Proposal
+Adjust (2026-10-16): with the note: land takes the branch head from just before the newest rebase in the reflog and applies today's rule to that head so a fix commit on top of a reviewed commit still lands on verify alone
 In:
 - **Land finds the branch as it was before a hand rebase.** When HEAD's tree has no result for a kind, `prepare` walks the branch's reflog (`git reflog <branch>`, newest first) for the newest entry whose tree has recorded results and whose commit is not an ancestor of HEAD: the head the lead rewrote. It takes that entry as the old head, its tree as the old tree and its fork point from `main` as the old base, exactly as if land had done the rebase itself. Its kinds join the required ones, and the existing rules apply unchanged: a result whose diff the rebase left unchanged is carried (`c:<old tree8>`), and one whose diff changed is refused with the existing `queue review --again` line. An entry that is an ancestor of HEAD (fixes committed after a review) changes nothing, so the one-pass rule stays: a review's findings are fixed and landed without a second review.
 - **Land says what it requires.** Before the checks it prints `required: verify (the repo's verify kind), review (t:<tree8> before the rebase at <sha8>)`, so a kind left out is visible in its output.
