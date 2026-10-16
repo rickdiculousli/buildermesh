@@ -185,7 +185,7 @@ func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Wri
 			Log:       log,
 			Checkouts: cfg.Expand(cfg.Runner.Checkouts), ClaudeBin: claude,
 			Quota:    quota,
-			Revision: buildVersion().Revision, Module: buildModule(), Exe: exe,
+			Revision: buildVersion().Revision, RevTime: buildVersion().Time, Module: buildModule(), Exe: exe,
 			Restart:    func() { restarting.Store(true); restart() },
 			Supervised: os.Getenv("BMESH_SUPERVISED") == "1",
 		})

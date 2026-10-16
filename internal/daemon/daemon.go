@@ -53,6 +53,7 @@ type Deps struct {
 	Quota *web.Quota // the quota gate the map shares; nil = one of the reminder's own from [quota] command
 
 	Revision string // this binary's commit (vcs.revision); "" = unknown
+	RevTime  string // that commit's time (RFC 3339); "" = unknown
 	Module   string // the module this binary was built from; "" = unknown, no upstream to read
 	Exe      string // the binary's path, which [update] replaces
 	Restart  func() // ends serve so the binary re-execs; called after an update drained

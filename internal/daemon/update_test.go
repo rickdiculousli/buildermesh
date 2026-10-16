@@ -255,9 +255,9 @@ func TestAnnounceStartedAndFailedUpdate(t *testing.T) {
 	old, next := strings.Repeat("a", 40), strings.Repeat("b", 40)
 	read := func() string { b, _ := os.ReadFile(ntfy); return string(b) }
 
-	f.d.Revision = old
+	f.d.Revision, f.d.RevTime = old, "2026-10-15T09:00:00Z"
 	announce(f.ctx, f.d)
-	if evs := f.daemonEvents(t, "started"); len(evs) != 1 || evs[0].Text != old {
+	if evs := f.daemonEvents(t, "started"); len(evs) != 1 || evs[0].Text != old || evs[0].Body != "2026-10-15T09:00:00Z" {
 		t.Fatalf("started %+v", evs)
 	}
 	// An update to next, then the binary restored by hand starts as old.

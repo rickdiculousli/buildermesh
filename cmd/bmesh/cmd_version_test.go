@@ -379,3 +379,109 @@ func TestMeshStatusClosesWithNotice(t *testing.T) {
 		t.Fatalf("code %d out %q", code, out)
 	}
 }
+
+func TestRestartCommand(t *testing.T) {
+	for goos, want := range map[string]string{
+		"linux":   "systemctl --user restart bmesh",
+		"darwin":  "launchctl kickstart -k gui/$(id -u)/com.buildermesh.bmesh",
+		"windows": "taskkill /F /IM bmesh.exe & schtasks /Run /TN buildermesh",
+		"freebsd": "stop bmesh serve and start it again",
+	} {
+		if got := restartCommand(goos); got != want {
+			t.Errorf("%s: %q, want %q", goos, got, want)
+		}
+	}
+}
+
+// withGOOS makes the restart name goos's service manager.
+func withGOOS(t *testing.T, goos string) {
+	t.Helper()
+	saved := hostGOOS
+	t.Cleanup(func() { hostGOOS = saved })
+	hostGOOS = goos
+}
+
+func TestUpdateNamesDaemonRestart(t *testing.T) {
+	c, ctx := setup(t)
+	hub, err := os.ReadFile(os.Getenv("BMESH_CONFIG"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, shas := updateBox(t)
+	f, err := os.OpenFile(os.Getenv("BMESH_CONFIG"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write(hub); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	started := func(rev string) {
+		t.Helper()
+		if err := mesh.PublishEvent(ctx, c, mesh.Event{From: "daemon." + testHost, Event: "started", Text: rev, Body: "2026-10-14T09:00:00Z"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// No started for this host: no line.
+	withRevision(t, shas[1])
+	if out, errOut, code := runCLI(t, nil, "update"); code != 0 || out != "up to date\n" || errOut != "" {
+		t.Fatalf("no daemon: code %d out %q err %q", code, out, errOut)
+	}
+	started(shas[0])
+	for _, goos := range []string{"linux", "darwin", "windows"} {
+		withGOOS(t, goos)
+		want := "up to date\nthis box's daemon still runs " + shas[0][:8] + "; restart it so it runs " + shas[1][:8] + ": " + restartCommand(goos) + "\n"
+		if out, errOut, code := runCLI(t, nil, "update"); code != 0 || out != want || errOut != "" {
+			t.Fatalf("%s: code %d out %q err %q, want %q", goos, code, out, errOut, want)
+		}
+	}
+	// After a swap the line names the binary now at the path, and the
+	// hint, which compares the revision the swap left behind, is not
+	// printed.
+	withGOOS(t, "linux")
+	withRevision(t, shas[0])
+	started(strings.Repeat("9e", 20))
+	want := shas[0][:8] + " -> " + shas[1][:8] + "\nthis box's daemon still runs 9e9e9e9e; restart it so it runs " + shas[1][:8] + ": systemctl --user restart bmesh\n"
+	if out, errOut, code := runCLI(t, nil, "update"); code != 0 || out != want || errOut != "" {
+		t.Fatalf("swap: code %d out %q err %q, want %q", code, out, errOut, want)
+	}
+	// The daemon runs the binary at the path: no line.
+	started(shas[1])
+	withRevision(t, shas[1])
+	if out, errOut, code := runCLI(t, nil, "update"); code != 0 || out != "up to date\n" || errOut != "" {
+		t.Fatalf("matching: code %d out %q err %q", code, out, errOut)
+	}
+}
+
+func TestRevisionHintNamesDaemonRestart(t *testing.T) {
+	c, ctx := setup(t)
+	withGOOS(t, "darwin")
+	bin, daemonRev := strings.Repeat("1a", 20), strings.Repeat("9e", 20)
+	withRevision(t, bin) // committed 2026-10-15T09:00:00Z
+	started := func(from, at string) {
+		t.Helper()
+		if err := mesh.PublishEvent(ctx, c, mesh.Event{From: from, Event: "started", Text: daemonRev, Body: at}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Another host's older daemon is that host's to update.
+	started("daemon.mac", "2026-10-14T09:00:00Z")
+	if _, errOut, _ := runCLI(t, nil, "mesh-status"); errOut != "bmesh: mac runs 9e9e9e9e, this is 1a1a1a1a; run bmesh update\n" {
+		t.Fatalf("another host: %q", errOut)
+	}
+	// This host's daemon runs an older commit: restart it.
+	started("daemon."+testHost, "2026-10-14T09:00:00Z")
+	want := "bmesh: this box's daemon runs 9e9e9e9e, this binary is 1a1a1a1a; restart the daemon: launchctl kickstart -k gui/$(id -u)/com.buildermesh.bmesh\n"
+	if _, errOut, code := runCLI(t, nil, "mesh-status"); code != 0 || errOut != want {
+		t.Fatalf("older own daemon: code %d err %q, want %q", code, errOut, want)
+	}
+	// A newer daemon, or one whose time is unknown, means this binary is
+	// behind.
+	update := "bmesh: " + testHost + " runs 9e9e9e9e, this is 1a1a1a1a; run bmesh update\n"
+	for _, at := range []string{"2026-10-16T09:00:00Z", ""} {
+		started("daemon."+testHost, at)
+		if _, errOut, _ := runCLI(t, nil, "mesh-status"); errOut != update {
+			t.Fatalf("own daemon at %q: %q, want %q", at, errOut, update)
+		}
+	}
+}
