@@ -172,17 +172,6 @@ func (a *app) leaseRun(slot string, argv []string, ttl time.Duration) error {
 func (a *app) withLeases(slots []string, holder string, ttl time.Duration, capacity func(slot string) (int, error),
 	body func(ctx context.Context) error) error {
 	var keys []string
-	release := func() error {
-		ctx, cancel := cmdCtx()
-		defer cancel()
-		var first error
-		for _, key := range keys {
-			if err := mesh.ReleaseLease(ctx, a.client, key, holder); err != nil && first == nil {
-				first = leaseErr(err, key)
-			}
-		}
-		return first
-	}
 	ctx, cancel := cmdCtx()
 	for _, slot := range slots {
 		n, err := capacity(slot)
@@ -194,11 +183,31 @@ func (a *app) withLeases(slots []string, holder string, ttl time.Duration, capac
 			}
 		}
 		cancel()
-		release()
+		a.releaseLeases(keys, holder)
 		return err
 	}
 	cancel()
+	return a.holdLeases(keys, holder, ttl, body)
+}
 
+// releaseLeases gives back keys held by holder; the first failure is
+// returned after every key was tried.
+func (a *app) releaseLeases(keys []string, holder string) error {
+	ctx, cancel := cmdCtx()
+	defer cancel()
+	var first error
+	for _, key := range keys {
+		if err := mesh.ReleaseLease(ctx, a.client, key, holder); err != nil && first == nil {
+			first = leaseErr(err, key)
+		}
+	}
+	return first
+}
+
+// holdLeases runs body while holder holds keys, as withLeases describes,
+// and releases them after.
+func (a *app) holdLeases(keys []string, holder string, ttl time.Duration, body func(ctx context.Context) error) error {
+	release := func() error { return a.releaseLeases(keys, holder) }
 	sigs, stopSigs := leaseSignals()
 	defer stopSigs()
 	runCtx, kill := context.WithCancel(context.Background())

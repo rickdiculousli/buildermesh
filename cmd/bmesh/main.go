@@ -89,6 +89,10 @@ commands:
   update [--repo R]                        build R's main (default [update] repo, else the row this binary's
                                            module is from) over this binary, keeping it as bmesh.prev; print
                                            <old8> -> <new8>, or up to date
+  land [--spec NNN] [--ttl D] [--wait D]   land this worktree's branch on main under the lease land.<repo> (waits
+                                           while another lead holds it): fetch, rebase, run or require the results,
+                                           write verified, set done with merged and branch, commit, push; a push
+                                           main refuses starts again from the fetch once; prints landed <sha8>
   result find <kind> [--commit C] [--model M] [--json] [-- args...]
                                            print the result of kind at the commit's tree, without --model every
                                            model's (exit 3 when none)
@@ -229,6 +233,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdScaffold(rest)
 	case "serve":
 		return a.cmdServe(rest)
+	case "land":
+		return a.cmdLand(rest)
 	case "result":
 		return a.cmdResult(rest)
 	case "lock-lease":

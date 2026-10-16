@@ -384,9 +384,16 @@ func (a *app) repoName(ctx context.Context, self mesh.Path, top string) (string,
 	if ok && n.Repo != "" {
 		return n.Repo, nil
 	}
+	return a.repoNameAt(top), nil
+}
+
+// repoNameAt is repoName without a node: the [repos] key whose checkout
+// shares the git common dir of top, else the base name of the main repo
+// holding top.
+func (a *app) repoNameAt(top string) string {
 	common, ok := checkout.CommonDir(top)
 	if !ok {
-		return filepath.Base(top), nil
+		return filepath.Base(top)
 	}
 	keys := make([]string, 0, len(a.cfg.Repos))
 	for key := range a.cfg.Repos {
@@ -396,11 +403,11 @@ func (a *app) repoName(ctx context.Context, self mesh.Path, top string) (string,
 	for _, key := range keys {
 		if _, p, err := a.cfg.RepoPath(key); err == nil {
 			if c, ok := checkout.CommonDir(p); ok && c == common {
-				return key, nil
+				return key
 			}
 		}
 	}
-	return filepath.Base(filepath.Dir(common)), nil
+	return filepath.Base(filepath.Dir(common))
 }
 
 // cmdRoutineGo tells a kind's instances to start on the jobs waiting.
@@ -565,14 +572,28 @@ func (a *app) cmdRoutineRun(args []string) error {
 	if err != nil {
 		return err
 	}
-	key := mesh.ResultKey(name, tree, jobArgs, *model)
-	if k.Deterministic && !*rerun {
+	ok, out, how, err := a.runInline(ctx, k, top, head, tree, self, *model, *text, jobArgs, *rerun)
+	if err != nil {
+		return err
+	}
+	return a.printRunVerdict(name, tree, *model, ok, out, how)
+}
+
+// runInline runs kind k on HEAD (head, tree) of the worktree top for self,
+// holding the kind's slots, and records the result; a deterministic kind is
+// answered from its record unless rerun. It returns the verdict, the output
+// and how it came to be: "recorded" or "answered from the record".
+func (a *app) runInline(ctx context.Context, k kind.Kind, top, head, tree, self, model, text string, jobArgs []string,
+	rerun bool) (bool, string, string, error) {
+	name := k.Name
+	key := mesh.ResultKey(name, tree, jobArgs, model)
+	if k.Deterministic && !rerun {
 		r, ok, err := mesh.GetResult(ctx, a.client, key)
 		if err != nil {
-			return err
+			return false, "", "", err
 		}
 		if ok {
-			return a.printRunVerdict(name, tree, *model, r.OK, r.Output, "answered from the record")
+			return r.OK, r.Output, "answered from the record", nil
 		}
 	}
 
@@ -582,33 +603,33 @@ func (a *app) cmdRoutineRun(args []string) error {
 		if strings.TrimSpace(claude) == "" {
 			claude = a.cfg.Runner.Claude
 		}
-		inst = instance.NewModel(k, *model, claude)
+		inst = instance.NewModel(k, model, claude)
 	}
 	rc, err := kind.LoadRepoConfig(top)
 	if err != nil {
-		return err
+		return false, "", "", err
 	}
 	capacity := func(slot string) (int, error) { return max(rc.Slots[slot], 1), nil }
 	j := instance.Job{ID: newID(), Kind: name, Commit: head, Tree: tree, From: self, Reply: self,
-		Args: jobArgs, Text: *text, Dir: top}
+		Args: jobArgs, Text: text, Dir: top}
 	var reply instance.Reply
 	err = a.withLeases(k.Slots, self, k.Timeout+time.Minute, capacity, func(ctx context.Context) error {
 		reply = inst.Run(ctx, j)
 		return nil
 	})
 	if err != nil {
-		return err
+		return false, "", "", err
 	}
 	// Every inline run ran HEAD, so every one records (R12); only a
 	// deterministic kind is answered from its record.
 	putCtx, cancel := cmdCtx() // the run may have outlasted ctx
 	defer cancel()
 	r := mesh.Result{Kind: name, Tree: tree, Commit: head, Args: jobArgs, OK: reply.OK,
-		Output: mesh.Truncate(reply.Output), By: self, Model: *model}
+		Output: mesh.Truncate(reply.Output), By: self, Model: model}
 	if err := mesh.PutResult(putCtx, a.client, r); err != nil {
-		return err
+		return false, "", "", err
 	}
-	return a.printRunVerdict(name, tree, *model, reply.OK, reply.Output, "recorded")
+	return reply.OK, reply.Output, "recorded", nil
 }
 
 // printRunVerdict prints a run's output and then its verdict line,
