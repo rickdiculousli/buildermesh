@@ -79,6 +79,7 @@ type Server struct {
 	sessions      map[string]bool
 	codes         map[string]code
 	HangLaunch    bool // launch creates the thread, then never replies
+	LoseLaunch    bool // launch never replies and creates nothing
 	n             int
 }
 
@@ -154,7 +155,7 @@ func (s *Server) environment(w http.ResponseWriter, r *http.Request) {
 		version = "0.0.45"
 	}
 	writeJSON(w, 200, map[string]any{"environmentId": s.EnvironmentID, "label": "fake",
-		"platform": map[string]any{"os": "linux", "arch": "x64", "machine": "desktop"},
+		"platform":      map[string]any{"os": "linux", "arch": "x64", "machine": "desktop"},
 		"serverVersion": version, "orchestrationProtocolVersion": s.Protocol, "capabilities": map[string]any{}})
 }
 
@@ -323,6 +324,11 @@ func (s *Server) mcp(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.Calls = append(s.Calls, Call{Tool: m.Params.Name, Args: m.Params.Arguments})
 	hang := m.Params.Name == "t3_thread_launch" && s.HangLaunch
+	if m.Params.Name == "t3_thread_launch" && s.LoseLaunch {
+		s.mu.Unlock()
+		<-r.Context().Done()
+		return
+	}
 	result, err := s.tool(m.Params.Name, m.Params.Arguments, access)
 	s.mu.Unlock()
 	if hang && err == nil {
@@ -444,7 +450,7 @@ func (s *Server) tool(name string, a map[string]any, access string) (map[string]
 		s.order = append(s.order, t.ID)
 		return map[string]any{"threadId": t.ID, "projectId": p.ID,
 			"modelSelection": map[string]any{"instanceId": "claudeAgent", "model": t.Model, "options": ms["options"]},
-			"runId": r.ID, "status": "preparing"}, nil
+			"runId":          r.ID, "status": "preparing"}, nil
 	case "t3_thread_list":
 		if str(a, "projectId") == "" {
 			return nil, &toolErr{"target_required", "Pass projectId: this MCP client is not running inside a T3 thread."}
