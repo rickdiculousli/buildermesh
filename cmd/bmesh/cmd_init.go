@@ -351,13 +351,15 @@ const schtasksMax = 261
 // schtasksLines are the commands that keep bmesh serve running on Windows,
 // to run in cmd: a task at logon running `serve --restart --detach` (the
 // config path as --config, since a task sets no environment), the task
-// started now, and a rem line naming the log. Each path is quoted, so one
-// with spaces passes; one holding a quote or a % has no safe spelling under
-// cmd and is refused, as is a command longer than /TR takes.
+// started now, and a rem line naming the log. Each path is quoted for
+// schtasks, so one with spaces passes; cmd has no escape for the \" that
+// quoting takes, so to cmd each path stands outside quotes, and one holding
+// a character cmd reads there (a quote, %, &, ^, |, < or >) is refused, as
+// is a command longer than /TR takes.
 func schtasksLines(exe, cfgPath, logPath string) ([]string, error) {
 	for _, p := range []string{exe, cfgPath} {
-		if strings.ContainsAny(p, "\"%\r\n") {
-			return nil, fmt.Errorf("init --service: %q cannot be passed through cmd (it holds a quote or a %%); move it and run init --service again", p)
+		if strings.ContainsAny(p, "\"%&^|<>\r\n") {
+			return nil, fmt.Errorf("init --service: %q cannot be passed through cmd (it holds one of \" %% & ^ | < >); move it and run init --service again", p)
 		}
 	}
 	tr := `"` + exe + `" serve --restart --detach --config "` + cfgPath + `"`
