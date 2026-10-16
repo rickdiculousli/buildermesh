@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 )
@@ -34,7 +35,7 @@ func announce(ctx context.Context, d Deps) {
 		d.Log.Warn("update: read last started", "err", err)
 	}
 	if okU && (!okS || upd.Seq > st.Seq) {
-		if ev, err := decodeEvent(upd.Data); err == nil && ev.Commit != d.revision() {
+		if ev, err := decodeEvent(upd.Data); err == nil && !selfupdate.Same(ev.Commit, d.revision()) {
 			title := "bmesh update failed on " + d.Host
 			body := fmt.Sprintf("update %s did not start; this is %s", ev.Text, selfupdate.Short(d.Revision))
 			d.Log.Warn("update: failed", "update", ev.Text, "running", selfupdate.Short(d.Revision))
@@ -91,7 +92,7 @@ func (r *routineSet) checkUpdate(dir string) bool {
 		r.d.Log.Warn("update: read main", "err", err)
 		return false
 	}
-	if head == r.d.Revision || head == r.updateSeen {
+	if selfupdate.Same(head, r.d.Revision) || head == r.updateSeen {
 		return false
 	}
 	r.updateSeen = head
@@ -111,9 +112,16 @@ func (r *routineSet) checkUpdate(dir string) bool {
 		r.d.Log.Warn("update: build failed; keeping this binary", "main", next, "err", err)
 		return false
 	}
-	text := old + " -> " + next
+	r.restartInto(head)
+	return true
+}
+
+// restartInto publishes update for the binary just swapped in at head,
+// drains and asks serve to restart.
+func (r *routineSet) restartInto(head string) {
+	text := selfupdate.Short(r.d.Revision) + " -> " + selfupdate.Short(head)
 	ctx, cancel := r.settleCtx()
-	err = mesh.PublishEvent(ctx, r.d.Client, mesh.Event{From: r.d.from(), Event: "update", Text: text, Commit: head,
+	err := mesh.PublishEvent(ctx, r.d.Client, mesh.Event{From: r.d.from(), Event: "update", Text: text, Commit: head,
 		At: r.d.Now().UTC().Format(time.RFC3339)})
 	cancel()
 	if err != nil {
@@ -123,7 +131,115 @@ func (r *routineSet) checkUpdate(dir string) bool {
 	r.drain()
 	r.d.Log.Info("update: drained; restarting")
 	r.d.Restart()
-	return true
+}
+
+// writeNotice writes the notice's line to the state dir, or removes it for
+// "" (nothing without a state dir).
+func (d *Deps) writeNotice(line string) {
+	if d.StateDir == "" {
+		return
+	}
+	if err := selfupdate.WriteNotice(d.StateDir, line); err != nil {
+		d.Log.Warn("update: write notice", "err", err)
+	}
+}
+
+// initCheck sets up the check of main the routine loop runs every [update]
+// check_every when it isn't self-updating from a row: the notice, and with
+// [update] upstream (no [update] repo) the install. Upstream that cannot run
+// is logged once and leaves the notice; with no check, a notice left from
+// before is removed.
+func (r *routineSet) initCheck() {
+	d, u := r.d, r.d.Cfg.Update
+	if r.updateRepo != "" || u.CheckEvery <= 0 {
+		if u.Upstream && r.updateRepo == "" {
+			d.Log.Warn("update: [update] upstream needs check_every; off")
+		}
+		d.writeNotice("")
+		return
+	}
+	if u.Repo == "" && d.Module == "" {
+		d.Log.Info("update: this binary does not say its module, so no main to check; off")
+		d.writeNotice("")
+		return
+	}
+	r.checkEvery = u.CheckEvery
+	if !u.Upstream || u.Repo != "" {
+		return
+	}
+	switch {
+	case d.GOOS == "windows":
+		d.Log.Warn("update: [update] upstream is refused on Windows, where the restart needs a service manager init --service doesn't write; notice only")
+	case d.Revision == "":
+		d.Log.Warn("update: this binary has no revision; notice only")
+	case d.Exe == "" || d.Restart == nil:
+		d.Log.Warn("update: no binary path to replace; notice only")
+	default:
+		r.upstream = d.Module
+	}
+}
+
+// checkMain reads main, from rowDir ([update] repo's main checkout) when
+// set, else from a fetch of the module's main into the bare repo under the
+// cache dir, and compares it with the binary at Exe (this daemon's own
+// revision when that says none, so a `bmesh update` that already swapped
+// it in reads as current). When the binary is behind it writes the notice,
+// or with upstream installs main, publishes update, drains and asks serve
+// to restart, reporting whether it did; a failed install is logged once per
+// main commit and tried again on the next check. A current binary removes
+// the notice.
+func (r *routineSet) checkMain(rowDir string) bool {
+	d := r.d
+	var (
+		dir, head string
+		release   func()
+		err       error
+	)
+	if rowDir != "" {
+		dir = rowDir
+		if release, err = selfupdate.Lock(dir); err == nil {
+			if head, err = selfupdate.Head(dir); err != nil {
+				release()
+			}
+		}
+	} else {
+		var cache string
+		if cache, err = config.CacheDir(); err == nil {
+			dir = selfupdate.UpstreamDir(cache)
+			head, release, err = selfupdate.FetchUpstream(dir, d.Module)
+		}
+	}
+	if err != nil {
+		d.Log.Warn("update: read main", "err", err)
+		return false
+	}
+	var once sync.Once
+	unlock := func() { once.Do(release) }
+	defer unlock()
+	own := selfupdate.Installed(r.ctx, d.Exe)
+	if own == "" {
+		own = d.Revision
+	}
+	line, err := selfupdate.Notice(dir, own, head)
+	if err != nil {
+		d.Log.Warn("update: read main's history", "err", err)
+		return false
+	}
+	if line != "" && r.upstream != "" && rowDir == "" {
+		err := selfupdate.InstallModule(r.ctx, r.upstream, d.Exe, head)
+		unlock()
+		if err == nil {
+			d.writeNotice("")
+			r.restartInto(head)
+			return true
+		}
+		if head != r.failedAt {
+			r.failedAt = head
+			d.Log.Warn("update: install failed; keeping this binary", "main", selfupdate.Short(head), "err", err)
+		}
+	}
+	d.writeNotice(line)
+	return false
 }
 
 // drain stops every kind's feed, so no further job is taken, then ends the

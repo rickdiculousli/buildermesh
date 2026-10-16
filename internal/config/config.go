@@ -107,8 +107,14 @@ type ConsoleConfig struct {
 }
 
 // UpdateConfig is the daemon's self-update: Repo names the registry row
-// whose main it builds itself from ("" = off).
-type UpdateConfig struct{ Repo string }
+// whose main it builds itself from ("" = off). Without it, the daemon reads
+// the module's main every CheckEvery (0 = never) and writes the notice when
+// this binary is behind; Upstream also installs it.
+type UpdateConfig struct {
+	Repo       string
+	CheckEvery time.Duration
+	Upstream   bool
+}
 
 // HostsConfig is the hosts layer (boxes joined by the admin's roster):
 // nothing of it runs unless Enabled, which only `bmesh init --hosts` sets.
@@ -237,8 +243,12 @@ type file struct {
 	Routines struct {
 		KeepResults duration `toml:"keep_results"`
 	}
-	Update UpdateConfig
-	Hosts  HostsConfig
+	Update struct {
+		Repo       string
+		CheckEvery duration `toml:"check_every"`
+		Upstream   bool
+	}
+	Hosts HostsConfig
 }
 
 func defaults() *Config {
@@ -256,6 +266,7 @@ func defaults() *Config {
 		Console:  ConsoleConfig{Hosts: map[string]string{}},
 		Status:   StatusConfig{KeepDone: 24 * time.Hour},
 		Routines: RoutinesConfig{KeepResults: 30 * 24 * time.Hour},
+		Update:   UpdateConfig{CheckEvery: 6 * time.Hour},
 	}
 }
 
@@ -346,8 +357,9 @@ func Load(path string) (*Config, error) {
 	}
 	f := file{
 		Mesh: c.Mesh, Host: c.Host, Serve: c.Serve, Runner: c.Runner, Spec: c.Spec, Models: c.Models,
-		Quota: c.Quota, Console: c.Console, Update: c.Update, Hosts: c.Hosts,
+		Quota: c.Quota, Console: c.Console, Hosts: c.Hosts,
 	}
+	f.Update.Repo, f.Update.CheckEvery, f.Update.Upstream = c.Update.Repo, duration(c.Update.CheckEvery), c.Update.Upstream
 	f.Notify.DigestEvery = duration(c.Notify.DigestEvery)
 	f.Notify.CatchUp = duration(c.Notify.CatchUp)
 	f.Liveness.Grace = duration(c.Liveness.Grace)
@@ -359,7 +371,8 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("config %s: %w", path, err)
 	}
 	c.Mesh, c.Host, c.Serve, c.Runner, c.Spec, c.Models = f.Mesh, f.Host, f.Serve, f.Runner, f.Spec, f.Models
-	c.Quota, c.Console, c.Update, c.Hosts = f.Quota, f.Console, f.Update, f.Hosts
+	c.Quota, c.Console, c.Hosts = f.Quota, f.Console, f.Hosts
+	c.Update = UpdateConfig{Repo: f.Update.Repo, CheckEvery: time.Duration(f.Update.CheckEvery), Upstream: f.Update.Upstream}
 	if k := c.Hosts.KeyStore; k != "" && k != "keychain" && k != "file" {
 		return nil, fmt.Errorf("config %s: [hosts] key_store %q: want keychain or file", path, k)
 	}
@@ -404,7 +417,8 @@ func Load(path string) (*Config, error) {
 		WakeEvery: time.Duration(f.Liveness.WakeEvery)}
 	c.Status = StatusConfig{KeepDone: time.Duration(f.Status.KeepDone)}
 	c.Routines = RoutinesConfig{KeepResults: time.Duration(f.Routines.KeepResults)}
-	for key, d := range map[string]time.Duration{"[status] keep_done": c.Status.KeepDone, "[routines] keep_results": c.Routines.KeepResults} {
+	for key, d := range map[string]time.Duration{"[status] keep_done": c.Status.KeepDone, "[routines] keep_results": c.Routines.KeepResults,
+		"[update] check_every": c.Update.CheckEvery} {
 		if d < 0 {
 			return nil, fmt.Errorf("config %s: %s: negative duration", path, key)
 		}

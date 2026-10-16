@@ -9,8 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
+	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 )
 
 // withRevision makes the binary's build info name rev ("" = no VCS).
@@ -210,5 +212,170 @@ func TestUpdateRefusesBuildOfAnotherRevision(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(exe), "bmesh.prev")); !os.IsNotExist(err) {
 		t.Fatalf("bmesh.prev written: %v", err)
+	}
+}
+
+// withModuleInstall makes the binary's build info that of `go install
+// <module>/cmd/bmesh@<rev>`: no vcs settings, a pseudo-version naming rev.
+func withModuleInstall(t *testing.T, module, rev string) {
+	t.Helper()
+	saved := readBuildInfo
+	t.Cleanup(func() { readBuildInfo = saved })
+	readBuildInfo = func() (*debug.BuildInfo, bool) {
+		return &debug.BuildInfo{Main: debug.Module{Path: module, Version: "v0.0.0-20261016043719-" + rev[:12]}}, true
+	}
+}
+
+func TestVersionFromModuleInstall(t *testing.T) {
+	t.Setenv("BMESH_CONFIG", filepath.Join(t.TempDir(), "absent", "config.toml"))
+	withModuleInstall(t, "example.com/bm", "ab7e0b543677")
+	if out, errOut, code := runCLI(t, nil, "version"); code != 0 || out != "bmesh ab7e0b54 2026-10-16T04:37:19Z\n" {
+		t.Fatalf("code %d out %q err %q", code, out, errOut)
+	}
+}
+
+func TestRevisionHintComparesByPrefix(t *testing.T) {
+	c, ctx := setup(t)
+	full := "ab7e0b543677" + strings.Repeat("0", 28)
+	withModuleInstall(t, "example.com/bm", full)
+	if err := mesh.PublishEvent(ctx, c, mesh.Event{From: "daemon." + testHost, Event: "started", Text: full}); err != nil {
+		t.Fatal(err)
+	}
+	if _, errOut, code := runCLI(t, nil, "mesh-status"); code != 0 || errOut != "" {
+		t.Fatalf("12 hex against the full commit: code %d err %q", code, errOut)
+	}
+	if err := mesh.PublishEvent(ctx, c, mesh.Event{From: "daemon." + testHost, Event: "started", Text: strings.Repeat("9e", 20)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, errOut, _ := runCLI(t, nil, "mesh-status"); errOut != "bmesh: "+testHost+" runs 9e9e9e9e, this is ab7e0b54; run bmesh update\n" {
+		t.Fatalf("another commit: %q", errOut)
+	}
+}
+
+// upstreamBox is a box with no registry row, the fake go, a binary holding
+// "old" and a repo standing in for module example.com/up's main (two
+// commits), which it returns.
+func upstreamBox(t *testing.T) (exe, goLog string, shas []string) {
+	t.Helper()
+	dir := t.TempDir()
+	src := filepath.Join(dir, "up")
+	if err := os.Mkdir(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	meshtest.Git(t, src, "init", "-q", "-b", "main")
+	for _, msg := range []string{"c1", "c2"} {
+		meshtest.Git(t, src, "commit", "-q", "--allow-empty", "-m", msg)
+		shas = append(shas, meshtest.Git(t, src, "rev-parse", "HEAD"))
+	}
+	t.Setenv("BMESH_UPSTREAM_URL", src)
+	cfg := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(cfg, []byte("[runner]\ncheckouts = \"\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BMESH_CONFIG", cfg)
+	t.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state"))
+	fake, err := filepath.Abs(filepath.Join("..", "..", "testdata", "fake-go.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	goLog = filepath.Join(dir, "go.log")
+	t.Setenv("BMESH_GO_COMMAND", "sh "+fake)
+	t.Setenv("FAKE_GO_LOG", goLog)
+	t.Setenv("FAKE_GO_EXIT", "")
+	t.Setenv("FAKE_GO_REVISION", "")
+	t.Setenv("INVOCATION_ID", "")
+	exe = filepath.Join(dir, "bin", "bmesh")
+	if err := os.MkdirAll(filepath.Dir(exe), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	saved := executable
+	t.Cleanup(func() { executable = saved })
+	executable = func() (string, error) { return exe, nil }
+	return exe, goLog, shas
+}
+
+func TestUpdateFromUpstreamWithoutRow(t *testing.T) {
+	exe, goLog, shas := upstreamBox(t)
+	if err := selfupdate.WriteNotice(config.StateDir(), "bmesh: 1 commit behind main"); err != nil {
+		t.Fatal(err)
+	}
+	withModuleInstall(t, "example.com/up", shas[0])
+	out, errOut, code := runCLI(t, nil, "update")
+	want := shas[0][:8] + " -> " + shas[1][:8] + "\n" + pluginLine + "\n"
+	if code != 0 || out != want {
+		t.Fatalf("code %d out %q err %q, want %q", code, out, errOut, want)
+	}
+	if got, err := exec.Command(exe).Output(); err != nil || strings.TrimSpace(string(got)) != "fake bmesh "+shas[1] {
+		t.Fatalf("binary: %q %v", got, err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(filepath.Dir(exe), "bmesh.prev")); string(b) != "old" {
+		t.Fatalf("bmesh.prev %q", b)
+	}
+	if b, _ := os.ReadFile(goLog); strings.TrimSpace(string(b)) != "install example.com/up@"+shas[1] {
+		t.Fatalf("go log %q", b)
+	}
+	if selfupdate.ReadNotice(config.StateDir()) != "" {
+		t.Fatal("the notice outlived the update")
+	}
+	withModuleInstall(t, "example.com/up", shas[1])
+	if out, _, code := runCLI(t, nil, "update"); code != 0 || out != "up to date\n" {
+		t.Fatalf("current: code %d out %q", code, out)
+	}
+	// A binary from a commit main lacks is left alone, as from a row.
+	withModuleInstall(t, "example.com/up", strings.Repeat("e", 12))
+	if _, errOut, code := runCLI(t, nil, "update"); code != exitRefused || !strings.Contains(errOut, "example.com/up's main ("+shas[1][:8]+") does not contain this binary's eeeeeeee") {
+		t.Fatalf("code %d err %q", code, errOut)
+	}
+}
+
+func TestUpdateFromUpstreamRefusesAnotherRevision(t *testing.T) {
+	exe, _, shas := upstreamBox(t)
+	withModuleInstall(t, "example.com/up", shas[0])
+	t.Setenv("FAKE_GO_REVISION", "eeeeeeee")
+	out, errOut, code := runCLI(t, nil, "update")
+	want := "bmesh: update: built binary reports eeeeeeee, not " + shas[1][:8] + "; keeping this binary\n"
+	if code != exitRefused || out != "" || errOut != want {
+		t.Fatalf("code %d out %q err %q, want %q", code, out, errOut, want)
+	}
+	if b, _ := os.ReadFile(exe); string(b) != "old" {
+		t.Fatalf("binary %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(exe), "bmesh.prev")); !os.IsNotExist(err) {
+		t.Fatalf("bmesh.prev written: %v", err)
+	}
+}
+
+func TestUpdateNotice(t *testing.T) {
+	t.Setenv("BMESH_CONFIG", filepath.Join(t.TempDir(), "absent", "config.toml")) // no setup, no init
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Setenv("BMESH_UPSTREAM_URL", filepath.Join(t.TempDir(), "unreachable"))
+	if out, errOut, code := runCLI(t, nil, "update", "--notice"); code != 0 || out != "" || errOut != "" {
+		t.Fatalf("no file: code %d out %q err %q", code, out, errOut)
+	}
+	line := "bmesh: 2 commits behind main; run bmesh update, then update the buildermesh plugin"
+	if err := selfupdate.WriteNotice(config.StateDir(), line); err != nil {
+		t.Fatal(err)
+	}
+	if out, errOut, code := runCLI(t, nil, "update", "--notice"); code != 0 || out != line+"\n" || errOut != "" {
+		t.Fatalf("code %d out %q err %q", code, out, errOut)
+	}
+	if _, _, code := runCLI(t, nil, "update", "--notice", "--repo", "x"); code != exitUsage {
+		t.Fatalf("--notice with --repo: code %d", code)
+	}
+}
+
+func TestMeshStatusClosesWithNotice(t *testing.T) {
+	setup(t)
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	line := "bmesh: 2 commits behind main; run bmesh update, then update the buildermesh plugin"
+	if err := selfupdate.WriteNotice(config.StateDir(), line); err != nil {
+		t.Fatal(err)
+	}
+	out, _, code := runCLI(t, nil, "mesh-status")
+	if code != 0 || !strings.HasSuffix(out, "\n"+line+"\n") {
+		t.Fatalf("code %d out %q", code, out)
 	}
 }
