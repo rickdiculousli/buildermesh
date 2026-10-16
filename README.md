@@ -37,7 +37,7 @@ What this box is set to:
 
 One line per registered repo (`repo: none` with none); a multi-box config shows `setup: several boxes` and the hub's URL (a password in it as `xxxxx`) with its token file; `service` names the unit or plist when the file `--service` writes exists.
 
-On a single box `[mesh] nats` stays `""`: `serve` embeds the hub on `[mesh] listen` (default `127.0.0.1:4222`), and every other command dials it there, `nats://<listen>` (an unspecified host, `0.0.0.0` or `::`, as `127.0.0.1`), in JetStream domain `hub` with the same token handling. With nothing listening a command fails with `bmesh: no hub at 127.0.0.1:4222: is bmesh serve running?`.
+On a single box `[mesh] nats` stays `""`: `serve` embeds the hub on `[mesh] listen` (default `127.0.0.1:4222`), and every other command dials it there, `nats://<listen>` (an unspecified host, `0.0.0.0` or `::`, as `127.0.0.1`), in JetStream domain `hub` with the same token handling. With nothing listening a command fails with `bmesh: no hub at 127.0.0.1:4222: is bmesh serve running?`; a `listen` on port 0, where `serve` picks a free port, is refused, since the CLI can't know which.
 
 The config lives in the OS config dir (`os.UserConfigDir`: `~/.config/bmesh` on Linux, `~/Library/Application Support/bmesh` on macOS, `%AppData%\bmesh` on Windows; an existing `~/.config/bmesh` is kept on any OS), the embedded hub's store in the OS cache dir (`os.UserCacheDir`); see Config. A configured command line runs through the platform's shell (`sh` on Unix; `cmd /C` on Windows, where every argument is quoted and one holding a quote or a `%` is refused) and nothing assumes tmux; only Linux and macOS are run.
 
