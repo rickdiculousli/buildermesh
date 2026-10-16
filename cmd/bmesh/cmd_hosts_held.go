@@ -206,6 +206,9 @@ func (a *app) approveProposal(ctx context.Context, b *hostsBox, x hosts.Held) er
 		}
 		return fail(exitRefused, "%s: hold %s dropped", text, x.ID)
 	}
+	if x.Expired(time.Now()) {
+		return drop("refused: the proposal expired")
+	}
 	r := b.local.Roster
 	if sender, ok := r.Host(x.Job.By); !ok || x.Job.Verify(sender.Key) != nil || x.Job.To != b.host {
 		return drop(fmt.Sprintf("refused: the proposal's job from %s doesn't verify against roster v%d", x.Job.By, r.Version))
@@ -224,6 +227,12 @@ func (a *app) approveProposal(ctx context.Context, b *hostsBox, x hosts.Held) er
 	}
 	if reg.Version != base {
 		return drop(fmt.Sprintf("refused: proposed against registry v%d; it is v%d now: propose again", base, reg.Version))
+	}
+	if own, err := a.reposText(); err != nil {
+		return err
+	} else if reg.Version > 0 && own != reg.Rows {
+		return fail(exitRefused, "%s has changes registry v%d doesn't, which approving would overwrite: undo them, or publish them and have %s propose again; the proposal stays held",
+			config.ReposPath(a.cfg.Path()), reg.Version, x.From())
 	}
 	diff, err := a.printDiff(fmt.Sprintf("%s: registry proposal from %s, v%d -> v%d:", x.ID, x.From(), reg.Version, reg.Version+1), reg, rows)
 	if err != nil {

@@ -106,6 +106,16 @@ func TestRegistryPublishProposeAndRemoveWithCheckouts(t *testing.T) {
 	if readFile(t, repos(mac)) != reg1 || registryVersion(mac) != 1 {
 		t.Fatal("a held proposal changed the registry")
 	}
+	// Unpublished edits on the admin box would be overwritten: refused.
+	if err := os.WriteFile(repos(mac), []byte(reg1+"# wip\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, errs, code := mac.run(t, "pw\n", "hosts", "approve", id); code != exitRefused || !strings.Contains(errs, "which approving would overwrite") {
+		t.Fatalf("approve over unpublished edits: %d %s", code, errs)
+	}
+	if err := os.WriteFile(repos(mac), []byte(reg1), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	out, errs, code = mac.run(t, "pw\n", "hosts", "approve", id)
 	if code != 0 || !strings.Contains(out, "registry v2 published: proposal from k16 approved") {
 		t.Fatalf("approve: %d %s %s", code, out, errs)
