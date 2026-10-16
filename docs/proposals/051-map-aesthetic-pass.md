@@ -4,7 +4,7 @@ title: The map gets one design pass: a calm page where the live work is the firs
 kind: ux
 size: M
 judge: fable
-status: proposed
+status: accepted
 lens: ux
 proposed_by: operator
 proposed_on: 2026-10-16

@@ -4,7 +4,7 @@ title: The map draws each build family's coordinator as a layer above its leads,
 kind: ux
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: ux
 proposed_by: operator
 proposed_on: 2026-10-16

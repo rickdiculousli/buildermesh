@@ -4,7 +4,7 @@ title: The map lets old alerts fold away instead of heading the page forever
 kind: ux
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: ux
 proposed_by: operator
 proposed_on: 2026-10-16
