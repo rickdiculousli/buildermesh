@@ -74,6 +74,27 @@ func TestInitLeafRole(t *testing.T) {
 	if !strings.Contains(out, "copy the hub's there") {
 		t.Fatalf("out %q", out)
 	}
+	// A token file given with ~ is made (hub) and found (leaf) in the home
+	// directory, and written to the config as given.
+	home := filepath.Join(root, "home")
+	t.Setenv("HOME", home)
+	hubCfg := filepath.Join(root, "h", "config.toml")
+	if _, errs, code := runInit(t, hubCfg, root, "100.64.1.2:4222\n\n~/tok\n", "init", "--role", "hub", "--runner", "claude", "--no-repo"); code != 0 {
+		t.Fatalf("%d %q", code, errs)
+	}
+	if _, err := os.Stat(filepath.Join(home, "tok")); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := config.Load(hubCfg); c.Mesh.TokenFile != "~/tok" {
+		t.Fatalf("%+v", c.Mesh)
+	}
+	if _, err := os.Stat(filepath.Join(root, "~")); err == nil {
+		t.Fatal("made a directory named ~")
+	}
+	out, _, code = runInit(t, filepath.Join(root, "l", "config.toml"), root, "nats://100.64.1.2:7422\n~/tok\n", "init", "--role", "leaf", "--runner", "claude", "--no-repo")
+	if code != 0 || strings.Contains(out, "copy the hub's there") {
+		t.Fatalf("%d %q", code, out)
+	}
 	// No remote answered: refused.
 	if _, _, code := runInit(t, filepath.Join(root, "b", "config.toml"), root, "", "init", "--role", "leaf", "--no-repo"); code != exitUsage {
 		t.Fatal(code)

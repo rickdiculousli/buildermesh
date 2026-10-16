@@ -97,16 +97,16 @@ func (a *app) cmdInit(args []string) error {
 			return err
 		}
 		if m.role == "hub" {
-			made, err := makeToken(m.tokenFile)
+			made, err := makeToken(config.ExpandHome(m.tokenFile))
 			if err != nil {
 				return err
 			}
 			if made {
-				wrote = append(wrote, m.tokenFile)
+				wrote = append(wrote, config.ExpandHome(m.tokenFile))
 			}
 		}
 		if m.role == "leaf" {
-			if _, ok := statOK(m.tokenFile); !ok {
+			if _, ok := statOK(config.ExpandHome(m.tokenFile)); !ok {
 				fmt.Fprintf(a.stdout, "no token at %s yet: copy the hub's there (mode 0600) before bmesh hub starts\n", m.tokenFile)
 			}
 		}

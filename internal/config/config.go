@@ -572,7 +572,10 @@ func (c *Config) Token() (string, error) {
 }
 
 // Expand replaces a leading ~ with the home directory.
-func (c *Config) Expand(p string) string {
+func (c *Config) Expand(p string) string { return ExpandHome(p) }
+
+// ExpandHome replaces a leading ~ with the home directory.
+func ExpandHome(p string) string {
 	if p == "~" || strings.HasPrefix(p, "~/") {
 		if home, err := os.UserHomeDir(); err == nil {
 			return filepath.Join(home, p[1:])
