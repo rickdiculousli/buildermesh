@@ -17,6 +17,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/runner"
+	"github.com/rickdiculousli/buildermesh/internal/web"
 )
 
 const (
@@ -43,6 +44,8 @@ type Deps struct {
 
 	T3Token  string // the T3 sign-in file `bmesh t3 login` writes; "" = no expiry warnings
 	StateDir string // where the daemon's push record lives
+
+	Quota *web.Quota // the quota gate the map shares; nil = one of the reminder's own from [quota] command
 
 	Revision string // this binary's commit (vcs.revision); "" = unknown
 	Exe      string // the binary's path, which [update] replaces
@@ -115,7 +118,8 @@ func decodeEvent(data []byte) (mesh.Event, error) {
 
 // Run publishes started (after pushing an update that never started), then
 // starts the activity follower, the poll+wake+rounds and silence loops, the
-// digest and push loops when [notify] has somewhere to send, and, when
+// digest and push loops when [notify] has somewhere to send, the quota
+// reset reminders when [quota] remind_topic is set, and, when
 // [repos] names any repo, the routine loop; it returns once ctx ends
 // and every loop has stopped.
 func Run(ctx context.Context, d Deps) error {
@@ -158,6 +162,13 @@ func Run(ctx context.Context, d Deps) error {
 	}
 	if d.T3Token != "" && (d.Cfg.Notify.Ntfy != "" || d.Cfg.Notify.Command != "") {
 		start(func() { every(ctx, time.Hour, func() { t3LoginOnce(ctx, d) }) })
+	}
+	if d.Cfg.Quota.RemindTopic != "" {
+		q := d.Quota
+		if q == nil {
+			q = &web.Quota{Command: d.Cfg.Quota.Command}
+		}
+		start(func() { every(ctx, remindEvery, func() { remindOnce(ctx, d, q) }) })
 	}
 	if pushEnabled(d.Cfg.Notify) {
 		start(func() { pushLoop(ctx, d) })

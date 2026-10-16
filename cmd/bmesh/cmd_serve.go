@@ -124,6 +124,7 @@ func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Wri
 	defer stopDaemon()
 	daemonDone := make(chan error, 1)
 	log := slog.New(slog.NewTextHandler(stderr, nil))
+	quota := &web.Quota{Command: cfg.Quota.Command} // one gate for the map's strip and the daemon's reminders
 	go func() {
 		t3Token := ""
 		if cfg.Runner.Kind == "t3" {
@@ -134,13 +135,14 @@ func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Wri
 			T3Token: t3Token, StateDir: config.StateDir(),
 			Log:       log,
 			Checkouts: cfg.Expand(cfg.Runner.Checkouts), ClaudeBin: claude,
+			Quota:    quota,
 			Revision: buildVersion().Revision, Exe: exe,
 			Restart: func() { restarting.Store(true); restart() },
 		})
 	}()
 
 	srv := &http.Server{
-		Handler: web.Handler(c, serveHistory, web.Options{Cfg: cfg, Host: host, Log: log}), ReadHeaderTimeout: 10 * time.Second,
+		Handler: web.Handler(c, serveHistory, web.Options{Cfg: cfg, Host: host, Log: log, Quota: quota}), ReadHeaderTimeout: 10 * time.Second,
 		// Requests end with ctx, so open event streams don't hold Shutdown.
 		BaseContext: func(net.Listener) context.Context { return ctx },
 	}

@@ -48,6 +48,9 @@ type Options struct {
 	Host string
 	Now  func() time.Time
 	Log  *slog.Logger
+	// Quota is the gate the strip reads through; nil = one of its own from
+	// [quota] command. serve shares one with the daemon's reminder.
+	Quota *Quota
 }
 
 // asset serves an embedded file with its content type.

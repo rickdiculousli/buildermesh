@@ -27,8 +27,11 @@ const (
 	// Readme and Gitkeep are created when missing, never rewritten.
 	Readme  = "docs/proposals/README.md"
 	Gitkeep = "docs/proposals/assets/.gitkeep"
-	// MarkerPrefix opens a block: <!-- command-center:done --> ... <!-- /command-center:done -->.
-	MarkerPrefix = "command-center:"
+	// MarkerPrefix opens a block: <!-- bmesh:done --> ... <!-- /bmesh:done -->.
+	MarkerPrefix = "bmesh:"
+	// LegacyPrefix is the prefix an earlier scaffold wrote; a block under it
+	// is read, and rewritten in place under MarkerPrefix.
+	LegacyPrefix = "command-center:"
 	// VerifyPlaceholder is what the snippet says where the verify commands go.
 	VerifyPlaceholder = "[the verify commands]"
 )
@@ -101,13 +104,27 @@ func block(name, body string) string {
 	return "<!-- " + MarkerPrefix + name + " -->\n" + body + "\n<!-- /" + MarkerPrefix + name + " -->"
 }
 
-// Apply is text with each marked block's content replaced (done, proposals,
-// mesh in that order); a block that is absent is appended at the end, after
-// a blank line. Nothing outside the markers changes.
+// blockRE matches a marked block under either prefix, opening and closing
+// marker under the same one.
+func blockRE(name string) *regexp.Regexp {
+	var alts []string
+	for _, prefix := range []string{MarkerPrefix, LegacyPrefix} {
+		m := regexp.QuoteMeta(prefix + name)
+		alts = append(alts, `<!-- `+m+` -->.*?<!-- /`+m+` -->`)
+	}
+	return regexp.MustCompile(`(?s)` + strings.Join(alts, "|"))
+}
+
+// Apply is text with each marked block replaced (done, proposals, mesh in
+// that order) by a bmesh: block with the new content; the first block of a
+// name under either prefix is rewritten in place, so a legacy
+// command-center: block becomes the bmesh: one rather than gaining a twin.
+// A block that is absent is appended at the end, after a blank line.
+// Nothing outside the markers changes.
 func Apply(text, done, proposals, mesh string) string {
 	bodies := map[string]string{"done": done, "proposals": proposals, "mesh": mesh}
 	for _, name := range Blocks {
-		re := regexp.MustCompile(`(?s)<!-- ` + regexp.QuoteMeta(MarkerPrefix+name) + ` -->.*?<!-- /` + regexp.QuoteMeta(MarkerPrefix+name) + ` -->`)
+		re := blockRE(name)
 		b := block(name, bodies[name])
 		if re.MatchString(text) {
 			first := true

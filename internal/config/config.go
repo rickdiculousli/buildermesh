@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -85,8 +86,15 @@ type StatusConfig struct{ KeepDone time.Duration }
 type RoutinesConfig struct{ KeepResults time.Duration }
 
 // QuotaConfig names the command whose JSON output the map's strip shows; ""
-// hides the strip.
-type QuotaConfig struct{ Command string }
+// hides the strip. RemindTopic is the ntfy topic the daemon schedules each
+// used 5-hour window's reset reminder on ("" = no reminders).
+type QuotaConfig struct {
+	Command     string
+	RemindTopic string `toml:"remind_topic"`
+}
+
+// topicRE is an ntfy topic name.
+var topicRE = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // ConsoleConfig holds the thread link templates of the map, {thread} being
 // replaced by a lead's runner thread: ThreadURL for leads on this host, Hosts
@@ -327,6 +335,16 @@ func Load(path string) (*Config, error) {
 	}
 	c.Notify = NotifyConfig{Ntfy: f.Notify.Ntfy, Command: f.Notify.Command, DigestEvery: time.Duration(f.Notify.DigestEvery),
 		Push: push, MapURL: f.Notify.MapURL, CatchUp: time.Duration(f.Notify.CatchUp)}
+	if t := c.Quota.RemindTopic; t != "" {
+		switch {
+		case !topicRE.MatchString(t):
+			return nil, fmt.Errorf("config %s: [quota] remind_topic %q: an ntfy topic is 1 to 64 of A-Z, a-z, 0-9, _ and -", path, t)
+		case c.Quota.Command == "":
+			return nil, fmt.Errorf("config %s: [quota] remind_topic needs [quota] command, which the readings come from", path)
+		case c.Notify.Ntfy == "":
+			return nil, fmt.Errorf("config %s: [quota] remind_topic needs [notify] ntfy, whose URL the topic goes into", path)
+		}
+	}
 	c.Liveness = LivenessConfig{Grace: time.Duration(f.Liveness.Grace), PollEvery: time.Duration(f.Liveness.PollEvery),
 		WakeEvery: time.Duration(f.Liveness.WakeEvery)}
 	c.Status = StatusConfig{KeepDone: time.Duration(f.Status.KeepDone)}

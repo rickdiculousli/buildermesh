@@ -82,7 +82,11 @@ func newServer(c *mesh.Client, o Options) *server {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &server{c: c, cfg: cfg, host: o.Host, now: now, quota: &Quota{Command: cfg.Quota.Command}, log: log,
+	quota := o.Quota
+	if quota == nil {
+		quota = &Quota{Command: cfg.Quota.Command}
+	}
+	return &server{c: c, cfg: cfg, host: o.Host, now: now, quota: quota, log: log,
 		specs: map[string]specEntry{}, ledgers: map[string]ledgerEntry{}, fetched: map[string]time.Time{}}
 }
 

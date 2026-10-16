@@ -283,3 +283,22 @@ func TestLoadKeepDurations(t *testing.T) {
 		}
 	}
 }
+
+func TestQuotaRemindTopic(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	ok := "[notify]\nntfy = \"http://k16:2586/bmesh\"\n[quota]\ncommand = \"cat q.json\"\nremind_topic = \"quota-reset\"\n"
+	os.WriteFile(p, []byte(ok), 0o644)
+	if c, err := Load(p); err != nil || c.Quota.RemindTopic != "quota-reset" {
+		t.Fatalf("%v %+v", err, c)
+	}
+	for body, want := range map[string]string{
+		"[notify]\nntfy = \"http://k16:2586/bmesh\"\n[quota]\ncommand = \"x\"\nremind_topic = \"a/b\"\n": "an ntfy topic is",
+		"[notify]\nntfy = \"http://k16:2586/bmesh\"\n[quota]\nremind_topic = \"q\"\n":                    "needs [quota] command",
+		"[notify]\ncommand = \"cat\"\n[quota]\ncommand = \"x\"\nremind_topic = \"q\"\n":                  "needs [notify] ntfy",
+	} {
+		os.WriteFile(p, []byte(body), 0o644)
+		if _, err := Load(p); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: %v, want %q", body, err, want)
+		}
+	}
+}

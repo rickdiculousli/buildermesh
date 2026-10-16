@@ -12,8 +12,8 @@ import (
 	"strings"
 )
 
-// The ledger: a repo's proposal specs, read and edited with the rules
-// command-center's tools/proposals.py had. A spec's frontmatter is flat
+// The ledger: a repo's proposal specs, read and edited by these rules. A
+// spec's frontmatter is flat
 // `key: value` lines between `---` fences (lines starting with `#` are
 // ignored); there is no other record, so a file that can't be read is
 // reported as malformed, never skipped or guessed at.

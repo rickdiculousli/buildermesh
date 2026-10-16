@@ -27,7 +27,7 @@ func TestScaffoldWritesChecksAndRefuses(t *testing.T) {
 		t.Fatalf("write: %d %q %q", code, out, errs)
 	}
 	b, _ := os.ReadFile(filepath.Join(repo, "AGENTS.md"))
-	if !strings.HasPrefix(string(b), "# Working here\n\nbody\n\n<!-- command-center:done -->\n## Definition of done\n") ||
+	if !strings.HasPrefix(string(b), "# Working here\n\nbody\n\n<!-- bmesh:done -->\n## Definition of done\n") ||
 		!strings.Contains(string(b), "(`go test ./...`, `go vet ./...`)") || !strings.Contains(string(b), "pushed to `x/demo`") ||
 		!strings.Contains(string(b), "`verify` runs `go test ./...`, `go vet ./...`; `review` asks") || strings.Contains(string(b), "Rick") {
 		t.Fatalf("%s", b)
@@ -63,7 +63,7 @@ func TestScaffoldWritesChecksAndRefuses(t *testing.T) {
 	if code != 0 || strings.Contains(out, "verify.toml") || !strings.Contains(errs, "no verify commands, so the verify kind was not written") {
 		t.Fatalf("bare: %d %q %q", code, out, errs)
 	}
-	if b, _ := os.ReadFile(filepath.Join(bare, "AGENTS.md")); !strings.HasPrefix(string(b), "<!-- command-center:done -->") ||
+	if b, _ := os.ReadFile(filepath.Join(bare, "AGENTS.md")); !strings.HasPrefix(string(b), "<!-- bmesh:done -->") ||
 		!strings.Contains(string(b), "`verify` runs nothing yet") {
 		t.Fatalf("%s", b)
 	}

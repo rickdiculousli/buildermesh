@@ -18,21 +18,21 @@ const snippet = "# The buildermesh paragraph\n\nPaste this and fill the brackete
 func TestApplyAppendsBlocksWhenAbsent(t *testing.T) {
 	out := Apply("# A\n\nbody\n", "DONE", "PROPS", "MESH")
 	if !strings.HasPrefix(out, "# A\n\nbody\n") ||
-		!strings.Contains(out, "<!-- command-center:done -->\nDONE\n<!-- /command-center:done -->") ||
-		!strings.Contains(out, "<!-- command-center:proposals -->\nPROPS\n<!-- /command-center:proposals -->") ||
-		!strings.Contains(out, "<!-- command-center:mesh -->\nMESH\n<!-- /command-center:mesh -->") {
+		!strings.Contains(out, "<!-- bmesh:done -->\nDONE\n<!-- /bmesh:done -->") ||
+		!strings.Contains(out, "<!-- bmesh:proposals -->\nPROPS\n<!-- /bmesh:proposals -->") ||
+		!strings.Contains(out, "<!-- bmesh:mesh -->\nMESH\n<!-- /bmesh:mesh -->") {
 		t.Fatal(out)
 	}
-	if strings.Index(out, "command-center:done") > strings.Index(out, "command-center:proposals") ||
-		strings.Index(out, "command-center:proposals") > strings.Index(out, "command-center:mesh") {
+	if strings.Index(out, "bmesh:done") > strings.Index(out, "bmesh:proposals") ||
+		strings.Index(out, "bmesh:proposals") > strings.Index(out, "bmesh:mesh") {
 		t.Fatal(out)
 	}
 }
 
 func TestApplyReplacesInPlaceAndIsIdempotent(t *testing.T) {
-	once := Apply("# A\n\n<!-- command-center:done -->\nold\n<!-- /command-center:done -->\n\ntail\n", "NEW", "P", "M")
+	once := Apply("# A\n\n<!-- bmesh:done -->\nold\n<!-- /bmesh:done -->\n\ntail\n", "NEW", "P", "M")
 	if !strings.Contains(once, "\nNEW\n") || strings.Contains(once, "old") || !strings.Contains(once, "\ntail\n") ||
-		!strings.HasSuffix(strings.TrimSpace(once), "<!-- /command-center:mesh -->") {
+		!strings.HasSuffix(strings.TrimSpace(once), "<!-- /bmesh:mesh -->") {
 		t.Fatal(once)
 	}
 	if Apply(once, "NEW", "P", "M") != once {
@@ -44,9 +44,9 @@ func TestApplyReplacesInPlaceAndIsIdempotent(t *testing.T) {
 }
 
 func TestApplyNothingOutsideMarkersChanges(t *testing.T) {
-	src := "intro\n<!-- command-center:done -->\nx\n<!-- /command-center:done -->\nmid\n<!-- command-center:proposals -->\ny\n<!-- /command-center:proposals -->\nend\n"
+	src := "intro\n<!-- bmesh:done -->\nx\n<!-- /bmesh:done -->\nmid\n<!-- bmesh:proposals -->\ny\n<!-- /bmesh:proposals -->\nend\n"
 	want := strings.Replace(strings.Replace(src, "\nx\n", "\nX2\n", 1), "\ny\n", "\nY2\n", 1) +
-		"\n<!-- command-center:mesh -->\nZ\n<!-- /command-center:mesh -->\n"
+		"\n<!-- bmesh:mesh -->\nZ\n<!-- /bmesh:mesh -->\n"
 	if got := Apply(src, "X2", "Y2", "Z"); got != want {
 		t.Fatalf("got\n%s\nwant\n%s", got, want)
 	}
@@ -57,7 +57,7 @@ func TestApplyToAFileWithoutTrailingNewlineIsIdempotent(t *testing.T) {
 	if !strings.HasPrefix(once, "# A\nbody\n") || Apply(once, "D", "P", "M") != once {
 		t.Fatal(once)
 	}
-	if empty := Apply("", "D", "P", "M"); !strings.HasPrefix(empty, "<!-- command-center:done -->") || Apply(empty, "D", "P", "M") != empty {
+	if empty := Apply("", "D", "P", "M"); !strings.HasPrefix(empty, "<!-- bmesh:done -->") || Apply(empty, "D", "P", "M") != empty {
 		t.Fatal(empty)
 	}
 }
@@ -139,7 +139,7 @@ func TestTargetsCheckThenWriteIsStable(t *testing.T) {
 		t.Fatal(err, skipped)
 	}
 	diff := Plan(targets)
-	for _, want := range []string{"+<!-- command-center:done -->", "+<!-- command-center:mesh -->", "+++ b/docs/proposals/README.md",
+	for _, want := range []string{"+<!-- bmesh:done -->", "+<!-- bmesh:mesh -->", "+++ b/docs/proposals/README.md",
 		"new empty file docs/proposals/assets/.gitkeep", "+++ b/.bmesh/routines/verify.toml", "+command = \"npm test\"", "+++ b/.bmesh/routines/review.toml",
 		"--- a/AGENTS.md", "--- /dev/null"} {
 		if !strings.Contains(diff, want) {
@@ -200,7 +200,7 @@ func TestTargetsWithoutAgentsOrVerify(t *testing.T) {
 	if strings.Join(rels, " ") != "AGENTS.md docs/proposals/README.md docs/proposals/assets/.gitkeep .bmesh/routines/review.toml" {
 		t.Fatal(rels)
 	}
-	if !strings.HasPrefix(targets[0].Want, "<!-- command-center:done -->") {
+	if !strings.HasPrefix(targets[0].Want, "<!-- bmesh:done -->") {
 		t.Fatal(targets[0].Want)
 	}
 	// A routines dir from the repo's config is honoured.
@@ -240,5 +240,26 @@ func TestUnifiedMatchesDiff(t *testing.T) {
 	}
 	if Unified("a", "b", "same\n", "same\n") != "" {
 		t.Fatal("equal texts differ")
+	}
+}
+
+func TestApplyMigratesLegacyBlocksInPlace(t *testing.T) {
+	src := "intro\n<!-- command-center:done -->\nold done\n<!-- /command-center:done -->\nmid\n" +
+		"<!-- command-center:proposals -->\nold props\n<!-- /command-center:proposals -->\n" +
+		"<!-- bmesh:mesh -->\nold mesh\n<!-- /bmesh:mesh -->\nend\n"
+	want := "intro\n<!-- bmesh:done -->\nD\n<!-- /bmesh:done -->\nmid\n" +
+		"<!-- bmesh:proposals -->\nP\n<!-- /bmesh:proposals -->\n" +
+		"<!-- bmesh:mesh -->\nM\n<!-- /bmesh:mesh -->\nend\n"
+	got := Apply(src, "D", "P", "M")
+	if got != want {
+		t.Fatalf("got\n%s\nwant\n%s", got, want)
+	}
+	if strings.Contains(got, "command-center") || strings.Count(got, "<!-- bmesh:done -->") != 1 || Apply(got, "D", "P", "M") != got {
+		t.Fatal("a legacy block left behind, duplicated, or a second run changes it")
+	}
+	// Markers of the two prefixes never pair up across a block.
+	mixed := "<!-- command-center:done -->\nx\n<!-- /bmesh:done -->\n"
+	if out := Apply(mixed, "D", "P", "M"); !strings.HasPrefix(out, mixed) {
+		t.Fatalf("a mismatched pair was rewritten:\n%s", out)
 	}
 }
