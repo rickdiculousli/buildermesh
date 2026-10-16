@@ -81,6 +81,9 @@ func (r *routineSet) newDelivery(f *feed, m jetstream.Msg, j mesh.Job, from mesh
 				if err := m.InProgress(); err != nil {
 					r.d.Log.Warn("routines: in progress", "job", j.ID, "err", err)
 				}
+				if dl.noted.Load() { // the kind's bm-jobs entry stays fresh, so status believes it
+					r.writeHolds(f.name, func(map[uint64]mesh.Hold) {})
+				}
 			}
 		}
 	}()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -82,13 +83,12 @@ type QueuedJob struct {
 	Seq    uint64 `json:"seq"`
 }
 
-// scanLimit bounds how many messages one subject scan reads.
-const scanLimit = 1000
-
 // KindJobs lists kindName's unanswered jobs in stream order: every job on
-// its inbox past the consumer's ack floor that a daemon holds (from
-// bm-jobs), was never delivered, or was delivered and has no reply in its
-// requester's inbox (handed back, or held by a daemon that died: waiting).
+// its inbox past the consumer's ack floor that has no reply in its
+// requester's inbox, held or running as a live daemon's bm-jobs entry says,
+// else waiting (never delivered, handed back, or held by a daemon that
+// died). An entry not rewritten within the kind's AckWait is a dead
+// daemon's: a live one rewrites it with every in-progress heartbeat.
 func KindJobs(ctx context.Context, c *Client, kindName string) ([]QueuedJob, error) {
 	cons, err := c.JS.Consumer(ctx, StreamMesh, InboxConsumer(RoutinePath(kindName)))
 	if errors.Is(err, jetstream.ErrConsumerNotFound) {
@@ -106,9 +106,14 @@ func KindJobs(ctx context.Context, c *Client, kindName string) ([]QueuedJob, err
 	if err != nil {
 		return nil, err
 	}
+	live := time.Now().Add(-info.Config.AckWait)
 	held := map[uint64]Hold{}
 	newest := map[uint64]string{} // seq → the At of the Holds it came from
 	for _, hs := range all {
+		at, err := time.Parse(time.RFC3339, hs.At)
+		if err != nil || at.Before(live) {
+			continue
+		}
 		for _, h := range hs.Jobs {
 			if h.Seq > floor && hs.At >= newest[h.Seq] {
 				held[h.Seq], newest[h.Seq] = h, hs.At
@@ -120,21 +125,19 @@ func KindJobs(ctx context.Context, c *Client, kindName string) ([]QueuedJob, err
 		return nil, err
 	}
 	var out []QueuedJob
-	err = scanSubject(ctx, st, InboxSubject(RoutinePath(kindName)), floor+1, func(seq uint64, m Message) (bool, error) {
+	err = scanSubject(ctx, c, st, InboxSubject(RoutinePath(kindName)), floor+1, func(seq uint64, m Message) (bool, error) {
 		if m.Kind != "job" || m.Job == nil {
 			return true, nil
+		}
+		if seq <= delivered {
+			replied, err := hasReply(ctx, c, st, m.From, m.Job.ID, seq)
+			if err != nil || replied {
+				return err == nil, err
+			}
 		}
 		q := QueuedJob{ID: m.Job.ID, From: m.From, State: "waiting", Seq: seq}
 		if h, ok := held[seq]; ok {
 			q.State, q.Holder = h.State, h.Holder
-		} else if seq <= delivered {
-			replied, err := hasReply(ctx, st, m.From, m.Job.ID, seq)
-			if err != nil {
-				return false, err
-			}
-			if replied {
-				return true, nil
-			}
 		}
 		out = append(out, q)
 		return true, nil
@@ -143,13 +146,13 @@ func KindJobs(ctx context.Context, c *Client, kindName string) ([]QueuedJob, err
 }
 
 // hasReply reports a reply to job in from's inbox after sequence after.
-func hasReply(ctx context.Context, st jetstream.Stream, from, job string, after uint64) (bool, error) {
+func hasReply(ctx context.Context, c *Client, st jetstream.Stream, from, job string, after uint64) (bool, error) {
 	p, err := ParsePath(from)
 	if err != nil {
 		return false, nil
 	}
 	found := false
-	err = scanSubject(ctx, st, InboxSubject(p), after+1, func(_ uint64, m Message) (bool, error) {
+	err = scanSubject(ctx, c, st, InboxSubject(p), after+1, func(_ uint64, m Message) (bool, error) {
 		found = m.Kind == "reply" && m.Reply != nil && m.Reply.Job == job
 		return !found, nil
 	})
@@ -157,28 +160,48 @@ func hasReply(ctx context.Context, st jetstream.Stream, from, job string, after 
 }
 
 // scanSubject calls f with each message on subject from sequence from on,
-// up to scanLimit of them, until f returns false.
-func scanSubject(ctx context.Context, st jetstream.Stream, subject string, from uint64, f func(uint64, Message) (bool, error)) error {
-	seq := from
-	for range scanLimit {
-		raw, err := st.GetMsg(ctx, seq, jetstream.WithGetMsgSubject(subject))
-		if errors.Is(err, jetstream.ErrMsgNotFound) {
-			return nil
-		}
+// in order, until f returns false or the subject ends.
+func scanSubject(ctx context.Context, c *Client, st jetstream.Stream, subject string, from uint64, f func(uint64, Message) (bool, error)) error {
+	// An ordered consumer on an empty range would wait for the next message.
+	first, err := st.GetMsg(ctx, from, jetstream.WithGetMsgSubject(subject))
+	if errors.Is(err, jetstream.ErrMsgNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	cons, err := c.JS.OrderedConsumer(ctx, StreamMesh, jetstream.OrderedConsumerConfig{
+		FilterSubjects: []string{subject},
+		DeliverPolicy:  jetstream.DeliverByStartSequencePolicy,
+		OptStartSeq:    first.Sequence,
+	})
+	if err != nil {
+		return err
+	}
+	it, err := cons.Messages()
+	if err != nil {
+		return err
+	}
+	defer it.Stop()
+	for {
+		raw, err := it.Next(jetstream.NextContext(ctx))
 		if err != nil {
 			return err
 		}
-		seq = raw.Sequence + 1
-		var m Message
-		if json.Unmarshal(raw.Data, &m) != nil {
-			continue
-		}
-		more, err := f(raw.Sequence, m)
-		if err != nil || !more {
+		meta, err := raw.Metadata()
+		if err != nil {
 			return err
 		}
+		var m Message
+		if json.Unmarshal(raw.Data(), &m) == nil {
+			if more, err := f(meta.Sequence.Stream, m); err != nil || !more {
+				return err
+			}
+		}
+		if meta.NumPending == 0 {
+			return nil
+		}
 	}
-	return nil
 }
 
 // ClearHolds empties every bm-jobs entry host wrote, so what a daemon that

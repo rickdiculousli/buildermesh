@@ -60,14 +60,25 @@ func TestKindJobsWaitingHeldAndAnswered(t *testing.T) {
 	if err := msgs[2].DoubleAck(ctx); err != nil {
 		t.Fatal(err)
 	}
+	for range 1100 { // a busy requester: the reply is found past them all
+		if _, err := Send(ctx, c, Message{From: "x", To: "app-001", Text: "chatter"}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := SendReply(ctx, c, RoutinePath("review"), from, Reply{Job: "j-replied", Kind: "review", OK: true}); err != nil {
 		t.Fatal(err)
 	}
-	// The ack floor stays below j-replied while j-held waits unacked.
-	// A stale entry from another host and an older write lose to the newest.
+	// The ack floor stays below j-replied while j-held waits unacked. A hold
+	// of an answered job is not believed; of two live entries the newest
+	// wins; an entry older than AckWait (1m) is a dead daemon's.
+	at := func(d time.Duration) string { return time.Now().Add(-d).UTC().Format(time.RFC3339) }
 	for _, h := range []Holds{
-		{Kind: "review", Host: "old", At: "2026-10-16T09:00:00Z", Jobs: []Hold{{Seq: seq(msgs[1]), Job: "j-held", Holder: "routine.review.x-1", State: "held"}}},
-		{Kind: "review", Host: "k16", At: "2026-10-16T10:00:00Z", Jobs: []Hold{{Seq: seq(msgs[1]), Job: "j-held", From: "app-001", Holder: "routine.review.opus-5-5-1", State: "running"}}},
+		{Kind: "review", Host: "dead", At: at(2 * time.Minute), Jobs: []Hold{{Seq: seq(msgs[3]), Job: "j-orphan", Holder: "routine.review.x-9", State: "running"}}},
+		{Kind: "review", Host: "old", At: at(30 * time.Second), Jobs: []Hold{{Seq: seq(msgs[1]), Job: "j-held", Holder: "routine.review.x-1", State: "held"}}},
+		{Kind: "review", Host: "k16", At: at(0), Jobs: []Hold{
+			{Seq: seq(msgs[1]), Job: "j-held", From: "app-001", Holder: "routine.review.opus-5-5-1", State: "running"},
+			{Seq: seq(msgs[2]), Job: "j-replied", From: "app-001", Holder: "routine.review.opus-5-5-1", State: "held"},
+		}},
 	} {
 		if err := PutHolds(ctx, c, h); err != nil {
 			t.Fatal(err)
@@ -91,11 +102,11 @@ func TestKindJobsWaitingHeldAndAnswered(t *testing.T) {
 	}
 
 	// Clearing a host's holds leaves the others.
-	if err := ClearHolds(ctx, c, "k16", "2026-10-16T11:00:00Z"); err != nil {
+	if err := ClearHolds(ctx, c, "k16", at(0)); err != nil {
 		t.Fatal(err)
 	}
 	all, err := ListHolds(ctx, c, "review")
-	if err != nil || len(all) != 2 {
+	if err != nil || len(all) != 3 {
 		t.Fatalf("holds %+v %v", all, err)
 	}
 	for _, h := range all {
