@@ -533,13 +533,15 @@ function apply(f) {
 
 // --- the recent-events drawer ---------------------------------------------
 
-// describe turns a frame into {path, event, text}.
+// describe turns a frame into {path, event, text}; an inbox frame's also
+// carries from and to, its path being "from → to".
 function describe(f) {
   const p = f.payload && typeof f.payload === "object" ? f.payload : { text: String(f.payload) };
   const rest = f.subject.replace(/^bm\./, "");
   if (rest.startsWith("inbox.")) {
     const kind = p.kind && p.kind !== "message" ? p.kind + " " : "";
-    return { path: (p.from || "?") + " → " + rest.slice(6), event: "inbox", text: kind + (p.text || "") };
+    const from = p.from || "?", to = rest.slice(6);
+    return { path: from + " → " + to, from, to, event: "inbox", text: kind + (p.text || "") };
   }
   const i = rest.lastIndexOf(".");
   const path = i > 0 ? rest.slice(0, i) : rest;
@@ -578,18 +580,162 @@ function frameKey(f) {
   return f.subject + "@" + (p.at || f.at || "") + "#" + (p.text || "");
 }
 
+// The drawer's lanes: each path that owns a row (an inbox row's sender) gets
+// one, in order of first appearance, newest first, LANE_PX apart; past the
+// last lane the rest share it. A chip's hue is its lead tree's (a hash of
+// the path's top segment over HUES), a child a lighter step; routines and
+// the daemon are grey.
+const LANE_PX = 14, LANES = 6, PHONE_LANES = 3;
+const HUES = [172, 212, 262, 318, 28, 46, 138, 350];
+const NEUTRAL = new Set(["routine", "daemon", "?"]);
+
+// recentFocus is the path the drawer lights: hover while the mouse is on a
+// chip or its line, else pin, set by a click and kept across redraws. mute
+// is a path just unpinned, which the mouse still on it doesn't relight.
+const recentFocus = { pin: "", hover: "", mute: "" };
+let recentTW = 0; // the widest time column seen, for the lanes' origin
+
+// paint gives e the hue of path: --h, --l (the step, 0 to 2) and --sat (0
+// for grey), which map.css's .hue turns into --c-fg and --c-bg.
+function paint(e, path) {
+  const segs = String(path).split(".");
+  let h = 0, sat = 0;
+  if (!NEUTRAL.has(segs[0])) {
+    let n = 2166136261; // FNV-1a
+    for (const c of segs[0]) n = Math.imul(n ^ c.codePointAt(0), 16777619);
+    h = HUES[(n >>> 0) % HUES.length];
+    sat = 1;
+  }
+  e.classList.add("hue");
+  e.style.setProperty("--h", h);
+  e.style.setProperty("--l", Math.min(segs.length - 1, 2));
+  e.style.setProperty("--sat", sat);
+}
+
+// chipLabel drops the nearest ancestor's prefix that owns a lane: "eng",
+// not "buildermesh-round-1.eng", when the round has rows of its own.
+function chipLabel(path, owners) {
+  const segs = path.split(".");
+  for (let i = segs.length - 1; i > 0; i--) {
+    if (owners.has(segs.slice(0, i).join("."))) return segs.slice(i).join(".");
+  }
+  return path;
+}
+
+function chip(path, owners, cls) {
+  const b = el("button", cls, chipLabel(path, owners));
+  b.type = "button";
+  b.title = path;
+  b.dataset.path = path;
+  paint(b, path);
+  return b;
+}
+
 function drawRecent() {
   recentTimer = 0;
-  const items = mesh.recent.map((f) => {
+  const rows = mesh.recent.map((f) => {
     const d = describe(f);
+    return { f, d, who: d.from === undefined ? d.path : d.from };
+  });
+  const order = [...new Set(rows.map((r) => r.who))];
+  const owners = new Set(order);
+  const max = phone.matches ? PHONE_LANES : LANES;
+  const items = rows.map(({ f, d, who }) => {
     const li = document.createElement("li");
     li.className = "ev-" + d.event;
-    li.append(span("t", stamp((f.payload && f.payload.at) || f.at)), span("p", d.path), span("e", d.event), span("x", d.text));
+    li.dataset.who = who;
+    const c = chip(who, owners, "chip");
+    c.style.setProperty("--lane", Math.min(order.indexOf(who), max - 1));
+    li.append(span("t", stamp((f.payload && f.payload.at) || f.at)), c);
+    if (d.to !== undefined) {
+      li.dataset.to = d.to;
+      li.append(span("arrow", "→"), chip(d.to, owners, "chip small"));
+    }
+    li.append(span("e", d.event), span("x", d.text));
     clampRow(li, frameKey(f));
     return li;
   });
+  const lanes = order.slice(0, max).map((p, i) => {
+    const e = el("div", "lane");
+    e.style.setProperty("--lane", i);
+    if (order.length > max && i === max - 1) {
+      e.classList.add("shared");
+    } else {
+      e.dataset.path = p;
+      paint(e, p);
+    }
+    return e;
+  });
+  $("lanes").replaceChildren(...lanes);
+  $("recent-box").style.setProperty("--lanes", lanes.length);
   $("recent").replaceChildren(...items);
   $("drawer-count").textContent = items.length ? "(" + items.length + ")" : "";
+  const pin = recentFocus.pin;
+  if (pin && !rows.some((r) => r.who === pin || r.d.to === pin)) recentFocus.pin = "";
+  focusRecent();
+  measureTime();
+}
+
+// measureTime sets --tw, the time column's width the lanes start after, to
+// the widest seen; a closed drawer measures nothing, so opening it measures
+// again.
+function measureTime() {
+  let w = 0;
+  for (const t of $("recent").querySelectorAll(".t")) w = Math.max(w, t.getBoundingClientRect().width);
+  if (w <= recentTW) return;
+  recentTW = Math.ceil(w);
+  $("recent-box").style.setProperty("--tw", recentTW + "px");
+}
+
+// focusRecent dims every row that neither is the focused path's nor names
+// it as recipient, and lights its lane.
+function focusRecent() {
+  const f = recentFocus.hover || recentFocus.pin;
+  for (const li of $("recent").children) li.classList.toggle("dim", !!f && li.dataset.who !== f && li.dataset.to !== f);
+  for (const e of $("lanes").children) e.classList.toggle("on", !!f && e.dataset.path === f);
+  for (const b of $("recent").querySelectorAll(".chip")) b.setAttribute("aria-pressed", String(b.dataset.path === recentFocus.pin));
+}
+
+// hoverPath is the path under the mouse: a chip's, or a lane's when the
+// mouse is within a few pixels of its line and not on a row's words.
+function hoverPath(ev) {
+  const c = ev.target.closest(".chip");
+  if (c) return c.dataset.path;
+  if (ev.target.closest("span")) return "";
+  for (const e of $("lanes").children) {
+    if (!e.dataset.path) continue;
+    const r = e.getBoundingClientRect();
+    if (Math.abs(ev.clientX - (r.left + r.width / 2)) <= 5) return e.dataset.path;
+  }
+  return "";
+}
+
+function setHover(p) {
+  if (p === recentFocus.mute) p = "";
+  else recentFocus.mute = "";
+  if (p === recentFocus.hover) return;
+  recentFocus.hover = p;
+  focusRecent();
+}
+
+// unpin drops the pin; the mouse still on that chip doesn't relight it.
+function unpin() {
+  recentFocus.mute = recentFocus.pin;
+  recentFocus.pin = recentFocus.hover = "";
+  focusRecent();
+}
+
+// pinChip pins the path of a clicked chip, moves the pin to it from
+// another, or unpins it when it is pinned. Touch has no hover: a tap pins.
+function pinChip(ev) {
+  const c = ev.target.closest(".chip");
+  if (!c) return;
+  if (recentFocus.pin === c.dataset.path) {
+    unpin();
+    return;
+  }
+  recentFocus.pin = c.dataset.path;
+  focusRecent();
 }
 
 // --- clamped rows -----------------------------------------------------------
@@ -609,9 +755,10 @@ function clampRow(e, key) {
 }
 
 // toggleRows opens or closes the clamped row a tap lands on (a band row's
-// words from anywhere in the row), unless the tap is a link or a fold.
+// words from anywhere in the row), unless the tap is a link, a fold or a
+// chip.
 function toggleRows(ev) {
-  if (ev.target.closest("a, summary")) return;
+  if (ev.target.closest("a, summary, .chip")) return;
   const row = ev.target.closest(".clamp, .need");
   const e = row && row.classList.contains("need") ? row.querySelector(".clamp") : row;
   if (!e || !this.contains(e)) return;
@@ -1302,6 +1449,7 @@ mesh.vertical = phone.matches;
 phone.addEventListener("change", () => {
   mesh.vertical = phone.matches;
   render();
+  drawRecent(); // the lane count follows the width
 });
 let resizeTimer = 0, lastWidth = window.innerWidth;
 window.addEventListener("resize", () => {
@@ -1312,6 +1460,11 @@ window.addEventListener("resize", () => {
 });
 
 for (const id of ["needs", "recent", "lead-panel"]) $(id).addEventListener("click", toggleRows);
+$("recent").addEventListener("click", pinChip);
+$("recent").addEventListener("pointermove", (ev) => { if (ev.pointerType === "mouse") setHover(hoverPath(ev)); });
+$("recent").addEventListener("pointerleave", () => setHover(""));
+$("drawer").addEventListener("toggle", measureTime);
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && recentFocus.pin) unpin(); });
 window.addEventListener("hashchange", route);
 route();
 loadTree();

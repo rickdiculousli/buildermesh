@@ -312,16 +312,78 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
 .drawer .count { color: var(--muted); font-weight: normal; }
 .drawer ol { list-style: none; margin: 0; padding: 0 0 8px; }
 /* The row's bottom space is a margin: a clamped row shows its overflow
-   through padding. */
-.drawer li { padding: 4px var(--pad) 0; margin-bottom: 4px; border-top: 1px solid var(--line); word-break: break-word; font-size: 13px; }
+   through padding. Its first line starts at the edge (time, then the chip
+   at its lane); the lines it wraps to hang past the lanes, so no words
+   cross a lane's line. --tw is the time column's width (map.js measures
+   it), --lanes the lane count, --lane a chip's or line's lane. */
+.recent-box {
+  position: relative;
+  --lane-x: calc(var(--pad) + var(--tw, 0px) + 6px);
+  --hang: calc(var(--lane-x) + var(--lanes, 1) * 14px);
+}
+.lanes { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.lane {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--lane-x) + var(--lane) * 14px + 7px);
+  width: 1px;
+  background: var(--c-fg);
+  opacity: .3;
+}
+.lane.shared { background: var(--muted); }
+.lane.on { opacity: 1; width: 3px; margin-left: -1px; }
+.drawer li {
+  padding: 4px var(--pad) 0 var(--hang);
+  text-indent: calc(var(--pad) - var(--hang));
+  margin-bottom: 4px;
+  border-top: 1px solid var(--line);
+  word-break: break-word;
+  font-size: 13px;
+  transition: opacity .15s;
+}
+.drawer li.dim { opacity: .35; }
 .drawer li span { margin-right: 6px; }
-.drawer .t { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.drawer .p { font-weight: 600; }
+.drawer .t { display: inline-block; min-width: var(--tw, 0px); text-indent: 0; white-space: nowrap; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.drawer .arrow { color: var(--muted); }
 .drawer .e { color: var(--muted); }
 .drawer .ev-blocked .e { color: var(--blocked); }
 .drawer .ev-ask .e { color: var(--asking); }
 .drawer .ev-started .e, .drawer .ev-progress .e { color: var(--working); }
 .drawer .ev-inbox .e { color: var(--msg); }
+/* A node's chip, in its hue (map.js sets --h, --l and --sat). */
+.hue {
+  --c-fg: hsl(var(--h) calc(75% * var(--sat)) calc(28% + var(--l) * 7%));
+  --c-bg: hsl(var(--h) calc(70% * var(--sat)) calc(91% + var(--l) * 3%));
+}
+@media (prefers-color-scheme: dark) {
+  .hue {
+    --c-fg: hsl(var(--h) calc(75% * var(--sat)) calc(74% + var(--l) * 7%));
+    --c-bg: hsl(var(--h) calc(35% * var(--sat)) calc(22% - var(--l) * 4%));
+  }
+}
+.drawer .chip {
+  display: inline-block;
+  max-width: 100%;
+  margin: 0 6px 0 calc(var(--lane, 0) * 14px);
+  padding: 0 7px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--c-bg);
+  color: var(--c-fg);
+  font: 600 12px/18px var(--font);
+  text-indent: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: top;
+  cursor: pointer;
+}
+.drawer .chip.small { margin-left: 0; padding: 0 6px; font-size: 11px; }
+.drawer .chip[aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px var(--c-fg); }
+@media (prefers-reduced-motion: reduce) {
+  .drawer li { transition: none; }
+}
 
 /* The phone: map.js stacks the blocks to fit the width (matchMedia on the
    same query), and the drawer is a bottom sheet. */
