@@ -4,7 +4,7 @@ title: A spec that changes a repo's verify commands changes its registry row, an
 kind: refinement
 size: S
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: 56979e66-321a-467e-9cbc-a2165df787ff
 proposed_on: 2026-10-16
@@ -13,6 +13,8 @@ built_by: 1987097a-9507-4022-980a-02fbdc9f9043
 host: k16
 family: buildermesh-build-5
 branch: bmesh/1987097a-9507-4022-980a-02fbdc9f9043
+merged: 8f067133c892eaef6de707037102e72f72b4aabb
+verified: review ok t:511149c2 m:claude-opus-5-5 c:f644acfa; verify ok t:511149c2
 ---
 
 ## Opportunity
