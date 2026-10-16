@@ -4,7 +4,7 @@ title: A daemon that stops hands its held jobs back
 kind: refinement
 size: S
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
@@ -13,6 +13,8 @@ built_by: 8b924fe0-b2da-4104-9e95-6c93ebcb790f
 host: k16
 family: buildermesh-build-2
 branch: bmesh/8b924fe0-b2da-4104-9e95-6c93ebcb790f
+verified: verify ok t:222a97f3
+merged: e73a12df9df014ddff9b263995df45fb734aa00c
 ---
 
 ## Opportunity
