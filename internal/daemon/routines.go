@@ -21,6 +21,7 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/checkout"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
+	"github.com/rickdiculousli/buildermesh/internal/level"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 )
@@ -69,10 +70,19 @@ type routineSet struct {
 	drained    bool   // an update drained the feeds; guarded by mu
 }
 
-// fetch updates repoPath's origin refs (nothing without an origin).
-func (r *routineSet) fetch(repoPath string) error {
+// fetch updates repoPath's origin refs (nothing without an origin). With
+// [hosts] enabled it holds repo's lock (<state dir>/locks/<repo>.lock),
+// which a level and a landing take too.
+func (r *routineSet) fetch(repo, repoPath string) error {
 	r.fetchMu.Lock()
 	defer r.fetchMu.Unlock()
+	if r.d.Cfg.Hosts.Enabled && r.d.StateDir != "" {
+		unlock, err := level.Lock(r.d.StateDir, repo)
+		if err != nil {
+			return err
+		}
+		defer unlock()
+	}
 	return checkout.Fetch(repoPath)
 }
 
@@ -168,8 +178,8 @@ func routines(ctx context.Context, d Deps) {
 // discover returns the kinds on repoPath's main: origin/main after a fetch
 // when the repo has an origin, else the local main (R4). dir is the main
 // checkout once it is at that commit, else "".
-func (r *routineSet) discover(repoPath string) (dir string, kinds []kind.Kind, err error) {
-	if err := r.fetch(repoPath); err != nil {
+func (r *routineSet) discover(repo, repoPath string) (dir string, kinds []kind.Kind, err error) {
+	if err := r.fetch(repo, repoPath); err != nil {
 		r.d.Log.Warn("routines: fetch", "repo", repoPath, "err", err)
 	}
 	dir, err = r.ensureCheckout(repoPath, "main")
@@ -230,7 +240,7 @@ func (r *routineSet) rescan() {
 			continue
 		}
 		repoPaths[name] = path
-		dir, kinds, err := r.discover(path)
+		dir, kinds, err := r.discover(name, path)
 		if name == r.updateRepo {
 			updateDir = dir
 		}

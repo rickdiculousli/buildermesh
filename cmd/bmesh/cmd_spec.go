@@ -290,7 +290,7 @@ func (a *app) cmdChooseIdeas(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := landOnMain(ctx, repoPath, branch); err != nil {
+	if err := a.landOnMain(ctx, repoPath, branch); err != nil {
 		return fail(exitRefused, "refused: %v; the review is committed on branch %s", err, branch)
 	}
 	landed = true

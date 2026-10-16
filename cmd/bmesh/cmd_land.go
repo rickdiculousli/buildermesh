@@ -357,13 +357,13 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 		}
 		fmt.Fprintf(out, "push origin main %s\n", rec[:8])
 		// origin has it; the main checkout follows when it can.
-		if err := landOnMain(ctx, l.repoPath, l.branch); err != nil {
+		if err := l.a.landOnMain(ctx, l.repoPath, l.branch); err != nil {
 			fmt.Fprintf(l.a.stderr, "bmesh: %v; origin/main has %s\n", err, rec[:8])
 		} else {
 			fmt.Fprintf(out, "main %s\n", rec[:8])
 		}
 	} else {
-		if err := landOnMain(ctx, l.repoPath, l.branch); err != nil {
+		if err := l.a.landOnMain(ctx, l.repoPath, l.branch); err != nil {
 			undo()
 			if l.mainMoved(ctx, baseSHA) {
 				return true, nil
