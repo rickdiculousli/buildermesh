@@ -42,7 +42,10 @@ var stampRevision, stampTime, stampRelease string
 // module's pseudo-version (a `go install <module>@<commit>` build: its
 // 12-hex suffix is the revision, its timestamp the time), and one with none
 // of them is unknown. The stamped release is the version's when the stamp
-// names the same commit.
+// names the same commit; a main module version that is a release tag (a
+// `go install <module>@vX.Y.Z` build, which names no commit) is the
+// release of a version with no revision, for an update to resolve
+// (OwnCommit).
 func FromBuildInfo(bi *debug.BuildInfo, ok bool) Version {
 	var v Version
 	if ok && bi != nil {
@@ -66,7 +69,19 @@ func FromBuildInfo(bi *debug.BuildInfo, ok bool) Version {
 	if Same(v.Revision, stampRevision) {
 		v.Release = stampRelease
 	}
+	if v.Revision == "" && ok && bi != nil && IsRelease(bi.Main.Version) {
+		v.Release = bi.Main.Version
+	}
 	return v
+}
+
+// Own is what an update compares: the revision, else a release tag that
+// names no commit (a tagged module install), else "".
+func (v Version) Own() string {
+	if v.Revision == "" && IsRelease(v.Release) {
+		return v.Release
+	}
+	return v.Revision
 }
 
 // pseudo matches a module pseudo-version (vX.0.0-<time>-<rev>,
@@ -101,9 +116,13 @@ func Same(a, b string) bool {
 }
 
 // String is `<rev8> <time> [modified]`, or `unknown`; with a release it
-// is `<release> (<rev8> <time> [modified])`.
+// is `<release> (<rev8> <time> [modified])`, and a release with no
+// revision (a tagged module install) is the release alone.
 func (v Version) String() string {
 	if v.Revision == "" {
+		if v.Release != "" {
+			return v.Release
+		}
 		return Unknown
 	}
 	s := Short(v.Revision)
@@ -220,7 +239,7 @@ func cloneMain(repoPath, clones, dir string) error {
 			return err
 		}
 	}
-	if _, err := git(dir, "fetch", "--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main"); err != nil {
+	if _, err := git(dir, "fetch", "--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main", "+refs/tags/v*:refs/tags/v*"); err != nil {
 		return err
 	}
 	return checkout.MoveTo(dir, "origin/main")
@@ -301,9 +320,10 @@ func stampFlags(dir, head string) (string, error) {
 // versionTimeout bounds the built binary's `version`.
 const versionTimeout = 30 * time.Second
 
-// reports is the revision bin's `version` prints: `<rev8>`, `unknown`, or
-// its output (or error) when that is not `bmesh <rev8> ...` or `bmesh
-// <release> (<rev8> ...)`.
+// reports is the revision bin's `version` prints: `<rev8>`, `unknown`, a
+// release alone (`bmesh v0.2.0`, a tagged module install), or its output
+// (or error) when that is not `bmesh <rev8> ...` or `bmesh <release>
+// (<rev8> ...)`.
 func reports(ctx context.Context, bin string) string {
 	ctx, cancel := context.WithTimeout(ctx, versionTimeout)
 	defer cancel()
@@ -322,14 +342,26 @@ func reports(ctx context.Context, bin string) string {
 	return f[1]
 }
 
-// Install builds ./cmd/bmesh in dir, which is at head, to a temporary file
-// beside exe, stamped with head and its commit time; it refuses the build
-// (Refused) unless its `version` names head, then moves exe to Prev(exe)
-// and the build to exe. A failed or refused build leaves exe as it was; so
-// does a failed swap, as far as the file system allows.
+// Install builds ./cmd/bmesh at head in dir (a bmesh-owned checkout, moved
+// to head for the build and back to where it was after) to a temporary
+// file beside exe, stamped with head and its commit time; it refuses the
+// build (Refused) unless its `version` names head, then moves exe to
+// Prev(exe) and the build to exe. A failed or refused build leaves exe as
+// it was; so does a failed swap, as far as the file system allows.
 func Install(ctx context.Context, dir, exe, head string) error {
 	ctx, cancel := context.WithTimeout(ctx, BuildTimeout)
 	defer cancel()
+	at, err := Head(dir)
+	if err != nil {
+		return err
+	}
+	if !Same(at, head) {
+		if err := checkout.MoveTo(dir, head); err != nil {
+			return err
+		}
+		// Back for the next read, which moves it again on a failure here.
+		defer func() { _ = checkout.MoveTo(dir, at) }()
+	}
 	ldflags, err := stampFlags(dir, head)
 	if err != nil {
 		return err

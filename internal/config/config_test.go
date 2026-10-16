@@ -284,6 +284,25 @@ func TestLoadKeepDurations(t *testing.T) {
 	}
 }
 
+func TestUpdateTrack(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	if c, err := Load(p); err != nil || c.Update.Track != "release" {
+		t.Fatalf("default: %v %+v", err, c)
+	}
+	os.WriteFile(p, []byte("[update]\nrepo = \"bm\"\n"), 0o644)
+	if c, err := Load(p); err != nil || c.Update.Track != "release" {
+		t.Fatalf("unset: %v %+v", err, c.Update)
+	}
+	os.WriteFile(p, []byte("[update]\ntrack = \"latest\"\n"), 0o644)
+	if c, err := Load(p); err != nil || c.Update.Track != "latest" {
+		t.Fatalf("latest: %v %+v", err, c.Update)
+	}
+	os.WriteFile(p, []byte("[update]\ntrack = \"main\"\n"), 0o644)
+	if _, err := Load(p); err == nil || !strings.Contains(err.Error(), `[update] track "main": want release or latest`) {
+		t.Fatalf("bad track: %v", err)
+	}
+}
+
 func TestQuotaRemindTopic(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "c.toml")
 	ok := "[notify]\nntfy = \"http://k16:2586/bmesh\"\n[quota]\ncommand = \"cat q.json\"\nremind_topic = \"quota-reset\"\n"

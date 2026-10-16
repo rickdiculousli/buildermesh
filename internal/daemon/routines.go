@@ -77,12 +77,13 @@ type routineSet struct {
 	deferred map[string]time.Time // job id → when it was last deferred, so each is logged once
 
 	updateRepo string // [update] repo when the update can run, else ""
-	updateSeen string // the main commit the update last acted on
+	updateSeen string // the target commit the update last acted on
+	noTagSaid  bool   // "no release tag yet" was logged
 
 	checkEvery time.Duration // how often main is checked for the notice; 0 = never (self-updating from a row, or off)
 	checkNext  time.Time     // when the next check is due
 	upstream   string        // the module the check installs from ([update] upstream), else "": notice only
-	failedAt   string        // the main commit whose failed install was last logged
+	failedAt   string        // the target commit whose failed install was last logged
 	drained    bool          // an update drained the feeds; guarded by mu
 }
 

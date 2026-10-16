@@ -104,11 +104,11 @@ func (a *app) cmdRelease(args []string) error {
 		}
 		ref = "origin/main"
 	}
-	head, err := a.codeHead(ctx, repoPath, ref)
+	head, err := a.codeHead(repoPath, ref)
 	if err != nil {
 		return err
 	}
-	last, err := lastRelease(ctx, repoPath, ref)
+	last, err := selfupdate.NewestRelease(repoPath, ref)
 	if err != nil {
 		return err
 	}
@@ -208,23 +208,6 @@ func (a *app) cmdRelease(args []string) error {
 	}
 	fmt.Fprintf(a.stdout, "released %s %s at %s (%s)%s\n", row.Name, tag, head[:8], specList(ids), pushed)
 	return nil
-}
-
-// lastRelease is the highest release tag in ref's history, "" when it has
-// none.
-func lastRelease(ctx context.Context, repoPath, ref string) (string, error) {
-	tags, err := gitIn(ctx, repoPath, "tag", "--list", "v*", "--merged", ref)
-	if err != nil {
-		return "", err
-	}
-	var last string
-	var top release
-	for _, t := range strings.Fields(tags) {
-		if r, ok := parseRelease(t); ok && (last == "" || slices.Compare(r[:], top[:]) > 0) {
-			last, top = t, r
-		}
-	}
-	return last, nil
 }
 
 // releaseMessage is the tag's message: `<repo> <tag>`, then one line per

@@ -53,6 +53,7 @@ type Deps struct {
 	Quota *web.Quota // the quota gate the map shares; nil = one of the reminder's own from [quota] command
 
 	Revision string // this binary's commit (vcs.revision); "" = unknown
+	Tag      string // with no Revision, the release tag a tagged module install was built at, resolved on main by an update; "" = none
 	RevTime  string // that commit's time (RFC 3339); "" = unknown
 	Module   string // the module this binary was built from; "" = unknown, no upstream to read
 	Exe      string // the binary's path, which [update] replaces

@@ -18,6 +18,15 @@ var readBuildInfo = debug.ReadBuildInfo
 
 func buildVersion() selfupdate.Version { return selfupdate.FromBuildInfo(readBuildInfo()) }
 
+// buildTag is the release tag this binary was installed at when that is
+// all it says of its commit (`go install <module>@vX.Y.Z`), else "".
+func buildTag() string {
+	if v := buildVersion(); v.Revision == "" {
+		return v.Own()
+	}
+	return ""
+}
+
 // buildModule is the module this binary was built from, "" when it does not
 // say.
 func buildModule() string {

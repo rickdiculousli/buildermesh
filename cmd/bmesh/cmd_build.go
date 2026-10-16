@@ -152,7 +152,7 @@ func (a *app) cmdBuild(args []string) error {
 		}
 	}
 	if gate {
-		head, err := a.codeHead(ctx, repoPath, "main")
+		head, err := a.codeHead(repoPath, "main")
 		if err != nil {
 			return err
 		}
