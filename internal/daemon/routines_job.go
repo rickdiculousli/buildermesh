@@ -26,11 +26,13 @@ import (
 const settleTimeout = 10 * time.Second
 
 // delivery is a fetched job until it is settled. While unsettled it is kept
-// in progress every AckWait/3, so a job held in a batch or running past the
-// kind's timeout is not redelivered. A loop that stops hands it back with a
-// NAK (a running job's process group killed first), so the next daemon takes
-// it at once; only a daemon that dies leaves it to be redelivered after
-// AckWait.
+// in progress every ackWaitExtra/3 (20 s), so a job held in a batch or
+// running past the kind's timeout is not redelivered: every AckWait any box
+// writes is a timeout plus ackWaitExtra, so another box's shorter AckWait,
+// which applies to this box's pending jobs too, can't outrun the beat. A
+// loop that stops hands it back with a NAK (a running job's process group
+// killed first), so the next daemon takes it at once; only a daemon that
+// dies leaves it to be redelivered after AckWait.
 type delivery struct {
 	msg  jetstream.Msg
 	job  mesh.Job
@@ -41,7 +43,7 @@ type delivery struct {
 	stop chan struct{}
 	once sync.Once
 
-	held   bool // counted in f.held until started or settled
+	held   bool // in f.held until started or settled
 	unheld sync.Once
 	noted  atomic.Bool // in the kind's bm-jobs entry until settled
 }
@@ -49,13 +51,19 @@ type delivery struct {
 // hold counts dl as waiting in a pool; call before handing it over.
 func (dl *delivery) hold() {
 	dl.held = true
-	dl.f.held.Add(1)
+	dl.f.heldMu.Lock()
+	dl.f.held[dl] = dl.seq
+	dl.f.heldMu.Unlock()
 }
 
 // start ends dl's wait in a pool.
 func (dl *delivery) start() {
 	if dl.held {
-		dl.unheld.Do(func() { dl.f.held.Add(-1) })
+		dl.unheld.Do(func() {
+			dl.f.heldMu.Lock()
+			delete(dl.f.held, dl)
+			dl.f.heldMu.Unlock()
+		})
 	}
 }
 
@@ -65,7 +73,7 @@ func (r *routineSet) newDelivery(f *feed, m jetstream.Msg, j mesh.Job, from mesh
 		dl.seq = meta.Sequence.Stream
 	}
 	f.inflight.Add(1)
-	every := max(time.Duration(f.ackWait.Load())/3, 100*time.Millisecond)
+	every := max(ackWaitExtra/3, 100*time.Millisecond)
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()

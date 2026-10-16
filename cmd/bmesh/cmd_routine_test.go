@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +13,8 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
-// kindRepo is gitRepo with kind files committed under .bmesh/routines.
+// kindRepo is gitRepo with kind files committed under .bmesh/routines,
+// registered in repos.toml under its directory's name.
 func kindRepo(t *testing.T, kinds map[string]string) string {
 	t.Helper()
 	repo := gitRepo(t)
@@ -27,6 +29,7 @@ func kindRepo(t *testing.T, kinds map[string]string) string {
 	}
 	meshtest.Git(t, repo, "add", "-A")
 	meshtest.Git(t, repo, "commit", "-m", "kinds")
+	writeRepos(t, fmt.Sprintf("[repos.%q]\npath = %q\n", filepath.Base(repo), repo))
 	return repo
 }
 
@@ -200,25 +203,51 @@ func queuedRepo(t *testing.T, c *mesh.Client, ctx context.Context) string {
 }
 
 // R16: a job queued from a linked worktree (where leads live) names the
-// [repos] entry of its main repo, not the worktree's directory.
+// [repos] entry of its main repo, not the worktree's directory. A repo the
+// registry doesn't name is refused: no daemon would run its job.
 func TestQueueFromLinkedWorktreeNamesConfiguredRepo(t *testing.T) {
 	c, ctx := setup(t)
 	repo := kindRepo(t, map[string]string{"verify": "command = \"true\"\n"})
 	wt := filepath.Join(t.TempDir(), "thread-1")
 	meshtest.Git(t, repo, "worktree", "add", "--detach", wt)
 	t.Chdir(wt)
-	// No [repos] entry: the main repo's base name.
-	if got := queuedRepo(t, c, ctx); got != filepath.Base(repo) {
-		t.Fatalf("no [repos]: repo %q, want %q", got, filepath.Base(repo))
+	// No [repos] entry: the main repo's base name, refused.
+	other := "[repos.other]\npath = \"" + t.TempDir() + "\"\n"
+	writeRepos(t, other)
+	if _, errs, code := runCLI(t, as("app-001"), "routine", "queue", "verify"); code != 3 ||
+		errs != "bmesh: "+filepath.Base(repo)+" is not in the registry\n" {
+		t.Fatalf("no [repos]: %d %q", code, errs)
 	}
-	writeRepos(t, "[repos.other]\npath = \""+t.TempDir()+"\"\n[repos.demo]\npath = \""+repo+"\"\n")
+	writeRepos(t, other+"[repos.demo]\npath = \""+repo+"\"\n")
 	if got := queuedRepo(t, c, ctx); got != "demo" {
 		t.Fatalf("[repos]: repo %q, want demo", got)
 	}
-	// A registered node naming its repo is believed.
+	// A registered node naming its repo is believed, and refused while the
+	// registry lacks that repo.
 	putNode(t, c, ctx, mesh.Node{Path: "app-001", Repo: "named"})
+	if _, errs, code := runCLI(t, as("app-001"), "routine", "queue", "verify"); code != 3 ||
+		errs != "bmesh: named is not in the registry\n" {
+		t.Fatalf("unregistered node repo: %d %q", code, errs)
+	}
+	writeRepos(t, other+"[repos.named]\npath = \""+repo+"\"\n")
 	if got := queuedRepo(t, c, ctx); got != "named" {
 		t.Fatalf("node: repo %q, want named", got)
+	}
+	if n, err := mesh.Depth(ctx, c, "verify"); err != nil || n != 0 {
+		t.Fatalf("depth %d %v: a refusal queued nothing", n, err)
+	}
+}
+
+// An inline kind is refused by queue: it runs in the requester's worktree.
+func TestQueueRefusesInlineKind(t *testing.T) {
+	c, ctx := setup(t)
+	kindRepo(t, map[string]string{"lint": "mode = \"inline\"\ncommand = \"true\"\n"})
+	if _, errs, code := runCLI(t, as("app-001"), "routine", "queue", "lint"); code != 3 ||
+		errs != "bmesh: lint is inline: run it with bmesh routine run\n" {
+		t.Fatalf("inline: %d %q", code, errs)
+	}
+	if n, err := mesh.Depth(ctx, c, "lint"); err != nil || n != 0 {
+		t.Fatalf("depth %d %v", n, err)
 	}
 }
 

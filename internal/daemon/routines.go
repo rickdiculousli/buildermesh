@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"slices"
@@ -20,7 +22,6 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/rickdiculousli/buildermesh/internal/checkout"
-	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/level"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
@@ -34,12 +35,16 @@ var (
 	busyNakDelay = 30 * time.Second       // a job whose slot is busy is redelivered after this
 	fetchWait    = time.Second            // the longest one fetch blocks, so a stop is seen
 	drainWait    = 500 * time.Millisecond // after a batch, how long an instance waits for a further queued job
+	deferBase    = 2 * time.Second        // a deferred job's first redelivery delay, doubled per delivery
+	deferCap     = time.Minute            // the longest a deferred job waits before it is redelivered
 )
 
 // routineSet runs every routine kind of every repo in [repos]. Each kind has
-// one feed: its inbox consumer and a dispatcher that fetches the kind's
-// messages and routes each job to the group of the job's repo, which runs it
-// on a pooled instance of the job's model or on a fresh run of its own.
+// one feed: its inbox consumer, shared with every other box that runs the
+// kind, and a dispatcher that fetches the kind's messages and routes each
+// job to the group of the job's repo, which runs it on a pooled instance of
+// the job's model or on a fresh run of its own. A job for a repo this box
+// can't judge the kind for is deferred to a box that can.
 type routineSet struct {
 	d      Deps
 	ctx    context.Context    // the loop's: running jobs and heartbeats end with it
@@ -66,6 +71,10 @@ type routineSet struct {
 
 	missing map[string]bool   // registered repos with no path on this box, logged once; rescan's own
 	readErr map[string]string // repo → the main commit whose kinds failed to read, logged once per commit; rescan's own
+	mainAt  map[string]string // repo → "<ref> at <sha8>", the main its kinds were last read at; rescan's own
+
+	deferMu  sync.Mutex           // guards deferred
+	deferred map[string]time.Time // job id → when it was last deferred, so each is logged once
 
 	updateRepo string // [update] repo when the update can run, else ""
 	updateSeen string // the main commit the update last acted on
@@ -106,13 +115,17 @@ type feed struct {
 	cons     jetstream.Consumer
 	ctx      context.Context // ends when the feed stops
 	cancel   context.CancelFunc
-	maxAck   int
-	ackWait  atomic.Int64 // time.Duration
+	ackWait  atomic.Int64 // time.Duration: the AckWait this box last wrote
+	capacity atomic.Int64 // this box's instance count: the most jobs it fetches at once
 	inflight atomic.Int64 // jobs fetched and not yet settled
-	held     atomic.Int64 // jobs handed to a pool and not yet started
 
-	mu     sync.Mutex // guards groups and sends to their pools
-	groups map[string]*group
+	heldMu sync.Mutex
+	held   map[*delivery]uint64 // jobs handed to a pool and not yet started → stream sequence
+
+	mu       sync.Mutex // guards groups, deferred, mains and sends to the pools
+	groups   map[string]*group
+	deferred map[string]string // repo → why this box can't judge the kind for it
+	mains    map[string]string // repo → the main its kinds were read at ("origin/main at <sha8>")
 }
 
 // group is one repo's definition of a kind (as on its main) and the pools
@@ -130,10 +143,15 @@ type group struct {
 // and are told to start a batch on gos.
 type pool struct {
 	model string
-	paths []string
+	names []instanceName
 	jobs  chan *delivery
 	gos   []chan struct{}
 }
+
+// instanceName is a pooled instance's node path, which carries this box's
+// host, and the name of its checkout, which doesn't: checkouts are local to
+// the box.
+type instanceName struct{ path, checkout string }
 
 // routines runs the routine loop until ctx ends (or an update drained it):
 // on start and every kindRescan it reads each repo's kinds from its main and
@@ -153,8 +171,8 @@ func routines(ctx context.Context, d Deps) {
 	defer cancel()
 	r := &routineSet{d: d, ctx: ctx, cancel: cancel, root: d.Checkouts, claude: d.ClaudeBin,
 		feeds: map[string]*feed{}, paths: map[string]chan struct{}{}, missing: map[string]bool{},
-		readErr: map[string]string{},
-		holds:   map[string]map[uint64]mesh.Hold{}, updateRepo: updateRepo(d)}
+		readErr: map[string]string{}, mainAt: map[string]string{}, deferred: map[string]time.Time{},
+		holds: map[string]map[uint64]mesh.Hold{}, updateRepo: updateRepo(d)}
 	if strings.TrimSpace(r.claude) == "" {
 		r.claude = "claude"
 	}
@@ -180,14 +198,15 @@ func routines(ctx context.Context, d Deps) {
 
 // discover returns the kinds on repoPath's main: origin/main after a fetch
 // when the repo has an origin, else the local main (R4). dir is the main
-// checkout once it is at that commit, else "".
-func (r *routineSet) discover(repo, repoPath string) (dir string, kinds []kind.Kind, err error) {
+// checkout once it is at that commit, else ""; at names the commit the kinds
+// were read at, "<ref> at <sha8>".
+func (r *routineSet) discover(repo, repoPath string) (dir, at string, kinds []kind.Kind, err error) {
 	if err := r.fetch(repo, repoPath); err != nil {
 		r.d.Log.Warn("routines: fetch", "repo", repoPath, "err", err)
 	}
 	dir, err = r.ensureCheckout(repoPath, "main")
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	ref := "main"
 	if exec.Command("git", "-C", repoPath, "remote", "get-url", "origin").Run() == nil {
@@ -197,15 +216,19 @@ func (r *routineSet) discover(repo, repoPath string) (dir string, kinds []kind.K
 	// from the same checkout.
 	unlock, err := selfupdate.Lock(dir)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	err = checkout.MoveTo(dir, ref)
+	var sha []byte
+	if err == nil {
+		sha, err = exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
+	}
 	unlock()
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	kinds, err = kind.LoadDir(dir)
-	return dir, kinds, err
+	return dir, fmt.Sprintf("%s at %.8s", ref, strings.TrimSpace(string(sha))), kinds, err
 }
 
 // mainCommit is the commit discover reads kinds at, origin/main when the
@@ -225,8 +248,12 @@ func mainCommit(repoPath string) string {
 // rescan reads every repo's kinds and brings the feeds in line; a kind whose
 // os is another OS's is left out, so this box never fetches its jobs. A repo that
 // cannot be read keeps what it had; one whose path does not exist on this
-// box has no kinds here and is logged once per daemon start. With [update] on, the update repo's main
-// is then compared with this binary; an update drains the feeds for good.
+// box has no kinds here and is logged once per daemon start. Each feed is
+// handed, with its groups, the repos it can't judge the kind for here: no
+// checkout, a main that failed to read and left no group, or the kind left
+// out for another OS. Their jobs are deferred to a box that can. With
+// [update] on, the update repo's main is then compared with this binary; an
+// update drains the feeds for good.
 func (r *routineSet) rescan() {
 	if r.isDrained() {
 		return
@@ -240,6 +267,8 @@ func (r *routineSet) rescan() {
 	want := map[string]map[string]kind.Kind{} // kind → repo → definition
 	repoPaths := map[string]string{}
 	failed := map[string]bool{}
+	cant := map[string]string{}             // repo → why no kind of it can be judged here
+	osOut := map[string]map[string]string{} // kind → repo → why it is left to another OS
 	for _, name := range names {
 		if r.ctx.Err() != nil {
 			return
@@ -247,6 +276,7 @@ func (r *routineSet) rescan() {
 		_, path, err := r.d.Cfg.RepoPath(name)
 		if err != nil {
 			r.d.Log.Warn("routines: repo", "repo", name, "err", err)
+			cant[name] = "has no usable path"
 			continue
 		}
 		if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
@@ -255,10 +285,12 @@ func (r *routineSet) rescan() {
 				r.missing[name] = true
 				r.d.Log.Info("routines: repo has no checkout on this box; skipped", "repo", name, "path", path)
 			}
+			cant[name] = "has no checkout"
+			delete(r.mainAt, name)
 			continue
 		}
 		repoPaths[name] = path
-		dir, kinds, err := r.discover(name, path)
+		dir, at, kinds, err := r.discover(name, path)
 		if name == r.updateRepo {
 			updateDir = dir
 		}
@@ -271,11 +303,17 @@ func (r *routineSet) rescan() {
 				r.d.Log.Warn("routines: read kinds", "repo", name, "err", err)
 			}
 			failed[name] = true
+			cant[name] = "has a main that failed to read"
 			continue
 		}
 		delete(r.readErr, name)
+		r.mainAt[name] = at
 		for _, k := range kinds {
 			if !k.RunsOn(r.d.GOOS) { // another OS's box takes its jobs
+				if osOut[k.Name] == nil {
+					osOut[k.Name] = map[string]string{}
+				}
+				osOut[k.Name][name] = "runs " + k.Name + " on " + k.OS + ", not"
 				continue
 			}
 			if want[k.Name] == nil {
@@ -316,8 +354,18 @@ func (r *routineSet) rescan() {
 	}
 	sort.Strings(kinds)
 	for _, name := range kinds {
-		r.applyKind(name, want[name], repoPaths)
+		deferred := maps.Clone(osOut[name])
+		if deferred == nil {
+			deferred = map[string]string{}
+		}
+		for repo, why := range cant {
+			if _, kept := want[name][repo]; !kept { // a failed read keeps an earlier scan's group
+				deferred[repo] = why
+			}
+		}
+		r.applyKind(name, want[name], repoPaths, deferred, maps.Clone(r.mainAt))
 	}
+	r.forgetDeferred()
 	r.sweep()
 }
 
@@ -383,53 +431,67 @@ func shortOf(model string) string {
 	return mesh.ModelShort(model)
 }
 
-// consumerSettings: MaxAckPending is the kind's instance count over every
-// repo (pool × models for pooled, pool for fresh: R5); AckWait the longest
+// consumerSettings: capacity is this box's instance count for the kind over
+// its repos (pool × models for pooled, pool for fresh: R5), at least 1 so a
+// feed whose groups can only refuse still fetches; AckWait the longest
 // timeout plus ackWaitExtra.
 func consumerSettings(defs map[string]kind.Kind) (int, time.Duration) {
-	maxAck, longest := 0, time.Duration(0)
+	capacity, longest := 0, time.Duration(0)
 	for _, k := range defs {
 		switch k.Mode {
 		case "pooled":
-			maxAck += k.Pool * len(modelsOf(k))
+			capacity += k.Pool * len(modelsOf(k))
 		case "fresh":
-			maxAck += k.Pool
+			capacity += k.Pool
 		}
 		longest = max(longest, k.Timeout)
 	}
-	return max(maxAck, 1), max(longest+ackWaitExtra, time.Second)
+	return max(capacity, 1), max(longest+ackWaitExtra, time.Second)
 }
 
-// applyKind starts the kind's feed when new, updates its consumer when its
-// settings changed, and starts or restarts each repo's group whose
-// definition or instance paths changed. Called with r.mu held.
-func (r *routineSet) applyKind(name string, defs map[string]kind.Kind, repoPaths map[string]string) {
+// applyKind starts the kind's feed when new, brings its consumer in line
+// and starts or restarts each repo's group whose definition or instance
+// paths changed; deferred and mains change with the groups, under f.mu.
+// Called with r.mu held.
+//
+// The consumer is every box's: its MaxAckPending is -1 (each box gates its
+// own fetches at its capacity), and its AckWait is the last writer's. This
+// box writes AckWait when its own value changes; otherwise it reads the
+// consumer and writes -1 back, keeping the AckWait it read, when an old
+// daemon left a count.
+func (r *routineSet) applyKind(name string, defs map[string]kind.Kind, repoPaths, deferred, mains map[string]string) {
 	f := r.feeds[name]
-	maxAck, ackWait := consumerSettings(defs)
-	if f == nil || f.maxAck != maxAck || time.Duration(f.ackWait.Load()) != ackWait {
-		cons, err := mesh.KindConsumer(r.ctx, r.d.Client, name, maxAck, ackWait)
+	capacity, ackWait := consumerSettings(defs)
+	switch {
+	case f == nil:
+		cons, err := mesh.KindConsumer(r.ctx, r.d.Client, name, -1, ackWait)
 		if err != nil {
 			r.d.Log.Warn("routines: consumer", "kind", name, "err", err)
-			if f == nil {
-				return
-			}
-		} else if f == nil {
-			f = r.startFeed(name, cons)
-			r.feeds[name] = f
+			return
 		}
-		if err == nil {
-			f.maxAck = maxAck
+		f = r.startFeed(name, cons, capacity)
+		f.ackWait.Store(int64(ackWait))
+		r.feeds[name] = f
+	case time.Duration(f.ackWait.Load()) != ackWait:
+		if _, err := mesh.KindConsumer(r.ctx, r.d.Client, name, -1, ackWait); err != nil {
+			r.d.Log.Warn("routines: consumer", "kind", name, "err", err)
+		} else {
 			f.ackWait.Store(int64(ackWait))
 		}
+	default:
+		r.convergeConsumer(f)
 	}
+	f.capacity.Store(int64(capacity))
 
 	repos := make([]string, 0, len(defs))
 	for repo := range defs {
 		repos = append(repos, repo)
 	}
 	sort.Strings(repos)
+	host := mesh.RepoToken(r.d.Host)
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.deferred, f.mains = deferred, mains
 	numbered := map[string]int{} // model short → instances numbered so far
 	for _, repo := range repos {
 		k := defs[repo]
@@ -437,23 +499,28 @@ func (r *routineSet) applyKind(name string, defs map[string]kind.Kind, repoPaths
 		if old := f.groups[repo]; old != nil && repoPath == "" {
 			repoPath = old.repoPath // a repo kept from an earlier scan
 		}
-		paths := map[string][]string{}
+		names := map[string][]instanceName{}
 		if k.Mode == "pooled" {
 			for _, m := range modelsOf(k) {
 				for i := 0; i < k.Pool; i++ {
-					numbered[shortOf(m)]++
-					paths[m] = append(paths[m], "routine."+name+"."+shortOf(m)+"-"+strconv.Itoa(numbered[shortOf(m)]))
+					short := shortOf(m)
+					numbered[short]++
+					n := strconv.Itoa(numbered[short])
+					names[m] = append(names[m], instanceName{
+						path:     "routine." + name + "." + host + "-" + short + "-" + n,
+						checkout: "routine." + name + "." + short + "-" + n,
+					})
 				}
 			}
 		}
-		sig := fmt.Sprintf("%s|%+v|%v", repoPath, k, paths)
+		sig := fmt.Sprintf("%s|%+v|%v", repoPath, k, names)
 		if old := f.groups[repo]; old != nil {
 			if old.sig == sig {
 				continue
 			}
 			old.cancel()
 		}
-		f.groups[repo] = r.startGroup(repo, repoPath, k, sig, paths)
+		f.groups[repo] = r.startGroup(repo, repoPath, k, sig, names)
 	}
 	for repo, g := range f.groups {
 		if _, ok := defs[repo]; !ok {
@@ -463,9 +530,30 @@ func (r *routineSet) applyKind(name string, defs map[string]kind.Kind, repoPaths
 	}
 }
 
-func (r *routineSet) startFeed(name string, cons jetstream.Consumer) *feed {
+// convergeConsumer reads the kind's consumer and, when its MaxAckPending is
+// anything but -1 (an old daemon's count), writes -1 back with the AckWait
+// it read.
+func (r *routineSet) convergeConsumer(f *feed) {
+	ctx, cancel := context.WithTimeout(r.ctx, settleTimeout)
+	defer cancel()
+	info, err := f.cons.Info(ctx)
+	if err != nil {
+		r.d.Log.Warn("routines: consumer info", "kind", f.name, "err", err)
+		return
+	}
+	if info.Config.MaxAckPending == -1 {
+		return
+	}
+	if _, err := mesh.KindConsumer(ctx, r.d.Client, f.name, -1, info.Config.AckWait); err != nil {
+		r.d.Log.Warn("routines: consumer", "kind", f.name, "err", err)
+	}
+}
+
+func (r *routineSet) startFeed(name string, cons jetstream.Consumer, capacity int) *feed {
 	ctx, cancel := context.WithCancel(r.ctx)
-	f := &feed{name: name, cons: cons, ctx: ctx, cancel: cancel, groups: map[string]*group{}}
+	f := &feed{name: name, cons: cons, ctx: ctx, cancel: cancel, groups: map[string]*group{},
+		held: map[*delivery]uint64{}}
+	f.capacity.Store(int64(capacity))
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
@@ -489,7 +577,7 @@ func (f *feed) stop() {
 // startGroup starts a group's pooled instances (none for fresh and inline
 // kinds). Once they have all stopped, jobs left in the pools are returned
 // to the inbox.
-func (r *routineSet) startGroup(repo, repoPath string, k kind.Kind, sig string, paths map[string][]string) *group {
+func (r *routineSet) startGroup(repo, repoPath string, k kind.Kind, sig string, names map[string][]instanceName) *group {
 	ctx, cancel := context.WithCancel(r.ctx)
 	g := &group{repo: repo, repoPath: repoPath, k: k, sig: sig, ctx: ctx, cancel: cancel, pools: map[string]*pool{}}
 	if k.Mode != "pooled" {
@@ -497,9 +585,9 @@ func (r *routineSet) startGroup(repo, repoPath string, k kind.Kind, sig string, 
 	}
 	var gwg sync.WaitGroup
 	for _, m := range modelsOf(k) {
-		p := &pool{model: m, paths: paths[m], jobs: make(chan *delivery, 64)}
+		p := &pool{model: m, names: names[m], jobs: make(chan *delivery, 64)}
 		g.pools[m] = p
-		for _, path := range p.paths {
+		for _, name := range p.names {
 			goCh := make(chan struct{}, 1)
 			p.gos = append(p.gos, goCh)
 			r.wg.Add(1)
@@ -507,7 +595,7 @@ func (r *routineSet) startGroup(repo, repoPath string, k kind.Kind, sig string, 
 			go func() {
 				defer r.wg.Done()
 				defer gwg.Done()
-				r.pooledInstance(g, p, path, goCh)
+				r.pooledInstance(g, p, name, goCh)
 			}()
 		}
 	}
@@ -555,14 +643,30 @@ func isGo(m mesh.Message) bool {
 	return m.Kind == "message" && strings.TrimSpace(m.Text) == "go" || m.Kind == "job" && m.Job != nil && m.Job.Go
 }
 
-// dispatch fetches the kind's messages one at a time until ctx ends. A go
-// is passed to the instances; a job is routed. Held jobs count against
-// MaxAckPending, so a go queued behind them cannot be fetched: while jobs
-// are held and not yet running, each empty fetch looks ahead in the stream
-// for one. A message fetched once ctx has ended goes back to the inbox.
+// dispatch fetches the kind's messages one at a time until ctx ends, while
+// fewer jobs than this box's capacity are in flight: the consumer has no
+// limit of its own, since every box that runs the kind shares it. A go is
+// passed to the instances; a job is routed. A go is one message that one box
+// fetches, so while jobs are held this box looks in the stream for a go past
+// the oldest of them (and past the last go it acted on): after each empty
+// fetch, and every fetchWait while its capacity is full. A message fetched
+// once ctx has ended goes back to the inbox.
 func (r *routineSet) dispatch(ctx context.Context, f *feed) {
-	var last, goSeen uint64 // highest stream sequence fetched; of a go acted on
+	var goSeen uint64 // stream sequence of the last go acted on
+	peek := func() {
+		if oldest, ok := f.oldestHeld(); ok {
+			if seq, ok := r.peekGo(ctx, f.name, max(oldest, goSeen)); ok {
+				goSeen = seq
+				f.signalGo()
+			}
+		}
+	}
 	for ctx.Err() == nil {
+		if f.inflight.Load() >= f.capacity.Load() {
+			peek()
+			sleepCtx(ctx, fetchWait)
+			continue
+		}
 		m, err := f.cons.Next(jetstream.FetchMaxWait(fetchWait))
 		if err != nil {
 			if ctx.Err() != nil {
@@ -573,12 +677,7 @@ func (r *routineSet) dispatch(ctx context.Context, f *feed) {
 				sleepCtx(ctx, fetchWait)
 				continue
 			}
-			if f.held.Load() > 0 {
-				if seq, ok := r.peekGo(ctx, f.name, max(last, goSeen)); ok {
-					goSeen = seq
-					f.signalGo()
-				}
-			}
+			peek()
 			continue
 		}
 		if ctx.Err() != nil { // Next takes no ctx: the feed stopped meanwhile
@@ -590,7 +689,6 @@ func (r *routineSet) dispatch(ctx context.Context, f *feed) {
 		var seq uint64
 		if meta, err := m.Metadata(); err == nil {
 			seq = meta.Sequence.Stream
-			last = max(last, seq)
 		}
 		var msg mesh.Message
 		if err := json.Unmarshal(m.Data(), &msg); err != nil {
@@ -606,6 +704,7 @@ func (r *routineSet) dispatch(ctx context.Context, f *feed) {
 				r.d.Log.Warn("routines: ack go", "kind", f.name, "err", err)
 			}
 			if seq == 0 || seq > goSeen {
+				goSeen = max(goSeen, seq)
 				f.signalGo()
 			}
 		default:
@@ -613,6 +712,24 @@ func (r *routineSet) dispatch(ctx context.Context, f *feed) {
 			m.Ack()
 		}
 	}
+}
+
+// oldestHeld is the stream sequence of the oldest job held in a pool and
+// not yet started; false when none is.
+func (f *feed) oldestHeld() (uint64, bool) {
+	f.heldMu.Lock()
+	defer f.heldMu.Unlock()
+	if len(f.held) == 0 {
+		return 0, false
+	}
+	oldest := uint64(0)
+	first := true
+	for _, seq := range f.held {
+		if first || seq < oldest {
+			oldest, first = seq, false
+		}
+	}
+	return oldest, true
 }
 
 // peekGo looks at the kind's inbox past sequence after for a go.
@@ -637,9 +754,11 @@ func (r *routineSet) peekGo(ctx context.Context, kindName string, after uint64) 
 	return 0, false
 }
 
-// route settles what the dispatcher can decide (unknown repo, a kind not on
-// the repo's main, an inline kind, an unknown model: each replied and acked)
-// and hands the rest to the repo's pool for the model or to a fresh run.
+// route settles what the dispatcher can decide (a kind not on the repo's
+// main, an inline kind, an unknown model: each replied and acked), defers
+// what this box can't judge (a repo its registry doesn't name yet, or one
+// the feed defers) and hands the rest to the repo's pool for the model or to
+// a fresh run.
 func (r *routineSet) route(f *feed, m jetstream.Msg, msg mesh.Message) {
 	j := *msg.Job
 	from, err := mesh.ParsePath(msg.From)
@@ -658,7 +777,9 @@ func (r *routineSet) route(f *feed, m jetstream.Msg, msg mesh.Message) {
 		dl.ack()
 	}
 	if _, ok := r.d.Cfg.Repos[j.Repo]; !ok {
-		refuse(unknownRepo(r.d.Cfg, r.d.Host, j.Repo))
+		// serve reads repos.toml only when it starts: a box that has the
+		// row now runs it once restarted, and another box may have it.
+		r.deferJob(dl, "is not in the registry serve read at start, so not")
 		return
 	}
 	if text := r.handOff(f, dl); text != "" {
@@ -666,19 +787,49 @@ func (r *routineSet) route(f *feed, m jetstream.Msg, msg mesh.Message) {
 	}
 }
 
-// unknownRepo is the refusal of a job for a repo the daemon's registry
-// lacks. The daemon reads repos.toml once, when serve starts, so a row on
-// disk now but not then is named as such: a restart takes it.
-func unknownRepo(cfg *config.Config, host, repo string) string {
-	text := fmt.Sprintf("unknown repo %s to bmesh serve on %s", repo, host)
-	if cfg.Path() != "" {
-		if rows, err := config.LoadRepos(config.ReposPath(cfg.Path())); err == nil {
-			if _, ok := rows[repo]; ok {
-				return text + ": repos.toml has it now, but serve read the registry when it started; restart bmesh serve"
-			}
+// deferJob hands dl back for a box that can run it: a NAK delayed
+// deferBase × 2^(n-1), at most deferCap, n its delivery count, with no
+// reply. A random part of the delay, up to a quarter, is taken off: this box
+// fetches again at once and then every fetchWait, so an exact delay would
+// end just as its own fetch became the oldest waiting, which nats-server
+// serves first, and a box that can run the job would never get it. Each job
+// is logged once.
+func (r *routineSet) deferJob(dl *delivery, why string) {
+	n := uint64(1)
+	if meta, err := dl.msg.Metadata(); err == nil {
+		n = meta.NumDelivered
+	}
+	r.deferMu.Lock()
+	_, seen := r.deferred[dl.job.ID]
+	r.deferred[dl.job.ID] = r.d.Now()
+	r.deferMu.Unlock()
+	if !seen {
+		r.d.Log.Info(fmt.Sprintf("routines: deferred job %s: %s %s here", dl.job.ID, dl.job.Repo, why))
+	}
+	d := deferDelay(n)
+	dl.nakDelay(d - rand.N(d/4+1))
+}
+
+// deferDelay is a deferred job's redelivery delay at its nth delivery.
+func deferDelay(n uint64) time.Duration {
+	d := deferBase
+	for i := uint64(1); i < n && d < deferCap; i++ {
+		d *= 2
+	}
+	return min(d, deferCap)
+}
+
+// forgetDeferred drops the deferred jobs not seen for ten times deferCap:
+// answered, or taken by a box that can run them.
+func (r *routineSet) forgetDeferred() {
+	cutoff := r.d.Now().Add(-10 * deferCap)
+	r.deferMu.Lock()
+	defer r.deferMu.Unlock()
+	for id, at := range r.deferred {
+		if at.Before(cutoff) {
+			delete(r.deferred, id)
 		}
 	}
-	return text + "; serve reads repos.toml only when it starts, so restart it after changing the registry"
 }
 
 // handOff passes dl to its repo's pool for its model, or starts a fresh run;
@@ -692,9 +843,14 @@ func (r *routineSet) handOff(f *feed, dl *delivery) string {
 		return ""
 	}
 	g := f.groups[j.Repo]
+	if g == nil {
+		if why, ok := f.deferred[j.Repo]; ok {
+			r.deferJob(dl, why)
+			return ""
+		}
+		return fmt.Sprintf("kind %s is not on %s's main (%s)", f.name, j.Repo, f.mains[j.Repo])
+	}
 	switch {
-	case g == nil:
-		return fmt.Sprintf("kind %s is not on %s's main", f.name, j.Repo)
 	case g.k.Mode == "inline":
 		return fmt.Sprintf("kind %s is inline; run it with bmesh routine run", f.name)
 	}

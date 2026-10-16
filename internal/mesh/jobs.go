@@ -54,14 +54,16 @@ func Truncate(s string) string {
 }
 
 // Default kind consumer settings, used when a requester queues before any
-// daemon has set the kind's own (pool size, timeout + 1 min).
+// daemon has set the kind's own (timeout + 1 min). MaxAckPending is
+// unlimited, as every daemon writes it: the consumer is shared by every box
+// that runs the kind, and each box gates its own fetches.
 const (
-	defaultKindMaxAck  = 1
+	defaultKindMaxAck  = -1
 	defaultKindAckWait = 21 * time.Minute
 )
 
 // kindConsumerConfig is the kind's inbox consumer: at most maxAck jobs out
-// at once, each redelivered when unacked after ackWait.
+// at once (-1 for no limit), each redelivered when unacked after ackWait.
 func kindConsumerConfig(kindName string, maxAck int, ackWait time.Duration) jetstream.ConsumerConfig {
 	p := RoutinePath(kindName)
 	return jetstream.ConsumerConfig{
@@ -75,7 +77,8 @@ func kindConsumerConfig(kindName string, maxAck int, ackWait time.Duration) jets
 }
 
 // KindConsumer creates or updates the kind's inbox consumer: at most maxAck
-// jobs out at once, each redelivered when unacked after ackWait.
+// jobs out at once (-1 for no limit), each redelivered when unacked after
+// ackWait.
 func KindConsumer(ctx context.Context, c *Client, kindName string, maxAck int, ackWait time.Duration) (jetstream.Consumer, error) {
 	cons, err := c.JS.CreateOrUpdateConsumer(ctx, StreamMesh, kindConsumerConfig(kindName, maxAck, ackWait))
 	if err != nil {
