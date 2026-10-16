@@ -226,7 +226,7 @@ func (r *routineSet) checkMain(rowDir string) bool {
 		return false
 	}
 	if line != "" && r.upstream != "" && rowDir == "" {
-		err := selfupdate.InstallModule(r.ctx, r.upstream, d.Exe, head)
+		err := selfupdate.InstallModule(r.ctx, dir, r.upstream, d.Exe, head)
 		unlock()
 		if err == nil {
 			d.writeNotice("")

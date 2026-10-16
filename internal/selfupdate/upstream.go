@@ -61,17 +61,23 @@ func FetchUpstream(dir, module string) (head string, unlock func(), err error) {
 }
 
 // InstallModule builds <module>/cmd/bmesh at head with `go install` into a
-// temporary directory beside exe (GOBIN), then refuses or swaps it in as
-// Install does.
-func InstallModule(ctx context.Context, module, exe, head string) error {
+// temporary directory beside exe (GOBIN), stamped with head and its commit
+// time from dir (the fetched main) as Install's build is, so a commit go
+// resolves to a tag still names itself; then it refuses or swaps the build
+// in as Install does.
+func InstallModule(ctx context.Context, dir, module, exe, head string) error {
 	ctx, cancel := context.WithTimeout(ctx, BuildTimeout)
 	defer cancel()
+	ldflags, err := stampFlags(dir, head)
+	if err != nil {
+		return err
+	}
 	tmp, err := os.MkdirTemp(filepath.Dir(exe), ".bmesh-update-*")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(tmp)
-	argv := append(goCommand(), "install", module+"/cmd/bmesh@"+head)
+	argv := append(goCommand(), "install", "-ldflags", ldflags, module+"/cmd/bmesh@"+head)
 	if Scoped() {
 		argv = append([]string{"systemd-run", "--user", "--scope", "--quiet", "--collect", "--"}, argv...)
 	}
