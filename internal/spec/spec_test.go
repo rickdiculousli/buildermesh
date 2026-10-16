@@ -7,17 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-)
 
-func runGit(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	full := append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"}, args...)
-	cmd := exec.Command("git", full...)
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
-}
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
+)
 
 func specText(status, merged string) string {
 	return "---\nid: 12\nstatus: " + status + "\nmerged: " + merged + "\n---\nbody\n"
@@ -32,8 +24,8 @@ func commitSpec(t *testing.T, repo, status, merged string) {
 	if err := os.WriteFile(filepath.Join(p, "012-thing.md"), []byte(specText(status, merged)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, repo, "add", "-A")
-	runGit(t, repo, "commit", "-m", "spec "+status)
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "spec "+status)
 }
 
 func revParse(t *testing.T, repo, rev string) string {
@@ -50,9 +42,9 @@ func newRepo(t *testing.T) string {
 	root := t.TempDir()
 	origin := filepath.Join(root, "origin.git")
 	repo := filepath.Join(root, "repo")
-	runGit(t, root, "init", "--bare", origin)
-	runGit(t, root, "init", "-b", "main", repo)
-	runGit(t, repo, "remote", "add", "origin", origin)
+	meshtest.Git(t, root, "init", "--bare", origin)
+	meshtest.Git(t, root, "init", "-b", "main", repo)
+	meshtest.Git(t, repo, "remote", "add", "origin", origin)
 	return repo
 }
 
@@ -82,7 +74,7 @@ func TestFrontmatterParsesLikeProposalsPy(t *testing.T) {
 func TestCheckDoneTrueOnlyWhenLanded(t *testing.T) {
 	repo := newRepo(t)
 	commitSpec(t, repo, "building", "")
-	runGit(t, repo, "push", "origin", "main")
+	meshtest.Git(t, repo, "push", "origin", "main")
 	d, err := CheckDone(repo, glob, "012")
 	if err != nil {
 		t.Fatal(err)
@@ -91,31 +83,31 @@ func TestCheckDoneTrueOnlyWhenLanded(t *testing.T) {
 		t.Fatalf("%+v", d)
 	}
 	commitSpec(t, repo, "done", "abc")
-	runGit(t, repo, "push", "origin", "main")
+	meshtest.Git(t, repo, "push", "origin", "main")
 	d, _ = CheckDone(repo, glob, "012")
 	if d.OK || d.Why != "merged abc is not on origin/main" {
 		t.Fatalf("merged not a commit: %+v", d)
 	}
 	landed := revParse(t, repo, "HEAD")
 	commitSpec(t, repo, "done", landed)
-	runGit(t, repo, "push", "origin", "main")
+	meshtest.Git(t, repo, "push", "origin", "main")
 	d, err = CheckDone(repo, glob, "012")
 	if err != nil || !d.OK || d.Path != "docs/proposals/012-thing.md" || d.Merged != landed {
 		t.Fatalf("%+v %v", d, err)
 	}
 	// A commit on a branch never merged is not on origin/main.
-	runGit(t, repo, "checkout", "-q", "-b", "side")
-	runGit(t, repo, "commit", "--allow-empty", "-m", "side")
+	meshtest.Git(t, repo, "checkout", "-q", "-b", "side")
+	meshtest.Git(t, repo, "commit", "--allow-empty", "-m", "side")
 	local := revParse(t, repo, "HEAD")
-	runGit(t, repo, "checkout", "-q", "main")
+	meshtest.Git(t, repo, "checkout", "-q", "main")
 	commitSpec(t, repo, "done", local)
-	runGit(t, repo, "push", "origin", "main")
+	meshtest.Git(t, repo, "push", "origin", "main")
 	d, _ = CheckDone(repo, glob, "012")
 	if d.OK || d.Why != "merged "+local+" is not on origin/main" {
 		t.Fatalf("unpushed merged: %+v", d)
 	}
 	commitSpec(t, repo, "done", "")
-	runGit(t, repo, "push", "origin", "main")
+	meshtest.Git(t, repo, "push", "origin", "main")
 	d, _ = CheckDone(repo, glob, "012")
 	if d.OK || d.Why != "merged is empty" {
 		t.Fatalf("%+v", d)
@@ -129,7 +121,7 @@ func TestCheckDoneTrueOnlyWhenLanded(t *testing.T) {
 func TestCheckDoneReadsOriginNotLocal(t *testing.T) {
 	repo := newRepo(t)
 	commitSpec(t, repo, "building", "")
-	runGit(t, repo, "push", "origin", "main")
+	meshtest.Git(t, repo, "push", "origin", "main")
 	commitSpec(t, repo, "done", "abc")
 	d, err := CheckDone(repo, glob, "012")
 	if err != nil {
@@ -142,7 +134,7 @@ func TestCheckDoneReadsOriginNotLocal(t *testing.T) {
 
 func TestFindOnMainWithoutRemote(t *testing.T) {
 	repo := filepath.Join(t.TempDir(), "r")
-	runGit(t, filepath.Dir(repo), "init", "-b", "main", repo)
+	meshtest.Git(t, filepath.Dir(repo), "init", "-b", "main", repo)
 	commitSpec(t, repo, "done", "abc")
 	p, text, err := FindOnMain(repo, glob, "012")
 	if err != nil || p != "docs/proposals/012-thing.md" || !strings.Contains(text, "done") {
@@ -157,12 +149,12 @@ func TestFindOnMainWithoutRemote(t *testing.T) {
 func TestFindOnMainLocalDoesNotFetch(t *testing.T) {
 	repo := newRepo(t)
 	commitSpec(t, repo, "building", "")
-	runGit(t, repo, "push", "-q", "origin", "main")
+	meshtest.Git(t, repo, "push", "-q", "origin", "main")
 	// Another clone moves origin's main on; repo's origin/main stays behind.
 	other := filepath.Join(filepath.Dir(repo), "other")
-	runGit(t, filepath.Dir(repo), "clone", "-q", "-b", "main", filepath.Join(filepath.Dir(repo), "origin.git"), other)
+	meshtest.Git(t, filepath.Dir(repo), "clone", "-q", "-b", "main", filepath.Join(filepath.Dir(repo), "origin.git"), other)
 	commitSpec(t, other, "done", "abc")
-	runGit(t, other, "push", "-q", "origin", "main")
+	meshtest.Git(t, other, "push", "-q", "origin", "main")
 	ctx := context.Background()
 	if _, text, err := FindOnMainLocal(ctx, repo, glob, "012"); err != nil || !strings.Contains(text, "status: building") {
 		t.Fatalf("before a fetch: %q %v", text, err)
@@ -181,7 +173,7 @@ func TestFindOnMainLocalDoesNotFetch(t *testing.T) {
 		t.Fatalf("no repo: %q %v", text, err)
 	}
 	solo := filepath.Join(t.TempDir(), "solo")
-	runGit(t, filepath.Dir(solo), "init", "-q", "-b", "main", solo)
+	meshtest.Git(t, filepath.Dir(solo), "init", "-q", "-b", "main", solo)
 	commitSpec(t, solo, "done", "abc")
 	if err := FetchMain(ctx, solo); err != nil {
 		t.Fatalf("fetch without origin: %v", err)

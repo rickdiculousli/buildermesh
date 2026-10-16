@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
 // leadSetup is setup plus a t3 runner backed by testdata/fake-t3.sh and a
@@ -145,11 +146,7 @@ func TestLeadStartRefusesOverMax(t *testing.T) {
 	// Another host's lead and a done lead here don't count.
 	putNode(t, c, ctx, mesh.Node{Path: "elsewhere-001", Host: "otherbox"})
 	putNode(t, c, ctx, mesh.Node{Path: "old-001"})
-	for _, s := range []string{"working", "done"} {
-		if _, err := mesh.WriteState(ctx, c, "old-001", mesh.State{State: s, By: "node"}); err != nil {
-			t.Fatal(err)
-		}
-	}
+	meshtest.ForceState(t, c, "old-001", mesh.State{State: "done", By: "node"})
 	for _, id := range []string{"001", "002"} {
 		if out, errs, code := runCLI(t, nil, "lead", "start", "--repo", "demo", "--spec", id, "--brief", "/dev/null"); code != 0 {
 			t.Fatalf("start %s: %d %q %q", id, code, out, errs)
@@ -167,11 +164,7 @@ func TestLeadStartRefusesOverMax(t *testing.T) {
 		t.Fatal("refused lead registered")
 	}
 	// One finishing frees a place.
-	for _, s := range []string{"working", "done"} {
-		if _, err := mesh.WriteState(ctx, c, "demo-001", mesh.State{State: s, By: "node"}); err != nil {
-			t.Fatal(err)
-		}
-	}
+	meshtest.ForceState(t, c, "demo-001", mesh.State{State: "done", By: "node"})
 	if _, errs, code := runCLI(t, nil, "lead", "start", "--repo", "demo", "--spec", "003", "--brief", "/dev/null"); code != 0 {
 		t.Fatalf("after done: %d %q", code, errs)
 	}
@@ -192,10 +185,10 @@ func TestLeadStartClaudeRunner(t *testing.T) {
 	t.Setenv("FAKE_LOG", log)
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(root, "cache")) // the runner's state dir
 	repo := filepath.Join(root, "demo")
-	runGit(t, root, "init", "-b", "main", repo)
+	meshtest.Git(t, root, "init", "-b", "main", repo)
 	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644)
-	runGit(t, repo, "add", "-A")
-	runGit(t, repo, "commit", "-m", "one")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "one")
 	brief := filepath.Join(root, "brief.md")
 	os.WriteFile(brief, []byte("build it"), 0o644)
 	f, err := os.OpenFile(os.Getenv("BMESH_CONFIG"), os.O_APPEND|os.O_WRONLY, 0)

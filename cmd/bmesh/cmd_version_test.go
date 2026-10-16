@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
 // withRevision makes the binary's build info name rev ("" = no VCS).
@@ -99,14 +100,14 @@ func updateBox(t *testing.T) (exe string, shas []string) {
 	if err := os.Mkdir(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	gitT(t, repo, "init", "-q", "-b", "main")
+	meshtest.Git(t, repo, "init", "-q", "-b", "main")
 	for i, body := range []string{"module example.com/bm\n", "module example.com/bm\n\ngo 1.26\n"} {
 		if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		gitT(t, repo, "add", "go.mod")
-		gitT(t, repo, "commit", "-q", "-m", "c"+string(rune('1'+i)))
-		shas = append(shas, gitT(t, repo, "rev-parse", "HEAD"))
+		meshtest.Git(t, repo, "add", "go.mod")
+		meshtest.Git(t, repo, "commit", "-q", "-m", "c"+string(rune('1'+i)))
+		shas = append(shas, meshtest.Git(t, repo, "rev-parse", "HEAD"))
 	}
 	cfg := filepath.Join(dir, "config.toml")
 	if err := os.WriteFile(cfg, []byte("[runner]\ncheckouts = \""+filepath.Join(dir, "checkouts")+"\"\n"), 0o644); err != nil {
@@ -134,16 +135,6 @@ func updateBox(t *testing.T) (exe string, shas []string) {
 	t.Cleanup(func() { executable = saved })
 	executable = func() (string, error) { return exe, nil }
 	return exe, shas
-}
-
-func gitT(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	full := append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"}, args...)
-	out, err := exec.Command("git", full...).CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, out)
-	}
-	return strings.TrimSpace(string(out))
 }
 
 func TestUpdateUpToDate(t *testing.T) {

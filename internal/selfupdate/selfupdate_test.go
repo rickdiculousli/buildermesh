@@ -9,17 +9,9 @@ import (
 	"strings"
 	"testing"
 	"time"
-)
 
-func tgit(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	full := append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"}, args...)
-	out, err := exec.Command("git", full...).CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, out)
-	}
-	return strings.TrimSpace(string(out))
-}
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
+)
 
 // repo is a git repo on main with one commit per name in commits.
 func repo(t *testing.T, commits ...string) (string, []string) {
@@ -28,15 +20,15 @@ func repo(t *testing.T, commits ...string) (string, []string) {
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	tgit(t, dir, "init", "-q", "-b", "main")
+	meshtest.Git(t, dir, "init", "-q", "-b", "main")
 	var shas []string
 	for _, c := range commits {
 		if err := os.WriteFile(filepath.Join(dir, "f"), []byte(c), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		tgit(t, dir, "add", "f")
-		tgit(t, dir, "commit", "-q", "-m", c)
-		shas = append(shas, tgit(t, dir, "rev-parse", "HEAD"))
+		meshtest.Git(t, dir, "add", "f")
+		meshtest.Git(t, dir, "commit", "-q", "-m", c)
+		shas = append(shas, meshtest.Git(t, dir, "rev-parse", "HEAD"))
 	}
 	return dir, shas
 }
@@ -149,8 +141,8 @@ func TestMainCheckoutClonesAndFollows(t *testing.T) {
 	if h, _ := Head(dir); h != shas[0] {
 		t.Fatalf("head %s, want %s", h, shas[0])
 	}
-	tgit(t, origin, "commit", "-q", "--allow-empty", "-m", "two")
-	two := tgit(t, origin, "rev-parse", "HEAD")
+	meshtest.Git(t, origin, "commit", "-q", "--allow-empty", "-m", "two")
+	two := meshtest.Git(t, origin, "rev-parse", "HEAD")
 	unlock()
 	if dir, unlock, err = MainCheckout(origin, "", clones, "bm"); err != nil {
 		t.Fatal(err)
@@ -159,7 +151,7 @@ func TestMainCheckoutClonesAndFollows(t *testing.T) {
 	if h, _ := Head(dir); h != two {
 		t.Fatalf("head %s, want %s", h, two)
 	}
-	if b := tgit(t, origin, "status", "--porcelain"); b != "" {
+	if b := meshtest.Git(t, origin, "status", "--porcelain"); b != "" {
 		t.Fatalf("operator's checkout touched: %q", b)
 	}
 }

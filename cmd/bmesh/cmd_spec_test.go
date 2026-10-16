@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
 // landedRepo makes a repo with a bare origin and one pushed commit, the one
@@ -17,15 +18,15 @@ func landedRepo(t *testing.T) (repo, merged, tree string) {
 	root := t.TempDir()
 	origin := filepath.Join(root, "origin.git")
 	repo = filepath.Join(root, "repo")
-	runGit(t, root, "init", "--bare", origin)
-	runGit(t, root, "init", "-b", "main", repo)
-	runGit(t, repo, "remote", "add", "origin", origin)
+	meshtest.Git(t, root, "init", "--bare", origin)
+	meshtest.Git(t, root, "init", "-b", "main", repo)
+	meshtest.Git(t, repo, "remote", "add", "origin", origin)
 	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, repo, "add", "-A")
-	runGit(t, repo, "commit", "-m", "work")
-	runGit(t, repo, "push", "origin", "main")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "work")
+	meshtest.Git(t, repo, "push", "origin", "main")
 	return repo, gitOut(t, "-C", repo, "rev-parse", "HEAD"), gitOut(t, "-C", repo, "rev-parse", "HEAD^{tree}")
 }
 
@@ -40,9 +41,9 @@ func landSpec(t *testing.T, repo, front string) {
 	if err := os.WriteFile(filepath.Join(dir, "012-thing.md"), []byte("---\n"+front+"---\nbody\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, repo, "add", "-A")
-	runGit(t, repo, "commit", "-m", "spec")
-	runGit(t, repo, "push", "origin", "main")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "spec")
+	meshtest.Git(t, repo, "push", "origin", "main")
 }
 
 func TestDoneRequiresVerifiedMatchingResults(t *testing.T) {
@@ -149,19 +150,19 @@ func TestDoneRequiresVerifiedMatchingResults(t *testing.T) {
 func TestDoneRefusesMergedNotOnMain(t *testing.T) {
 	c, ctx := setup(t)
 	repo := filepath.Join(t.TempDir(), "repo")
-	runGit(t, filepath.Dir(repo), "init", "-b", "main", repo)
+	meshtest.Git(t, filepath.Dir(repo), "init", "-b", "main", repo)
 	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, repo, "add", "-A")
-	runGit(t, repo, "commit", "-m", "base")
-	runGit(t, repo, "checkout", "-b", "side")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "base")
+	meshtest.Git(t, repo, "checkout", "-b", "side")
 	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("side\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, repo, "commit", "-am", "side")
+	meshtest.Git(t, repo, "commit", "-am", "side")
 	side, tree := gitOut(t, "-C", repo, "rev-parse", "side"), gitOut(t, "-C", repo, "rev-parse", "side^{tree}")
-	runGit(t, repo, "checkout", "main")
+	meshtest.Git(t, repo, "checkout", "main")
 	dir := filepath.Join(repo, "docs", "proposals")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -170,8 +171,8 @@ func TestDoneRefusesMergedNotOnMain(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "012-thing.md"), []byte(front), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, repo, "add", "-A")
-	runGit(t, repo, "commit", "-m", "spec")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "spec")
 	if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "verify", Tree: tree, OK: true, By: "h"}); err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +188,7 @@ func TestDoneRefusesMergedNotOnMain(t *testing.T) {
 		t.Fatalf("state %s", got)
 	}
 	// Merged into main, it is done.
-	runGit(t, repo, "merge", "--no-edit", "side")
+	meshtest.Git(t, repo, "merge", "--no-edit", "side")
 	if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", side); code != 0 {
 		t.Fatalf("after merge: %d %q %q", code, out, errs)
 	}
@@ -204,8 +205,8 @@ func TestSpecVerifiedComposesAndWrites(t *testing.T) {
 	if err := os.WriteFile(specPath, []byte("---\nid: 12\nstatus: building\n---\nbody\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, repo, "add", "-A")
-	runGit(t, repo, "commit", "-m", "spec")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "spec")
 	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 
 	const none = "bmesh: no results for HEAD's tree; run the routines first\n"

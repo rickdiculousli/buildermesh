@@ -6,27 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
-
-func tgit(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	full := append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"}, args...)
-	out, err := exec.Command("git", full...).CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, out)
-	}
-	return strings.TrimSpace(string(out))
-}
-
-func commitFile(t *testing.T, repo, name, content string) string {
-	t.Helper()
-	if err := os.WriteFile(filepath.Join(repo, name), []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	tgit(t, repo, "add", name)
-	tgit(t, repo, "commit", "-q", "-m", "add "+name)
-	return tgit(t, repo, "rev-parse", "HEAD")
-}
 
 func newRepo(t *testing.T) (repo string, c1, c2 string) {
 	t.Helper()
@@ -34,9 +16,9 @@ func newRepo(t *testing.T) (repo string, c1, c2 string) {
 	if err := os.Mkdir(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	tgit(t, repo, "init", "-q")
-	c1 = commitFile(t, repo, "a.txt", "one\n")
-	c2 = commitFile(t, repo, "b.txt", "two\n")
+	meshtest.Git(t, repo, "init", "-q", "-b", "main")
+	c1 = meshtest.CommitFiles(t, repo, map[string]string{"a.txt": "one\n"})
+	c2 = meshtest.CommitFiles(t, repo, map[string]string{"b.txt": "two\n"})
 	return
 }
 
@@ -92,7 +74,7 @@ func TestRemoveForgetsWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	listed := func() bool {
-		return strings.Contains(tgit(t, repo, "worktree", "list", "--porcelain"), "worktree "+real+"\n")
+		return strings.Contains(meshtest.Git(t, repo, "worktree", "list", "--porcelain"), "worktree "+real+"\n")
 	}
 	if !listed() {
 		t.Fatal("worktree not listed before Remove")
@@ -174,8 +156,8 @@ func TestEnsureReplacesStaleWorktree(t *testing.T) {
 	if err := os.Mkdir(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	tgit(t, repo, "init", "-q")
-	commitFile(t, repo, "z.txt", "z\n")
+	meshtest.Git(t, repo, "init", "-q", "-b", "main")
+	meshtest.CommitFiles(t, repo, map[string]string{"z.txt": "z\n"})
 	dir, err = Ensure(repo, root, "main")
 	if err != nil {
 		t.Fatal(err)
@@ -222,7 +204,7 @@ func TestFetchUpdatesOriginRef(t *testing.T) {
 	if out, err := exec.Command("git", "clone", "-q", origin, clone).CombinedOutput(); err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
-	c3 := commitFile(t, origin, "c.txt", "three\n")
+	c3 := meshtest.CommitFiles(t, origin, map[string]string{"c.txt": "three\n"})
 	if err := Fetch(clone); err != nil {
 		t.Fatal(err)
 	}
@@ -230,11 +212,11 @@ func TestFetchUpdatesOriginRef(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	branch := tgit(t, origin, "rev-parse", "--abbrev-ref", "HEAD")
+	branch := meshtest.Git(t, origin, "rev-parse", "--abbrev-ref", "HEAD")
 	if err := MoveTo(dir, "origin/"+branch); err != nil {
 		t.Fatal(err)
 	}
-	if got := tgit(t, dir, "rev-parse", "HEAD"); got != c3 {
+	if got := meshtest.Git(t, dir, "rev-parse", "HEAD"); got != c3 {
 		t.Errorf("HEAD = %s, want %s", got, c3)
 	}
 }

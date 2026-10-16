@@ -9,18 +9,19 @@ import (
 	"testing"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
 // gitRepo makes a repo with one commit and changes into it.
 func gitRepo(t *testing.T) string {
 	t.Helper()
 	repo := t.TempDir()
-	runGit(t, repo, "init", "-b", "main")
+	meshtest.Git(t, repo, "init", "-b", "main")
 	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, repo, "add", "-A")
-	runGit(t, repo, "commit", "-m", "a")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "a")
 	t.Chdir(repo)
 	return repo
 }
@@ -152,8 +153,8 @@ func TestResultRecordRefusesDirtyHead(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "b.txt"), []byte("b\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, repo, "add", "-A")
-	runGit(t, repo, "commit", "-m", "b")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "b")
 	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("changed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

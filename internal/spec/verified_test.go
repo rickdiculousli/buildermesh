@@ -79,7 +79,7 @@ func TestComposeFromResultsAtHead(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := filepath.Join(t.TempDir(), "r")
-	runGit(t, filepath.Dir(repo), "init", "-b", "main", repo)
+	meshtest.Git(t, filepath.Dir(repo), "init", "-b", "main", repo)
 	commitSpec(t, repo, "building", "")
 	tree := headTree(t, repo)
 
@@ -166,16 +166,16 @@ func TestCheckDoneParsesVerified(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, repo, "commit", "--allow-empty", "-m", "work")
+	meshtest.Git(t, repo, "commit", "--allow-empty", "-m", "work")
 	merged := revParse(t, repo, "HEAD")
 	write := func(verified string) {
 		text := "---\nid: 12\nstatus: done\nmerged: " + merged + "\nverified: " + verified + "\n---\n"
 		if err := os.WriteFile(filepath.Join(dir, "012-thing.md"), []byte(text), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		runGit(t, repo, "add", "-A")
-		runGit(t, repo, "commit", "-m", "spec")
-		runGit(t, repo, "push", "origin", "main")
+		meshtest.Git(t, repo, "add", "-A")
+		meshtest.Git(t, repo, "commit", "-m", "spec")
+		meshtest.Git(t, repo, "push", "origin", "main")
 	}
 	write("verify ok t:3f2a9c1e")
 	d, err := CheckDone(repo, glob, "012")
