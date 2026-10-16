@@ -70,7 +70,7 @@ In:
 **The transport** is inbox messages in `bm-mesh`, the way routine jobs travel.
 - **Jobs.** A job for a box goes to `bm.inbox.host.<host>`. That box's durable consumer, `inbox-host--<host>` (AckWait 10m, `InProgress()` every minute while a job runs, MaxAckPending 1), resumes where it stopped, so a box that was asleep gets what it missed, in order.
 - **Replies.** A reply goes to `bm.hostreply.<caller>.<job id>`, and `bmesh hosts replies` reads them later.
-- **Reserved first tokens.** `host` and `hostreply` join them. One helper in `internal/mesh`, `IsMeshInternal(subject)`, replaces the separate lists in names.go:21, the activity reader (activity.go:61), `watch` and the map's tree, so all of them skip the same tokens.
+- **Reserved first tokens.** `host` and `hostreply` join them. One helper in `internal/mesh`, `IsMeshInternal(subject)`, replaces the separate lists in names.go:21, the activity reader (activity.go:61), the push loop's `nodeEvent` (push.go), `status`'s `splitSubject` (cmd_status.go), `watch` and the map's tree (map.js `apply`), so all of them skip the same tokens.
 
 **Signed messages.** Every job, reply, approval, roster, registry (023) and presence entry is signed.
 - **The signed bytes** are a type tag followed by every field in a fixed order:
