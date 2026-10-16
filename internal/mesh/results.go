@@ -12,17 +12,21 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-// Result is the record of one job of a kind run against a tree.
+// Result is the record of one job of a kind run against a tree. PatchID is
+// the `git patch-id --stable` of the diff a model was asked to read (the job
+// text's `base: <sha>` to the commit), so a review carries to another tree
+// with the same diff.
 type Result struct {
-	Kind   string   `json:"kind"`
-	Tree   string   `json:"tree"`
-	Commit string   `json:"commit"`
-	Args   []string `json:"args"`
-	OK     bool     `json:"ok"`
-	Output string   `json:"output"`
-	At     string   `json:"at"`
-	By     string   `json:"by"`
-	Model  string   `json:"model,omitempty"`
+	Kind    string   `json:"kind"`
+	Tree    string   `json:"tree"`
+	Commit  string   `json:"commit"`
+	Args    []string `json:"args"`
+	OK      bool     `json:"ok"`
+	Output  string   `json:"output"`
+	At      string   `json:"at"`
+	By      string   `json:"by"`
+	Model   string   `json:"model,omitempty"`
+	PatchID string   `json:"patch_id,omitempty"`
 }
 
 // ResultKey is <kind>.<tree>, with "." and the first 8 hex digits of the

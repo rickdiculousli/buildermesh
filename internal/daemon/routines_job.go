@@ -325,6 +325,17 @@ func (w *worker) handle(dl *delivery) {
 		return
 	}
 
+	// A model reads the diff the text's base names; its patch-id lets the
+	// verdict carry to a tree a rebase made from the same diff.
+	patch := ""
+	if w.model != "" {
+		pctx, cancel := r.settleCtx()
+		if patch, err = checkout.ReviewedPatch(pctx, w.g.repoPath, j.Text, j.Commit); err != nil {
+			r.d.Log.Warn("routines: patch-id", "job", j.ID, "err", err)
+		}
+		cancel()
+	}
+
 	dl.note(w.path, "running")
 	w.setState("working")
 	w.event("progress", fmt.Sprintf("job %s started", j.ID), dl.from.String())
@@ -344,7 +355,7 @@ func (w *worker) handle(dl *delivery) {
 	} else {
 		pctx, cancel := r.settleCtx()
 		rec := mesh.Result{Kind: kc.Name, Tree: tree, Commit: j.Commit, Args: j.Args, OK: rep.OK,
-			Output: mesh.Truncate(rep.Output), By: w.path, Model: w.model}
+			Output: mesh.Truncate(rep.Output), By: w.path, Model: w.model, PatchID: patch}
 		if err := mesh.PutResult(pctx, r.d.Client, rec); err != nil {
 			r.d.Log.Warn("routines: put result", "key", key, "err", err)
 			key = ""

@@ -294,8 +294,9 @@ func TestLandRefusesMainAheadOfOrigin(t *testing.T) {
 	assertNoLeases(t, c, ctx)
 }
 
-// A review recorded before the rebase carries when the rebase leaves the
-// diff unchanged, and stops land when it changed it.
+// A review recorded before the rebase with no patch-id carries when the
+// rebase leaves the diff unchanged, off the line, and stops land when it
+// changed it.
 func TestLandCarriesReviewOnlyForAnUnchangedDiff(t *testing.T) {
 	c, ctx := setup(t)
 	r := newLandRepo(t)
@@ -335,5 +336,92 @@ func TestLandCarriesReviewOnlyForAnUnchangedDiff(t *testing.T) {
 	}
 	if front := r.specOnOrigin(t); !strings.Contains(front, "verified: verify ok t:") || strings.Contains(front, "review") {
 		t.Fatalf("spec on origin:\n%s", front)
+	}
+}
+
+// A review that recorded the patch-id of the diff it read lands on the
+// verified line carried from the tree it read, and done accepts it; a
+// changed hunk needs a review of its own.
+func TestLandPutsACarriedReviewOnTheLine(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	if _, errs, code := runCLI(t, as("app-012"), "started"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	writeFile(t, filepath.Join(r.wt, "a.txt"), "ONE\ntwo\nthree\n")
+	meshtest.Git(t, r.wt, "commit", "-qam", "lead a")
+	reviewed := gitOut(t, "rev-parse", "HEAD^{tree}")
+	base := gitOut(t, "merge-base", "origin/main", "HEAD")
+	if _, errs, code := runCLI(t, as("app-012"), "result", "record", "review", "--ok", "--base", base); code != 2 || !strings.Contains(errs, "--base needs --model") {
+		t.Fatalf("base without model: %d %q", code, errs)
+	}
+	if _, errs, code := runCLI(t, as("app-012"), "result", "record", "review", "--ok", "--model", "claude-opus-5-5", "--base", "HEAD"); code != 3 || !strings.Contains(errs, "empty diff") {
+		t.Fatalf("empty diff: %d %q", code, errs)
+	}
+	if out, errs, code := runCLI(t, as("app-012"), "result", "record", "review", "--ok", "--model", "claude-opus-5-5", "--base", base); code != 0 {
+		t.Fatalf("record: %d %q %q", code, out, errs)
+	}
+	if rec, ok, err := mesh.GetResult(ctx, c, mesh.ResultKey("review", reviewed, nil, "claude-opus-5-5")); err != nil || !ok || rec.PatchID == "" {
+		t.Fatalf("recorded %+v %v %v", rec, ok, err)
+	}
+
+	// Main moves in another file: a new tree, the same diff.
+	r.pushOther(t, "c.txt", "c\n")
+	out, errs, code := runCLI(t, as("app-012"), "land")
+	merged := gitOut(t, "rev-parse", "HEAD~1")
+	tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+	entry := "review ok t:" + tree[:8] + " m:claude-opus-5-5 c:" + reviewed[:8]
+	if code != 0 || !strings.Contains(out, entry+" (carried from t:"+reviewed[:8]+": the diff is unchanged)\n") ||
+		!strings.Contains(out, "verified: "+entry+"; verify ok t:"+tree[:8]+"\n") {
+		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+	}
+	if front := r.specOnOrigin(t); !strings.Contains(front, "verified: "+entry+"; verify ok t:"+tree[:8]+"\n") ||
+		!strings.Contains(front, "merged: "+merged+"\n") {
+		t.Fatalf("spec on origin:\n%s", front)
+	}
+	rec := gitOut(t, "rev-parse", "HEAD")
+	if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", rec); code != 0 || out != "done app-012 "+rec[:8]+"\n" {
+		t.Fatalf("done: %d %q %q", code, out, errs)
+	}
+}
+
+// done matches a carried entry by a model result with a patch-id at the
+// tree the entry names, and refuses one with no such result.
+func TestDoneMatchesCarriedEntryAtItsTree(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	if _, errs, code := runCLI(t, as("app-012"), "started"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	reviewed := gitOut(t, "rev-parse", "HEAD^{tree}")
+	put := func(res mesh.Result) {
+		t.Helper()
+		res.Kind, res.Tree, res.OK, res.Model, res.By = "review", reviewed, true, "claude-opus-5-5", "h"
+		if err := mesh.PutResult(ctx, c, res); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Recorded without a patch-id: the entry claims what no result shows.
+	put(mesh.Result{})
+	merged := gitOut(t, "-C", r.repo, "rev-parse", "main")
+	tree := gitOut(t, "-C", r.repo, "rev-parse", "main^{tree}")
+	if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "verify", Tree: tree, OK: true, By: "h"}); err != nil {
+		t.Fatal(err)
+	}
+	line := "verify ok t:" + tree[:8] + "; review ok t:" + tree[:8] + " m:claude-opus-5-5 c:" + reviewed[:8]
+	writeFile(t, filepath.Join(r.repo, "docs", "proposals", "012-thing.md"),
+		"---\nid: 12\nstatus: done\nbranch: lead\nmerged: "+merged+"\nverified: "+line+"\n---\nbody\n")
+	meshtest.Git(t, r.repo, "commit", "-qam", "012 done")
+	meshtest.Git(t, r.repo, "push", "-q", "origin", "main")
+	rec := gitOut(t, "-C", r.repo, "rev-parse", "main")
+	if _, errs, code := runCLI(t, as("app-012"), "done", "--commit", rec); code != 3 ||
+		!strings.Contains(errs, "not done: verified names review but no result for tree "+reviewed[:8]) {
+		t.Fatalf("no patch-id: %d %q", code, errs)
+	}
+	put(mesh.Result{PatchID: "0123456789abcdef0123456789abcdef01234567"})
+	if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", rec); code != 0 {
+		t.Fatalf("done: %d %q %q", code, out, errs)
 	}
 }

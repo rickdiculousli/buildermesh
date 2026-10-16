@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/checkout"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
@@ -33,6 +34,14 @@ func TestParseFormatVerifiedRoundTrip(t *testing.T) {
 	if got, err := ParseVerified("  game fail t:00ff00ff  "); err != nil || len(got) != 1 || got[0].OK || got[0].Kind != "game" {
 		t.Fatalf("fail entry: %+v %v", got, err)
 	}
+	carried := "review ok t:3f2a9c1e m:claude-opus-5-5 c:0011aabb; game ok t:3f2a9c1e c:0011aabb"
+	if got, err := ParseVerified(carried); err != nil || len(got) != 2 ||
+		got[0] != (Entry{Kind: "review", OK: true, Tree8: "3f2a9c1e", Model: "claude-opus-5-5", Carried: "0011aabb"}) ||
+		got[1] != (Entry{Kind: "game", OK: true, Tree8: "3f2a9c1e", Carried: "0011aabb"}) {
+		t.Fatalf("carried: %+v %v", got, err)
+	} else if s := FormatVerified(got); s != carried {
+		t.Fatalf("format carried: %q", s)
+	}
 	if got, err := ParseVerified("   "); got != nil || err != nil {
 		t.Fatalf("empty: %+v %v", got, err)
 	}
@@ -47,6 +56,11 @@ func TestParseFormatVerifiedRoundTrip(t *testing.T) {
 		"review ok t:3f2a9c1e x:y",
 		"review ok t:3f2a9c1e m:a b",
 		"verify ok t:3f2a9c1e; ; review ok t:3f2a9c1e",
+		"review ok t:3f2a9c1e c:0011aabb m:claude-opus-5-5",
+		"review ok t:3f2a9c1e m:claude-opus-5-5 c:",
+		"review ok t:3f2a9c1e m:claude-opus-5-5 c:0011AABB",
+		"review ok t:3f2a9c1e m:claude-opus-5-5 c:0011aabb c:0011aabb",
+		"review ok t:3f2a9c1e m:a m:b",
 	} {
 		if _, err := ParseVerified(bad); err == nil {
 			t.Fatalf("%q: no error", bad)
@@ -114,6 +128,81 @@ func TestComposeFromResultsAtHead(t *testing.T) {
 	}
 	if got, _ := ComposeVerified(ctx, c, repo); len(got) != 2 || got[0].OK {
 		t.Fatalf("newest wins: %+v", got)
+	}
+}
+
+// A model's result recorded with the patch-id of the diff it read carries
+// to a tree a rebase made from the same diff, and to no other.
+func TestComposeCarriesAReviewOfTheSameDiff(t *testing.T) {
+	url := meshtest.Start(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	t.Cleanup(cancel)
+	c, err := mesh.Connect(ctx, url, "", "hub", "test", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+	if err := mesh.Provision(ctx, c, 0); err != nil {
+		t.Fatal(err)
+	}
+	repo := filepath.Join(t.TempDir(), "r")
+	meshtest.Git(t, filepath.Dir(repo), "init", "-b", "main", repo)
+	meshtest.CommitFiles(t, repo, map[string]string{"a.txt": "one\ntwo\nthree\nfour\nfive\nsix\nseven\n"})
+	meshtest.Git(t, repo, "checkout", "-q", "-b", "lead")
+	reviewed := meshtest.CommitFiles(t, repo, map[string]string{"a.txt": "ONE\ntwo\nthree\nfour\nfive\nsix\nseven\n"})
+	reviewedTree := headTree(t, repo)
+	patch, err := checkout.PatchID(ctx, repo, "main", reviewed)
+	if err != nil || patch == "" {
+		t.Fatalf("patch %q %v", patch, err)
+	}
+	put := func(r mesh.Result) {
+		t.Helper()
+		r.By = "h"
+		if err := mesh.PutResult(ctx, c, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(mesh.Result{Kind: "review", Tree: reviewedTree, Commit: reviewed, OK: true, Model: "claude-opus-5-5", PatchID: patch, At: "2026-10-01T10:00:00Z"})
+	// A command kind's result is about its tree: it never carries.
+	put(mesh.Result{Kind: "verify", Tree: reviewedTree, Commit: reviewed, OK: true, PatchID: patch, At: "2026-10-01T10:00:00Z"})
+
+	// Main moves in another file; the lead rebases: a new tree, the same diff.
+	meshtest.Git(t, repo, "checkout", "-q", "main")
+	meshtest.CommitFiles(t, repo, map[string]string{"c.txt": "c\n"})
+	meshtest.Git(t, repo, "checkout", "-q", "lead")
+	meshtest.Git(t, repo, "rebase", "-q", "main")
+	tree := headTree(t, repo)
+	if tree == reviewedTree {
+		t.Fatal("the rebase left the tree")
+	}
+	put(mesh.Result{Kind: "verify", Tree: tree, OK: true, At: "2026-10-02T10:00:00Z"})
+	got, err := ComposeVerified(ctx, c, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Entry{
+		{Kind: "review", OK: true, Tree8: tree[:8], Model: "claude-opus-5-5", Carried: reviewedTree[:8]},
+		{Kind: "verify", OK: true, Tree8: tree[:8]},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("same diff: %+v", got)
+	}
+
+	// A result at HEAD's own tree wins over a carried one.
+	put(mesh.Result{Kind: "review", Tree: tree, OK: true, Model: "claude-opus-5-5", At: "2026-09-01T10:00:00Z"})
+	if got, _ := ComposeVerified(ctx, c, repo); len(got) != 2 || got[0].Carried != "" || got[0].Tree8 != tree[:8] {
+		t.Fatalf("own tree wins: %+v", got)
+	}
+
+	// A changed hunk is another diff: nothing carries.
+	meshtest.CommitFiles(t, repo, map[string]string{"a.txt": "ONE\ntwo\nthree\nfour\nfive\nsix\nSEVEN\n"})
+	if got, _ := ComposeVerified(ctx, c, repo); len(got) != 0 {
+		t.Fatalf("changed hunk: %+v", got)
+	}
+	// On main there is no diff to carry a review to.
+	meshtest.Git(t, repo, "checkout", "-q", "main")
+	if got, _ := ComposeVerified(ctx, c, repo); len(got) != 0 {
+		t.Fatalf("on main: %+v", got)
 	}
 }
 

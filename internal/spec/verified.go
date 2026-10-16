@@ -11,17 +11,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/checkout"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
 
-// Entry is one `<kind> <ok|fail> t:<tree first 8>[ m:<model>]` of a spec's
-// verified line.
+// Entry is one `<kind> <ok|fail> t:<tree first 8>[ m:<model>][ c:<tree
+// first 8>]` of a spec's verified line. Carried is the tree a model's result
+// was recorded at when it carries to Tree8: the diff it read is the one that
+// lands.
 type Entry struct {
-	Kind  string
-	OK    bool
-	Tree8 string
-	Model string
+	Kind    string
+	OK      bool
+	Tree8   string
+	Model   string
+	Carried string
 }
 
 func (e Entry) String() string {
@@ -31,6 +35,9 @@ func (e Entry) String() string {
 	}
 	if e.Model != "" {
 		s += " m:" + e.Model
+	}
+	if e.Carried != "" {
+		s += " c:" + e.Carried
 	}
 	return s
 }
@@ -57,9 +64,9 @@ func ParseVerified(line string) ([]Entry, error) {
 }
 
 func parseEntry(s string) (Entry, error) {
-	bad := fmt.Errorf("verified entry %q is not `<kind> <ok|fail> t:<tree first 8>[ m:<model>]`", s)
+	bad := fmt.Errorf("verified entry %q is not `<kind> <ok|fail> t:<tree first 8>[ m:<model>][ c:<tree first 8>]`", s)
 	f := strings.Fields(s)
-	if len(f) != 3 && len(f) != 4 {
+	if len(f) < 3 || len(f) > 5 {
 		return Entry{}, bad
 	}
 	e := Entry{Kind: f[0]}
@@ -78,12 +85,19 @@ func parseEntry(s string) (Entry, error) {
 		return Entry{}, bad
 	}
 	e.Tree8 = t8
-	if len(f) == 4 {
-		m, ok := strings.CutPrefix(f[3], "m:")
-		if !ok || m == "" {
+	rest := f[3:]
+	if len(rest) > 0 && strings.HasPrefix(rest[0], "m:") {
+		if e.Model = rest[0][2:]; e.Model == "" {
 			return Entry{}, bad
 		}
-		e.Model = m
+		rest = rest[1:]
+	}
+	if len(rest) > 0 {
+		c, ok := strings.CutPrefix(rest[0], "c:")
+		if !ok || !tree8RE.MatchString(c) || len(rest) > 1 {
+			return Entry{}, bad
+		}
+		e.Carried = c
 	}
 	return e, nil
 }
@@ -107,8 +121,11 @@ func Tree(repoPath, rev string) (string, error) {
 }
 
 // ComposeVerified makes an entry per (kind, model) from the results recorded
-// for the tree of the repo's HEAD, whatever their args; the newest wins.
-// Entries are sorted by kind, then model.
+// for the tree of the repo's HEAD, whatever their args; the newest wins. A
+// (kind, model) with none there takes the newest model result recorded with
+// HEAD's patch-id (the diff from its merge-base with main to HEAD) at
+// another tree, as an entry carried from that tree. Entries are sorted by
+// kind, then model.
 func ComposeVerified(ctx context.Context, c *mesh.Client, repoPath string) ([]Entry, error) {
 	tree, err := Tree(repoPath, "HEAD")
 	if err != nil {
@@ -118,20 +135,34 @@ func ComposeVerified(ctx context.Context, c *mesh.Client, repoPath string) ([]En
 	if err != nil {
 		return nil, err
 	}
+	patch, err := headPatch(ctx, repoPath)
+	if err != nil {
+		return nil, err
+	}
 	type group struct{ kind, model string }
 	newest := map[group]mesh.Result{}
+	carried := map[group]mesh.Result{}
 	for _, r := range all {
-		if r.Tree != tree {
-			continue
-		}
 		g := group{r.Kind, r.Model}
-		if old, ok := newest[g]; !ok || Newer(r.At, old.At) {
-			newest[g] = r
+		switch {
+		case r.Tree == tree:
+			if old, ok := newest[g]; !ok || Newer(r.At, old.At) {
+				newest[g] = r
+			}
+		case patch != "" && r.Model != "" && r.PatchID == patch && len(r.Tree) >= 8:
+			if old, ok := carried[g]; !ok || Newer(r.At, old.At) {
+				carried[g] = r
+			}
 		}
 	}
-	out := make([]Entry, 0, len(newest))
+	out := make([]Entry, 0, len(newest)+len(carried))
 	for g, r := range newest {
 		out = append(out, Entry{Kind: g.kind, OK: r.OK, Tree8: tree[:8], Model: g.model})
+	}
+	for g, r := range carried {
+		if _, ok := newest[g]; !ok {
+			out = append(out, Entry{Kind: g.kind, OK: r.OK, Tree8: tree[:8], Model: g.model, Carried: r.Tree[:8]})
+		}
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Kind != out[j].Kind {
@@ -140,6 +171,21 @@ func ComposeVerified(ctx context.Context, c *mesh.Client, repoPath string) ([]En
 		return out[i].Model < out[j].Model
 	})
 	return out, nil
+}
+
+// headPatch is the patch-id of the repo's diff from its merge-base with
+// main (origin/main when there is an origin) to HEAD: "" when HEAD is on
+// main or there is no main to measure from.
+func headPatch(ctx context.Context, repoPath string) (string, error) {
+	base := "main"
+	if _, err := gitCtx(ctx, repoPath, "remote", "get-url", "origin"); err == nil {
+		base = "origin/main"
+	}
+	mb, err := gitCtx(ctx, repoPath, "merge-base", base, "HEAD")
+	if err != nil {
+		return "", nil
+	}
+	return checkout.PatchID(ctx, repoPath, strings.TrimSpace(mb), "HEAD")
 }
 
 // Newer reports whether At a is later than b, comparing the strings when
