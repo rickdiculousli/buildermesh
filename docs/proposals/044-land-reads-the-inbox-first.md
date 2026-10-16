@@ -4,7 +4,7 @@ title: bmesh land stops while the lead has an unread message from the operator
 kind: refinement
 size: S
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: 56979e66-321a-467e-9cbc-a2165df787ff
 proposed_on: 2026-10-16
@@ -13,6 +13,8 @@ built_by: 3f788fa6-81cb-4cb2-93c8-8bf5eb08eeaf
 host: k16
 family: buildermesh-build-5
 branch: bmesh/3f788fa6-81cb-4cb2-93c8-8bf5eb08eeaf
+merged: 0bc31547abffab814d22a1095d3438e81ce189e3
+verified: verify ok t:d36a8921
 ---
 
 ## Opportunity
