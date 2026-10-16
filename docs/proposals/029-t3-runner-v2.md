@@ -17,9 +17,10 @@ Both boxes run 0.0.45 today and must move one at a time (k16 first, then the Mac
 - **Protocol.** `GET /.well-known/t3/environment` reports `serverVersion` and `orchestrationProtocolVersion` (`1` on 0.0.45, `2` on 0.1.0).
 - **Credential.** The MCP endpoint `/mcp` (streamable HTTP, JSON-RPC, `mcp-session-id`) accepts only MCP client sessions.
   - A token minted on the box with `t3 auth session issue` is capped at `approval-required`. With it, a `full-access` launch fails `runtime_mode_escalation_denied`, and `t3_project_create` fails `capability_denied`.
-  - Only the OAuth sign-in carries a full-access ceiling. The server advertises dynamic registration, PKCE S256 and public clients at `/.well-known/oauth-authorization-server`, with grant `authorization_code` only.
+  - Only the OAuth sign-in carries a ceiling above `approval-required`. The operator picks it when approving (`auto` or full access). The server advertises dynamic registration, PKCE S256 and public clients at `/.well-known/oauth-authorization-server`, with grant `authorization_code` only.
   - The token lasts 30 days and has no refresh token. The ceiling is set only by the code exchange (`issueMcpClientSession`, `MCP_CLIENT_SESSION_TTL = days(30)`).
-- **Launch.** `t3_thread_launch {projectId, title, modelSelection: {provider: "claudeAgent", model, options: {effort}}, runtimeMode: "full-access", workspaceStrategy, message}`.
+- **Launch.** `t3_thread_launch {projectId, title, modelSelection: {provider: "claudeAgent", model, options: {effort}}, runtimeMode, workspaceStrategy, message}`.
+- **Runtime modes.** For Claude, T3 maps `full-access` to Claude Code's `bypassPermissions` and `auto` to its `auto` permission mode (`permissionModeForClaudeRuntimePolicy`). In `auto`, a classifier blocks risky actions, and T3 installs no approval callback, so a blocked action is denied rather than waiting on a person. Every lead so far has run in `full-access`, which `t3_dispatch.py --runtime-mode` defaults to.
   - `workspaceStrategy` is `{type: "worktree", baseRef, branch}` or `{type: "existing_worktree", worktreePath, branch}`.
   - The given `branch` is used as is, and the worktree lands at `<T3 home>/worktrees/<repo>/<branch>`.
   - The server assigns thread ids (`mcp:<uuid>`). Launch has no retry key.
@@ -45,14 +46,15 @@ The `t3` runner keeps one interface and gets two paths. In, all in buildermesh:
 - **The V2 client** is Go, with no `uv`: a small MCP-over-HTTP client in `internal/runner/t3mcp` (initialize, `notifications/initialized`, `tools/call`, the session header, re-initializing once on an expired session). A tool result with `isError` becomes an error carrying its `code` and `message`.
 - **Start.**
   - It finds the project whose `workspaceRoot` is the repo (`t3_project_list`), or creates it (`t3_project_create`).
-  - It then launches with `runtimeMode: "full-access"`, provider `claudeAgent`, `[models]` model and effort as `options.effort`, the title, the brief as `message`, and `workspaceStrategy {type: "worktree", baseRef: <StartSpec.Branch or "main">, branch: "bmesh/<ThreadID>"}`.
+  - It then launches with `runtimeMode` from `[runner] t3_runtime_mode`, provider `claudeAgent`, `[models]` model and effort as `options.effort`, the title, the brief as `message`, and `workspaceStrategy {type: "worktree", baseRef: <StartSpec.Branch or "main">, branch: "bmesh/<ThreadID>"}`.
   - With `StartSpec.Worktree` set, it launches `existing_worktree` with that path and branch.
   - Because launch has no retry key, a timeout or lost reply is reconciled with `t3_thread_list` on the project, matching the `bmesh/<ThreadID>` branch, before any error is returned. `Started.Thread` is T3's id.
   - On V2, a round's thread is filed under the target repo's own project and `[runner] t3_project` is ignored: V2 can't bind another repo's worktree. The daemon logs once that `t3_project` has no effect on a V2 server.
+- **Runtime mode.** `[runner] t3_runtime_mode` defaults to `"auto"`, and `"full-access"` is the per-box fallback. Config load refuses any other value, because `approval-required` and `auto-accept-edits` stall an unattended lead. The V1 path passes it as `--runtime-mode`, so leads on a 0.0.45 box move to `auto` as well.
 - **Status.**
   - `Running` is true when `activeRunId` is set or the newest run is `preparing`, `queued`, `starting`, `running` or `waiting`.
   - `LastReply` is the newest `assistant_message` text.
-  - `waiting` with `pendingRequestCount > 0` is logged as `t3: <path> waits on a question or approval` (a full-access lead shouldn't get here).
+  - `waiting` with `pendingRequestCount > 0` is logged as `t3: <path> waits on a question or approval` (an `auto` or `full-access` lead shouldn't get here, because `auto` denies rather than asks).
   - A `failed` newest run with `usage_limit` logs the reset time, and the silence check treats it as not running.
 - **Send** keeps today's contract. It reads Status first and returns `ErrRunning` for a running thread, so the daemon's wake doesn't pile up. Otherwise it calls `t3_thread_send` with `mode: "queue"`, never `auto`, so a turn that starts between the check and the send gets a queued message rather than a steered one. `clientRequestId` is `bmesh-<sha256(thread, text, minute)>`, so a retried wake isn't sent twice.
 - **Interrupt** is `t3_thread_interrupt`, and `no_active_run` counts as success.
@@ -61,11 +63,11 @@ The `t3` runner keeps one interface and gets two paths. In, all in buildermesh:
   - It exchanges the code with PKCE and writes `<config dir>/t3-token.json` (mode 0600: server, token, `expiresAt`, scopes). `--status` prints the server, scopes and days left.
   - The login prints the steps for approving from another machine, so the operator can sign in from the phone or the Mac:
     - `ssh -N -L <port>:localhost:<port> <box>` for the callback;
-    - choose **Full access**;
+    - choose the access level the box runs, **Auto** unless its `t3_runtime_mode` is `full-access`;
     - a pairing code from `t3 auth pairing create` if the browser isn't paired.
-  - The V2 path refuses to start a lead without the token, or with it expired, with `bmesh: T3 sign-in missing or expired; run bmesh t3 login` (exit 3). It refuses a token whose ceiling turns out to be less than full access with the same exit, naming the cap.
+  - The V2 path refuses to start a lead without the token, or with it expired, with `bmesh: T3 sign-in missing or expired; run bmesh t3 login` (exit 3). It refuses a token whose ceiling is below `t3_runtime_mode` with the same exit, naming both.
   - The daemon pushes `T3 sign-in on <box> expires in N days: bmesh t3 login` at 7, 3 and 1 days before `expiresAt` (once each; only that box's daemon reads its token, so the pushes sent are kept in `<state dir>/t3-login-pushes.json`, which survives a restart), and `bmesh mesh-status` shows the expiry when it is under 7 days.
-  - The token path and the login are behind one `credential` interface, so if T3 later lets the box's own CLI mint a full-access session, a self-renewing source replaces the login without touching the runner.
+  - The token path and the login are behind one `credential` interface, so if T3 later lets the box's own CLI mint a session with a runtime-mode ceiling, a self-renewing source replaces the login without touching the runner.
 - **Console links.** `ConsoleURL` path-escapes the thread id before putting it into `{thread}`, so `mcp:…` becomes `mcp%3A…` and a V1 id is unchanged.
 - **Tests.** An MCP fake in `testdata/` (an `httptest` server) serves the environment document, the OAuth endpoints and the tools above with the shapes recorded in Phase 1. It covers:
   - protocol 1 versus 2 path selection;
@@ -83,23 +85,33 @@ The `t3` runner keeps one interface and gets two paths. In, all in buildermesh:
 Out:
 - Removing the V1 path and `t3_dispatch.py` (024, once both boxes are on 0.1.0).
 - Codex threads through the runner.
+- The `claude` runner and routines, which still run `--dangerously-skip-permissions` (a separate spec if `auto` holds here).
 - T3's own push, webhooks, schedules and Connect. ntfy stays the push path.
 - `t3_thread_wait` inside the daemon. The daemon keeps polling Status each minute, so one slow server can't hold a goroutine.
 
 Judge: opus, because the facts are measured but the reconcile-by-branch, the send race and the login flow need judgment against a live server.
 
 ## What you'll see
-On a box whose T3 is 0.1.0, `bmesh build buildermesh 0NN` starts a lead that shows in T3's sidebar under the repo's project, on branch `bmesh/<thread id>`. From another box, `bmesh --node operator send <path> ping` reaches it within `wake_every`, and the map's thread link opens it. The same binary on a 0.0.45 box still starts leads through `t3_dispatch.py`. `bmesh t3 login --status` prints `k16: full-access, 29 days left`, and a week before expiry the phone gets a push saying to sign in again.
+On a box whose T3 is 0.1.0, `bmesh build buildermesh 0NN` starts a lead that shows in T3's sidebar under the repo's project, on branch `bmesh/<thread id>`. From another box, `bmesh --node operator send <path> ping` reaches it within `wake_every`, and the map's thread link opens it. The same binary on a 0.0.45 box still starts leads through `t3_dispatch.py`. `bmesh t3 login --status` prints `k16: auto, 29 days left`, and a week before expiry the phone gets a push saying to sign in again.
 
 ## Verification
 - The repo's verify, with the new fake-backed tests above.
 - A live check by the lead on k16:
   - against the Phase 1 scratch V2 server (`systemctl --user status t3-v2-scratch`, port 3780; its scratch project's repo is `~/.cache/t3-v2-scratch/repo`), start a demo lead with a two-line brief, send it a message, read its status, interrupt it and `node forget` it;
   - do the same against the live 0.0.45 server on 3773 through the V1 path.
-- The lead runs `bmesh t3 login --server http://127.0.0.1:3780` itself and asks the operator through `bmesh ask` to approve it (Full access). The `ask` text carries the URL, a fresh pairing code and the tunnel command.
-- Record both live checks in the closing commit.
+- The lead runs `bmesh t3 login --server http://127.0.0.1:3780` itself and asks the operator through `bmesh ask` to approve it (Auto). The `ask` text carries the URL, a fresh pairing code and the tunnel command.
+- **A real land under `auto`,** the check that decides the default. On the scratch server, a demo lead in `auto` must:
+  - commit in its worktree;
+  - fast-forward the scratch repo's `main` checkout (outside its worktree);
+  - push to a scratch bare remote;
+  - run `bmesh started|progress|done` against the mesh.
+
+  If the classifier denies any step, record which one and the denial text. The lead then decides, with the operator through `bmesh ask`, whether to keep `auto` and tell leads in their brief what to do instead, or to make `full-access` the default.
+- Record every live check in the closing commit.
 
 ## Risks and the alternative considered
+`auto` may deny a step a lead needs, most likely while landing outside its worktree or pushing `main`. The live land check above finds that before any box depends on it, and `full-access` stays a one-line fallback per box. A denied step makes a lead block, not misbehave.
+
 The sign-in needs a person every 30 days per box. Missing it stops new leads on that box but not running ones, and the pushes and `mesh-status` warn a week ahead.
 
 The alternative is the apps' WebSocket RPC (protocol 2), with a box-minted session bmesh renews itself, as `t3_dispatch.py` does on V1. It needs no person, but it ties bmesh to T3's undocumented internal API again, which is what broke this time. The MCP tools are T3's documented surface for outside agents.
@@ -108,5 +120,5 @@ Filing round threads under the target repo's project instead of buildermesh's ch
 
 ## Needs from the operator
 - **Accept that, on V2, a proposal round's threads show under the target repo's T3 project**, not under buildermesh's (round two's decision 4 can't hold on V2).
-- On each box after its T3 is on 0.1.0: run `bmesh t3 login` and approve it with Full access. Repeat monthly when the push says so.
+- On each box after its T3 is on 0.1.0: run `bmesh t3 login` and approve it at **Auto** (Full access only on a box set to `full-access`). Repeat monthly when the push says so.
 - `[runner] t3_server` only if a box's T3 isn't on `127.0.0.1:3773`.
