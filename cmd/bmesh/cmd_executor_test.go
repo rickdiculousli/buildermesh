@@ -339,7 +339,7 @@ func TestExecutorRemoveRefusesUnmerged(t *testing.T) {
 	if _, errs, code := runCLI(t, nil, "executor", "new", "--name", "alpha", "--json"); code != 0 {
 		t.Fatalf("new a third time: %d %q", code, errs)
 	}
-	if out, _, code := runCLI(t, as("demo-012.alpha"), "inbox"); code != 0 || out != "" {
+	if out, _, code := runCLI(t, as("demo-012.alpha"), "inbox"); code != 0 || out != "inbox: empty\n" {
 		t.Fatalf("successor inherited mail: %d %q", code, out)
 	}
 	// --force removes an unmerged, dirty executor.

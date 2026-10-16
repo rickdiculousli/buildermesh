@@ -42,4 +42,4 @@ Which verify commands prove it; anything new that's needed.
 ## Risks and the alternative considered
 
 ## Needs from the operator
-Empty unless a taste call really is theirs.
+Empty unless a taste call really is theirs, or a config key some box must set to turn the change on: name the key and the file it lives in.

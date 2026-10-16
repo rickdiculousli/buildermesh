@@ -57,7 +57,8 @@ func (a *app) cmdSend(args []string) error {
 	return nil
 }
 
-// cmdInbox prints this node's messages, acking them unless --peek.
+// cmdInbox prints this node's messages, acking them unless --peek, or
+// `inbox: empty` (nothing under --json).
 func (a *app) cmdInbox(args []string) error {
 	fs := a.flags("inbox")
 	peek := fs.Bool("peek", false, "leave the messages unread")
@@ -77,6 +78,10 @@ func (a *app) cmdInbox(args []string) error {
 	msgs, err := mesh.Fetch(ctx, a.client, p, !*peek)
 	if err != nil {
 		return err
+	}
+	if len(msgs) == 0 && !a.json {
+		fmt.Fprintln(a.stdout, "inbox: empty")
+		return nil
 	}
 	for _, m := range msgs {
 		if a.json {

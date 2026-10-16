@@ -40,10 +40,11 @@ commands:
                                            surfaces, pin; --json prints the rows
   repos show <name> [--json]               one row
   whoami                                   print this node's path
-  started|progress|blocked|ask [--text T]  report an event
-  done --commit SHA [--text T]             report done (a lead's spec must have landed, verified by results)
+  started|progress|blocked|ask [--text T]  report an event; print <event> <path>
+  done --commit SHA [--text T]             report done (a lead's spec must have landed, verified by results); print
+                                           done <path> <sha8>, or already done at <sha8> for a repeat
   send <path> <text|->                     message a node (- reads stdin)
-  inbox [--peek] [--json]                  read (and ack) this node's messages
+  inbox [--peek] [--json]                  read (and ack) this node's messages; inbox: empty when none
   thread-status [<path>] [--json]          print a node's state
   mesh-status [--all] [--json]             every node's state, runner and unread count; nodes done longer than
                                            [status] keep_done are counted, not listed, unless --all (or --json)
@@ -83,7 +84,8 @@ commands:
                                            module is from) over this binary, keeping it as bmesh.prev; print
                                            <old8> -> <new8>, or up to date
   result find <kind> [--commit C] [--model M] [--json] [-- args...]
-                                           print the result of kind at the commit's tree (exit 3 when none)
+                                           print the result of kind at the commit's tree, without --model every
+                                           model's (exit 3 when none)
   result record <kind> --ok|--fail [--commit C] [--model M] [--output FILE|-] [-- args...]
                                            record a result of kind at the commit's tree
   lock-lease acquire <slot> [--ttl D]      take a place in a slot and print its key (exit 3 when busy)
@@ -100,7 +102,8 @@ commands:
   routine wait <job id> [--timeout D]      wait for a job's reply; print its output, exit 0 ok / 1 fail / 5 timeout
   routine run <kind> [--commit HEAD] [--model M] [--here] [--rerun] [--text T] [-- args...]
                                            run a kind in this worktree and record its result; a deterministic
-                                           kind needs a clean tree and answers from a recorded result; exit 0 ok / 1 fail
+                                           kind needs a clean tree and answers from a recorded result; ends with
+                                           <kind> ok|fail t:<tree8>; exit 0 ok / 1 fail
   spec list [--repo R] [--status S] [--json]
                                            the repo's specs, one row each (id, status, size, kind, lens, title)
   spec next-id [--repo R]                  the next free spec id
@@ -132,6 +135,7 @@ type app struct {
 	json           bool
 	cfg            *config.Config
 	client         *mesh.Client
+	hint           string // the revision hint, printed once after the command's output
 }
 
 func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
@@ -143,18 +147,26 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			a.client.Close()
 		}
 	}()
-	err := a.dispatch(args)
+	code := a.report(a.dispatch(args))
+	if a.hint != "" {
+		fmt.Fprintln(stderr, a.hint)
+	}
+	return code
+}
+
+// report prints err as "bmesh: <msg>" on stderr and returns the exit code.
+func (a *app) report(err error) int {
 	if err == nil {
 		return exitOK
 	}
 	var ee *exitErr
 	if errors.As(err, &ee) {
 		if ee.msg != "" {
-			fmt.Fprintf(stderr, "bmesh: %s\n", ee.msg)
+			fmt.Fprintf(a.stderr, "bmesh: %s\n", ee.msg)
 		}
 		return ee.code
 	}
-	fmt.Fprintf(stderr, "bmesh: %s\n", err)
+	fmt.Fprintf(a.stderr, "bmesh: %s\n", err)
 	return exitError
 }
 
@@ -254,7 +266,7 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 	for {
 		if err := fs.Parse(args); err != nil {
 			if errors.Is(err, flag.ErrHelp) {
-				return nil, fail(exitUsage, "usage: bmesh %s (see `bmesh help`)", fs.Name())
+				return nil, fail(exitUsage, "usage: bmesh %s%s (see `bmesh help`)", fs.Name(), ownFlags(fs))
 			}
 			return nil, fail(exitUsage, "%s: %v", fs.Name(), err)
 		}
@@ -276,6 +288,18 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 	}
 }
 
+// ownFlags names the flags a subcommand adds to the global ones, as
+// " [--a] [--b]", or "" when it has none.
+func ownFlags(fs *flag.FlagSet) string {
+	var b strings.Builder
+	fs.VisitAll(func(f *flag.Flag) {
+		if f.Name != "config" && f.Name != "node" && f.Name != "json" {
+			fmt.Fprintf(&b, " [--%s]", f.Name)
+		}
+	})
+	return b.String()
+}
+
 func (a *app) loadConfig() error {
 	if a.cfg != nil {
 		return nil
@@ -293,8 +317,8 @@ func (a *app) loadConfig() error {
 }
 
 // connect loads the config and dials the hub; name labels the connection.
-// Once connected it prints the revision hint when the daemon runs another
-// build.
+// Once connected it reads the revision hint, which run prints after the
+// command's output, when the daemon runs another build.
 func (a *app) connect(ctx context.Context, name string) error {
 	if a.client != nil {
 		return nil

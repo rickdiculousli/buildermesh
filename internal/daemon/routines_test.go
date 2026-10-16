@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -698,5 +699,51 @@ func TestRescanForgetsStoppedInstancesAfterKeepDone(t *testing.T) {
 	}
 	if f.events(t, "routine.verify.cmd-1", "done") != 1 {
 		t.Fatal("cmd-1's done event is gone")
+	}
+}
+
+// logBuf is a goroutine-safe log sink.
+type logBuf struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *logBuf) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *logBuf) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+func TestRescanSkipsRepoMissingHereLoggingOnce(t *testing.T) {
+	f := routineSetup(t, map[string]string{".bmesh/routines/verify.toml": "timeout = \"30s\"\ncommand = \"echo ran\"\n"})
+	kindRescan = 200 * time.Millisecond
+	gone := filepath.Join(t.TempDir(), "elsewhere")
+	f.d.Cfg.Repos["gone"] = config.Repo{Path: gone}
+	var log logBuf
+	f.d.Log = slog.New(slog.NewTextHandler(&log, nil))
+
+	f.start(t)
+	f.waitStarted(t, "routine.verify.cmd-1", 1)
+	f.poll(t, time.Second) // several rescans
+	out := log.String()
+	if n := strings.Count(out, "routines: repo has no checkout on this box; skipped"); n != 1 || !strings.Contains(out, "repo=gone") {
+		t.Fatalf("skip logged %d times:\n%s", n, out)
+	}
+	if strings.Contains(out, "read kinds") || strings.Contains(out, "level=WARN") {
+		t.Fatalf("a missing repo warned:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(f.d.Checkouts, "elsewhere")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a checkout was made for the missing repo: %v", err)
+	}
+	// The repo that is here still runs its kind.
+	id := f.queue(t, mesh.Job{Kind: "verify", Commit: tgit(t, f.repo, "rev-parse", "HEAD"), Go: true})
+	if r := f.reply(t, id, 20*time.Second); !r.OK {
+		t.Fatalf("reply %+v", r)
 	}
 }

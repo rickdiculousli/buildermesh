@@ -195,8 +195,12 @@ func TestSendInboxRoundTrip(t *testing.T) {
 		t.Fatalf("inbox: %d %q", code, out)
 	}
 	out, _, code = runCLI(t, as("b"), "inbox")
-	if code != 0 || out != "" {
+	if code != 0 || out != "inbox: empty\n" {
 		t.Fatalf("second inbox: %d %q", code, out)
+	}
+	// --json prints nothing for an empty inbox.
+	if out, _, code := runCLI(t, as("b"), "inbox", "--json"); code != 0 || out != "" {
+		t.Fatalf("empty json inbox: %d %q", code, out)
 	}
 	// stdin text and the JSON form.
 	var o, e bytes.Buffer
@@ -377,7 +381,7 @@ func TestExecutorAskGoesToParent(t *testing.T) {
 	if _, errs, code := runCLI(t, as("app-012.alpha"), "started"); code != 0 {
 		t.Fatal(code, errs)
 	}
-	if out, errs, code := runCLI(t, as("app-012.alpha"), "ask", "--text", "which db?"); code != 0 || out != "" {
+	if out, errs, code := runCLI(t, as("app-012.alpha"), "ask", "--text", "which db?"); code != 0 || out != "ask app-012.alpha\n" {
 		t.Fatalf("ask: %d %q %q", code, out, errs)
 	}
 	lead, _ := mesh.ParsePath("app-012")
@@ -444,7 +448,7 @@ func TestInboxEmptyReturnsAtOnce(t *testing.T) {
 	putNode(t, c, ctx, mesh.Node{Path: "app-012"})
 	start := time.Now()
 	out, errs, code := runCLI(t, as("app-012"), "inbox")
-	if took := time.Since(start); code != 0 || out != "" || took > 500*time.Millisecond {
+	if took := time.Since(start); code != 0 || out != "inbox: empty\n" || took > 500*time.Millisecond {
 		t.Fatalf("empty inbox: %d %q %q in %v", code, out, errs, took)
 	}
 }
@@ -455,9 +459,14 @@ func TestExecutorDoneAndBlockedReportToParent(t *testing.T) {
 	// No worktree: the report names the recorded branch and the commit as given.
 	putNode(t, c, ctx, mesh.Node{Path: "app-012.alpha", Role: "executor", Parent: "app-012", Branch: "t3code/x-alpha"})
 	lead, _ := mesh.ParsePath("app-012")
+	// Each event prints one line: `<event> <path>`, done its commit too.
 	run := func(args ...string) {
 		t.Helper()
-		if out, errs, code := runCLI(t, as("app-012.alpha"), args...); code != 0 || out != "" {
+		want := args[0] + " app-012.alpha\n"
+		if args[0] == "done" {
+			want = "done app-012.alpha " + args[2][:8] + "\n"
+		}
+		if out, errs, code := runCLI(t, as("app-012.alpha"), args...); code != 0 || out != want {
 			t.Fatalf("%v: %d %q %q", args, code, out, errs)
 		}
 	}
@@ -520,7 +529,7 @@ func TestExecutorDoneNeedsCommitSkipsSpec(t *testing.T) {
 		t.Fatalf("state after refusal %s", got)
 	}
 	out, errs, code := runCLI(t, as("app-012.alpha"), "done", "--commit", "abc1234", "--text", "built")
-	if code != 0 || out != "" || errs != "" {
+	if code != 0 || out != "done app-012.alpha abc1234\n" || errs != "" {
 		t.Fatalf("done: %d %q %q", code, out, errs)
 	}
 	if got := stateOf(t, c, ctx, "app-012.alpha"); got != "done" {

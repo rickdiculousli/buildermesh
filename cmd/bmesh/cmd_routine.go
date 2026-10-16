@@ -547,8 +547,7 @@ func (a *app) cmdRoutineRun(args []string) error {
 			return err
 		}
 		if ok {
-			fmt.Fprintf(a.stderr, "answered from result %s\n", key)
-			return a.printVerdict(r.OK, r.Output)
+			return a.printRunVerdict(name, tree, *model, r.OK, r.Output, "answered from the record")
 		}
 	}
 
@@ -584,8 +583,25 @@ func (a *app) cmdRoutineRun(args []string) error {
 	if err := mesh.PutResult(putCtx, a.client, r); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.stderr, "recorded %s\n", key)
-	return a.printVerdict(reply.OK, reply.Output)
+	return a.printRunVerdict(name, tree, *model, reply.OK, reply.Output, "recorded")
+}
+
+// printRunVerdict prints a run's output and then its verdict line,
+// `<kind> ok|fail t:<tree8>[ m:<model>] (<how>)`, a verified entry and how
+// the result came to be: recorded, or answered from the record.
+func (a *app) printRunVerdict(name, tree, model string, ok bool, out, how string) error {
+	line := fmt.Sprintf("%s %s t:%s", name, okWord(ok), tree[:8])
+	if model != "" {
+		line += " m:" + model
+	}
+	if out != "" && !strings.HasSuffix(out, "\n") {
+		out += "\n"
+	}
+	fmt.Fprintf(a.stdout, "%s%s (%s)\n", out, line, how)
+	if !ok {
+		return fail(exitError, "")
+	}
+	return nil
 }
 
 // refuseDirty refuses (exit 3) when the cwd's worktree has uncommitted
