@@ -323,14 +323,19 @@ func Install(ctx context.Context, dir, exe, head string) error {
 
 // swap refuses built (Refused) unless its `version` names head, then moves
 // exe to Prev(exe) and built to exe; a failed swap leaves exe as it was, as
-// far as the file system allows.
+// far as the file system allows. A Prev(exe) that cannot be removed is
+// moved to Prev(exe)+".old" instead: on Windows, where a running binary can
+// be renamed but not removed, it is still the image of `serve --restart`,
+// which the update before this one moved there.
 func swap(ctx context.Context, built, exe, head string) error {
 	if got := reports(ctx, built); got != Short(head) {
 		return &Refused{Reported: got, Head: head}
 	}
 	prev := Prev(exe)
 	if err := os.Remove(prev); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+		if rerr := os.Rename(prev, prev+".old"); rerr != nil {
+			return fmt.Errorf("%w; and moving it aside: %v", err, rerr)
+		}
 	}
 	if err := os.Rename(exe, prev); err != nil {
 		return err

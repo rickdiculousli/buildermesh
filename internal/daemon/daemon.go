@@ -56,6 +56,11 @@ type Deps struct {
 	Module   string // the module this binary was built from; "" = unknown, no upstream to read
 	Exe      string // the binary's path, which [update] replaces
 	Restart  func() // ends serve so the binary re-execs; called after an update drained
+	// Supervised says serve runs under `bmesh serve --restart`
+	// (BMESH_SUPERVISED=1), which starts the new binary after an update on
+	// Windows, where there is no exec; a Windows daemon without it refuses
+	// to update.
+	Supervised bool
 }
 
 func (d *Deps) defaults() {

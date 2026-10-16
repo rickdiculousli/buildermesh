@@ -121,6 +121,33 @@ func TestInstallSwapsAndKeepsPrev(t *testing.T) {
 	}
 }
 
+// A bmesh.prev that cannot be removed (on Windows, the running image of
+// serve --restart; here a directory with a file in it) is moved aside.
+func TestInstallMovesBusyPrevAside(t *testing.T) {
+	fakeGo(t)
+	dir, shas := repo(t, "one")
+	exe := filepath.Join(t.TempDir(), "bmesh")
+	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	busy := filepath.Join(Prev(exe), "image")
+	if err := os.MkdirAll(filepath.Dir(busy), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(busy, []byte("supervisor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := Install(context.Background(), dir, exe, shas[0]); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(Prev(exe)); string(b) != "old" {
+		t.Fatalf("prev %q", b)
+	}
+	if b, _ := os.ReadFile(filepath.Join(Prev(exe)+".old", "image")); string(b) != "supervisor" {
+		t.Fatalf("moved aside %q", b)
+	}
+}
+
 func TestInstallFailedBuildLeavesBinary(t *testing.T) {
 	fakeGo(t)
 	t.Setenv("FAKE_GO_EXIT", "1")

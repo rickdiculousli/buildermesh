@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -41,12 +42,14 @@ var serveHostsEvery time.Duration
 func (a *app) cmdServe(args []string) error {
 	fs := a.flags("serve")
 	listen := fs.String("listen", "", "HTTP address (default [serve] listen)")
+	restart := fs.Bool("restart", false, "run serve as a child and start it again whenever it exits")
+	detachF := fs.Bool("detach", false, "with --restart, on Windows: start the supervisor with no console window and return")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
-	if len(pos) != 0 {
-		return fail(exitUsage, "usage: bmesh serve [--listen ADDR]")
+	if len(pos) != 0 || *detachF && !*restart {
+		return fail(exitUsage, "usage: bmesh serve [--listen ADDR] [--restart [--detach]]")
 	}
 	if err := a.loadConfig(); err != nil {
 		return err
@@ -55,6 +58,12 @@ func (a *app) cmdServe(args []string) error {
 	exe, err := executable()
 	if err == nil {
 		exe, err = filepath.EvalSymlinks(exe)
+	}
+	if *restart {
+		if err != nil {
+			return fmt.Errorf("serve --restart: no binary path to start: %w", err)
+		}
+		return a.superviseServe(exe, args, *detachF)
 	}
 	if err != nil {
 		fmt.Fprintf(a.stderr, "bmesh serve: no binary path, so no [update]: %v\n", err)
@@ -69,6 +78,38 @@ func (a *app) cmdServe(args []string) error {
 		return reexec(exe)
 	}
 	return err
+}
+
+// superviseServe is serve --restart: the supervisor, with serve's own
+// arguments for the child. With detach (Windows) it starts itself again
+// with no console window and returns. On Windows the supervisor and the
+// child write to serve.log in the state dir, there being no journal there.
+func (a *app) superviseServe(exe string, args []string, detachIt bool) error {
+	logPath := filepath.Join(config.StateDir(), "serve.log")
+	if detachIt {
+		pid, err := detach(exe, append([]string{"serve", "--restart"}, childArgs(a.configPath, args)[1:]...))
+		if err != nil {
+			return fail(exitUsage, "serve --detach: %v", err)
+		}
+		fmt.Fprintf(a.stderr, "bmesh serve: supervisor started with no window (pid %d); log in %s\n", pid, logPath)
+		return nil
+	}
+	var out io.Writer = a.stderr
+	if runtime.GOOS == "windows" {
+		if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+			return err
+		}
+		l, err := openRotLog(logPath, serveLogMax)
+		if err != nil {
+			return err
+		}
+		defer l.Close()
+		fmt.Fprintf(a.stderr, "bmesh serve --restart: log in %s\n", logPath)
+		out = l
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
+	return newSupervisor(exe, childArgs(a.configPath, args), out).run(ctx)
 }
 
 // serve runs the embedded server (when [mesh] nats is empty), the daemon and
@@ -145,7 +186,8 @@ func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Wri
 			Checkouts: cfg.Expand(cfg.Runner.Checkouts), ClaudeBin: claude,
 			Quota:    quota,
 			Revision: buildVersion().Revision, Module: buildModule(), Exe: exe,
-			Restart: func() { restarting.Store(true); restart() },
+			Restart:    func() { restarting.Store(true); restart() },
+			Supervised: os.Getenv("BMESH_SUPERVISED") == "1",
 		})
 	}()
 

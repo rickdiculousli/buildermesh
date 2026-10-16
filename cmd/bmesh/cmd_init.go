@@ -27,7 +27,7 @@ var runnerKinds = []string{"claude", "t3", "tmux"}
 // the default), so a script can drive it.
 func (a *app) cmdInit(args []string) error {
 	fs := a.flags("init")
-	service := fs.Bool("service", false, "write the systemd user unit (Linux) or launchd plist (macOS) for bmesh serve")
+	service := fs.Bool("service", false, "write the systemd user unit (Linux) or launchd plist (macOS) for bmesh serve, or print the schtasks commands (Windows)")
 	force := fs.Bool("force", false, "rewrite an existing config.toml and this repo's registry row")
 	hub := fs.String("hub", "", "multi-box: the NATS hub URL (nats://host:4222)")
 	tokenFile := fs.String("token-file", "", "multi-box: the hub's token file")
@@ -266,7 +266,8 @@ func shortRemote(u string) string {
 
 // writeService writes the unit that keeps bmesh serve running: a systemd user
 // unit on Linux, a launchd agent on macOS. It returns the file and the
-// commands that enable it; on another OS, only the advice.
+// commands that enable it; on Windows, with no file, the schtasks commands
+// that set up a logon task; on another OS, only the advice.
 func writeService(configDir string) (string, []string, error) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -333,8 +334,41 @@ func writeService(configDir string) (string, []string, error) {
 			return "", nil, err
 		}
 		return plist, []string{"launchctl bootstrap gui/$(id -u) " + plist + "   # the daemon; log in ~/Library/Logs/bmesh.log"}, nil
+	case "windows":
+		cfgPath, err := filepath.Abs(filepath.Join(configDir, "config.toml"))
+		if err != nil {
+			return "", nil, err
+		}
+		lines, err := schtasksLines(exe, cfgPath, filepath.Join(config.StateDir(), "serve.log"))
+		return "", lines, err
 	}
 	return "", []string{"bmesh serve        # no service file for " + runtime.GOOS + "; keep this running"}, nil
+}
+
+// schtasksMax is the longest command schtasks /TR takes.
+const schtasksMax = 261
+
+// schtasksLines are the commands that keep bmesh serve running on Windows,
+// to run in cmd: a task at logon running `serve --restart --detach` (the
+// config path as --config, since a task sets no environment), the task
+// started now, and a rem line naming the log. Each path is quoted, so one
+// with spaces passes; one holding a quote or a % has no safe spelling under
+// cmd and is refused, as is a command longer than /TR takes.
+func schtasksLines(exe, cfgPath, logPath string) ([]string, error) {
+	for _, p := range []string{exe, cfgPath} {
+		if strings.ContainsAny(p, "\"%\r\n") {
+			return nil, fmt.Errorf("init --service: %q cannot be passed through cmd (it holds a quote or a %%); move it and run init --service again", p)
+		}
+	}
+	tr := `"` + exe + `" serve --restart --detach --config "` + cfgPath + `"`
+	if len(tr) > schtasksMax {
+		return nil, fmt.Errorf("init --service: the task's command is %d characters, more than the %d schtasks takes: %s", len(tr), schtasksMax, tr)
+	}
+	return []string{
+		`schtasks /Create /TN buildermesh /SC ONLOGON /RL LIMITED /F /TR "` + strings.ReplaceAll(tr, `"`, `\"`) + `"`,
+		"schtasks /Run /TN buildermesh",
+		"rem in cmd: bmesh serve then starts at every logon with no window; its log is " + logPath,
+	}, nil
 }
 
 // serviceFile is where init --service writes the unit on this OS: a

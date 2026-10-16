@@ -41,7 +41,8 @@ refused (exit 3).
 commands:
   init [--service] [--force] [--hub URL] [--token-file F] [--runner K] [--no-repo]
                                            set this box up: config.toml, this repo in repos.toml (it needs a main
-                                           branch), --service the unit for bmesh serve; asks what the flags don't
+                                           branch), --service the unit for bmesh serve (on Windows, the schtasks
+                                           commands for a logon task running serve --restart); asks what the flags don't
                                            say, then prints every setting in effect and the key that changes it
   init --hosts [--admin]                   join this box to the mesh with a one-time invite code (asked at the
                                            prompt), or --admin make it the admin; writes only [hosts] and, with
@@ -122,9 +123,12 @@ commands:
                                            print {"path","branch","worktree"} and (without --json) its header
   executor list [--json]                   this lead's tree: path, state, branch, head, unread
   executor remove <name> [--force]         remove a merged executor's worktree and branch (exit 3 unmerged)
-  serve [--listen ADDR]                    run the daemon and the map (embedded NATS when [mesh] nats is empty);
+  serve [--listen ADDR] [--restart [--detach]]
+                                           run the daemon and the map (embedded NATS when [mesh] nats is empty);
                                            with [update] repo, it rebuilds itself when that repo's main moves;
-                                           else every [update] check_every it writes the notice when behind
+                                           else every [update] check_every it writes the notice when behind;
+                                           --restart runs it as a child, started again 5s after every exit;
+                                           --detach (Windows) starts that with no console window and returns
   t3 login [--server URL] [--callback-port 52299] [--timeout D]
                                            sign bmesh in to this box's T3 0.1.0 (default [runner] t3_server):
                                            print the authorize URL, take the redirect on localhost or pasted,
