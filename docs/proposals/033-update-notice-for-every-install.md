@@ -4,7 +4,7 @@ title: Every install learns when bmesh moved on, and can take it
 kind: feature
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
@@ -12,6 +12,8 @@ built_by: 4bcd6572-6f0b-4ada-84ea-a8cdd0f85540
 host: k16
 family: buildermesh-build-3
 branch: bmesh/4bcd6572-6f0b-4ada-84ea-a8cdd0f85540
+merged: b72db2a948662fb23cb08d89dd3cfe03eaf2eba5
+verified: review ok t:ed5dcffa m:claude-opus-5-5 c:80b783a0; verify ok t:ed5dcffa
 ---
 
 ## Opportunity
