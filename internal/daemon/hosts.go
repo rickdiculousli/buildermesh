@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -54,14 +55,19 @@ type hostsNode struct {
 	wake  wakeClock
 
 	notesCut bool // notes.md was over 16 KB at the last read: logged once
+
+	heldMu    sync.Mutex  // the held store
+	levelling atomic.Bool // a self-level is running
+	wg        sync.WaitGroup
 }
 
 // hostsRun runs the hosts layer until ctx ends: each minute it notes a
 // wake, syncs the roster (taking a newer one, putting its own back when the
-// hub's is missing, unsigned or lower), writes signed presence and the
-// session line (this-box.txt); and it
-// takes this box's jobs one at a time. A box that hasn't joined logs so and
-// does nothing.
+// hub's is missing, unsigned or lower), drops expired holds, writes signed
+// presence and the session line (this-box.txt); it takes this box's jobs
+// one at a time, answers approvals of its holds, and self-levels its repos
+// on start and on each wake. A box that hasn't joined logs so and does
+// nothing.
 func hostsRun(ctx context.Context, d Deps) {
 	key, err := hosts.LoadHostKey(hosts.HostKeyPath(d.ConfigDir))
 	if err != nil {
@@ -83,12 +89,12 @@ func hostsRun(ctx context.Context, d Deps) {
 	if tick <= 0 {
 		tick = defaultHostsEvery
 	}
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() { defer wg.Done(); h.jobLoop(ctx) }()
-	wg.Add(1)
-	go func() { defer wg.Done(); every(ctx, tick, func() { h.tick(ctx) }) }()
-	wg.Wait()
+	h.wg.Add(4)
+	go func() { defer h.wg.Done(); h.jobLoop(ctx) }()
+	go func() { defer h.wg.Done(); h.serveApprovals(ctx) }()
+	go func() { defer h.wg.Done(); h.selfLevel(ctx) }()
+	go func() { defer h.wg.Done(); every(ctx, tick, func() { h.tick(ctx) }) }()
+	h.wg.Wait()
 }
 
 // tick is the minute's work: a wake check, the roster, old salt records and
@@ -99,14 +105,19 @@ func (h *hostsNode) tick(ctx context.Context) {
 	gap, woke := h.wake.observe(now)
 	h.mu.Unlock()
 	if woke {
-		h.d.Log.Info("hosts: woke; re-reading the roster", "gap", gap.Round(time.Second))
+		h.d.Log.Info("hosts: woke; re-reading the roster and self-levelling", "gap", gap.Round(time.Second))
 	}
 	if err := h.syncRoster(ctx); err != nil {
 		h.d.Log.Warn("hosts: roster", "err", err)
 	}
+	if woke && ctx.Err() == nil {
+		h.wg.Add(1)
+		go func() { defer h.wg.Done(); h.selfLevel(ctx) }()
+	}
 	if err := h.salts.Prune(now); err != nil {
 		h.d.Log.Warn("hosts: salts", "err", err)
 	}
+	h.pruneHolds(now)
 	if err := h.putPresence(ctx, now); err != nil {
 		h.d.Log.Warn("hosts: presence", "err", err)
 	}
@@ -310,6 +321,8 @@ func (h *hostsNode) run(ctx context.Context, m jetstream.Msg, j *hosts.Job) (boo
 	switch j.Op {
 	case "ping":
 		return true, fmt.Sprintf("%s, roster v%d", h.revision(), h.roster().Version)
+	case "level":
+		return h.levelJob(ctx, j)
 	}
 	return false, fmt.Sprintf("unknown op %s (this bmesh is %s)", cut(j.Op, 32), h.revision())
 }

@@ -113,12 +113,15 @@ type UpdateConfig struct{ Repo string }
 // nothing of it runs unless Enabled, which only `bmesh init --hosts` sets.
 // Admin marks the admin box, Secure a box that holds for the operator what
 // others ask of it, KeyStore where the admin or approval key lives
-// (keychain or file; "" = keychain on macOS, file elsewhere).
+// (keychain or file; "" = keychain on macOS, file elsewhere), PushModes
+// the registry modes whose rows a level pushes when this box is ahead (020;
+// nil = ship and fork).
 type HostsConfig struct {
-	Enabled  bool
-	Admin    bool
-	Secure   bool
-	KeyStore string `toml:"key_store"`
+	Enabled   bool
+	Admin     bool
+	Secure    bool
+	KeyStore  string   `toml:"key_store"`
+	PushModes []string `toml:"push_modes"`
 }
 
 // KeyStoreKind is [hosts] key_store, else keychain on macOS and file
@@ -342,6 +345,11 @@ func Load(path string) (*Config, error) {
 	c.Quota, c.Console, c.Update, c.Hosts = f.Quota, f.Console, f.Update, f.Hosts
 	if k := c.Hosts.KeyStore; k != "" && k != "keychain" && k != "file" {
 		return nil, fmt.Errorf("config %s: [hosts] key_store %q: want keychain or file", path, k)
+	}
+	for _, m := range c.Hosts.PushModes {
+		if !slices.Contains(Modes, m) {
+			return nil, fmt.Errorf("config %s: [hosts] push_modes: %q is not one of %s", path, m, strings.Join(Modes, ", "))
+		}
 	}
 	for key, e := range map[string]string{"lead_effort": c.Models.LeadEffort, "proposer_effort": c.Models.ProposerEffort} {
 		if err := CheckEffort(e); err != nil {

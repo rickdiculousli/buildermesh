@@ -264,24 +264,28 @@ func pushLive(ctx context.Context, d Deps, s mesh.Stored, jobs chan<- pushJob) {
 }
 
 // pushable reports a subject the loop pushes: a node event listed in
-// [notify] push, or (with [hosts] enabled) a daemon's refused, whose path
-// is daemon.<host>.
+// [notify] push, or (with [hosts] enabled) a daemon's refused, held or
+// level, whose path is daemon.<host>.
 func pushable(d Deps, subject string) (path, event string, ok bool) {
-	if host, ok := refusedHost(subject); ok {
-		return "daemon." + host, "refused", d.Cfg.Hosts.Enabled
+	if host, event, ok := hostsEvent(subject); ok {
+		return "daemon." + host, event, d.Cfg.Hosts.Enabled
 	}
 	path, event, ok = nodeEvent(subject)
 	return path, event, ok && slices.Contains(d.Cfg.Notify.Push, event)
 }
 
-// refusedHost is the host of a bm.daemon.<host>.refused subject.
-func refusedHost(subject string) (string, bool) {
+// hostsEvents are the daemon events of the hosts layer the phone hears:
+// a refused job (019), a hold and a level's unanswered refusal (020).
+var hostsEvents = []string{"refused", "held", "level"}
+
+// hostsEvent splits a bm.daemon.<host>.<event> subject of hostsEvents.
+func hostsEvent(subject string) (host, event string, ok bool) {
 	rest, ok := strings.CutPrefix(subject, "bm.daemon.")
 	if !ok {
-		return "", false
+		return "", "", false
 	}
-	host, ok := strings.CutSuffix(rest, ".refused")
-	return host, ok && host != "" && !strings.Contains(host, ".")
+	host, event, ok = strings.Cut(rest, ".")
+	return host, event, ok && host != "" && slices.Contains(hostsEvents, event)
 }
 
 // refusedQuiet is how long a refusal from one sender for one check stays
@@ -312,6 +316,37 @@ func pushRefused(ctx context.Context, d Deps, s mesh.Stored, path string, jobs c
 	req := PushRequest{Headers: Headers{Title: fmt.Sprintf("%s refused %s: %s", host, who, check), Priority: "high",
 		Tags: "warning", Click: d.Cfg.Notify.MapURL}, Body: cutUTF8(ev.Text, pushBodyMax)}
 	claim := mesh.Event{From: d.from(), Event: "push", Text: req.Title, Seq: s.Seq, Body: key,
+		At: d.Now().UTC().Format(time.RFC3339)}
+	dup, err := mesh.PublishEventID(ctx, d.Client, claim, fmt.Sprintf("push-%d", s.Seq))
+	if err != nil {
+		d.Log.Warn("push: claim", "path", path, "seq", s.Seq, "err", err)
+		return
+	}
+	if dup {
+		return
+	}
+	j := pushJob{req: req, path: path, seq: s.Seq}
+	select {
+	case jobs <- j:
+	case <-ctx.Done():
+		pushShutdown(d, j)
+	}
+}
+
+// pushHostsEvent claims a daemon's held or level event s, once: a hold
+// (title its text, `ricks-macbook holds: pstack-claude +3 commits (k16)`)
+// or a level's refusal or failure no caller waited for.
+func pushHostsEvent(ctx context.Context, d Deps, s mesh.Stored, path, event string, jobs chan<- pushJob) {
+	ev, err := decodeEvent(s.Data)
+	if err != nil || ev.Text == "" {
+		return
+	}
+	h := Headers{Title: cutUTF8(ev.Text, 200), Priority: "default", Tags: "hourglass", Click: d.Cfg.Notify.MapURL}
+	if event == "level" {
+		h.Priority, h.Tags = "high", "warning"
+	}
+	req := PushRequest{Headers: h, Body: cutUTF8(ev.Text, pushBodyMax)}
+	claim := mesh.Event{From: d.from(), Event: "push", To: path, Text: req.Title, Seq: s.Seq,
 		At: d.Now().UTC().Format(time.RFC3339)}
 	dup, err := mesh.PublishEventID(ctx, d.Client, claim, fmt.Sprintf("push-%d", s.Seq))
 	if err != nil {
@@ -386,8 +421,13 @@ func pushCatchUp(ctx context.Context, d Deps, jobs chan<- pushJob) (last uint64,
 // it for delivery; non-leads, a lost claim race and failures are skipped
 // (failures logged).
 func pushClaim(ctx context.Context, d Deps, s mesh.Stored, path, event string, jobs chan<- pushJob) {
-	if event == "refused" && strings.HasPrefix(path, "daemon.") {
-		pushRefused(ctx, d, s, path, jobs)
+	if strings.HasPrefix(path, "daemon.") {
+		switch event {
+		case "refused":
+			pushRefused(ctx, d, s, path, jobs)
+		case "held", "level":
+			pushHostsEvent(ctx, d, s, path, event, jobs)
+		}
 		return
 	}
 	ev, err := decodeEvent(s.Data)
