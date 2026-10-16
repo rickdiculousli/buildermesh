@@ -3,8 +3,8 @@ id: 017
 title: Recent events draw each node as a coloured chip in its own lane
 kind: ux
 size: S
-judge: fable
-status: proposed
+judge: opus
+status: accepted
 lens: ux
 proposed_by: 3ac8b8a4-8c59-4284-8f78-728ed0e1a551
 proposed_on: 2026-10-15

@@ -4,7 +4,7 @@ title: Boxes keep each other level: sync, plugin refresh and approval holds
 kind: feature
 size: L
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16

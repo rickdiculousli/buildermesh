@@ -4,7 +4,7 @@ title: A self-updated bmesh knows its own revision, so self-update stays on
 kind: refinement
 size: S
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: operator coordinator (Mac session, 2026-10-16)
 proposed_on: 2026-10-16

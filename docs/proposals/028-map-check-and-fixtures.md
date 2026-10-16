@@ -4,7 +4,7 @@ title: The map's browser check and test fixtures are in the repo
 kind: maintenance
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16

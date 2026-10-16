@@ -4,7 +4,7 @@ title: A review carries across a rebase that leaves the diff unchanged
 kind: refinement
 size: S
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
