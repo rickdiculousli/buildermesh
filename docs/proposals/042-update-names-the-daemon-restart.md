@@ -4,7 +4,7 @@ title: bmesh update says when this box's daemon still runs the old binary, and h
 kind: refinement
 size: S
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: 56979e66-321a-467e-9cbc-a2165df787ff
 proposed_on: 2026-10-16
@@ -13,6 +13,8 @@ built_by: 5e40fd56-b2f9-4b2b-8bde-110f2110102d
 host: k16
 family: buildermesh-build-4
 branch: bmesh/5e40fd56-b2f9-4b2b-8bde-110f2110102d
+merged: 26e3e60787f3589a9727a4d6ecee82eb0105e725
+verified: review ok t:25ba756e m:claude-opus-5-5 c:2a0ca2ef; verify ok t:25ba756e
 ---
 
 ## Opportunity
