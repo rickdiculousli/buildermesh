@@ -67,7 +67,7 @@ const (
 var Idempotent = map[string]bool{"ping": true, "level": true, "prune": true}
 
 // AdminOps need the admin's signature: their job is signed by the admin key.
-var AdminOps = map[string]bool{}
+var AdminOps = map[string]bool{"nix": true}
 
 // Check runs checks 1 to 7 in order and stops at the first failure:
 //  1. by is in the roster (an admin op: verified against the admin key);
