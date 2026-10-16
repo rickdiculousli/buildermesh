@@ -34,8 +34,9 @@ const (
 const usage = `usage: bmesh [--config FILE] [--node PATH] [--json] <command> [args]
 
 --config, --node and --json are accepted before or after the command.
-Every command but init, help, version and hosts --here needs the box set up (the flag <config dir>/.setup-complete
-or a config.toml): a terminal run runs init first, a non-interactive one is refused (exit 3).
+Every command but init, help, version, hosts --here and update --notice needs the box set up (the flag
+<config dir>/.setup-complete or a config.toml): a terminal run runs init first, a non-interactive one is
+refused (exit 3).
 
 commands:
   init [--service] [--force] [--hub URL] [--token-file F] [--runner K] [--no-repo]
@@ -122,7 +123,8 @@ commands:
   executor list [--json]                   this lead's tree: path, state, branch, head, unread
   executor remove <name> [--force]         remove a merged executor's worktree and branch (exit 3 unmerged)
   serve [--listen ADDR]                    run the daemon and the map (embedded NATS when [mesh] nats is empty);
-                                           with [update] repo, it rebuilds itself when that repo's main moves
+                                           with [update] repo, it rebuilds itself when that repo's main moves;
+                                           else every [update] check_every it writes the notice when behind
   t3 login [--server URL] [--callback-port 52299] [--timeout D]
                                            sign bmesh in to this box's T3 0.1.0 (default [runner] t3_server):
                                            print the authorize URL, take the redirect on localhost or pasted,
@@ -130,8 +132,9 @@ commands:
   t3 login --status                        print the sign-in: <host>: <access>, N days left; server and scopes
   version                                  print this binary's commit: <rev8> <time> [modified], or unknown
   update [--repo R]                        build R's main (default [update] repo, else the row this binary's
-                                           module is from) over this binary, keeping it as bmesh.prev; print
-                                           <old8> -> <new8>, or up to date
+                                           module is from; with none, go install the module's main) over this
+                                           binary, keeping it as bmesh.prev; print <old8> -> <new8>, or up to date
+  update --notice                          print the daemon's behind-main notice (<state dir>/update.txt), if any
   land [--spec NNN] [--ttl D] [--wait D]   land this worktree's branch on main under the lease land.<repo> (waits
                                            while another lead holds it): fetch, rebase, run or require the results,
                                            write verified, set done with merged and branch, commit, push; a push
@@ -242,7 +245,8 @@ func (a *app) dispatch(args []string) error {
 	// hosts --here runs from a session hook: it reads one file and never
 	// sets the box up or refuses, so a session on a box without bmesh set
 	// up opens as quietly as one with [hosts] off.
-	here := cmd == "hosts" && slices.Contains(rest, "--here")
+	// So does update --notice, beside it in the same hook.
+	here := cmd == "hosts" && slices.Contains(rest, "--here") || cmd == "update" && slices.Contains(rest, "--notice")
 	if cmd != "init" && cmd != "help" && cmd != "version" && !here {
 		if err := a.ensureSetup(rest); err != nil {
 			return err

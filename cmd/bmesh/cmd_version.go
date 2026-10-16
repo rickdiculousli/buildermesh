@@ -17,6 +17,15 @@ var readBuildInfo = debug.ReadBuildInfo
 
 func buildVersion() selfupdate.Version { return selfupdate.FromBuildInfo(readBuildInfo()) }
 
+// buildModule is the module this binary was built from, "" when it does not
+// say.
+func buildModule() string {
+	if bi, ok := readBuildInfo(); ok && bi != nil {
+		return bi.Main.Path
+	}
+	return ""
+}
+
 // cmdVersion prints `bmesh <rev8> <time> [modified]`, or `bmesh unknown`.
 func (a *app) cmdVersion(args []string) error {
 	fs := a.flags("version")
@@ -39,6 +48,8 @@ const hintWait = 2 * time.Second
 // daemon to start when this host runs none, runs another revision than this
 // binary. There is none when either side does not know its revision or the
 // read fails: it is a hint, never a refusal, and never changes the exit code.
+// Revisions compare by prefix, so a module install's 12 hex match the full
+// commit.
 func (a *app) versionHint(ctx context.Context) {
 	own := buildVersion().Revision
 	if own == "" {
@@ -57,7 +68,7 @@ func (a *app) versionHint(ctx context.Context) {
 		}
 	}
 	var ev mesh.Event
-	if json.Unmarshal(s.Data, &ev) != nil || ev.Text == "" || ev.Text == selfupdate.Unknown || ev.Text == own {
+	if json.Unmarshal(s.Data, &ev) != nil || ev.Text == "" || ev.Text == selfupdate.Unknown || selfupdate.Same(ev.Text, own) {
 		return
 	}
 	host := strings.TrimSuffix(strings.TrimPrefix(s.Subject, "bm.daemon."), ".started")

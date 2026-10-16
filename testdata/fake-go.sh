@@ -6,7 +6,25 @@
 # "bmesh <rev8>" for `version` and "fake bmesh <commit>" otherwise. <rev8> is
 # $FAKE_GO_REVISION when set, else the stampRevision in the flags (unknown
 # without one).
-[ "$1" = build ] || { echo "fake go: want build, got $*" >&2; exit 2; }
+# `install <module>/cmd/bmesh@<commit>` appends "install <module>@<commit>"
+# to $FAKE_GO_LOG and, with the same $FAKE_GO_EXIT and $FAKE_GO_REVISION,
+# writes $GOBIN/bmesh printing "bmesh <commit8>" for `version` and "fake
+# bmesh <commit>" otherwise.
+if [ "$1" = install ]; then
+  pkg=${2%@*}
+  commit=${2##*@}
+  [ -n "$FAKE_GO_LOG" ] && echo "install ${pkg%/cmd/bmesh}@$commit" >> "$FAKE_GO_LOG"
+  if [ -n "$FAKE_GO_EXIT" ] && [ "$FAKE_GO_EXIT" != 0 ]; then
+    echo "fake install failed" >&2
+    exit "$FAKE_GO_EXIT"
+  fi
+  [ -n "$GOBIN" ] || { echo "fake go: no GOBIN" >&2; exit 2; }
+  rev=$(printf '%.8s' "${FAKE_GO_REVISION:-$commit}")
+  printf '#!/bin/sh\n[ "$1" = version ] && { echo "bmesh %s 2026-10-16T00:00:00Z"; exit 0; }\necho fake bmesh %s\n' "$rev" "$commit" > "$GOBIN/bmesh"
+  chmod +x "$GOBIN/bmesh"
+  exit 0
+fi
+[ "$1" = build ] || { echo "fake go: want build or install, got $*" >&2; exit 2; }
 shift
 flags=
 if [ "$1" = -ldflags ]; then flags=$2; shift 2; fi

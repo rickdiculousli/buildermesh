@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -35,8 +36,10 @@ type Version struct {
 var stampRevision, stampTime string
 
 // FromBuildInfo reads the vcs.* settings of bi (nil or !ok: none); a build
-// without vcs.revision falls back to Install's stamp, and one with neither
-// is unknown.
+// without vcs.revision falls back to Install's stamp, then to the main
+// module's pseudo-version (a `go install <module>@<commit>` build: its
+// 12-hex suffix is the revision, its timestamp the time), and one with none
+// of them is unknown.
 func FromBuildInfo(bi *debug.BuildInfo, ok bool) Version {
 	var v Version
 	if ok && bi != nil {
@@ -54,7 +57,41 @@ func FromBuildInfo(bi *debug.BuildInfo, ok bool) Version {
 	if v.Revision == "" {
 		v = Version{Revision: stampRevision, Time: stampTime}
 	}
+	if v.Revision == "" && ok && bi != nil {
+		v = fromPseudo(bi.Main.Version)
+	}
 	return v
+}
+
+// pseudo matches a module pseudo-version (vX.0.0-<time>-<rev>,
+// vX.Y.Z-pre.0.<time>-<rev> or vX.Y.Z-0.<time>-<rev>, optionally
+// +incompatible): the 14-digit UTC time and the 12-hex revision.
+var pseudo = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+-(?:[0-9A-Za-z.-]*\.)?([0-9]{14})-([0-9a-f]{12})(?:\+incompatible)?$`)
+
+// fromPseudo is the revision and time a pseudo-version names; a tagged
+// version, (devel) or "" names none.
+func fromPseudo(version string) Version {
+	m := pseudo.FindStringSubmatch(version)
+	if m == nil {
+		return Version{}
+	}
+	t, err := time.Parse("20060102150405", m[1])
+	if err != nil {
+		return Version{}
+	}
+	return Version{Revision: m[2], Time: t.UTC().Format(time.RFC3339)}
+}
+
+// Same reports whether two revisions name one commit: both known, one a
+// prefix of the other (a pseudo-version's 12 hex against a full commit).
+func Same(a, b string) bool {
+	if a == "" || b == "" || a == Unknown || b == Unknown {
+		return false
+	}
+	if len(a) > len(b) {
+		a, b = b, a
+	}
+	return strings.HasPrefix(b, a)
 }
 
 // String is `<rev8> <time> [modified]`, or `unknown`.
@@ -281,7 +318,14 @@ func Install(ctx context.Context, dir, exe, head string) error {
 	if err := os.Chmod(tmp, 0o755); err != nil {
 		return err
 	}
-	if got := reports(ctx, tmp); got != Short(head) {
+	return swap(ctx, tmp, exe, head)
+}
+
+// swap refuses built (Refused) unless its `version` names head, then moves
+// exe to Prev(exe) and built to exe; a failed swap leaves exe as it was, as
+// far as the file system allows.
+func swap(ctx context.Context, built, exe, head string) error {
+	if got := reports(ctx, built); got != Short(head) {
 		return &Refused{Reported: got, Head: head}
 	}
 	prev := Prev(exe)
@@ -291,7 +335,7 @@ func Install(ctx context.Context, dir, exe, head string) error {
 	if err := os.Rename(exe, prev); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, exe); err != nil {
+	if err := os.Rename(built, exe); err != nil {
 		if rerr := os.Rename(prev, exe); rerr != nil {
 			return fmt.Errorf("%w; and restoring %s: %v", err, prev, rerr)
 		}

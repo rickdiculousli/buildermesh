@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
@@ -304,5 +305,127 @@ func TestDigestTitleCarriesRevision(t *testing.T) {
 	digestOnce(f.ctx, f.d, &since)
 	if evs := f.daemonEvents(t, "digest"); len(evs) != 1 || evs[0].Text != "bmesh "+testHost+" 1a2b3c4d: 0 working, 1 asking, 0 silent" {
 		t.Fatalf("digest %+v", evs)
+	}
+}
+
+// upstreamSetup is updateSetup without [update] repo: app stands in for the
+// module example.com/app, whose main is checked every 300ms, and the notice
+// goes to a state dir of the test's.
+func upstreamSetup(t *testing.T, upstream bool) *ufix {
+	t.Helper()
+	u := updateSetup(t, map[string]string{})
+	u.d.Cfg.Update = config.UpdateConfig{CheckEvery: 300 * time.Millisecond, Upstream: upstream}
+	u.d.Module = "example.com/app"
+	u.d.StateDir = t.TempDir()
+	t.Setenv("BMESH_UPSTREAM_URL", u.repo)
+	t.Setenv("BMESH_CACHE_DIR", t.TempDir())
+	return u
+}
+
+func (u *ufix) notice() string { return selfupdate.ReadNotice(u.d.StateDir) }
+
+// landSpec lands spec 001 on app's main as a lead would: the spec, then
+// its `001: done at` commit.
+func (u *ufix) landSpec(t *testing.T) string {
+	t.Helper()
+	meshtest.CommitFiles(t, u.repo, map[string]string{"docs/proposals/001-first.md": "---\nid: 001\ntitle: The first\n---\n"})
+	meshtest.Git(t, u.repo, "commit", "-q", "--allow-empty", "-m", "001: done at 1a2b3c4d")
+	return meshtest.Git(t, u.repo, "rev-parse", "HEAD")
+}
+
+const behindTwo = "bmesh: 2 commits behind main (landed since: 001 The first); run bmesh update, then update the buildermesh plugin"
+
+func TestNoticeWrittenWhenBehindAndRemovedWhenCurrent(t *testing.T) {
+	u := upstreamSetup(t, false)
+	if err := selfupdate.WriteNotice(u.d.StateDir, "stale"); err != nil {
+		t.Fatal(err)
+	}
+	u.start(t)
+	waitFor(t, 20*time.Second, "the stale notice removed", func() bool { return u.notice() == "" })
+	next := u.landSpec(t)
+	waitFor(t, 20*time.Second, "the notice", func() bool { return u.notice() == behindTwo })
+	// A `bmesh update` swapped in a binary at main: the next check reads it
+	// as current, though this daemon still runs the old one.
+	if err := os.WriteFile(u.exe, []byte("#!/bin/sh\necho bmesh "+next[:8]+" 2026-10-16T00:00:00Z\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 20*time.Second, "the notice removed", func() bool { return u.notice() == "" })
+	u.noRestart(t, 500*time.Millisecond)
+	if l := lines(t, u.goLog); len(l) != 0 {
+		t.Fatalf("installed without upstream: %v", l)
+	}
+}
+
+func TestNoticeOffWithCheckEveryZero(t *testing.T) {
+	u := upstreamSetup(t, false)
+	u.d.Cfg.Update.CheckEvery = 0
+	if err := selfupdate.WriteNotice(u.d.StateDir, "stale"); err != nil {
+		t.Fatal(err)
+	}
+	u.land(t, "a.txt")
+	u.start(t)
+	waitFor(t, 20*time.Second, "the stale notice removed", func() bool { return u.notice() == "" })
+	time.Sleep(time.Second) // several scans
+	if u.notice() != "" {
+		t.Fatalf("notice %q", u.notice())
+	}
+}
+
+func TestUpstreamInstallsAndRestarts(t *testing.T) {
+	u := upstreamSetup(t, true)
+	old := u.d.Revision
+	u.start(t)
+	u.noRestart(t, time.Second) // main is this revision
+	next := u.land(t, "a.txt")
+	u.restarted(t, 20*time.Second)
+	out, err := exec.Command(u.exe).Output()
+	if err != nil || strings.TrimSpace(string(out)) != "fake bmesh "+next {
+		t.Fatalf("binary: %q %v", out, err)
+	}
+	if b, _ := os.ReadFile(selfupdate.Prev(u.exe)); string(b) != "old" {
+		t.Fatalf("bmesh.prev %q", b)
+	}
+	if l := lines(t, u.goLog); len(l) != 2 || l[1] != "example.com/app@"+next {
+		t.Fatalf("go log %v", l)
+	}
+	text := old[:8] + " -> " + next[:8]
+	if evs := u.daemonEvents(t, "update"); len(evs) != 1 || evs[0].Text != text || evs[0].Commit != next {
+		t.Fatalf("update events %+v", evs)
+	}
+	if u.notice() != "" {
+		t.Fatalf("notice %q", u.notice())
+	}
+}
+
+func TestUpstreamFailedInstallLoggedOnceAndRetried(t *testing.T) {
+	u := upstreamSetup(t, true)
+	t.Setenv("FAKE_GO_EXIT", "1")
+	u.start(t)
+	u.landSpec(t)
+	waitFor(t, 20*time.Second, "the notice", func() bool { return u.notice() == behindTwo })
+	waitFor(t, 20*time.Second, "a second try", func() bool { return len(lines(t, u.goLog)) >= 4 })
+	if n := strings.Count(u.log.String(), "update: install failed"); n != 1 {
+		t.Fatalf("logged %d times:\n%s", n, u.log.String())
+	}
+	if b, _ := os.ReadFile(u.exe); string(b) != "old" {
+		t.Fatalf("binary %q", b)
+	}
+	// The module proxy caught up: the same commit installs on the next check.
+	t.Setenv("FAKE_GO_EXIT", "")
+	u.restarted(t, 20*time.Second)
+}
+
+func TestUpstreamRefusedOnWindows(t *testing.T) {
+	u := upstreamSetup(t, true)
+	u.d.GOOS = "windows"
+	u.start(t)
+	u.landSpec(t)
+	waitFor(t, 20*time.Second, "the notice", func() bool { return u.notice() == behindTwo })
+	u.noRestart(t, time.Second)
+	if n := strings.Count(u.log.String(), "[update] upstream is refused on Windows"); n != 1 {
+		t.Fatalf("logged %d times:\n%s", n, u.log.String())
+	}
+	if l := lines(t, u.goLog); len(l) != 0 {
+		t.Fatalf("installed on Windows: %v", l)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/runner/t3mcp"
+	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 )
 
 func (a *app) cmdWhoami(args []string) error {
@@ -171,6 +172,9 @@ func (a *app) cmdMeshStatus(args []string) error {
 				fmt.Fprintf(a.stdout, "t3 sign-in on %s: expires in %d days (bmesh t3 login)\n", host, n)
 			}
 		}
+	}
+	if line := selfupdate.ReadNotice(config.StateDir()); line != "" {
+		fmt.Fprintln(a.stdout, line)
 	}
 	return nil
 }

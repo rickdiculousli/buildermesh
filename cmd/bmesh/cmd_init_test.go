@@ -293,7 +293,7 @@ func TestInitPrintsWhatTheBoxIsSetTo(t *testing.T) {
 		"proposers": {c.Models.Proposer + " at " + c.Models.ProposerEffort, "([models] proposer, proposer_effort)"},
 		"leads":     {c.Models.Lead + " at " + c.Models.LeadEffort, "([models] lead, lead_effort)"},
 		"executors": {"(bmesh executor new --model)"},
-		"updates":   {"off", "([update] repo)"},
+		"updates":   {"notice every 6h", "([update] check_every, upstream, repo)"},
 		"service":   {"none", "(bmesh init --service)"},
 		"routines":  {"on. This box runs any pushed commit's routine commands for every box on the mesh ([runner] checkouts)"},
 	})

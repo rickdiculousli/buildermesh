@@ -69,7 +69,12 @@ type routineSet struct {
 
 	updateRepo string // [update] repo when the update can run, else ""
 	updateSeen string // the main commit the update last acted on
-	drained    bool   // an update drained the feeds; guarded by mu
+
+	checkEvery time.Duration // how often main is checked for the notice; 0 = never (self-updating from a row, or off)
+	checkNext  time.Time     // when the next check is due
+	upstream   string        // the module the check installs from ([update] upstream), else "": notice only
+	failedAt   string        // the main commit whose failed install was last logged
+	drained    bool          // an update drained the feeds; guarded by mu
 }
 
 // fetch updates repoPath's origin refs (nothing without an origin). With
@@ -147,6 +152,7 @@ func routines(ctx context.Context, d Deps) {
 		if d.Cfg.Update.Repo != "" {
 			d.Log.Warn("update: no checkout root to build from; off", "repo", d.Cfg.Update.Repo)
 		}
+		d.writeNotice("")
 		return
 	}
 	ctx, cancel := context.WithCancel(ctx)
@@ -158,6 +164,7 @@ func routines(ctx context.Context, d Deps) {
 	if strings.TrimSpace(r.claude) == "" {
 		r.claude = "claude"
 	}
+	r.initCheck()
 	// What a daemon that died here held is back in the inbox after AckWait,
 	// not held.
 	if err := mesh.ClearHolds(ctx, d.Client, d.Host, d.Now().UTC().Format(time.RFC3339)); err != nil {
@@ -226,12 +233,13 @@ func mainCommit(repoPath string) string {
 // os is another OS's is left out, so this box never fetches its jobs. A repo that
 // cannot be read keeps what it had; one whose path does not exist on this
 // box has no kinds here and is logged once per daemon start. With [update] on, the update repo's main
-// is then compared with this binary; an update drains the feeds for good.
+// is then compared with this binary; an update drains the feeds for good. Without it, every
+// [update] check_every main is checked for the notice (and, with upstream, installed).
 func (r *routineSet) rescan() {
 	if r.isDrained() {
 		return
 	}
-	updateDir := ""
+	updateDir, rowDir := "", "" // the main checkouts of the update repo while it updates, and of [update] repo
 	names := make([]string, 0, len(r.d.Cfg.Repos))
 	for name := range r.d.Cfg.Repos {
 		names = append(names, name)
@@ -262,6 +270,9 @@ func (r *routineSet) rescan() {
 		if name == r.updateRepo {
 			updateDir = dir
 		}
+		if name == r.d.Cfg.Update.Repo {
+			rowDir = dir
+		}
 		if err != nil {
 			// Once per repo and main commit: a repo with no main fails
 			// the same way every minute.
@@ -287,6 +298,12 @@ func (r *routineSet) rescan() {
 
 	if updateDir != "" && r.checkUpdate(updateDir) {
 		return
+	}
+	if r.checkEvery > 0 && !r.d.Now().Before(r.checkNext) {
+		r.checkNext = r.d.Now().Add(r.checkEvery)
+		if r.checkMain(rowDir) {
+			return
+		}
 	}
 
 	r.mu.Lock()

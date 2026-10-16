@@ -79,10 +79,16 @@ func settings(c *config.Config, service string) []setting {
 		setting{"proposers", modelAt(c.Models.Proposer, c.Models.ProposerEffort), "The two sessions of a proposal round, which read the repo and write specs", "[models] proposer, proposer_effort"},
 		setting{"leads", modelAt(c.Models.Lead, c.Models.LeadEffort) + ", unless the spec's judge names another", "The session that builds one spec and lands it on main", "[models] lead, lead_effort"},
 		setting{"executors", "chosen by each lead", "Helpers a lead starts for pieces of its spec", "bmesh executor new --model"})
-	if c.Update.Repo == "" {
-		out = append(out, setting{"updates", "off", "The daemon doesn't rebuild bmesh; install it again to update, or name a registered checkout of buildermesh here", "[update] repo"})
-	} else {
+	every := config.FormatDuration(c.Update.CheckEvery)
+	switch {
+	case c.Update.Repo != "":
 		out = append(out, setting{"updates", "from " + c.Update.Repo, "The daemon rebuilds bmesh from " + c.Update.Repo + "'s main whenever it moves", "[update] repo"})
+	case c.Update.CheckEvery <= 0:
+		out = append(out, setting{"updates", "off", "The daemon doesn't check for a newer bmesh; bmesh update installs the newest main", "[update] check_every, upstream, repo"})
+	case c.Update.Upstream:
+		out = append(out, setting{"updates", "from upstream every " + every, "The daemon installs bmesh's newest main (go install) whenever it moves", "[update] upstream, check_every"})
+	default:
+		out = append(out, setting{"updates", "notice every " + every, "The daemon checks bmesh's main and each session says when this binary is behind; bmesh update takes it", "[update] check_every, upstream, repo"})
 	}
 	if service == "" {
 		out = append(out, setting{"service", "none", "Run bmesh serve yourself and keep it running, or have the OS do it", "bmesh init --service"})
