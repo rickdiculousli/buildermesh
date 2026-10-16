@@ -26,6 +26,7 @@ type Job struct {
 	Tree   string   `json:"tree"`
 	Args   []string `json:"args"`
 	Model  string   `json:"model"`
+	Effort string   `json:"effort,omitempty"`
 	Text   string   `json:"text"`
 	Go     bool     `json:"go"`
 	Rerun  bool     `json:"rerun"`

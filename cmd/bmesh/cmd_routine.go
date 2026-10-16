@@ -21,8 +21,8 @@ import (
 )
 
 const routineUsage = "usage: bmesh routine list [--json] | status [<kind>] [--json] | " +
-	"queue <kind> [--commit C] [--model M] [--go] [--rerun] [--again] [--text T] [-- args...] | go <kind> | wait <job id> [--timeout D] | " +
-	"run <kind> [--commit HEAD] [--model M] [--here] [--rerun] [--text T] [-- args...]"
+	"queue <kind> [--commit C] [--model M] [--effort E] [--go] [--rerun] [--again] [--text T] [-- args...] | go <kind> | wait <job id> [--timeout D] | " +
+	"run <kind> [--commit HEAD] [--model M] [--effort E] [--here] [--rerun] [--text T] [-- args...]"
 
 // hostOS is the OS a kind's os is matched against: this box's; tests set it.
 var hostOS = runtime.GOOS
@@ -294,6 +294,7 @@ func (a *app) cmdRoutineQueue(args []string) error {
 	fs := a.flags("routine queue")
 	commit := fs.String("commit", "HEAD", "commit the job runs against")
 	model := fs.String("model", "", "one of the kind's models (default the first)")
+	effort := fs.String("effort", "", "a model kind's effort for this job (default the model's)")
 	goNow := fs.Bool("go", false, "start the batch now")
 	rerun := fs.Bool("rerun", false, "run even when a result is recorded")
 	again := fs.Bool("again", false, "review: queue although this branch already has a review result")
@@ -320,6 +321,9 @@ func (a *app) cmdRoutineQueue(args []string) error {
 	}
 	if *model != "" && !slices.Contains(k.ModelsList(), *model) {
 		return fail(exitUsage, "kind %s has no model %q", name, *model)
+	}
+	if err := checkJobEffort(k, *effort); err != nil {
+		return err
 	}
 	if k.Mode == "inline" {
 		return fail(exitRefused, "%s is inline: run it with bmesh routine run", name)
@@ -392,7 +396,7 @@ func (a *app) cmdRoutineQueue(args []string) error {
 		return fail(exitRefused, "%s is not in the registry", repo)
 	}
 	j := mesh.Job{ID: newID(), Kind: name, Repo: repo, Commit: *commit, Args: jobArgs,
-		Model: *model, Text: *text, Go: *goNow, Rerun: *rerun}
+		Model: *model, Effort: *effort, Text: *text, Go: *goNow, Rerun: *rerun}
 	dup, err := mesh.Queue(ctx, a.client, self, j, top)
 	if err != nil {
 		return err
@@ -599,6 +603,7 @@ func (a *app) cmdRoutineRun(args []string) error {
 	fs := a.flags("routine run")
 	commit := fs.String("commit", "HEAD", "commit to run (must be HEAD)")
 	model := fs.String("model", "", "one of the kind's models (default the first)")
+	effort := fs.String("effort", "", "a model kind's effort for this job (default the model's)")
 	here := fs.Bool("here", false, "run a fresh or pooled kind in this worktree")
 	rerun := fs.Bool("rerun", false, "run even when a result is recorded")
 	text := fs.String("text", "", "text for a model kind")
@@ -632,6 +637,9 @@ func (a *app) cmdRoutineRun(args []string) error {
 	if *model != "" && !slices.Contains(k.ModelsList(), *model) {
 		return fail(exitUsage, "kind %s has no model %q", name, *model)
 	}
+	if err := checkJobEffort(k, *effort); err != nil {
+		return err
+	}
 	if *model == "" && k.IsModel() {
 		*model = k.ModelsList()[0]
 	}
@@ -661,7 +669,7 @@ func (a *app) cmdRoutineRun(args []string) error {
 	if err != nil {
 		return err
 	}
-	ok, out, how, err := a.runInline(ctx, k, top, head, tree, self, *model, *text, jobArgs, *rerun)
+	ok, out, how, err := a.runInline(ctx, k, top, head, tree, self, *model, *effort, *text, jobArgs, *rerun)
 	if err != nil {
 		return err
 	}
@@ -672,7 +680,7 @@ func (a *app) cmdRoutineRun(args []string) error {
 // holding the kind's slots, and records the result; a deterministic kind is
 // answered from its record unless rerun. It returns the verdict, the output
 // and how it came to be: "recorded" or "answered from the record".
-func (a *app) runInline(ctx context.Context, k kind.Kind, top, head, tree, self, model, text string, jobArgs []string,
+func (a *app) runInline(ctx context.Context, k kind.Kind, top, head, tree, self, model, effort, text string, jobArgs []string,
 	rerun bool) (bool, string, string, error) {
 	name := k.Name
 	key := mesh.ResultKey(name, tree, jobArgs, model)
@@ -700,7 +708,7 @@ func (a *app) runInline(ctx context.Context, k kind.Kind, top, head, tree, self,
 	}
 	capacity := func(slot string) (int, error) { return max(rc.Slots[slot], 1), nil }
 	j := instance.Job{ID: newID(), Kind: name, Commit: head, Tree: tree, From: self, Reply: self,
-		Args: jobArgs, Text: text, Dir: top}
+		Args: jobArgs, Text: text, Dir: top, Effort: effort}
 	var reply instance.Reply
 	err = a.withLeases(k.Slots, self, k.Timeout+time.Minute, capacity, func(ctx context.Context) error {
 		reply = inst.Run(ctx, j)
@@ -725,6 +733,18 @@ func (a *app) runInline(ctx context.Context, k kind.Kind, top, head, tree, self,
 		return false, "", "", err
 	}
 	return reply.OK, reply.Output, "recorded", nil
+}
+
+// checkJobEffort refuses an effort the runner can't start a session at, and
+// any effort for a command kind, which runs no model.
+func checkJobEffort(k kind.Kind, effort string) error {
+	if err := checkEffort(effort); err != nil {
+		return err
+	}
+	if effort != "" && !k.IsModel() {
+		return fail(exitUsage, "kind %s runs a command: --effort is for a model kind", k.Name)
+	}
+	return nil
 }
 
 // printRunVerdict prints a run's output and then its verdict line,

@@ -103,12 +103,9 @@ func SurfacesText(surfaces []string) string {
 	return strings.Join(surfaces, "; ")
 }
 
-// riskText and roteText size a change's review: a review is for risk the
-// verify commands can't catch, never for rote work.
-const (
-	riskText = "new logic, concurrency, quoting or escaping, a state or data migration, an interface others depend on"
-	roteText = "a rename, config values, wording, a mechanical edit across a few files that verify covers"
-)
+// sizedText sizes a change's review by its spec's size: XS and S land on
+// verify alone; M and up get one Opus review, harder the larger the change.
+const sizedText = "its spec's `size`, or an XS or S whose scope grew to M; at medium effort for M, high for L or larger"
 
 // PlainWords is how a thread's report names things, so the operator can
 // read it without looking anything up; the done rule and every closing end
@@ -120,7 +117,7 @@ const PlainWords = "Say what each thing is: the first time a message names a spe
 // branch.
 func Closing(verify []string) string {
 	return "> When it works, finish it: run the repo's verify commands (" + VerifyText(verify) +
-		") until they pass; when the change carries risk verify can't catch (" + riskText + "), have a model that didn't write it review it once and fix what it finds, while a rote change (" + roteText + ") lands on verify alone; " +
+		") until they pass; when the change is sized M or larger (" + sizedText + "), have Opus in a session that didn't write it review it once and fix what it finds, while an XS or S change lands on verify alone; " +
 		"rebase onto `main` and re-run verify; merge fast-forward to `main`, landing the branch your worktree is on (`git branch --show-current`), never the name in your brief; and push where the repo has a remote. " +
 		"It isn't done while it sits on a branch. End with one line: what's on `main` (the commit), its push state from a fresh fetch (pushed, with the commit `origin/main` is at and that it contains yours; not pushed and why; or local only, for a repo with no remote), and what, if anything, waits on the operator. " + PlainWords
 }
@@ -129,7 +126,7 @@ func Closing(verify []string) string {
 // before a change is done.
 func DoneRule(r config.Repo) string {
 	s := "A change is done when all of these hold: the repo's verify commands pass (" + VerifyText(r.Verify) +
-		"); a change carrying risk verify can't catch (" + riskText + ") was reviewed once against its spec by a model that didn't write it and the findings were fixed, while a rote change (" + roteText + ") is done on verify alone; " +
+		"); a change sized M or larger (" + sizedText + ") was reviewed once against its spec by Opus in a session that didn't write it and the findings were fixed, while an XS or S change is done on verify alone; " +
 		"the branch is rebased onto `main` with verify re-run; it is merged fast-forward to `main`"
 	if r.Remote != "" {
 		s += " and pushed to `" + r.Remote + "`"

@@ -355,7 +355,7 @@ func (w *worker) handle(dl *delivery) {
 	w.event("progress", fmt.Sprintf("job %s started", j.ID), dl.from.String())
 	start := time.Now()
 	ij := instance.Job{ID: j.ID, Kind: kc.Name, Commit: j.Commit, Tree: tree, From: w.path, Reply: dl.from.String(),
-		Args: j.Args, Text: j.Text, Dir: w.dir}
+		Args: j.Args, Text: j.Text, Dir: w.dir, Effort: j.Effort}
 	rep, lost := w.run(w.instanceFor(kc), ij, keys, ttl)
 	held := slices.DeleteFunc(slices.Clone(keys), func(k string) bool { return k == lost })
 	w.release(held)       // never the lost one: it may be someone else's now

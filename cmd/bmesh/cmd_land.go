@@ -416,7 +416,7 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA string) ([]s
 		if k.IsModel() {
 			model = k.ModelsList()[0]
 		}
-		ok, output, how, err := l.a.runInline(ctx, k, l.top, merged, tree, l.holder, model, "", nil, false)
+		ok, output, how, err := l.a.runInline(ctx, k, l.top, merged, tree, l.holder, model, "", "", nil, false)
 		if err != nil {
 			return nil, err
 		}

@@ -66,6 +66,9 @@ func TestModelInstanceResumesAndRecycles(t *testing.T) {
 			t.Fatalf("first argv %q lacks %q", argv, want)
 		}
 	}
+	if flag(argv, "--effort") != "" {
+		t.Fatalf("first argv %q: want no --effort for a job without one", argv)
+	}
 	id := flag(argv, "--session-id")
 	if id == "" || id != m.SessionID() || flag(argv, "--resume") != "" {
 		t.Fatalf("first argv %q: want --session-id %s and no --resume", argv, m.SessionID())
@@ -83,7 +86,12 @@ func TestModelInstanceResumesAndRecycles(t *testing.T) {
 		t.Fatal("idle past recycle_idle: want ShouldRecycle")
 	}
 
+	j.Effort = "high"
 	_, argv, stdin = runLogged(t, m, j)
+	if flag(argv, "--effort") != "high" {
+		t.Fatalf("second argv %q: want --effort high", argv)
+	}
+	j.Effort = ""
 	if flag(argv, "--resume") != id || flag(argv, "--session-id") != "" {
 		t.Fatalf("second argv %q: want --resume %s and no --session-id", argv, id)
 	}

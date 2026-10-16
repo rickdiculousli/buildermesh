@@ -464,6 +464,36 @@ recycle_context = 10
 	}
 }
 
+// A queued job's effort reaches the claude it runs; a job without one
+// passes none.
+func TestModelJobCarriesItsEffort(t *testing.T) {
+	f := routineSetup(t, map[string]string{".bmesh/routines/review.toml": `
+mode = "fresh"
+model = "m-a"
+prompt = "P"
+timeout = "30s"
+`})
+	log := filepath.Join(t.TempDir(), "claude.log")
+	t.Setenv("FAKE_LOG", log)
+	t.Setenv("FAKE_RESULT", "VERDICT: ok")
+	f.start(t)
+	if r := f.reply(t, f.queue(t, mesh.Job{Kind: "review", Effort: "high", Go: true}), 20*time.Second); !r.OK {
+		t.Fatalf("reply %+v", r)
+	}
+	if b, err := os.ReadFile(log); err != nil || !strings.Contains(string(b), "--effort high ") {
+		t.Fatalf("claude argv %q %v: want --effort high", b, err)
+	}
+	if err := os.Remove(log); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.reply(t, f.queue(t, mesh.Job{Kind: "review", Text: "again", Go: true}), 20*time.Second); !r.OK {
+		t.Fatalf("reply %+v", r)
+	}
+	if b, err := os.ReadFile(log); err != nil || strings.Contains(string(b), "--effort") {
+		t.Fatalf("claude argv %q %v: want no --effort", b, err)
+	}
+}
+
 func TestLeaseLostKillsJob(t *testing.T) {
 	f := routineSetup(t, map[string]string{
 		".bmesh/config.toml": "[slots]\ngame = 1\n",

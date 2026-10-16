@@ -94,6 +94,9 @@ func (m *Model) Run(ctx context.Context, j Job) Reply {
 	} else {
 		argv = append(argv, "--resume", session)
 	}
+	if j.Effort != "" {
+		argv = append(argv, "--effort", j.Effort)
+	}
 	argv = append(argv, "--allowedTools", tools, "--max-turns", "40")
 
 	var stdout, stderr bytes.Buffer

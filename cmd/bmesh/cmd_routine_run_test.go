@@ -157,6 +157,9 @@ func TestInlineRefusesNonInlineWithoutHere(t *testing.T) {
 	if _, errs, code := runCLI(t, nil, "routine", "run", "verify", "--here", "--model", "m1"); code != 2 {
 		t.Fatalf("model on a command kind: %d %q", code, errs)
 	}
+	if _, errs, code := runCLI(t, nil, "routine", "run", "verify", "--here", "--effort", "high"); code != 2 || !strings.Contains(errs, "--effort is for a model kind") {
+		t.Fatalf("effort on a command kind: %d %q", code, errs)
+	}
 }
 
 func TestInlineHoldsSlotLease(t *testing.T) {
@@ -246,6 +249,20 @@ func TestInlineModelKindThroughFake(t *testing.T) {
 	}
 	if stdin, err := os.ReadFile(log + ".stdin"); err != nil || !strings.Contains(string(stdin), "look at it") {
 		t.Fatalf("claude stdin %q %v", stdin, err)
+	}
+	if strings.Contains(string(b), "--effort") {
+		t.Fatalf("claude argv %q: want no --effort without one", b)
+	}
+
+	// --effort reaches claude; an effort the runner can't start at is a usage error.
+	if _, errs, code := runCLI(t, nil, "routine", "run", "review", "--model", "m2", "--effort", "medium", "--rerun"); code != 0 {
+		t.Fatalf("run --effort: %d %q", code, errs)
+	}
+	if b, _ := os.ReadFile(log); !strings.Contains(string(b), "--effort medium ") {
+		t.Fatalf("claude argv %q: want --effort medium", b)
+	}
+	if _, errs, code := runCLI(t, nil, "routine", "run", "review", "--effort", "huge"); code != 2 || !strings.Contains(errs, `effort "huge"`) {
+		t.Fatalf("run --effort huge: %d %q", code, errs)
 	}
 
 	// Default model is the first; a rerun replaces the record.

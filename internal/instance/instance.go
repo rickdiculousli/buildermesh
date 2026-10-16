@@ -17,10 +17,11 @@ import (
 
 // Job is one routine job as an instance sees it. From is the path the job
 // runs as; Reply is the requester's path. Dir is the checkout to run in.
+// Effort is a model kind's effort for this job ("": the model's default).
 type Job struct {
 	ID, Kind, Commit, Tree, From, Reply string
 	Args                                []string
-	Text, Dir                           string
+	Text, Dir, Effort                   string
 }
 
 // Reply is a job's outcome. Context is the model's context tokens (0 for commands).
