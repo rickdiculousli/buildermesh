@@ -77,14 +77,7 @@ func (f *fixture) setState(t *testing.T, path, state string) {
 	if state == "" || state == "idle" {
 		return
 	}
-	if state != "working" {
-		if _, err := mesh.WriteState(f.ctx, f.c, path, mesh.State{State: "working", By: "node"}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := mesh.WriteState(f.ctx, f.c, path, mesh.State{State: state, By: "node"}); err != nil {
-		t.Fatal(err)
-	}
+	meshtest.ForceState(t, f.c, path, mesh.State{State: state, By: "node"})
 }
 
 func (f *fixture) send(t *testing.T, to string, n int) {

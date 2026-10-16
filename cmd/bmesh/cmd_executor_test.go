@@ -183,11 +183,7 @@ func TestExecutorNewRefusesDuplicateName(t *testing.T) {
 	}
 	// A done executor's name can be reused: the path is reset to idle.
 	ctx := t.Context()
-	for _, s := range []string{"working", "done"} {
-		if _, err := mesh.WriteState(ctx, c, "demo-012.alpha", mesh.State{State: s, By: "node"}); err != nil {
-			t.Fatal(err)
-		}
-	}
+	meshtest.ForceState(t, c, "demo-012.alpha", mesh.State{State: "done", By: "node"})
 	if _, errs, code := runCLI(t, nil, "executor", "remove", "alpha"); code != 0 {
 		t.Fatalf("remove: %d %q", code, errs)
 	}

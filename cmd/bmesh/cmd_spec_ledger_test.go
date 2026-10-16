@@ -59,32 +59,17 @@ func ledgerRepoSetup(t *testing.T) (*mesh.Client, context.Context, string) {
 func pitchRound(t *testing.T, c *mesh.Client, ctx context.Context) {
 	t.Helper()
 	putNode(t, c, ctx, mesh.Node{Path: "demo-round-1", Role: "round", Repo: "demo"})
-	if _, err := mesh.WriteState(ctx, c, "demo-round-1", mesh.State{State: "working", By: "node"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := mesh.WriteState(ctx, c, "demo-round-1", mesh.State{State: "done", By: "daemon",
-		Text: "013 Thing 013 (feature, S, sonnet): second\n012 Thing 012 (feature, S, sonnet): first\n014 Thing 014: building"}); err != nil {
-		t.Fatal(err)
-	}
+	meshtest.ForceState(t, c, "demo-round-1", mesh.State{State: "done", By: "daemon",
+		Text: "013 Thing 013 (feature, S, sonnet): second\n012 Thing 012 (feature, S, sonnet): first\n014 Thing 014: building"})
 	putNode(t, c, ctx, mesh.Node{Path: "demo-round-2", Role: "round", Repo: "demo"})
 	putNode(t, c, ctx, mesh.Node{Path: "demo-round-2.eng", Role: "engineer", Parent: "demo-round-2", Repo: "demo"})
 	if _, err := mesh.WriteState(ctx, c, "demo-round-2", mesh.State{State: "working", By: "node"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := mesh.WriteState(ctx, c, "demo-round-2.eng", mesh.State{State: "working", By: "node"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := mesh.WriteState(ctx, c, "demo-round-2.eng", mesh.State{State: "done", By: "node", Text: "012 first\n013 second"}); err != nil {
-		t.Fatal(err)
-	}
+	meshtest.ForceState(t, c, "demo-round-2.eng", mesh.State{State: "done", By: "node", Text: "012 first\n013 second"})
 	// A newer round that blocked before any pitch is passed over.
 	putNode(t, c, ctx, mesh.Node{Path: "demo-round-3", Role: "round", Repo: "demo"})
-	if _, err := mesh.WriteState(ctx, c, "demo-round-3", mesh.State{State: "working", By: "node"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := mesh.WriteState(ctx, c, "demo-round-3", mesh.State{State: "blocked", By: "node", Text: "eng blocked: did not start: no route"}); err != nil {
-		t.Fatal(err)
-	}
+	meshtest.ForceState(t, c, "demo-round-3", mesh.State{State: "blocked", By: "node", Text: "eng blocked: did not start: no route"})
 }
 
 func TestSpecListNextIDSetTemplate(t *testing.T) {

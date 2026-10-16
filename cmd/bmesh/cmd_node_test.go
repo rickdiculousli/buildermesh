@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -13,15 +12,10 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
-// stateAt moves path through working to state, the last write dated at.
-func stateAt(t *testing.T, c *mesh.Client, ctx context.Context, path, state string, at time.Time) {
+// stateAt puts path in state, dated at.
+func stateAt(t *testing.T, c *mesh.Client, path, state string, at time.Time) {
 	t.Helper()
-	if _, err := mesh.WriteState(ctx, c, path, mesh.State{State: "working", By: "node"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := mesh.WriteState(ctx, c, path, mesh.State{State: state, By: "node", At: at.UTC().Format(time.RFC3339)}); err != nil {
-		t.Fatal(err)
-	}
+	meshtest.ForceState(t, c, path, mesh.State{State: state, By: "node", At: at.UTC().Format(time.RFC3339)})
 }
 
 func listed(out string) []string {
@@ -54,7 +48,7 @@ func TestMeshStatusHidesFinishedNodes(t *testing.T) {
 		if n.path == "app-003" {
 			at = time.Now().Add(-time.Hour)
 		}
-		stateAt(t, c, ctx, n.path, n.state, at)
+		stateAt(t, c, n.path, n.state, at)
 	}
 
 	out, errs, code := runCLI(t, nil, "mesh-status")
@@ -102,14 +96,14 @@ func TestNodeForget(t *testing.T) {
 	if err := mesh.PutRunner(ctx, c, "app-001", mesh.RunnerSample{Known: true}); err != nil {
 		t.Fatal(err)
 	}
-	stateAt(t, c, ctx, "app-001", "working", time.Now())
-	stateAt(t, c, ctx, "app-001.x", "working", time.Now())
+	stateAt(t, c, "app-001", "working", time.Now())
+	stateAt(t, c, "app-001.x", "working", time.Now())
 
 	_, errs, code := runCLI(t, nil, "node", "forget", "app-001")
 	if code != 3 || errs != "bmesh: refused: app-001 is working; only a done or blocked node is forgotten\n" {
 		t.Fatalf("working: %d %q", code, errs)
 	}
-	stateAt(t, c, ctx, "app-001", "done", time.Now())
+	stateAt(t, c, "app-001", "done", time.Now())
 	_, errs, code = runCLI(t, nil, "node", "forget", "app-001")
 	if code != 3 || errs != "bmesh: refused: app-001.x under app-001 is working\n" {
 		t.Fatalf("working executor: %d %q", code, errs)
@@ -118,7 +112,7 @@ func TestNodeForget(t *testing.T) {
 		t.Fatalf("unknown node: %d", code)
 	}
 
-	stateAt(t, c, ctx, "app-001.x", "blocked", time.Now())
+	stateAt(t, c, "app-001.x", "blocked", time.Now())
 	out, errs, code := runCLI(t, nil, "node", "forget", "app-001")
 	if code != 0 || out != "forgot app-001\nworktree /somewhere/app-001 kept\n" {
 		t.Fatalf("forget: %d %q %q", code, out, errs)
@@ -151,7 +145,7 @@ func TestNodeForgetWorktree(t *testing.T) {
 	meshtest.Git(t, real, "worktree", "add", "-q", "-b", "t3code/lead", wt)
 	// The node names the branch dispatch chose; the runner renamed it since.
 	putNode(t, c, ctx, mesh.Node{Path: "app-001", RepoPath: real, Worktree: wt, Branch: "t3code/c4422981"})
-	stateAt(t, c, ctx, "app-001", "done", time.Now())
+	stateAt(t, c, "app-001", "done", time.Now())
 
 	// Dirty: refused, nothing touched.
 	if err := os.WriteFile(filepath.Join(wt, "b.txt"), []byte("b\n"), 0o644); err != nil {
@@ -207,7 +201,7 @@ func TestNodeForgetWorktreeRebasedExecutor(t *testing.T) {
 	meshtest.Git(t, wt, "commit", "-q", "-m", "x")
 	putNode(t, c, ctx, mesh.Node{Path: "app-001", Branch: "t3code/lead"}) // its branch is gone
 	putNode(t, c, ctx, mesh.Node{Path: "app-001.x", Role: "executor", Parent: "app-001", RepoPath: real, Worktree: wt, Branch: "t3code/lead-x"})
-	stateAt(t, c, ctx, "app-001.x", "done", time.Now())
+	stateAt(t, c, "app-001.x", "done", time.Now())
 
 	_, errs, code := runCLI(t, nil, "node", "forget", "app-001.x", "--worktree")
 	if code != 3 || errs != "bmesh: refused: branch t3code/lead-x is not merged into main\n" {
@@ -244,7 +238,7 @@ func TestNodeForgetIdle(t *testing.T) {
 	// stopped thread: forgotten.
 	idle("app-001", mesh.Node{})
 	putNode(t, c, ctx, mesh.Node{Path: "app-001.x", Role: "executor", Parent: "app-001"})
-	stateAt(t, c, ctx, "app-001.x", "done", time.Now())
+	stateAt(t, c, "app-001.x", "done", time.Now())
 	for _, ev := range []mesh.Event{{From: "app-001.x", Event: "done"}, {From: "daemon." + testHost, Event: "wake", To: "app-001"}} {
 		if err := mesh.PublishEvent(ctx, c, ev); err != nil {
 			t.Fatal(err)

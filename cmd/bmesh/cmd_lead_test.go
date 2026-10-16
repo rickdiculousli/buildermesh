@@ -146,11 +146,7 @@ func TestLeadStartRefusesOverMax(t *testing.T) {
 	// Another host's lead and a done lead here don't count.
 	putNode(t, c, ctx, mesh.Node{Path: "elsewhere-001", Host: "otherbox"})
 	putNode(t, c, ctx, mesh.Node{Path: "old-001"})
-	for _, s := range []string{"working", "done"} {
-		if _, err := mesh.WriteState(ctx, c, "old-001", mesh.State{State: s, By: "node"}); err != nil {
-			t.Fatal(err)
-		}
-	}
+	meshtest.ForceState(t, c, "old-001", mesh.State{State: "done", By: "node"})
 	for _, id := range []string{"001", "002"} {
 		if out, errs, code := runCLI(t, nil, "lead", "start", "--repo", "demo", "--spec", id, "--brief", "/dev/null"); code != 0 {
 			t.Fatalf("start %s: %d %q %q", id, code, out, errs)
@@ -168,11 +164,7 @@ func TestLeadStartRefusesOverMax(t *testing.T) {
 		t.Fatal("refused lead registered")
 	}
 	// One finishing frees a place.
-	for _, s := range []string{"working", "done"} {
-		if _, err := mesh.WriteState(ctx, c, "demo-001", mesh.State{State: s, By: "node"}); err != nil {
-			t.Fatal(err)
-		}
-	}
+	meshtest.ForceState(t, c, "demo-001", mesh.State{State: "done", By: "node"})
 	if _, errs, code := runCLI(t, nil, "lead", "start", "--repo", "demo", "--spec", "003", "--brief", "/dev/null"); code != 0 {
 		t.Fatalf("after done: %d %q", code, errs)
 	}

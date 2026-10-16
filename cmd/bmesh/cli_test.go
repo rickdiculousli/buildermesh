@@ -267,11 +267,8 @@ func TestWatchExitsWhenAllTerminal(t *testing.T) {
 	c, ctx := setup(t)
 	putNode(t, c, ctx, mesh.Node{Path: "a"})
 	putNode(t, c, ctx, mesh.Node{Path: "b"})
-	for _, w := range []struct{ p, s string }{{"a", "working"}, {"a", "done"}, {"b", "working"}, {"b", "blocked"}} {
-		if _, err := mesh.WriteState(ctx, c, w.p, mesh.State{State: w.s, By: "node"}); err != nil {
-			t.Fatal(err)
-		}
-	}
+	meshtest.ForceState(t, c, "a", mesh.State{State: "done", By: "node"})
+	meshtest.ForceState(t, c, "b", mesh.State{State: "blocked", By: "node"})
 	out, errs, code := runCLI(t, nil, "watch", "--nodes", "a,b", "--timeout", "10s")
 	if code != 0 || !strings.HasSuffix(out, "watch-done\n") {
 		t.Fatalf("%d %q %q", code, out, errs)
