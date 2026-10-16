@@ -4,7 +4,7 @@ title: A routine kind can say it needs a Mac, and only a Mac takes its jobs
 kind: feature
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16

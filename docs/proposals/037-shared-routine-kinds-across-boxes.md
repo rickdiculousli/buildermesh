@@ -4,7 +4,7 @@ title: Two boxes running the same routine kind stop answering, throttling and na
 kind: refinement
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
