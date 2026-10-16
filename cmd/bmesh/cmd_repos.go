@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
 
 const reposUsage = "usage: bmesh repos [--json] | bmesh repos show <name> [--json] | repos publish | repos propose [--wait D] | " +
@@ -70,4 +72,24 @@ func (a *app) reposTable() error {
 			r.Host, r.UXHost, strings.Join(r.Surfaces, ", "), r.Pin)
 	}
 	return w.Flush()
+}
+
+// tokenClash refuses (exit 3) a registry in which two names map to one
+// path token (mesh.RepoToken: Foo and foo, my.app and my_app): their
+// rounds, leads and families would be one node path.
+func tokenClash(rows map[string]config.Repo) error {
+	names := make([]string, 0, len(rows))
+	for n := range rows {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	seen := map[string]string{}
+	for _, n := range names {
+		t := mesh.RepoToken(n)
+		if other, ok := seen[t]; ok {
+			return fail(exitRefused, "repos %s and %s are both %s in node paths; rename one", other, n, t)
+		}
+		seen[t] = n
+	}
+	return nil
 }

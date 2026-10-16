@@ -186,7 +186,7 @@ func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string, f
 	if err != nil {
 		return err
 	}
-	roundPath := fmt.Sprintf("%s-round-%d", row.Name, n)
+	roundPath := fmt.Sprintf("%s-round-%d", mesh.RepoToken(row.Name), n)
 	if _, err := mesh.ParsePath(roundPath); err != nil {
 		return fail(exitUsage, "round path: %v", err)
 	}
@@ -257,7 +257,7 @@ func nextRound(ctx context.Context, c *mesh.Client, repo string) (int, error) {
 	n := 0
 	for _, node := range nodes {
 		m := roundRE.FindStringSubmatch(node.Path)
-		if m == nil || m[1] != repo {
+		if m == nil || m[1] != mesh.RepoToken(repo) {
 			continue
 		}
 		if k, err := strconv.Atoi(m[2]); err == nil && k > n {
@@ -283,7 +283,7 @@ func openRound(ctx context.Context, c *mesh.Client, repo string) (string, error)
 	open, newest := "", 0
 	for _, node := range nodes {
 		m := roundRE.FindStringSubmatch(node.Path)
-		if m == nil || m[1] != repo {
+		if m == nil || m[1] != mesh.RepoToken(repo) {
 			continue
 		}
 		k, err := strconv.Atoi(m[2])
@@ -320,7 +320,7 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 	if err := levelMain(ctx, repoPath); err != nil {
 		return childStarted{}, fail(exitRefused, "refused: %v", err)
 	}
-	roundPath := fmt.Sprintf("%s-round-%d", row.Name, round)
+	roundPath := fmt.Sprintf("%s-round-%d", mesh.RepoToken(row.Name), round)
 	path := roundPath + "." + child
 	if _, err := mesh.ParsePath(path); err != nil {
 		return childStarted{}, fail(exitUsage, "%v", err)
@@ -339,7 +339,7 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 	if exists && st.State != "done" && st.State != "blocked" {
 		return childStarted{}, fail(exitRefused, "refused: node %s exists (state %s)", path, st.State)
 	}
-	branch := fmt.Sprintf("%s-round-%d-%s", row.Name, round, child)
+	branch := fmt.Sprintf("%s-round-%d-%s", mesh.RepoToken(row.Name), round, child)
 	wt := filepath.Join(a.cfg.Expand(a.cfg.Runner.Worktrees), row.Name, branch)
 	if abs, err := filepath.Abs(wt); err == nil {
 		wt = abs

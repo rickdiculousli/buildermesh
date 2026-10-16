@@ -130,6 +130,9 @@ func (a *app) cmdReposPublish(args []string) error {
 		fmt.Fprintf(a.stdout, "registry v%d: no change\n", reg.Version)
 		return nil
 	}
+	if err := tokenClash(a.cfg.Repos); err != nil {
+		return err
+	}
 	if _, err := a.printDiff(fmt.Sprintf("registry v%d -> v%d:", reg.Version, reg.Version+1), reg, a.cfg.Repos); err != nil {
 		return err
 	}
@@ -191,6 +194,9 @@ func (a *app) cmdReposPropose(args []string) error {
 	if text == reg.Rows {
 		fmt.Fprintf(a.stdout, "no change against registry v%d\n", reg.Version)
 		return nil
+	}
+	if err := tokenClash(a.cfg.Repos); err != nil {
+		return err
 	}
 	if _, err := a.printDiff(fmt.Sprintf("proposed against registry v%d:", reg.Version), reg, a.cfg.Repos); err != nil {
 		return err

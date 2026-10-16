@@ -253,7 +253,7 @@ func (a *app) cmdChooseIdeas(args []string) error {
 	if err != nil {
 		return err
 	}
-	branch := name + "-review-" + tag
+	branch := mesh.RepoToken(name) + "-review-" + tag
 	wt := filepath.Join(a.cfg.Expand(a.cfg.Runner.Worktrees), name, branch)
 	if err := addWorktree(ctx, repoPath, wt, branch, "main"); err != nil {
 		return err
@@ -402,7 +402,7 @@ func (a *app) latestRanks(ctx context.Context, repo string, specs []*spec.Spec) 
 		return nil, err
 	}
 	for k := n - 1; k >= 1; k-- {
-		st, _, err := mesh.ReadState(ctx, a.client, fmt.Sprintf("%s-round-%d", repo, k))
+		st, _, err := mesh.ReadState(ctx, a.client, fmt.Sprintf("%s-round-%d", mesh.RepoToken(repo), k))
 		if err != nil {
 			return nil, err
 		}

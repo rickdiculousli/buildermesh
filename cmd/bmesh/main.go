@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nats-io/nats.go"
+
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
@@ -380,8 +382,9 @@ func (a *app) loadConfig() error {
 	return nil
 }
 
-// connect loads the config and dials the hub; name labels the connection.
-// Once connected it reads the revision hint, which run prints after the
+// connect loads the config and dials the hub ([mesh] nats, else the hub
+// bmesh serve embeds on [mesh] listen); name labels the connection. Once
+// connected it reads the revision hint, which run prints after the
 // command's output, when the daemon runs another build.
 func (a *app) connect(ctx context.Context, name string) error {
 	if a.client != nil {
@@ -390,14 +393,19 @@ func (a *app) connect(ctx context.Context, name string) error {
 	if err := a.loadConfig(); err != nil {
 		return err
 	}
-	if a.cfg.Mesh.NATS == "" {
-		return fail(exitError, "[mesh] nats is empty; the CLI needs a hub URL")
-	}
 	token, err := a.cfg.Token()
 	if err != nil {
 		return fmt.Errorf("token: %w", err)
 	}
-	c, err := mesh.Connect(ctx, a.cfg.Mesh.NATS, token, a.cfg.Mesh.Domain, "bmesh/"+name, false)
+	url, embedded := a.cfg.HubURL()
+	domain := a.cfg.Mesh.Domain
+	if embedded {
+		domain = "hub" // the embedded server's domain, as serve dials it
+	}
+	c, err := mesh.Connect(ctx, url, token, domain, "bmesh/"+name, false)
+	if embedded && errors.Is(err, nats.ErrNoServers) {
+		return fail(exitError, "no hub at %s: is bmesh serve running?", strings.TrimPrefix(url, "nats://"))
+	}
 	if err != nil {
 		return err
 	}

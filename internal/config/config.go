@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -463,6 +464,22 @@ func (c *Config) HostName() string {
 		n, _, _ = strings.Cut(n, ".")
 	}
 	return strings.ToLower(n)
+}
+
+// HubURL is the hub the CLI dials: [mesh] nats, else (embedded true) the
+// hub bmesh serve embeds on this box, nats://<[mesh] listen>, with an
+// unspecified host (0.0.0.0, ::, "") dialled as 127.0.0.1.
+func (c *Config) HubURL() (url string, embedded bool) {
+	if c.Mesh.NATS != "" {
+		return c.Mesh.NATS, false
+	}
+	addr := c.Mesh.Listen
+	if host, port, err := net.SplitHostPort(addr); err == nil {
+		if ip := net.ParseIP(host); host == "" || ip != nil && ip.IsUnspecified() {
+			addr = net.JoinHostPort("127.0.0.1", port)
+		}
+	}
+	return "nats://" + addr, true
 }
 
 // Token reads [mesh] token_file; "" when none is configured.

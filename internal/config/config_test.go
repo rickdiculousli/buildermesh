@@ -321,3 +321,21 @@ func TestStateDir(t *testing.T) {
 		}
 	}
 }
+
+func TestHubURLIsTheEmbeddedHubWhenNATSIsEmpty(t *testing.T) {
+	for _, tc := range []struct {
+		nats, listen, want string
+		embedded           bool
+	}{
+		{"nats://hub:4222", "127.0.0.1:4222", "nats://hub:4222", false},
+		{"", "127.0.0.1:4222", "nats://127.0.0.1:4222", true},
+		{"", "0.0.0.0:5000", "nats://127.0.0.1:5000", true},
+		{"", "[::]:5000", "nats://127.0.0.1:5000", true},
+		{"", ":5000", "nats://127.0.0.1:5000", true},
+	} {
+		c := &Config{Mesh: MeshConfig{NATS: tc.nats, Listen: tc.listen}}
+		if got, emb := c.HubURL(); got != tc.want || emb != tc.embedded {
+			t.Errorf("%q %q: %q %v, want %q %v", tc.nats, tc.listen, got, emb, tc.want, tc.embedded)
+		}
+	}
+}
