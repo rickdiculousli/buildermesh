@@ -15,7 +15,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/config"
 )
 
-const initUsage = "usage: bmesh init [--service] [--force] [--hub URL] [--token-file F] [--runner claude|t3|tmux] [--no-repo]"
+const initUsage = "usage: bmesh init [--service] [--force] [--hub URL] [--token-file F] [--runner claude|t3|tmux] [--no-repo] | bmesh init --hosts [--admin]"
 
 // runnerKinds are the runners init looks for on PATH, in order of
 // preference: claude needs nothing else.
@@ -33,11 +33,13 @@ func (a *app) cmdInit(args []string) error {
 	tokenFile := fs.String("token-file", "", "multi-box: the hub's token file")
 	runnerFlag := fs.String("runner", "", "runner kind (default: claude when on PATH, else t3, else tmux)")
 	noRepo := fs.Bool("no-repo", false, "do not register the current directory's repo")
+	hostsFlag := fs.Bool("hosts", false, "join this box to the mesh's roster, or (--admin) make it the admin")
+	admin := fs.Bool("admin", false, "with --hosts: make this box the admin")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
-	if len(pos) != 0 {
+	if len(pos) != 0 || (*admin && !*hostsFlag) {
 		return fail(exitUsage, initUsage)
 	}
 	cfgPath := a.configPath
@@ -48,7 +50,10 @@ func (a *app) cmdInit(args []string) error {
 		cfgPath = abs
 	}
 	dir := filepath.Dir(cfgPath)
-	ask := &asker{in: bufio.NewReader(a.stdin), out: a.stdout}
+	ask := &asker{in: a.lines(), out: a.stdout}
+	if *hostsFlag {
+		return a.initHosts(cfgPath, *admin, ask)
+	}
 	wrote := []string{}
 
 	_, exists := statOK(cfgPath)
