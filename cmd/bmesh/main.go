@@ -37,6 +37,17 @@ commands:
   init [--service] [--force] [--hub URL] [--token-file F] [--runner K] [--no-repo]
                                            set this box up: config.toml, this repo in repos.toml, --service the
                                            unit for bmesh serve; asks what the flags don't say
+  init --hosts [--admin]                   join this box to the mesh with a one-time invite code (asked at the
+                                           prompt), or --admin make it the admin; writes only [hosts] and, with
+                                           routines off, [runner] checkouts = "" (keeps config.toml.prev)
+  hosts [--json]                           the roster joined with presence: awake, asleep, unverified or absent
+  hosts invite <name> [--secure] [--accept a,b] [--replace]
+                                           (admin) print a one-time code for a box to join with; waits 10m
+  hosts set <name> [--secure=true|false] [--accept a,b]
+                                           (admin) change a box's row in the roster
+  hosts revoke <name>                      (admin) publish the next roster without the box
+  hosts ping [<host>] [--wait D]           ping every roster box (or one); print each answer, or asleep: queued
+  hosts replies [--json]                   the replies this box's jobs got, checked
   repos [--json]                           the registry (repos.toml): name, mode, remote, verify, host, ux_host,
                                            surfaces, pin; --json prints the rows
   repos show <name> [--json]               one row
