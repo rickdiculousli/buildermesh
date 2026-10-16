@@ -122,6 +122,7 @@ func updateBox(t *testing.T) (exe string, shas []string) {
 	}
 	t.Setenv("BMESH_GO_COMMAND", "sh "+fake)
 	t.Setenv("FAKE_GO_LOG", "")
+	t.Setenv("FAKE_GO_REVISION", "")
 	t.Setenv("INVOCATION_ID", "")
 	exe = filepath.Join(dir, "bin", "bmesh")
 	if err := os.MkdirAll(filepath.Dir(exe), 0o755); err != nil {
@@ -176,5 +177,22 @@ func TestUpdateBuildsMainOverBinary(t *testing.T) {
 	withRevision(t, strings.Repeat("e", 40))
 	if _, errOut, code := runCLI(t, nil, "update", "--repo", "bm"); code != exitRefused || !strings.Contains(errOut, "does not contain") {
 		t.Fatalf("code %d err %q", code, errOut)
+	}
+}
+
+func TestUpdateRefusesBuildOfAnotherRevision(t *testing.T) {
+	exe, shas := updateBox(t)
+	withRevision(t, shas[0])
+	t.Setenv("FAKE_GO_REVISION", "eeeeeeee")
+	out, errOut, code := runCLI(t, nil, "update")
+	want := "bmesh: update: built binary reports eeeeeeee, not " + shas[1][:8] + "; keeping this binary\n"
+	if code != exitRefused || out != "" || errOut != want {
+		t.Fatalf("code %d out %q err %q, want %q", code, out, errOut, want)
+	}
+	if b, _ := os.ReadFile(exe); string(b) != "old" {
+		t.Fatalf("binary %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(exe), "bmesh.prev")); !os.IsNotExist(err) {
+		t.Fatalf("bmesh.prev written: %v", err)
 	}
 }

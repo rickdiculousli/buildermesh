@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -99,8 +100,13 @@ func (r *routineSet) checkUpdate(dir string) bool {
 		r.d.Log.Warn("update: main does not contain this revision; left alone", "main", next, "running", old)
 		return false
 	}
-	err = selfupdate.Install(r.ctx, dir, r.d.Exe)
+	err = selfupdate.Install(r.ctx, dir, r.d.Exe, head)
 	unlock()
+	var refused *selfupdate.Refused
+	if errors.As(err, &refused) {
+		r.d.Log.Warn("update: "+err.Error(), "main", next)
+		return false
+	}
 	if err != nil {
 		r.d.Log.Warn("update: build failed; keeping this binary", "main", next, "err", err)
 		return false

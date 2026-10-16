@@ -59,6 +59,7 @@ func updateSetup(t *testing.T, files map[string]string) *ufix {
 	t.Setenv("BMESH_GO_COMMAND", "sh "+fake)
 	t.Setenv("FAKE_GO_LOG", u.goLog)
 	t.Setenv("FAKE_GO_EXIT", "")
+	t.Setenv("FAKE_GO_REVISION", "")
 	t.Setenv("INVOCATION_ID", "")
 	u.exe = filepath.Join(t.TempDir(), "bin", "bmesh")
 	if err := os.MkdirAll(filepath.Dir(u.exe), 0o755); err != nil {
@@ -155,6 +156,32 @@ func TestUpdateFailedBuildLoggedOnce(t *testing.T) {
 	}
 	// The next commit is tried again.
 	t.Setenv("FAKE_GO_EXIT", "")
+	u.land(t, "b.txt")
+	u.restarted(t, 20*time.Second)
+}
+
+func TestUpdateRefusedBuildKeepsBinary(t *testing.T) {
+	u := updateSetup(t, map[string]string{})
+	t.Setenv("FAKE_GO_REVISION", "eeeeeeee")
+	u.start(t)
+	next := u.land(t, "a.txt")
+	want := "update: built binary reports eeeeeeee, not " + next[:8] + "; keeping this binary"
+	waitFor(t, 20*time.Second, "a refused build", func() bool { return strings.Contains(u.log.String(), want) })
+	u.noRestart(t, 1500*time.Millisecond) // several scans
+	if n := strings.Count(u.log.String(), "built binary reports"); n != 1 {
+		t.Fatalf("logged %d times:\n%s", n, u.log.String())
+	}
+	if b, _ := os.ReadFile(u.exe); string(b) != "old" {
+		t.Fatalf("binary %q", b)
+	}
+	if _, err := os.Stat(selfupdate.Prev(u.exe)); !os.IsNotExist(err) {
+		t.Fatalf("bmesh.prev written: %v", err)
+	}
+	if evs := u.daemonEvents(t, "update"); len(evs) != 0 {
+		t.Fatalf("update events %+v", evs)
+	}
+	// The next commit, built right, goes in.
+	t.Setenv("FAKE_GO_REVISION", "")
 	u.land(t, "b.txt")
 	u.restarted(t, 20*time.Second)
 }
