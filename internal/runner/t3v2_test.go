@@ -57,47 +57,12 @@ func jsonOf(v any) string {
 	return string(b)
 }
 
-func TestT3PicksThePathByProtocol(t *testing.T) {
-	log := useFake(t, "BMESH_T3_COMMAND", "fake-t3.sh", "FAKE_T3_LOG")
-	r, fake, _ := v2Setup(t, "auto", "auto")
-	now := time.Now()
-	r.Now = func() time.Time { return now }
-	r.Dispatch, r.Dir = "t3_dispatch.py", t.TempDir()
-	fake.Do(func(s *t3fake.Server) { s.Protocol = 1 })
-	if st, err := r.Status(context.Background(), "th-1"); err != nil || !st.Known {
-		t.Fatalf("v1 status %+v %v", st, err)
-	}
-	if !strings.Contains(readLog(t, log), "argv status th-1") {
-		t.Fatalf("V1 path not taken: %q", readLog(t, log))
-	}
-	if _, err := r.Status(context.Background(), "mcp:x"); !errors.Is(err, ErrNoThread) {
-		t.Fatalf("V2 id on V1: %v", err)
-	}
-	// The protocol is cached for a minute.
-	fake.Do(func(s *t3fake.Server) { s.Protocol = 2 })
-	if _, err := r.Status(context.Background(), "th-1"); err != nil {
-		t.Fatalf("cached: %v", err)
-	}
-	now = now.Add(61 * time.Second)
-	if _, err := r.Status(context.Background(), "th-1"); !errors.Is(err, ErrNoThread) {
-		t.Fatalf("V1 id on V2: %v", err)
-	}
-	if calls := fake.ToolCalls(); len(calls) != 0 {
-		t.Fatalf("a V1 id reached the V2 server: %v", calls)
-	}
-	fake.Do(func(s *t3fake.Server) { s.Protocol = 3 })
-	now = now.Add(61 * time.Second)
-	if _, err := r.Status(context.Background(), "th-1"); err == nil || !strings.Contains(err.Error(), "protocol 3") {
-		t.Fatalf("protocol 3: %v", err)
-	}
-}
-
 func TestT3V2StartLaunchesUnderTheRepoProject(t *testing.T) {
 	r, fake, _ := v2Setup(t, "auto", "auto")
 	repo := t.TempDir()
 	brief := writeBriefFile(t, "build spec 012")
 	spec := StartSpec{RepoPath: repo, Model: "m1", Effort: "high", Title: "[build] demo 012", BriefPath: brief,
-		ThreadID: "uuid-1", Project: "/r/bm"}
+		ThreadID: "uuid-1"}
 	// An auto sign-in can't register a project.
 	if _, err := r.Start(context.Background(), spec); err == nil || !strings.Contains(err.Error(), "add the repo as a project in T3") {
 		t.Fatalf("unregistered repo: %v", err)
@@ -190,7 +155,7 @@ func TestT3V2StartInAnExistingWorktree(t *testing.T) {
 	})
 	got, err := r.Start(context.Background(), StartSpec{RepoPath: repo, Model: "m1", Title: "[ideate] demo round 1: engineer",
 		BriefPath: writeBriefFile(t, "propose"), ThreadID: "uuid-2", Branch: "demo-round-1-eng",
-		Worktree: "/bm/wt/demo/demo-round-1-eng", Project: "/r/bm", Effort: "xhigh"})
+		Worktree: "/bm/wt/demo/demo-round-1-eng", Effort: "xhigh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,16 +375,5 @@ func TestT3V2RecordedReadShape(t *testing.T) {
 	st := statusFrom(v)
 	if st.Running || st.Waiting || len(v.Items) == 0 || v.Thread.Branch != "probe-q5" || len(v.RecentRuns) == 0 {
 		t.Fatalf("status %+v read %+v", st, v)
-	}
-}
-
-func TestT3V1PassesTheRuntimeMode(t *testing.T) {
-	log := useFake(t, "BMESH_T3_COMMAND", "fake-t3.sh", "FAKE_T3_LOG")
-	r := &T3{Dispatch: "t3_dispatch.py", Dir: t.TempDir(), RuntimeMode: "auto"}
-	if _, err := r.Start(context.Background(), StartSpec{RepoPath: "/r/demo", Model: "m1", Title: "t", BriefPath: writeBriefFile(t, "b"), ThreadID: "u"}); err != nil {
-		t.Fatal(err)
-	}
-	if l := readLog(t, log); !strings.Contains(l, " --thread-id u --runtime-mode auto\n") {
-		t.Fatalf("log %q", l)
 	}
 }

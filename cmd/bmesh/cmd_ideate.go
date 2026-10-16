@@ -382,16 +382,9 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 		undo()
 		return childStarted{}, err
 	}
-	project := ""
-	if a.cfg.Runner.T3Project != "" {
-		if _, project, err = a.cfg.RepoPath(a.cfg.Runner.T3Project); err != nil {
-			undo()
-			return childStarted{}, fmt.Errorf("[runner] t3_project: %w", err)
-		}
-	}
 	started, err := r.Start(context.WithoutCancel(ctx), runner.StartSpec{RepoPath: repoPath, Model: model, Effort: effort,
 		Title: fmt.Sprintf("[ideate] %s round %d: %s", row.Name, round, title), BriefPath: briefPath, ThreadID: thread,
-		Branch: branch, Worktree: wt, Project: project})
+		Branch: branch, Worktree: wt})
 	var to *runner.StartTimeout
 	if errors.As(err, &to) {
 		return childStarted{}, fmt.Errorf("start timed out; a thread on branch %s may exist (worktree %s)", to.Branch, wt)

@@ -9,14 +9,15 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
+	"github.com/rickdiculousli/buildermesh/internal/runner/t3mcp/t3fake"
 )
 
 // buildSetup is proposeSetup with the ledger replaced: specs 001 (done),
 // 002 and 003 (accepted, 003 builds on 002), 004 (accepted, names 010 and
 // 001), 005 (accepted, no judge) and 006 (proposed), on main and pushed.
-func buildSetup(t *testing.T) (*mesh.Client, string, string) {
+func buildSetup(t *testing.T) (*mesh.Client, string, *t3fake.Server) {
 	t.Helper()
-	c, repo, log := proposeSetup(t, "")
+	c, repo, fake := proposeSetup(t, "")
 	dir := filepath.Join(repo, "docs", "proposals")
 	for _, f := range []string{"012-thing.md", "013-thing.md"} {
 		os.Remove(filepath.Join(dir, f))
@@ -42,11 +43,11 @@ func buildSetup(t *testing.T) (*mesh.Client, string, string) {
 	meshtest.Git(t, repo, "add", "-A")
 	meshtest.Git(t, repo, "commit", "-m", "ledger")
 	meshtest.Git(t, repo, "push", "origin", "main")
-	return c, repo, log
+	return c, repo, fake
 }
 
 func TestBuildRecordsBuildingThenStartsTheLead(t *testing.T) {
-	c, repo, log := buildSetup(t)
+	c, repo, fake := buildSetup(t)
 	ctx := t.Context()
 	before := gitOut(t, "-C", repo, "rev-parse", "HEAD")
 	out, errs, code := runCLI(t, nil, "build", "demo", "002")
@@ -57,32 +58,35 @@ func TestBuildRecordsBuildingThenStartsTheLead(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("%q: %v", out, err)
 	}
-	if got.Path != "demo-002" || !uuidRE.MatchString(got.Thread) || got.Branch != "t3code/"+got.Thread || got.Model != "claude-opus-5-5" ||
+	// The node is a lead for the spec, with the thread T3 named and the id
+	// the brief was started with.
+	n, ok, err := mesh.GetNode(ctx, c, "demo-002")
+	if err != nil || !ok || n.Role != "lead" || n.Spec != "002" || n.Runner.Thread != got.Thread || !uuidRE.MatchString(n.Runner.Ref) ||
+		n.Model != "claude-opus-5-5" || n.Effort != "high" {
+		t.Fatalf("node %+v %v %v", n, ok, err)
+	}
+	thread := n.Runner.Ref
+	if got.Path != "demo-002" || !strings.HasPrefix(got.Thread, "mcp:") || got.Branch != "bmesh/"+thread || got.Model != "claude-opus-5-5" ||
 		got.Spec != "002" || len(got.Building) != 40 {
 		t.Fatalf("%+v", got)
 	}
 	// Two commits on main: building (thread, host) before the start, the
 	// branch after it (the t3 runner names its own); both pushed.
 	hist := gitOut(t, "-C", repo, "log", "--format=%s", before+"..main")
-	if hist != "Dispatch 002: branch t3code/"+got.Thread+"\nDispatch 002: building on "+testHost {
+	if hist != "Dispatch 002: branch bmesh/"+thread+"\nDispatch 002: building on "+testHost {
 		t.Fatalf("history:\n%s", hist)
 	}
 	if gitOut(t, "-C", repo, "rev-parse", "main") != got.Building || gitOut(t, "-C", repo, "rev-parse", "origin/main") != got.Building {
 		t.Fatal("building is not main's head, pushed")
 	}
 	text := gitOut(t, "-C", repo, "show", "main:docs/proposals/002-second.md")
-	for _, want := range []string{"status: building\n", "built_by: " + got.Thread + "\n", "host: " + testHost + "\n", "branch: t3code/" + got.Thread + "\n"} {
+	for _, want := range []string{"status: building\n", "built_by: " + thread + "\n", "host: " + testHost + "\n", "branch: bmesh/" + thread + "\n"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("spec lacks %q:\n%s", want, text)
 		}
 	}
 	if strings.Count(text, "status:") != 1 {
 		t.Fatal(text)
-	}
-	// The node is a lead for the spec, with the thread the brief was started with.
-	n, ok, err := mesh.GetNode(ctx, c, "demo-002")
-	if err != nil || !ok || n.Role != "lead" || n.Spec != "002" || n.Runner.Thread != got.Thread || n.Model != "claude-opus-5-5" || n.Effort != "high" {
-		t.Fatalf("node %+v %v %v", n, ok, err)
 	}
 	// The brief came from the binary, with the spec, the node and the row's facts.
 	b, err := os.ReadFile(filepath.Join(os.Getenv("BMESH_CACHE_DIR"), "bmesh", "briefs", "demo-002.md"))
@@ -99,10 +103,10 @@ func TestBuildRecordsBuildingThenStartsTheLead(t *testing.T) {
 	if strings.Contains(string(b), "{{") || strings.Contains(string(b), "Rick") {
 		t.Fatal("placeholder or operator name in the brief")
 	}
-	l, _ := os.ReadFile(log)
-	if !strings.Contains(string(l), "--model claude-opus-5-5 --title [build] demo 002: Spec 002 --prompt-file ") ||
-		!strings.Contains(string(l), "--thread-id "+got.Thread+" --effort high --runtime-mode auto\n") {
-		t.Fatalf("log:\n%s", l)
+	if l := launches(fake); len(l) != 1 || l[0]["title"] != "[build] demo 002: Spec 002" || l[0]["runtimeMode"] != "auto" ||
+		jsonOf(l[0]["modelSelection"]) != `{"model":"claude-opus-5-5","options":{"effort":"high"},"provider":"claudeAgent"}` ||
+		l[0]["message"] != string(b) {
+		t.Fatalf("launches %s", jsonOf(l))
 	}
 	// Main's worktrees and branches are left as they were.
 	if wts := gitOut(t, "-C", repo, "worktree", "list"); strings.Count(wts, "\n") != 0 {
@@ -142,7 +146,7 @@ func TestBuildRecordsBuildingThenStartsTheLead(t *testing.T) {
 }
 
 func TestBuildRefusals(t *testing.T) {
-	_, repo, log := buildSetup(t)
+	_, repo, fake := buildSetup(t)
 	head := gitOut(t, "-C", repo, "rev-parse", "main")
 	for _, c := range []struct {
 		args []string
@@ -169,14 +173,16 @@ func TestBuildRefusals(t *testing.T) {
 	if gitOut(t, "-C", repo, "rev-parse", "main") != head {
 		t.Fatal("a refused build recorded on main")
 	}
-	if _, err := os.Stat(log); err == nil {
-		t.Fatal("the runner was called")
+	if calls := fake.ToolCalls(); len(calls) != 0 {
+		t.Fatalf("the runner was called: %v", calls)
 	}
 }
 
 func TestBuildAFailedStartMovesTheSpecBack(t *testing.T) {
-	c, repo, _ := buildSetup(t)
-	t.Setenv("FAKE_T3_START_EXIT", "1")
+	c, repo, fake := buildSetup(t)
+	// With the repo not a T3 project, an auto sign-in can't start a thread.
+	var projects []t3fake.Project
+	fake.Do(func(s *t3fake.Server) { projects, s.Projects = s.Projects, nil })
 	before := gitOut(t, "-C", repo, "rev-parse", "HEAD")
 	_, errs, code := runCLI(t, nil, "build", "demo", "002")
 	if code != 1 || !strings.Contains(errs, "runner start") || !strings.Contains(errs, "the spec reads accepted again") {
@@ -194,7 +200,7 @@ func TestBuildAFailedStartMovesTheSpecBack(t *testing.T) {
 		t.Fatal("a node was registered")
 	}
 	// Then it can be built.
-	t.Setenv("FAKE_T3_START_EXIT", "0")
+	fake.Do(func(s *t3fake.Server) { s.Projects = projects })
 	if _, errs, code := runCLI(t, nil, "build", "demo", "002"); code != 0 {
 		t.Fatalf("after: %d %q", code, errs)
 	}
@@ -327,7 +333,7 @@ func TestBuildFamilies(t *testing.T) {
 }
 
 func TestBuildHoldsWhileAnotherFamilyRuns(t *testing.T) {
-	c, repo, log := buildSetup(t)
+	c, repo, fake := buildSetup(t)
 	ctx := t.Context()
 	// Family demo-build-4 has a lead working and one done; another repo's
 	// running family is no concern of demo's.
@@ -352,8 +358,8 @@ func TestBuildHoldsWhileAnotherFamilyRuns(t *testing.T) {
 	if gitOut(t, "-C", repo, "rev-parse", "main") != head {
 		t.Fatal("a held build recorded on main")
 	}
-	if _, err := os.Stat(log); err == nil {
-		t.Fatal("the runner was called")
+	if calls := fake.ToolCalls(); len(calls) != 0 {
+		t.Fatalf("the runner was called: %v", calls)
 	}
 	// The family's own coordinator is never held by it.
 	if out, errs, code := runCLI(t, nil, "build", "demo", "002", "--family", "demo-build-4"); code != 0 || !strings.Contains(out, `"family":"demo-build-4"`) {

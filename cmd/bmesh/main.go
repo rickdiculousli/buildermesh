@@ -408,6 +408,9 @@ func (a *app) loadConfig() error {
 	if err != nil {
 		return err
 	}
+	for _, l := range cfg.Ignored() {
+		fmt.Fprintln(a.stderr, l)
+	}
 	a.cfg = cfg
 	return nil
 }

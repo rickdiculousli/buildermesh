@@ -23,10 +23,9 @@ var ErrRunning = errors.New("runner: thread is running, nothing sent")
 // StartSpec is what a runner needs to start a session. Branch is the base to
 // branch from ("" = the repo's HEAD); runners that make their own worktree
 // (T3) ignore it. Worktree, when set, is an existing checkout the session
-// runs in (its branch is Branch): no runner makes one then. Project is the
-// repo T3 files the thread under ("" = RepoPath); other runners ignore it.
+// runs in (its branch is Branch): no runner makes one then.
 type StartSpec struct {
-	RepoPath, Model, Effort, Title, BriefPath, ThreadID, Branch, Worktree, Project string
+	RepoPath, Model, Effort, Title, BriefPath, ThreadID, Branch, Worktree string
 }
 
 // Started is the session a runner started.
@@ -37,7 +36,7 @@ type Started struct {
 // Status is one reading of a session. Known is false when the runner cannot
 // tell whether the session is mid-turn (tmux). Waiting is a turn held on a
 // question or approval; UsageLimit a newest turn that failed on a usage
-// limit, LimitResetAt when it resets ("" = unknown). Only T3 V2 sets them.
+// limit, LimitResetAt when it resets ("" = unknown). Only T3 sets them.
 type Status struct {
 	Running, Known bool
 	LastReply      string
@@ -73,8 +72,7 @@ func Preflight(ctx context.Context, r Runner) error {
 func New(cfg *config.Config) (Runner, error) {
 	switch cfg.Runner.Kind {
 	case "t3":
-		r := &T3{Dispatch: cfg.Expand(cfg.Runner.T3Dispatch), Server: cfg.Runner.T3Server,
-			RuntimeMode: cfg.Runner.T3Runtime, Cred: t3mcp.FileCredential{Path: cfg.T3TokenPath()}}
+		r := &T3{Server: cfg.Runner.T3Server, RuntimeMode: cfg.Runner.T3Runtime, Cred: t3mcp.FileCredential{Path: cfg.T3TokenPath()}}
 		if v := os.Getenv("BMESH_T3_TIMEOUT"); v != "" { // test hook
 			d, err := time.ParseDuration(v)
 			if err != nil {

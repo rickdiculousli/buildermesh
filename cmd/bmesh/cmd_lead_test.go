@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,37 +12,60 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
+	"github.com/rickdiculousli/buildermesh/internal/runner/t3mcp"
+	"github.com/rickdiculousli/buildermesh/internal/runner/t3mcp/t3fake"
 )
 
-// leadSetup is setup plus a t3 runner backed by testdata/fake-t3.sh and a
-// repos.toml demo entry; it returns the fake's log.
-func leadSetup(t *testing.T) (*mesh.Client, string) {
+// leadSetup is t3Setup with an auto sign-in, models for leads and
+// proposers, and a repos.toml demo entry whose repo is a T3 project.
+func leadSetup(t *testing.T) (*mesh.Client, *t3fake.Server) {
 	t.Helper()
-	c, _ := setup(t)
-	fake, err := filepath.Abs(filepath.Join("..", "..", "testdata", "fake-t3.sh"))
+	c, fake := t3Setup(t)
+	exp := time.Now().Add(20 * 24 * time.Hour)
+	if err := t3mcp.WriteToken(tokenPath(), t3mcp.Token{Server: fake.URL, Token: fake.MintToken("auto", exp), ExpiresAt: exp, Access: "auto"}); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(os.Getenv("BMESH_CONFIG"), os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("BMESH_T3_COMMAND", "sh "+fake)
-	log := filepath.Join(t.TempDir(), "t3.log")
-	t.Setenv("FAKE_T3_LOG", log)
-	repo := t.TempDir()
-	cfg := os.Getenv("BMESH_CONFIG")
-	f, err := os.OpenFile(cfg, os.O_APPEND|os.O_WRONLY, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	extra := "[runner]\nkind = \"t3\"\nt3_server = \"\"\n[models]\nlead = \"lead-model\"\nproposer = \"prop-model\"\n"
-	if _, err := f.WriteString(extra); err != nil {
+	if _, err := f.WriteString("[models]\nlead = \"lead-model\"\nproposer = \"prop-model\"\n"); err != nil {
 		t.Fatal(err)
 	}
 	f.Close()
+	repo := t.TempDir()
+	addT3Project(fake, repo)
 	writeRepos(t, "[repos.demo]\npath = \""+repo+"\"\n")
-	return c, log
+	return c, fake
+}
+
+// addT3Project registers repo as a project in the fake T3.
+func addT3Project(fake *t3fake.Server, repo string) {
+	fake.Do(func(s *t3fake.Server) {
+		s.Projects = append(s.Projects, t3fake.Project{ID: fmt.Sprintf("mcp:p%d", len(s.Projects)+1), WorkspaceRoot: repo})
+	})
+}
+
+// launches is the arguments of every t3_thread_launch so far, oldest first.
+func launches(fake *t3fake.Server) []map[string]any {
+	var out []map[string]any
+	fake.Do(func(s *t3fake.Server) {
+		for _, c := range s.Calls {
+			if c.Tool == "t3_thread_launch" {
+				out = append(out, c.Args)
+			}
+		}
+	})
+	return out
+}
+
+func jsonOf(v any) string {
+	b, _ := json.Marshal(v)
+	return string(b)
 }
 
 func TestLeadStartRegistersNode(t *testing.T) {
-	c, log := leadSetup(t)
+	c, fake := leadSetup(t)
 	ctx := t.Context()
 	out, errs, code := runCLI(t, nil, "lead", "start", "--repo", "demo", "--spec", "012", "--brief", "/dev/null")
 	if code != 0 {
@@ -55,8 +79,9 @@ func TestLeadStartRegistersNode(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("node %v %v", ok, err)
 	}
-	if got.Path != "demo-012" || n.Runner.Thread != got.Thread || n.Runner.Kind != "t3" || len(got.Thread) != 36 ||
-		n.Branch != "t3code/"+got.Thread || n.Worktree != "/wt/"+got.Thread || got.Worktree != n.Worktree {
+	if got.Path != "demo-012" || n.Runner.Thread != got.Thread || n.Runner.Kind != "t3" || !strings.HasPrefix(got.Thread, "mcp:") ||
+		!uuidRE.MatchString(n.Runner.Ref) || n.Branch != "bmesh/"+n.Runner.Ref || got.Branch != n.Branch ||
+		n.Worktree != filepath.Join("/fake-t3/worktrees", filepath.Base(n.RepoPath), n.Branch) || got.Worktree != n.Worktree {
 		t.Fatalf("output %+v node %+v", got, n)
 	}
 	if n.Role != "lead" || n.Repo != "demo" || n.Spec != "012" || n.Host != testHost || n.Model != "lead-model" || n.Effort != "high" ||
@@ -66,14 +91,14 @@ func TestLeadStartRegistersNode(t *testing.T) {
 	if s := stateOf(t, c, ctx, "demo-012"); s != "idle" {
 		t.Fatalf("state %s", s)
 	}
-	l, _ := os.ReadFile(log)
-	if !strings.Contains(string(l), "--model lead-model --title [build] demo 012 --prompt-file /dev/null --thread-id "+got.Thread+" --effort high --runtime-mode auto\n") {
-		t.Fatalf("log %q", l)
+	if l := launches(fake); len(l) != 1 || l[0]["title"] != "[build] demo 012" || l[0]["runtimeMode"] != "auto" ||
+		jsonOf(l[0]["modelSelection"]) != `{"model":"lead-model","options":{"effort":"high"},"provider":"claudeAgent"}` {
+		t.Fatalf("launches %s", jsonOf(l))
 	}
 }
 
 func TestLeadStartRefusesTakenPath(t *testing.T) {
-	c, log := leadSetup(t)
+	c, fake := leadSetup(t)
 	ctx := t.Context()
 	if out, errs, code := runCLI(t, nil, "lead", "start", "--repo", "demo", "--spec", "012", "--brief", "/dev/null"); code != 0 {
 		t.Fatalf("first: %d %q %q", code, out, errs)
@@ -81,13 +106,13 @@ func TestLeadStartRefusesTakenPath(t *testing.T) {
 	if _, err := mesh.WriteState(ctx, c, "demo-012", mesh.State{State: "working", By: "node"}); err != nil {
 		t.Fatal(err)
 	}
-	before, _ := os.ReadFile(log)
+	before := len(launches(fake))
 	out, errs, code := runCLI(t, nil, "lead", "start", "--repo", "demo", "--spec", "012", "--brief", "/dev/null")
 	if code != 3 || out != "" || errs != "bmesh: refused: path demo-012 is taken (state working); use --path demo-012-2\n" {
 		t.Fatalf("second: %d %q %q", code, out, errs)
 	}
-	if after, _ := os.ReadFile(log); string(after) != string(before) {
-		t.Fatalf("runner called on refusal: %q", after)
+	if after := len(launches(fake)); after != before {
+		t.Fatalf("runner called on refusal: %d launches", after)
 	}
 	// --path picks a free one.
 	out, errs, code = runCLI(t, nil, "lead", "start", "--repo", "demo", "--spec", "012", "--brief", "/dev/null",
@@ -116,16 +141,16 @@ func TestLeadStartRefusesTakenPath(t *testing.T) {
 }
 
 func TestLeadStartTimeoutNamesThread(t *testing.T) {
-	c, log := leadSetup(t)
+	c, fake := leadSetup(t)
 	t.Setenv("BMESH_T3_TIMEOUT", "300ms")
-	t.Setenv("FAKE_T3_START_SLEEP", "3")
+	fake.Do(func(s *t3fake.Server) { s.LoseLaunch = true })
 	out, errs, code := runCLI(t, nil, "lead", "start", "--repo", "demo", "--spec", "012", "--brief", "/dev/null")
-	m := regexp.MustCompile(`^bmesh: start timed out; thread id ([0-9a-f-]{36}) may exist\n$`).FindStringSubmatch(errs)
+	m := regexp.MustCompile(`^bmesh: start timed out; a thread on branch (bmesh/[0-9a-f-]{36}) may exist\n$`).FindStringSubmatch(errs)
 	if code != 1 || out != "" || m == nil {
 		t.Fatalf("%d %q %q", code, out, errs)
 	}
-	if l, _ := os.ReadFile(log); !strings.Contains(string(l), "--thread-id "+m[1]) {
-		t.Fatalf("thread id not the one passed: %q", l)
+	if l := launches(fake); len(l) != 1 || jsonOf(l[0]["workspaceStrategy"].(map[string]any)["branch"]) != `"`+m[1]+`"` {
+		t.Fatalf("branch not the one launched: %s", jsonOf(l))
 	}
 	if _, ok, err := mesh.GetNode(t.Context(), c, "demo-012"); ok || err != nil {
 		t.Fatalf("node registered after timeout: %v %v", ok, err)
@@ -133,7 +158,7 @@ func TestLeadStartTimeoutNamesThread(t *testing.T) {
 }
 
 func TestLeadStartRefusesOverMax(t *testing.T) {
-	c, log := leadSetup(t)
+	c, fake := leadSetup(t)
 	ctx := t.Context()
 	cfg := os.Getenv("BMESH_CONFIG")
 	b, err := os.ReadFile(cfg)
@@ -152,13 +177,13 @@ func TestLeadStartRefusesOverMax(t *testing.T) {
 			t.Fatalf("start %s: %d %q %q", id, code, out, errs)
 		}
 	}
-	before, _ := os.ReadFile(log)
+	before := len(launches(fake))
 	out, errs, code := runCLI(t, nil, "lead", "start", "--repo", "demo", "--spec", "003", "--brief", "/dev/null")
 	if code != 3 || out != "" || errs != "bmesh: 2 leads already working on this host\n" {
 		t.Fatalf("third: %d %q %q", code, out, errs)
 	}
-	if after, _ := os.ReadFile(log); string(after) != string(before) {
-		t.Fatalf("runner called on refusal: %q", after)
+	if after := len(launches(fake)); after != before {
+		t.Fatalf("runner called on refusal: %d launches", after)
 	}
 	if _, ok, _ := mesh.GetNode(ctx, c, "demo-003"); ok {
 		t.Fatal("refused lead registered")

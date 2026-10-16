@@ -14,7 +14,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/runner/t3mcp"
 )
 
-// The T3 V2 path: T3 Code 0.1.0's MCP tools, signed in with the token
+// The t3 runner's calls: T3 Code 0.1.0's MCP tools, signed in with the token
 // `bmesh t3 login` keeps.
 
 const signInHint = "T3 sign-in missing or expired; run bmesh t3 login"
@@ -140,10 +140,10 @@ func statusFrom(v v2Read) Status {
 	return s
 }
 
-// statusV2 reads the thread and its timeline from where the last read
+// status reads the thread and its timeline from where the last read
 // stopped, so a long thread costs one page a minute. The cursor never
 // passes an item whose text may still grow (a streaming reply).
-func (r *T3) statusV2(ctx context.Context, thread string) (Status, error) {
+func (r *T3) status(ctx context.Context, thread string) (Status, error) {
 	r.mu.Lock()
 	cur, ok := r.replies[thread]
 	r.mu.Unlock()
@@ -186,12 +186,12 @@ func (r *T3) statusV2(ctx context.Context, thread string) (Status, error) {
 	return st, nil
 }
 
-// sendV2 refuses a running thread, then queues the text: queue, never
+// send refuses a running thread, then queues the text: queue, never
 // steer, so a turn that starts between the check and the send gets the
 // message after it. The request id is the thread, text and minute, so a
 // retried wake isn't sent twice.
-func (r *T3) sendV2(ctx context.Context, thread, text string) error {
-	st, err := r.statusV2(ctx, thread)
+func (r *T3) send(ctx context.Context, thread, text string) error {
+	st, err := r.status(ctx, thread)
 	if err != nil {
 		return err
 	}
@@ -208,7 +208,7 @@ func sendRequestID(thread, text string, now time.Time) string {
 	return "bmesh-" + hex.EncodeToString(sum[:])
 }
 
-func (r *T3) interruptV2(ctx context.Context, thread string) error {
+func (r *T3) interrupt(ctx context.Context, thread string) error {
 	err := r.call(ctx, "t3_thread_interrupt", map[string]any{"threadId": thread}, nil)
 	if t3mcp.Code(err) == "no_active_run" {
 		return nil
@@ -321,26 +321,21 @@ func (r *T3) startable(ctx context.Context) (string, error) {
 }
 
 // Preflight refuses, before anything is recorded, a start the server or
-// the sign-in can't serve: an unknown protocol, and on V2 a sign-in
-// that is missing, expired, foreign or below the runtime mode.
+// the sign-in can't serve: a protocol other than 2, and a sign-in that is
+// missing, expired, foreign or below the runtime mode.
 func (r *T3) Preflight(ctx context.Context) error {
-	p, err := r.protocol(ctx)
-	if err != nil || p != 2 {
+	if err := r.protocol(ctx); err != nil {
 		return err
 	}
-	_, err = r.startable(ctx)
+	_, err := r.startable(ctx)
 	return err
 }
 
-// Protocol is the server's orchestration protocol (1 or 2).
-func (r *T3) Protocol(ctx context.Context) (int, error) { return r.protocol(ctx) }
-
-// startV2 launches the thread under the repo's own project ([runner]
-// t3_project has no effect on V2: T3 binds only a project's own
-// worktrees), in a new worktree on bmesh/<ThreadID> from s.Branch (else
+// start launches the thread under the repo's own project (T3 binds only
+// a project's own worktrees), in a new worktree on bmesh/<ThreadID> from s.Branch (else
 // main), or in s.Worktree on s.Branch. Launch has no retry key, so a lost
 // or timed-out reply is reconciled by branch before any error is returned.
-func (r *T3) startV2(ctx context.Context, s StartSpec) (Started, error) {
+func (r *T3) start(ctx context.Context, s StartSpec) (Started, error) {
 	mode, err := r.startable(ctx)
 	if err != nil {
 		return Started{}, err

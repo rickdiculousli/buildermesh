@@ -30,8 +30,8 @@ token_file = "~/.config/command-center/nats.token"   # the hub's token
 
 [runner]
 kind = "t3"
-# the V1 path's keys
-t3_dispatch = "~/repos/command-center/tools/t3_dispatch.py"   # V1 only
+# this box's T3
+t3_server = "http://127.0.0.1:3773"   # the default, said aloud
 max_leads = 6   # from memcap
 
 [notify]

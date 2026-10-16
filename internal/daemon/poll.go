@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
@@ -31,22 +30,6 @@ func noteRunner(d Deps, path string, s runner.Status) {
 	}
 	if prev, _ := notes.Swap(path, note); prev != note && note != "" {
 		d.Log.Info(note)
-	}
-}
-
-// t3ProjectNoted is set once the daemon has said [runner] t3_project has
-// no effect on this box's V2 server.
-var t3ProjectNoted atomic.Bool
-
-// noteT3Project logs, once, that [runner] t3_project is ignored by a V2
-// server: there a round's threads file under the target repo's project.
-func noteT3Project(ctx context.Context, d Deps) {
-	t3, ok := d.Runner.(*runner.T3)
-	if !ok || d.Cfg.Runner.T3Project == "" || t3ProjectNoted.Load() {
-		return
-	}
-	if p, err := t3.Protocol(ctx); err == nil && p == 2 && t3ProjectNoted.CompareAndSwap(false, true) {
-		d.Log.Info("t3: [runner] t3_project has no effect on a V2 server; a round's threads are filed under the target repo's T3 project")
 	}
 }
 
@@ -104,7 +87,6 @@ func syncBranch(ctx context.Context, d Deps, n mesh.Node) {
 // the sample in bm-runner; it also keeps the lead's recorded branch level
 // with its worktree's.
 func pollOnce(ctx context.Context, d Deps, _ *Activity) {
-	noteT3Project(ctx, d)
 	leads, err := localLeads(ctx, d)
 	if err != nil {
 		d.Log.Warn("poll: list nodes", "err", err)

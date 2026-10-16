@@ -82,9 +82,7 @@ type ServeConfig struct{ Listen string }
 
 type RunnerConfig struct {
 	Kind        string
-	T3Dispatch  string `toml:"t3_dispatch"`
-	T3Project   string `toml:"t3_project"`      // the repo whose T3 project proposal threads open in; "" = the target repo (V1 only)
-	T3Server    string `toml:"t3_server"`       // this box's T3: its protocol picks the V1 or V2 path
+	T3Server    string `toml:"t3_server"`       // this box's T3 0.1.0
 	T3Runtime   string `toml:"t3_runtime_mode"` // auto | full-access
 	TmuxSession string `toml:"tmux_session"`
 	Worktrees   string
@@ -220,8 +218,9 @@ type Config struct {
 	Update   UpdateConfig
 	Hosts    HostsConfig
 
-	dir  string // directory of the config file; "" when none was read
-	path string // the config file's path as given to Load
+	dir     string   // directory of the config file; "" when none was read
+	path    string   // the config file's path as given to Load
+	ignored []string // the lines Ignored returns
 }
 
 // duration decodes strings like "20m" or "30d" from TOML.
@@ -310,7 +309,7 @@ func defaults() *Config {
 		Mesh:  MeshConfig{Domain: "hub", Store: DefaultStore(), Listen: "127.0.0.1:4222"},
 		Hub:   HubConfig{MaxFileStore: "8GB", MaxMemoryStore: "256MB"},
 		Serve: ServeConfig{Listen: "127.0.0.1:3774"},
-		Runner: RunnerConfig{Kind: "t3", T3Dispatch: "t3_dispatch.py", T3Server: "http://127.0.0.1:3773", T3Runtime: "auto", TmuxSession: "bmesh",
+		Runner: RunnerConfig{Kind: "t3", T3Server: "http://127.0.0.1:3773", T3Runtime: "auto", TmuxSession: "bmesh",
 			Worktrees: "~/.bmesh/worktrees", Checkouts: "~/.bmesh/checkouts", Claude: "claude"},
 		Notify:   NotifyConfig{DigestEvery: time.Hour, Push: []string{"ask", "blocked", "done"}, CatchUp: time.Hour},
 		Liveness: LivenessConfig{Grace: 20 * time.Minute, PollEvery: 60 * time.Second, WakeEvery: 10 * time.Minute},
@@ -395,7 +394,8 @@ func SetupFlag(configPath string) string {
 
 // Load reads path over the defaults and the registry from repos.toml beside
 // it. A missing file yields the defaults; unknown keys are ignored, except
-// [repos], which is refused: it moved to repos.toml.
+// [repos], which is refused: it moved to repos.toml. Keys bmesh dropped
+// load too, each named by a line in Ignored.
 func Load(path string) (*Config, error) {
 	c := defaults()
 	c.path = path
@@ -422,8 +422,14 @@ func Load(path string) (*Config, error) {
 	f.Liveness.WakeEvery = duration(c.Liveness.WakeEvery)
 	f.Status.KeepDone = duration(c.Status.KeepDone)
 	f.Routines.KeepResults = duration(c.Routines.KeepResults)
-	if _, err := toml.DecodeFile(path, &f); err != nil {
+	md, err := toml.DecodeFile(path, &f)
+	if err != nil {
 		return nil, fmt.Errorf("config %s: %w", path, err)
+	}
+	for _, key := range []string{"t3_dispatch", "t3_project"} {
+		if md.IsDefined("runner", key) {
+			c.ignored = append(c.ignored, fmt.Sprintf("bmesh: [runner] %s is ignored (T3 0.1.0 needs no script); delete it from %s", key, path))
+		}
 	}
 	c.Mesh, c.Host, c.Hub, c.Serve, c.Runner, c.Spec, c.Models = f.Mesh, f.Host, f.Hub, f.Serve, f.Runner, f.Spec, f.Models
 	if !slices.Contains(HubRoles, c.Hub.Role) {
@@ -448,6 +454,9 @@ func Load(path string) (*Config, error) {
 		if err := CheckEffort(e); err != nil {
 			return nil, fmt.Errorf("config %s: [models] %s: %w", path, key, err)
 		}
+	}
+	if c.Runner.T3Server == "" {
+		return nil, fmt.Errorf("config %s: [runner] t3_server is empty: want this box's T3 0.1.0 (the default is http://127.0.0.1:3773)", path)
 	}
 	if m := c.Runner.T3Runtime; m != "auto" && m != "full-access" {
 		return nil, fmt.Errorf("config %s: [runner] t3_runtime_mode %q: want auto or full-access (approval-required and auto-accept-edits stall an unattended lead)", path, m)
@@ -492,6 +501,10 @@ func Load(path string) (*Config, error) {
 	}
 	return c, nil
 }
+
+// Ignored is one line per key the config file sets that bmesh no longer
+// reads, saying to delete it.
+func (c *Config) Ignored() []string { return c.ignored }
 
 // Path is the config file's path as loaded.
 func (c *Config) Path() string { return c.path }
