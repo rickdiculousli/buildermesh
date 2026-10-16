@@ -4,7 +4,7 @@ title: Two boxes running the same routine kind stop answering, throttling and na
 kind: refinement
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
@@ -12,6 +12,8 @@ built_by: 01a8df36-d510-45d6-ae37-d652fb03b0c4
 host: k16
 family: buildermesh-build-3
 branch: bmesh/01a8df36-d510-45d6-ae37-d652fb03b0c4
+merged: 5c5e46fea929bebdcd47aa779ad045afbd9e7d9e
+verified: verify ok t:d0ee4fff
 ---
 
 ## Opportunity
