@@ -474,3 +474,23 @@ func inProgress(gitDir string) bool {
 	}
 	return false
 }
+
+// JobArgs is a level job's args: the sha (origin's head after the sender
+// levelled), the sender's branch ("" for a pinned row) and until, when the
+// sender stops waiting for the reply (RFC 3339 UTC to the second).
+func JobArgs(sha, branch, until string) []string { return []string{sha, branch, until} }
+
+// ParseJobArgs reads JobArgs, refusing a sha or branch that isn't one.
+func ParseJobArgs(args []string) (sha, branch, until string, err error) {
+	if len(args) != 3 {
+		return "", "", "", fmt.Errorf("want sha, branch and until, got %d args", len(args))
+	}
+	sha, branch, until = args[0], args[1], args[2]
+	if !ValidSha(sha) {
+		return "", "", "", fmt.Errorf("sha %q", cut(sha, 64))
+	}
+	if branch != "" && !ValidBranch(branch) {
+		return "", "", "", fmt.Errorf("branch %q", cut(branch, 64))
+	}
+	return sha, branch, until, nil
+}
