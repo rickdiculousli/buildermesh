@@ -113,6 +113,13 @@ On a box whose T3 is 0.1.0, `bmesh build buildermesh 0NN` starts a lead that sho
   If the classifier denies any step, record which one and the denial text. The lead then decides, with the operator through `bmesh ask`, whether to keep `auto` and tell leads in their brief what to do instead, or to make `full-access` the default.
 - Record every live check in the closing commit.
 
+Live checks, 2026-10-16 on k16 (the lead, with a scratch daemon on host `k16-v2scratch`):
+- **Sign-in.** `bmesh t3 login --server http://127.0.0.1:3780` printed the URL and tunnel; the operator approved at Auto from the Mac and the redirect landed on the listener: `k16-v2scratch: auto, 30 days left` (scopes `orchestration:read orchestration:operate`).
+- **V2 (scratch 0.1.0, 3780).** `lead start` launched `mcp:bd7c0182…` on `bmesh/<thread id>` in `<base>/worktrees/repo/bmesh-<thread id>` (T3 flattens the slash), `runtimeMode` auto; status read `ready`; `bmesh --node operator send` was delivered by the daemon's wake within 15 s (`t3_thread_send` queue); a send mid-turn was refused; an active run was interrupted (run `interrupted`), an idle interrupt returned `no_active_run` as success; `node forget --worktree` removed worktree and branch.
+- **V1 (live 0.0.45, 3773).** The same binary started a thread through `t3_dispatch.py` with `--runtime-mode auto` (T3 recorded `auto`); status, send, refusal mid-turn, interrupt and idle interrupt held; forgotten with its worktree.
+- **Land under auto.** A Sonnet lead in `auto` on the scratch server committed in its worktree, fast-forwarded the scratch repo's `main` checkout outside it, pushed to a scratch bare remote and ran `bmesh started`, `progress` and `done` (bmesh refused `done` for want of a landed spec; nothing was denied by the classifier). `auto` stays the default.
+- **Found:** `t3_project_create` needs a full-access sign-in, so with `auto` a repo must already be a T3 project (the error says so).
+
 ## Risks and the alternative considered
 `auto` may deny a step a lead needs, most likely while landing outside its worktree or pushing `main`. The live land check above finds that before any box depends on it, and `full-access` stays a one-line fallback per box. A denied step makes a lead block, not misbehave.
 
