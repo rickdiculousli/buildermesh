@@ -1,6 +1,7 @@
 ---
 name: ideate
-description: Use when the operator asks for "proposals for X", "run a round on X", "ideate X", "ideas for X", "suggestions for X" or "what would you improve in X" - X a repo in the bmesh registry. Starts a buildermesh proposal round (an engineer and a UI/UX engineer thread) with bmesh ideate, watches it and tells the operator when its pitch is proposed. When the operator brings one specific idea of their own ("ideate this idea: ...", "spec this"), writes that idea's spec in this session instead and starts no round.
+description: >-
+  Use when the operator asks for "proposals for X", "run a round on X", "ideate X", "ideas for X", "suggestions for X" or "what would you improve in X" - X a repo in the bmesh registry. Starts a buildermesh proposal round (an engineer and a UI/UX engineer thread) with bmesh ideate, watches it and tells the operator when its pitch is proposed. When the operator brings one specific idea of their own ("ideate this idea: ...", "spec this"), writes that idea's spec in this session instead and starts no round.
 ---
 
 # Ideate

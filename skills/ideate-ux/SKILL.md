@@ -1,6 +1,7 @@
 ---
 name: ideate-ux
-description: Use when you were started as the UI/UX engineer of a buildermesh proposal round - your brief is headed "UI/UX engineer: proposal round" and names your node <repo>-round-<N>.ux. You run the app, screenshot its surfaces, write three to five ranked half-page specs on how it looks and feels into docs/proposals/, land them on main and report the ranked list with bmesh done.
+description: >-
+  Use when you were started as the UI/UX engineer of a buildermesh proposal round - your brief is headed "UI/UX engineer: proposal round" and names your node <repo>-round-<N>.ux. You run the app, screenshot its surfaces, write three to five ranked half-page specs on how it looks and feels into docs/proposals/, land them on main and report the ranked list with bmesh done.
 ---
 
 # Ideate: UI/UX engineer

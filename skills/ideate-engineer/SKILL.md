@@ -1,6 +1,7 @@
 ---
 name: ideate-engineer
-description: Use when you were started as the engineer of a buildermesh proposal round - your brief is headed "Engineer: proposal round" and names your node <repo>-round-<N>.eng. You read the repo, measure, write three to five ranked half-page specs into docs/proposals/, land them on main and report the ranked list with bmesh done.
+description: >-
+  Use when you were started as the engineer of a buildermesh proposal round - your brief is headed "Engineer: proposal round" and names your node <repo>-round-<N>.eng. You read the repo, measure, write three to five ranked half-page specs into docs/proposals/, land them on main and report the ranked list with bmesh done.
 ---
 
 # Ideate: engineer
