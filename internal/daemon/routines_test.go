@@ -238,7 +238,7 @@ batch_idle = "5s"
 command = "echo $BMESH_JOB >> ` + log + `; echo ran $BMESH_JOB"
 `})
 	f.start(t)
-	f.waitStarted(t, "routine.verify.cmd-1", 1)
+	f.waitStarted(t, "routine.verify.testhost-cmd-1", 1)
 
 	id1 := f.queue(t, mesh.Job{Kind: "verify"})
 	id2 := f.queue(t, mesh.Job{Kind: "verify"})
@@ -248,7 +248,7 @@ command = "echo $BMESH_JOB >> ` + log + `; echo ran $BMESH_JOB"
 	}
 	r1 := f.reply(t, id1, 15*time.Second)
 	r2 := f.reply(t, id2, 15*time.Second)
-	if !r1.OK || r1.Output != "ran "+id1+"\n" || r1.By != "routine.verify.cmd-1" || !r2.OK {
+	if !r1.OK || r1.Output != "ran "+id1+"\n" || r1.By != "routine.verify.testhost-cmd-1" || !r2.OK {
 		t.Fatalf("replies %+v %+v", r1, r2)
 	}
 	if got := lines(t, log); strings.Join(got, " ") != id1+" "+id2 {
@@ -277,7 +277,7 @@ command = "echo $BMESH_JOB >> ` + log + `; echo ran $BMESH_JOB"
 		t.Fatalf("runs %q", got)
 	}
 	// Each job: "job <id> started" and "job <id> ok <ms>".
-	if n := f.events(t, "routine.verify.cmd-1", "progress"); n != 8 {
+	if n := f.events(t, "routine.verify.testhost-cmd-1", "progress"); n != 8 {
 		t.Fatalf("progress events %d, want 8", n)
 	}
 }
@@ -297,8 +297,8 @@ command = "echo x >> ` + runs + `; if [ $(wc -l < ` + runs + `) -ge 2 ]; then ec
 `})
 	ackWaitExtra = 3*time.Second - time.Minute // AckWait = timeout + extra = 3s
 	stop := f.start(t)
-	f.waitStarted(t, "routine.slow.cmd-1", 1)
-	f.waitStarted(t, "routine.slow.cmd-2", 1)
+	f.waitStarted(t, "routine.slow.testhost-cmd-1", 1)
+	f.waitStarted(t, "routine.slow.testhost-cmd-2", 1)
 
 	id := f.queue(t, mesh.Job{Kind: "slow", Go: true})
 	waitFor(t, 10*time.Second, "first run", func() bool { return len(lines(t, runs)) == 1 })
@@ -306,7 +306,7 @@ command = "echo x >> ` + runs + `; if [ $(wc -l < ` + runs + `) -ge 2 ]; then ec
 	deadline := time.Now().Add(3500 * time.Millisecond)
 	for time.Now().Before(deadline) {
 		working := 0
-		for _, p := range []string{"routine.slow.cmd-1", "routine.slow.cmd-2"} {
+		for _, p := range []string{"routine.slow.testhost-cmd-1", "routine.slow.testhost-cmd-2"} {
 			if f.state(t, p) == "working" {
 				working++
 			}
@@ -317,7 +317,7 @@ command = "echo x >> ` + runs + `; if [ $(wc -l < ` + runs + `) -ge 2 ]; then ec
 		time.Sleep(100 * time.Millisecond)
 	}
 	if jobs, err := mesh.KindJobs(f.ctx, f.c, "slow"); err != nil || len(jobs) != 1 || jobs[0].ID != id ||
-		jobs[0].State != "running" || !strings.HasPrefix(jobs[0].Holder, "routine.slow.cmd-") {
+		jobs[0].State != "running" || !strings.HasPrefix(jobs[0].Holder, "routine.slow.testhost-cmd-") {
 		t.Fatalf("jobs while running %+v %v", jobs, err)
 	}
 	stop() // mid-job: the run is killed and the job handed back, unanswered
@@ -356,12 +356,12 @@ command = "echo $BMESH_JOB >> ` + runs + `"
 `})
 	ackWaitExtra = time.Minute // AckWait 2m
 	stop := f.start(t)
-	f.waitStarted(t, "routine.slow.cmd-1", 1)
+	f.waitStarted(t, "routine.slow.testhost-cmd-1", 1)
 
 	id := f.queue(t, mesh.Job{Kind: "slow"})
 	waitFor(t, 5*time.Second, "the job held", func() bool {
 		jobs, err := mesh.KindJobs(f.ctx, f.c, "slow")
-		return err == nil && len(jobs) == 1 && jobs[0].State == "held" && jobs[0].Holder == "routine.slow.cmd-1"
+		return err == nil && len(jobs) == 1 && jobs[0].State == "held" && jobs[0].Holder == "routine.slow.testhost-cmd-1"
 	})
 	stop()
 	if got := lines(t, runs); len(got) != 0 {
@@ -482,11 +482,11 @@ command = "sleep 30"
 	}
 	waitFor(t, 20*time.Second, "lease game.0", func() bool {
 		e, err := kv.Get(f.ctx, "game.0")
-		return err == nil && strings.Contains(string(e.Value()), "routine.play.cmd-1")
+		return err == nil && strings.Contains(string(e.Value()), "routine.play.testhost-cmd-1")
 	})
 	// The lease runs out (as if renewals had stalled) and another holder
 	// takes the place; retried when a renewal lands between the two.
-	expired := []byte(`{"holder":"routine.play.cmd-1","expires_at":"2000-01-01T00:00:00Z"}`)
+	expired := []byte(`{"holder":"routine.play.testhost-cmd-1","expires_at":"2000-01-01T00:00:00Z"}`)
 	waitFor(t, 10*time.Second, "other to take game.0", func() bool {
 		if _, err := kv.Put(f.ctx, "game.0", expired); err != nil {
 			t.Fatal(err)
@@ -498,7 +498,7 @@ command = "sleep 30"
 		return key == "game.0"
 	})
 	r := f.reply(t, id, 15*time.Second)
-	if r.OK || r.Output != "lease lost" || r.By != "routine.play.cmd-1" {
+	if r.OK || r.Output != "lease lost" || r.By != "routine.play.testhost-cmd-1" {
 		t.Fatalf("reply %+v", r)
 	}
 	// The instance released nothing of other's.
@@ -520,7 +520,7 @@ func TestJobCommitFetchedFromOrigin(t *testing.T) {
 	meshtest.Git(t, f.repo, "remote", "add", "origin", other)
 	meshtest.Git(t, f.repo, "fetch", "-q", "origin")
 	f.start(t)
-	f.waitStarted(t, "routine.verify.cmd-1", 1) // the rescan's fetch is over
+	f.waitStarted(t, "routine.verify.testhost-cmd-1", 1) // the rescan's fetch is over
 	pushed := meshtest.CommitFiles(t, other, map[string]string{"b.txt": "from origin\n"})
 	if _, err := exec.Command("git", "-C", f.repo, "cat-file", "-e", pushed+"^{commit}").Output(); err == nil {
 		t.Fatal("the daemon's clone already has the commit")
@@ -568,11 +568,11 @@ command = "echo ran >> ` + mark + `; echo fresh-run"
 	}
 
 	r = f.reply(t, f.queue(t, mesh.Job{Kind: "check", Go: true, Rerun: true}), 20*time.Second)
-	if !r.OK || r.Output != "fresh-run\n" || r.By != "routine.check.cmd-1" || r.ResultKey != key {
+	if !r.OK || r.Output != "fresh-run\n" || r.By != "routine.check.testhost-cmd-1" || r.ResultKey != key {
 		t.Fatalf("rerun reply %+v", r)
 	}
 	rec, ok, err := mesh.GetResult(f.ctx, f.c, key)
-	if err != nil || !ok || !rec.OK || rec.By != "routine.check.cmd-1" || rec.Output != "fresh-run\n" || rec.Commit != commit {
+	if err != nil || !ok || !rec.OK || rec.By != "routine.check.testhost-cmd-1" || rec.Output != "fresh-run\n" || rec.Commit != commit {
 		t.Fatalf("record %+v %v %v", rec, ok, err)
 	}
 }
@@ -608,30 +608,21 @@ batch_idle = "1s"
 	if r.OK || r.Output != "unknown model m-x" {
 		t.Fatalf("unknown model reply %+v", r)
 	}
-	r = f.reply(t, f.queue(t, mesh.Job{Kind: "review", Repo: "elsewhere", Go: true}), 20*time.Second)
-	if r.OK || r.Output != "unknown repo elsewhere to bmesh serve on "+testHost+"; serve reads repos.toml only when it starts, so restart it after changing the registry" {
-		t.Fatalf("unknown repo reply %+v", r)
-	}
-	// A row added to repos.toml after serve started is named as such.
-	if err := os.WriteFile(config.ReposPath(f.d.Cfg.Path()), []byte("[repos.elsewhere]\npath = \"/x\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	r = f.reply(t, f.queue(t, mesh.Job{Kind: "review", Repo: "elsewhere", Go: true}), 20*time.Second)
-	if r.OK || !strings.HasSuffix(r.Output, ": repos.toml has it now, but serve read the registry when it started; restart bmesh serve") {
-		t.Fatalf("unknown repo added since start %+v", r)
-	}
+	// A repo this box's registry doesn't name is deferred, never answered:
+	// serve reads repos.toml only at start, and another box may have it.
+	f.noReply(t, f.queue(t, mesh.Job{Kind: "review", Repo: "elsewhere", Go: true}), time.Second)
 	tree := meshtest.Git(t, f.repo, "rev-parse", "HEAD^{tree}")
 	id := f.queue(t, mesh.Job{Kind: "review", Model: "m-b", Go: true})
 	r = f.reply(t, id, 20*time.Second)
 	key := mesh.ResultKey("review", tree, nil, "m-b")
-	if !r.OK || r.Output != "VERDICT: ok" || r.By != "routine.review.m-b-1" || r.ResultKey != key {
+	if !r.OK || r.Output != "VERDICT: ok" || r.By != "routine.review.testhost-m-b-1" || r.ResultKey != key {
 		t.Fatalf("m-b reply %+v", r)
 	}
-	if rec, ok, err := mesh.GetResult(f.ctx, f.c, key); err != nil || !ok || rec.Model != "m-b" || rec.By != "routine.review.m-b-1" {
+	if rec, ok, err := mesh.GetResult(f.ctx, f.c, key); err != nil || !ok || rec.Model != "m-b" || rec.By != "routine.review.testhost-m-b-1" {
 		t.Fatalf("record %+v %v %v", rec, ok, err)
 	}
 	// A model instance's finished-job line carries its context tokens.
-	hist, err := mesh.History(f.ctx, f.c, "bm.routine.review.m-b-1.progress", time.Time{})
+	hist, err := mesh.History(f.ctx, f.c, "bm.routine.review.testhost-m-b-1.progress", time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -645,7 +636,7 @@ batch_idle = "1s"
 		!strings.HasSuffix(texts[len(texts)-1], " ctx 1000") {
 		t.Fatalf("m-b progress %q", texts)
 	}
-	n, ok, err := mesh.GetNode(f.ctx, f.c, "routine.review.m-a-1")
+	n, ok, err := mesh.GetNode(f.ctx, f.c, "routine.review.testhost-m-a-1")
 	if err != nil || !ok || n.Model != "m-a" || n.Role != "routine" {
 		t.Fatalf("m-a node %+v %v %v", n, ok, err)
 	}
@@ -689,7 +680,7 @@ func TestJobFetchedWhileStoppingStaysQueued(t *testing.T) {
 	f := routineSetup(t, map[string]string{".bmesh/routines/verify.toml": "timeout = \"30s\"\ncommand = \"echo ran\"\n"})
 	fetchWait = 2 * time.Second // the dispatcher's fetch outlives the stop
 	stop := f.start(t)
-	f.waitStarted(t, "routine.verify.cmd-1", 1)
+	f.waitStarted(t, "routine.verify.testhost-cmd-1", 1)
 	time.Sleep(300 * time.Millisecond) // the dispatcher is inside a fetch
 	done := make(chan struct{})
 	go func() { stop(); close(done) }()
@@ -724,10 +715,10 @@ func TestRescanForgetsStoppedInstancesAfterKeepDone(t *testing.T) {
 	f.setState(t, elsewhere, "done")
 
 	f.start(t)
-	f.waitStarted(t, "routine.verify.cmd-1", 1)
+	f.waitStarted(t, "routine.verify.testhost-cmd-1", 1)
 	meshtest.Git(t, f.repo, "rm", "-q", ".bmesh/routines/verify.toml")
 	meshtest.Git(t, f.repo, "commit", "-q", "-m", "drop verify")
-	waitFor(t, 10*time.Second, "cmd-1 done", func() bool { return f.state(t, "routine.verify.cmd-1") == "done" })
+	waitFor(t, 10*time.Second, "cmd-1 done", func() bool { return f.state(t, "routine.verify.testhost-cmd-1") == "done" })
 
 	present := func(path string) bool {
 		_, ok, err := mesh.GetNode(f.ctx, f.c, path)
@@ -737,14 +728,14 @@ func TestRescanForgetsStoppedInstancesAfterKeepDone(t *testing.T) {
 		return ok
 	}
 	f.poll(t, 2*time.Second) // several rescans, none past keep_done
-	for _, p := range []string{"routine.verify.cmd-1", stale, elsewhere} {
+	for _, p := range []string{"routine.verify.testhost-cmd-1", stale, elsewhere} {
 		if !present(p) {
 			t.Fatalf("%s forgotten before keep_done", p)
 		}
 	}
 
 	offset.Store(int64(time.Hour + time.Minute))
-	for _, p := range []string{"routine.verify.cmd-1", stale} {
+	for _, p := range []string{"routine.verify.testhost-cmd-1", stale} {
 		waitFor(t, 10*time.Second, p+" forgotten", func() bool { return !present(p) })
 		if s, rev, err := mesh.ReadState(f.ctx, f.c, p); err != nil || rev != 0 {
 			t.Fatalf("%s state %+v rev %d %v, want none", p, s, rev, err)
@@ -753,7 +744,7 @@ func TestRescanForgetsStoppedInstancesAfterKeepDone(t *testing.T) {
 	if !present(elsewhere) {
 		t.Fatalf("%s on another host forgotten", elsewhere)
 	}
-	if f.events(t, "routine.verify.cmd-1", "done") != 1 {
+	if f.events(t, "routine.verify.testhost-cmd-1", "done") != 1 {
 		t.Fatal("cmd-1's done event is gone")
 	}
 }
@@ -767,7 +758,7 @@ func TestRescanSkipsRepoMissingHereLoggingOnce(t *testing.T) {
 	f.d.Log = slog.New(slog.NewTextHandler(&log, nil))
 
 	f.start(t)
-	f.waitStarted(t, "routine.verify.cmd-1", 1)
+	f.waitStarted(t, "routine.verify.testhost-cmd-1", 1)
 	f.poll(t, time.Second) // several rescans
 	out := log.String()
 	if n := strings.Count(out, "routines: repo has no checkout on this box; skipped"); n != 1 || !strings.Contains(out, "repo=gone") {
@@ -787,11 +778,15 @@ func TestRescanSkipsRepoMissingHereLoggingOnce(t *testing.T) {
 }
 
 // startAs runs a second routine loop on the fixture's server as host, its
-// kinds matched against goos, with checkouts of its own.
-func (f *rfix) startAs(t *testing.T, host, goos string) (stop func()) {
+// kinds matched against goos, with checkouts of its own; each opt then
+// changes its Deps.
+func (f *rfix) startAs(t *testing.T, host, goos string, opts ...func(*Deps)) (stop func()) {
 	t.Helper()
 	d := f.d
 	d.Host, d.GOOS, d.Checkouts = host, goos, filepath.Join(t.TempDir(), "checkouts")
+	for _, opt := range opts {
+		opt(&d)
+	}
 	ctx, cancel := context.WithCancel(f.ctx)
 	done := make(chan struct{})
 	go func() { routines(ctx, d); close(done) }()
@@ -818,14 +813,14 @@ func TestOSKindRunsOnlyOnItsOS(t *testing.T) {
 	})
 	stopMac := f.startAs(t, "mac-box", "darwin")
 	f.startAs(t, "linux-box", "linux")
-	f.waitStarted(t, "routine.mac-build.cmd-1", 1)
+	f.waitStarted(t, "routine.mac-build.mac-box-cmd-1", 1)
 	for i := 0; i < 3; i++ {
 		r := f.reply(t, f.queue(t, mesh.Job{Kind: "mac-build", Go: true}), 20*time.Second)
-		if !r.OK || r.Output != "built\n" || r.By != "routine.mac-build.cmd-1" {
+		if !r.OK || r.Output != "built\n" || r.By != "routine.mac-build.mac-box-cmd-1" {
 			t.Fatalf("mac-build reply %+v", r)
 		}
 	}
-	n, ok, err := mesh.GetNode(f.ctx, f.c, "routine.mac-build.cmd-1")
+	n, ok, err := mesh.GetNode(f.ctx, f.c, "routine.mac-build.mac-box-cmd-1")
 	if err != nil || !ok || n.Host != "mac-box" {
 		t.Fatalf("instance %+v %v %v", n, ok, err)
 	}
@@ -875,7 +870,7 @@ func TestRescanLogsAKindReadFailureOncePerCommit(t *testing.T) {
 	f.d.Log = slog.New(slog.NewTextHandler(&log, nil))
 
 	f.start(t)
-	f.waitStarted(t, "routine.verify.cmd-1", 1)
+	f.waitStarted(t, "routine.verify.testhost-cmd-1", 1)
 	f.poll(t, time.Second) // several rescans
 	out := log.String()
 	if n := strings.Count(out, "routines: read kinds"); n != 1 || !strings.Contains(out, "repo=old") {

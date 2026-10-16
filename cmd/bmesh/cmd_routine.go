@@ -321,6 +321,9 @@ func (a *app) cmdRoutineQueue(args []string) error {
 	if *model != "" && !slices.Contains(k.ModelsList(), *model) {
 		return fail(exitUsage, "kind %s has no model %q", name, *model)
 	}
+	if k.Mode == "inline" {
+		return fail(exitRefused, "%s is inline: run it with bmesh routine run", name)
+	}
 	ctx, cancel := cmdCtx()
 	defer cancel()
 	self, err := a.identity(ctx, "routine")
@@ -382,6 +385,11 @@ func (a *app) cmdRoutineQueue(args []string) error {
 	repo, err := a.repoName(ctx, self, top)
 	if err != nil {
 		return err
+	}
+	// A daemon defers a repo its registry lacks to a box whose registry has
+	// it, so a repo no registry names would wait for nobody.
+	if _, ok := a.cfg.Repos[repo]; !ok {
+		return fail(exitRefused, "%s is not in the registry", repo)
 	}
 	j := mesh.Job{ID: newID(), Kind: name, Repo: repo, Commit: *commit, Args: jobArgs,
 		Model: *model, Text: *text, Go: *goNow, Rerun: *rerun}
@@ -450,7 +458,8 @@ func jobOS(ctx context.Context, top, name, commit string) (string, error) {
 // repoName is the name the daemon resolves a job's repo by: the node's repo
 // when self is a registered node naming one; else the [repos] key whose
 // checkout shares the git common dir of top (top may be a linked worktree);
-// else the base name of the main repo holding top.
+// else the base name of the main repo holding top, which queue refuses as
+// not in the registry and land uses only as its lease name.
 func (a *app) repoName(ctx context.Context, self mesh.Path, top string) (string, error) {
 	n, ok, err := mesh.GetNode(ctx, a.client, self.String())
 	if err != nil {

@@ -219,7 +219,7 @@ command = "echo $BMESH_JOB >> ` + runs + `; if [ $(wc -l < ` + runs + `) -ge 2 ]
 		}
 	}
 	u.start(t)
-	u.waitStarted(t, "routine.slow.cmd-1", 1)
+	u.waitStarted(t, "routine.slow.testhost-cmd-1", 1)
 
 	id1 := u.queue(t, mesh.Job{Kind: "slow", Go: true})
 	waitFor(t, 10*time.Second, "the job running", func() bool { return len(lines(t, runs)) == 1 })

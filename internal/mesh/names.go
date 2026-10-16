@@ -136,7 +136,9 @@ func ModelShort(model string) string {
 // a directory name may hold (and a token can't) written as -, runs of -
 // collapsed to one (a token holds no --) and a trailing - trimmed. Node
 // paths, families and branches that start with a repo's name start with
-// this; node.Repo and worktree directories keep the registry name.
+// this; node.Repo and worktree directories keep the registry name. A pooled
+// routine instance's path carries its box's host name made a token the same
+// way.
 func RepoToken(name string) string {
 	s := strings.NewReplacer(".", "-", "_", "-").Replace(strings.ToLower(name))
 	for strings.Contains(s, "--") {

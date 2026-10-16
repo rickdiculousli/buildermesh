@@ -14,7 +14,8 @@ const ensureRetry = 10 * time.Second
 // jobs until batch_idle passes with nothing new, a go arrives or a job with
 // go arrives, runs them in order on its warm instance, then runs any job
 // queued meanwhile at once before batching again.
-func (r *routineSet) pooledInstance(g *group, p *pool, path string, goCh chan struct{}) {
+func (r *routineSet) pooledInstance(g *group, p *pool, name instanceName, goCh chan struct{}) {
+	path := name.path
 	release := r.claimPath(g.ctx, path)
 	if release == nil {
 		return
@@ -23,7 +24,7 @@ func (r *routineSet) pooledInstance(g *group, p *pool, path string, goCh chan st
 	var dir string
 	for {
 		var err error
-		if dir, err = r.ensureCheckout(g.repoPath, path); err == nil {
+		if dir, err = r.ensureCheckout(g.repoPath, name.checkout); err == nil {
 			break
 		}
 		r.d.Log.Warn("routines: checkout", "path", path, "err", err)
