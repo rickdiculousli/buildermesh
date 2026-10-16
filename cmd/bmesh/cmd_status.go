@@ -402,11 +402,12 @@ func (a *app) printEvent(m mesh.Stored, leads map[string]bool) {
 	fmt.Fprintln(a.stdout, line)
 }
 
-// splitSubject turns bm.<path>.<event> into its path and event; inbox and
-// feedback subjects are not events.
+// splitSubject turns bm.<path>.<event> into its path and event. Daemon
+// events split as daemon.<host> and <event>; every other mesh-internal
+// subject (mesh.IsMeshInternal), host traffic included, is not an event.
 func splitSubject(subject string) (path, event string, ok bool) {
 	rest, found := strings.CutPrefix(subject, "bm.")
-	if !found || strings.HasPrefix(rest, "inbox.") || strings.HasPrefix(rest, "feedback.") {
+	if !found || mesh.IsMeshInternal(subject) && !strings.HasPrefix(rest, "daemon.") {
 		return "", "", false
 	}
 	i := strings.LastIndex(rest, ".")

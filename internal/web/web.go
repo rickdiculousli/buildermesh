@@ -143,11 +143,14 @@ func events(w http.ResponseWriter, r *http.Request, c *mesh.Client, hist time.Du
 
 	var lastSeq uint64
 	for _, m := range past {
+		lastSeq = m.Seq
+		if mesh.IsHostTraffic(m.Subject) {
+			continue
+		}
 		if writeFrame(w, "replay", m) != nil {
 			return
 		}
 		fl.Flush()
-		lastSeq = m.Seq
 	}
 	ping := time.NewTicker(pingEvery)
 	defer ping.Stop()
@@ -163,7 +166,7 @@ func events(w http.ResponseWriter, r *http.Request, c *mesh.Client, hist time.Du
 			if !ok {
 				return
 			}
-			if m.Seq <= lastSeq {
+			if m.Seq <= lastSeq || mesh.IsHostTraffic(m.Subject) {
 				continue
 			}
 			if writeFrame(w, "live", m) != nil {

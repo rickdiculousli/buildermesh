@@ -16,6 +16,14 @@ func TestActivityObserveIsTreeAware(t *testing.T) {
 	a.Observe("bm.xy.progress", t0.Add(30*time.Minute))  // not under x
 	a.Observe("bm.inbox.x", t0.Add(40*time.Minute))      // inbox is not activity
 	a.Observe("bm.daemon.h.silent", t0.Add(40*time.Minute))
+	for _, s := range []string{"bm.hostreply.k16.abc", "bm.inbox.host.k16", "bm.host.k16.x"} {
+		if a.Observe(s, t0.Add(50*time.Minute)) {
+			t.Fatalf("%s observed", s)
+		}
+	}
+	if got := a.Last("hostreply"); !got.IsZero() {
+		t.Fatalf("Last(hostreply) = %v", got)
+	}
 	if got := a.Last("x"); !got.Equal(t0.Add(20 * time.Minute)) {
 		t.Fatalf("Last(x) = %v", got)
 	}
