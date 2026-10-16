@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rickdiculousli/buildermesh/internal/config"
 	"net/http"
 	"os"
 	"os/exec"
@@ -270,7 +271,7 @@ func (r *T3) dir() (string, error) {
 	if r.Dir != "" {
 		return r.Dir, nil
 	}
-	c, err := os.UserCacheDir()
+	c, err := config.CacheDir()
 	if err != nil {
 		return "", err
 	}

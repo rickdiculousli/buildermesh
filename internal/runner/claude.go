@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rickdiculousli/buildermesh/internal/config"
 	"io"
 	"os"
 	"os/exec"
@@ -30,7 +31,7 @@ type Claude struct {
 func (r Claude) dir(thread string) (string, error) {
 	d := r.Dir
 	if d == "" {
-		c, err := os.UserCacheDir()
+		c, err := config.CacheDir()
 		if err != nil {
 			return "", err
 		}

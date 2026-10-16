@@ -430,7 +430,7 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 // writeBrief writes a rendered brief under <user cache dir>/bmesh/briefs,
 // where it stays for reading.
 func writeBrief(name, text string) (string, error) {
-	c, err := os.UserCacheDir()
+	c, err := config.CacheDir()
 	if err != nil {
 		return "", err
 	}

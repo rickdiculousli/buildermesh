@@ -14,7 +14,11 @@ if [ -n "$FAKE_PLUGIN_FAIL" ]; then
   done
 fi
 if [ "$1" = plugin ] && [ "$2" = list ]; then
-  printf '%s\n' "${FAKE_CODEX_LIST:-{\"installed\":[]\}}"
+  # The default is set apart: a quoted } inside ${...:-...} keeps its
+  # backslash in some shells (macOS's sh) and not in others (dash).
+  list=$FAKE_CODEX_LIST
+  [ -n "$list" ] || list='{"installed":[]}'
+  printf '%s\n' "$list"
 elif [ "$1" = plugin ] && [ "$2" = add ]; then
   printf '{"version":"%s"}\n' "$FAKE_CODEX_ADD_VERSION"
 fi

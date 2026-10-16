@@ -124,11 +124,15 @@ type HostsConfig struct {
 	PushModes []string `toml:"push_modes"`
 }
 
-// KeyStoreKind is [hosts] key_store, else keychain on macOS and file
+// KeyStoreKind is [hosts] key_store, else $BMESH_KEY_STORE (tests set it,
+// so no test reaches the real Keychain), else keychain on macOS and file
 // elsewhere.
 func (h HostsConfig) KeyStoreKind() string {
 	if h.KeyStore != "" {
 		return h.KeyStore
+	}
+	if k := os.Getenv("BMESH_KEY_STORE"); k == "keychain" || k == "file" {
+		return k
 	}
 	if goos == "darwin" {
 		return "keychain"
@@ -289,6 +293,18 @@ func DefaultStore() string {
 		d = filepath.Join(d, ".cache")
 	}
 	return filepath.Join(d, "bmesh", "jetstream")
+}
+
+// CacheDir is where bmesh keeps what it writes for reading later (briefs,
+// prompts, a claude session's files): $XDG_CACHE_HOME when it is an
+// absolute path, on every OS, else os.UserCacheDir. Tests set
+// XDG_CACHE_HOME to keep out of the box's own cache, which on macOS
+// os.UserCacheDir would not.
+func CacheDir() (string, error) {
+	if d := os.Getenv("XDG_CACHE_HOME"); filepath.IsAbs(d) {
+		return d, nil
+	}
+	return os.UserCacheDir()
 }
 
 func dirExists(p string) bool {

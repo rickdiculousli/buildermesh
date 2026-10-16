@@ -165,8 +165,9 @@ func TestIdeateStartsARoundWithTwoChildren(t *testing.T) {
 		!strings.Contains(st, "round") || !strings.Contains(st, "engineer") {
 		t.Fatalf("status:\n%s", st)
 	}
-	// A second round counts on from the nodes bucket.
-	out, errs, code = runCLI(t, nil, "ideate", "demo")
+	// A second round counts on from the nodes bucket (round 1 is still
+	// open, so it takes --force).
+	out, errs, code = runCLI(t, nil, "ideate", "demo", "--force")
 	if code != 0 || !strings.Contains(out, `"path":"demo-round-2"`) {
 		t.Fatalf("second round: %d %q %q", code, out, errs)
 	}
