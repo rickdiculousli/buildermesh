@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/runner"
 )
 
 const nodeUsage = "usage: bmesh node forget <path> [--worktree]"
@@ -18,8 +21,9 @@ func (a *app) cmdNode(args []string) error {
 	return a.cmdNodeForget(args[1:])
 }
 
-// cmdNodeForget deletes a done or blocked node: its registration, state,
-// runner sample and inbox consumer. With --worktree it first removes the
+// cmdNodeForget deletes a done or blocked node, or an idle one that never
+// reported and whose thread isn't running: its registration, state, runner
+// sample and inbox consumer. With --worktree it first removes the
 // node's clean worktree and merged branch on this host.
 func (a *app) cmdNodeForget(args []string) error {
 	fs := a.flags("node forget")
@@ -58,7 +62,13 @@ func (a *app) cmdNodeForget(args []string) error {
 		}
 		return "idle"
 	}
-	if s := stateOf(path); s != "done" && s != "blocked" {
+	switch s := stateOf(path); s {
+	case "done", "blocked":
+	case "idle":
+		if err := a.idleForgettable(ctx, n); err != nil {
+			return err
+		}
+	default:
 		return fail(exitRefused, "refused: %s is %s; only a done or blocked node is forgotten", path, s)
 	}
 	nodes, err := mesh.ListNodes(ctx, a.client)
@@ -85,6 +95,47 @@ func (a *app) cmdNodeForget(args []string) error {
 	fmt.Fprintf(a.stdout, "forgot %s\n", path)
 	if kept != "" {
 		fmt.Fprintf(a.stdout, "worktree %s kept\n", kept)
+	}
+	return nil
+}
+
+// idleForgettable refuses (exit 3) an idle node that published an event of
+// its own, whose thread isn't this box's runner's, or whose runner, asked
+// once, can't say the thread is known and not running: a lead between its
+// runner start and its first started is idle with no events too.
+func (a *app) idleForgettable(ctx context.Context, n mesh.Node) error {
+	hist, err := mesh.History(ctx, a.client, "bm."+n.Path+".*", time.Time{})
+	if err != nil {
+		return err
+	}
+	for _, m := range hist {
+		var ev mesh.Event
+		if json.Unmarshal(m.Data, &ev) == nil && ev.From == n.Path {
+			return fail(exitRefused, "refused: %s is idle but published %s; only an idle node that never reported is forgotten", n.Path, ev.Event)
+		}
+	}
+	if n.Host != a.cfg.HostName() {
+		return fail(exitRefused, "refused: %s is idle and its thread is on %s; run it on %s", n.Path, n.Host, n.Host)
+	}
+	if n.Runner.Kind != a.cfg.Runner.Kind {
+		return fail(exitRefused, "refused: %s is idle and its runner is %q, not this box's %s; run it on %s", n.Path, n.Runner.Kind, a.cfg.Runner.Kind, n.Host)
+	}
+	mayRun := fail(exitRefused, "refused: %s is idle and its thread may be running; stop it first", n.Path)
+	if n.Runner.Thread == "" {
+		return mayRun
+	}
+	r, err := runner.New(a.cfg)
+	if err != nil {
+		return err
+	}
+	st, err := r.Status(ctx, n.Runner.Thread)
+	switch {
+	case err != nil:
+		return fail(exitRefused, "refused: %s is idle and its thread may be running (%v); stop it first", n.Path, err)
+	case !st.Known:
+		return mayRun
+	case st.Running:
+		return fail(exitRefused, "refused: %s is idle and its thread %s is running; stop it first", n.Path, n.Runner.Thread)
 	}
 	return nil
 }

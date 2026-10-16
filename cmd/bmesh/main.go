@@ -48,7 +48,8 @@ commands:
   thread-status [<path>] [--json]          print a node's state
   mesh-status [--all] [--json]             every node's state, runner and unread count; nodes done longer than
                                            [status] keep_done are counted, not listed, unless --all (or --json)
-  node forget <path> [--worktree]          delete a done or blocked node, its state and inbox; --worktree also
+  node forget <path> [--worktree]          delete a done or blocked node (or an idle one that never reported and
+                                           whose thread isn't running), its state and inbox; --worktree also
                                            removes its clean worktree and merged branch on this host
   watch --nodes a,b [--since T] [--timeout D]
                                            follow nodes until all are done, blocked or silent
