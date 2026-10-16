@@ -56,6 +56,34 @@ func (a *app) cmdInit(args []string) error {
 	}
 	wrote := []string{}
 
+	// The repo to register is checked before anything is written: a repo
+	// without main, or a name whose node token another row has, is refused.
+	reposPath := config.ReposPath(cfgPath)
+	var register *config.Repo
+	if r, ok := cwdRepo(); ok && !*noRepo {
+		if !config.ValidName(r.Name) {
+			fmt.Fprintf(a.stdout, "not registering %s: a registry name matches %s (rename the directory, or add a row to %s by hand)\n",
+				r.Path, config.NamePattern, reposPath)
+		} else {
+			repos, err := config.LoadRepos(reposPath)
+			if err != nil {
+				return err
+			}
+			if _, have := repos[r.Name]; have && !*force {
+				fmt.Fprintf(a.stdout, "%s is already in %s\n", r.Name, reposPath)
+			} else {
+				if !hasMain(r.Path) {
+					return errNoMain(r.Path)
+				}
+				repos[r.Name] = r
+				if err := tokenClash(repos); err != nil {
+					return err
+				}
+				register = &r
+			}
+		}
+	}
+
 	_, exists := statOK(cfgPath)
 	if exists && !*force {
 		fmt.Fprintf(a.stdout, "%s exists; leaving it as it is (--force rewrites it)\n", cfgPath)
@@ -95,24 +123,12 @@ func (a *app) cmdInit(args []string) error {
 		wrote = append(wrote, cfgPath)
 	}
 
-	reposPath := config.ReposPath(cfgPath)
-	if !*noRepo {
-		if r, ok := cwdRepo(); ok && !config.ValidName(r.Name) {
-			fmt.Fprintf(a.stdout, "not registering %s: a registry name matches %s (rename the directory, or add a row to %s by hand)\n",
-				r.Path, config.NamePattern, reposPath)
-		} else if ok {
-			repos, err := config.LoadRepos(reposPath)
-			if err != nil {
+	if r := register; r != nil {
+		if strings.HasPrefix(ask.choice(fmt.Sprintf("Register %s (%s) in %s? [Y/n]", r.Name, r.Path, reposPath), "y"), "y") {
+			if err := config.WriteRepo(reposPath, *r); err != nil {
 				return err
 			}
-			if _, have := repos[r.Name]; have && !*force {
-				fmt.Fprintf(a.stdout, "%s is already in %s\n", r.Name, reposPath)
-			} else if strings.HasPrefix(ask.choice(fmt.Sprintf("Register %s (%s) in %s? [Y/n]", r.Name, r.Path, reposPath), "y"), "y") {
-				if err := config.WriteRepo(reposPath, r); err != nil {
-					return err
-				}
-				wrote = append(wrote, reposPath)
-			}
+			wrote = append(wrote, reposPath)
 		}
 	}
 
@@ -127,6 +143,10 @@ func (a *app) cmdInit(args []string) error {
 		}
 		enable = how
 	}
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return err
+	}
 
 	flag := config.SetupFlag(cfgPath)
 	if err := os.WriteFile(flag, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644); err != nil {
@@ -135,6 +155,7 @@ func (a *app) cmdInit(args []string) error {
 	for _, w := range wrote {
 		fmt.Fprintf(a.stdout, "wrote %s\n", w)
 	}
+	printSettings(a.stdout, cfg, installedService())
 	fmt.Fprintf(a.stdout, "set up (%s). Next:\n", flag)
 	if len(enable) > 0 {
 		for _, l := range enable {
@@ -194,20 +215,21 @@ func statOK(p string) (os.FileInfo, bool) {
 }
 
 // configBody is the config.toml init writes: the hub (embedded when hub is
-// empty) and the runner; everything else keeps its default.
+// empty) and the runner, each with what it means as a comment beside it;
+// everything else keeps its default.
 func configBody(hub, tokenFile, kind string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# bmesh config, written by bmesh init on %s. Keys not set here keep the defaults (README, Config).\n", time.Now().UTC().Format("2006-01-02"))
 	b.WriteString("[mesh]\n")
 	if hub == "" {
-		b.WriteString("nats = \"\"                 # \"\" = the embedded hub, started by bmesh serve on this box\n")
+		fmt.Fprintf(&b, "nats = \"\"   # \"\" = the hub embedded on [mesh] listen: %s\n", whyEmbedded)
 	} else {
-		fmt.Fprintf(&b, "nats = %q\n", hub)
+		fmt.Fprintf(&b, "nats = %q   # %s\n", hub, whyHub)
 		if tokenFile != "" {
-			fmt.Fprintf(&b, "token_file = %q\n", tokenFile)
+			fmt.Fprintf(&b, "token_file = %q   # %s\n", tokenFile, whyToken)
 		}
 	}
-	fmt.Fprintf(&b, "[runner]\nkind = %q\n", kind)
+	fmt.Fprintf(&b, "[runner]\nkind = %q   # %s\n", kind, whyRunner(kind))
 	return b.String()
 }
 
@@ -262,13 +284,13 @@ func writeService(configDir string) (string, []string, error) {
 			env += "\n" + k + "=" + v
 		}
 	}
+	file, err := serviceFile()
+	if err != nil {
+		return "", nil, err
+	}
 	switch runtime.GOOS {
 	case "linux":
-		ucd, err := os.UserConfigDir()
-		if err != nil {
-			return "", nil, err
-		}
-		unit := filepath.Join(ucd, "systemd", "user", "bmesh.service")
+		unit := file
 		body := "[Unit]\nDescription=buildermesh daemon (bmesh serve)\nAfter=network-online.target\n\n[Service]\n" +
 			"ExecStart=" + exe + " serve\nRestart=always\nRestartSec=5\n" +
 			"KillMode=process\n" + // a restart must not take the claude turns the daemon started with it
@@ -287,7 +309,7 @@ func writeService(configDir string) (string, []string, error) {
 		if err != nil {
 			return "", nil, err
 		}
-		plist := filepath.Join(home, "Library", "LaunchAgents", "com.buildermesh.bmesh.plist")
+		plist := file
 		logDir := filepath.Join(home, "Library", "Logs")
 		body := `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -313,6 +335,26 @@ func writeService(configDir string) (string, []string, error) {
 		return plist, []string{"launchctl bootstrap gui/$(id -u) " + plist + "   # the daemon; log in ~/Library/Logs/bmesh.log"}, nil
 	}
 	return "", []string{"bmesh serve        # no service file for " + runtime.GOOS + "; keep this running"}, nil
+}
+
+// serviceFile is where init --service writes the unit on this OS: a
+// systemd user unit on Linux, a launchd agent on macOS; "" elsewhere.
+func serviceFile() (string, error) {
+	switch runtime.GOOS {
+	case "linux":
+		ucd, err := os.UserConfigDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(ucd, "systemd", "user", "bmesh.service"), nil
+	case "darwin":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, "Library", "LaunchAgents", "com.buildermesh.bmesh.plist"), nil
+	}
+	return "", nil
 }
 
 // plistEnv renders KEY=value lines as launchd environment entries.

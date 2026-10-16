@@ -177,3 +177,154 @@ func TestCommandsRefuseUntilSetUp(t *testing.T) {
 		t.Fatalf("help %d", code)
 	}
 }
+
+// A repo with no main is refused before anything is written.
+func TestInitRefusesARepoWithoutMain(t *testing.T) {
+	root := t.TempDir()
+	cfg := filepath.Join(root, "cfg", "config.toml")
+	repo := filepath.Join(root, "old")
+	meshtest.Git(t, root, "init", "-b", "master", repo)
+	meshtest.CommitFiles(t, repo, map[string]string{"README": "x\n"})
+	out, errs, code := runInit(t, cfg, repo, "", "init", "--runner", "claude")
+	if code != 3 || !strings.Contains(errs, repo+" has no main branch; bmesh builds on main (rename the branch") {
+		t.Fatalf("%d %q %q", code, out, errs)
+	}
+	if _, err := os.Stat(filepath.Dir(cfg)); !os.IsNotExist(err) {
+		t.Fatalf("init wrote something: %v", err)
+	}
+	// Origin as fetched decides once it has been fetched: a main only
+	// on this box is not origin's.
+	origin := filepath.Join(root, "origin.git")
+	meshtest.Git(t, root, "init", "-q", "--bare", origin)
+	meshtest.Git(t, repo, "remote", "add", "origin", origin)
+	meshtest.Git(t, repo, "push", "-q", "origin", "master")
+	meshtest.Git(t, repo, "fetch", "-q", "origin")
+	meshtest.Git(t, repo, "branch", "main")
+	if _, errs, code := runInit(t, cfg, repo, "", "init", "--runner", "claude"); code != 3 || !strings.Contains(errs, "has no main branch") {
+		t.Fatalf("origin without main: %d %q", code, errs)
+	}
+	meshtest.Git(t, repo, "push", "-q", "origin", "main")
+	meshtest.Git(t, repo, "fetch", "-q", "origin")
+	if out, errs, code := runInit(t, cfg, repo, "", "init", "--runner", "claude"); code != 0 {
+		t.Fatalf("origin with main: %d %q %q", code, out, errs)
+	}
+	// --no-repo sets up without it.
+	cfg2 := filepath.Join(root, "two", "config.toml")
+	meshtest.Git(t, root, "init", "-b", "master", filepath.Join(root, "older"))
+	if out, errs, code := runInit(t, cfg2, filepath.Join(root, "older"), "", "init", "--runner", "claude", "--no-repo"); code != 0 {
+		t.Fatalf("--no-repo: %d %q %q", code, out, errs)
+	}
+}
+
+// A name whose node token a registered row has is refused.
+func TestInitRefusesANameOfATakenToken(t *testing.T) {
+	root := t.TempDir()
+	cfg := filepath.Join(root, "cfg", "config.toml")
+	repo := filepath.Join(root, "MyApp")
+	meshtest.Git(t, root, "init", "-b", "main", repo)
+	os.MkdirAll(filepath.Dir(cfg), 0o755)
+	os.WriteFile(config.ReposPath(cfg), []byte("[repos.myapp]\npath = \"/elsewhere\"\n"), 0o644)
+	_, errs, code := runInit(t, cfg, repo, "", "init", "--runner", "claude")
+	if code != 3 || !strings.Contains(errs, "repos MyApp and myapp are both myapp in node paths") {
+		t.Fatalf("%d %q", code, errs)
+	}
+}
+
+// settingsLines is init's settings block, by setting name.
+func settingsLines(t *testing.T, out string) map[string]string {
+	t.Helper()
+	_, block, ok := strings.Cut(out, "What this box is set to:\n")
+	if !ok {
+		t.Fatalf("no settings block:\n%s", out)
+	}
+	block, _, _ = strings.Cut(block, "set up (")
+	lines := map[string]string{}
+	for _, l := range strings.Split(strings.TrimRight(block, "\n"), "\n") {
+		name, rest, ok := strings.Cut(strings.TrimPrefix(l, "  "), ": ")
+		if !ok || !strings.HasPrefix(l, "  ") {
+			t.Fatalf("not a setting line: %q", l)
+		}
+		lines[name] += rest
+	}
+	return lines
+}
+
+// The block names every setting with its key, read back from the config
+// in effect: what init wrote, and the defaults it didn't.
+func TestInitPrintsWhatTheBoxIsSetTo(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "xdg")) // no service file
+	cfg := filepath.Join(root, "cfg", "config.toml")
+	repo := filepath.Join(root, "app")
+	meshtest.Git(t, root, "init", "-b", "main", repo)
+	out, errs, code := runInit(t, cfg, repo, "", "init", "--runner", "claude")
+	if code != 0 {
+		t.Fatalf("%d %q %q", code, out, errs)
+	}
+	if !strings.Contains(out, "What this box is set to:\n") || strings.Index(out, "What this box") > strings.Index(out, "Next:") {
+		t.Fatalf("block not before Next:\n%s", out)
+	}
+	c, err := config.Load(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(lines map[string]string, want map[string][]string) {
+		t.Helper()
+		for name, parts := range want {
+			l, ok := lines[name]
+			if !ok {
+				t.Errorf("no %s line", name)
+				continue
+			}
+			for _, p := range parts {
+				if !strings.Contains(l, p) {
+					t.Errorf("%s: %q lacks %q", name, l, p)
+				}
+			}
+		}
+	}
+	check(settingsLines(t, out), map[string][]string{
+		"setup":     {"single box", "([mesh] nats)"},
+		"hub":       {"embedded on " + c.Mesh.Listen + ". bmesh serve runs the message hub itself; nothing to install ([mesh] nats, listen)"},
+		"runner":    {"claude. Each lead and proposal round is a claude session started for you ([runner] kind)"},
+		"repo":      {"app at " + repo, "(repos.toml)"},
+		"worktrees": {c.Expand(c.Runner.Worktrees), "([runner] worktrees)"},
+		"map":       {"http://" + c.Serve.Listen + "/. A page showing every running node; open it while bmesh serve runs ([serve] listen)"},
+		"proposers": {c.Models.Proposer + " at " + c.Models.ProposerEffort, "([models] proposer, proposer_effort)"},
+		"leads":     {c.Models.Lead + " at " + c.Models.LeadEffort, "([models] lead, lead_effort)"},
+		"executors": {"(bmesh executor new --model)"},
+		"updates":   {"off", "([update] repo)"},
+		"service":   {"none", "(bmesh init --service)"},
+		"routines":  {"on. This box runs any pushed commit's routine commands for every box on the mesh ([runner] checkouts)"},
+	})
+	// config.toml explains each key it wrote.
+	b, _ := os.ReadFile(cfg)
+	for _, want := range []string{"nats = \"\"   # \"\" = the hub embedded on [mesh] listen: bmesh serve runs the message hub itself",
+		"kind = \"claude\"   # Each lead and proposal round is a claude session"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("config lacks %q:\n%s", want, b)
+		}
+	}
+
+	// On an existing config, the block is what is there, defaults and all.
+	os.WriteFile(cfg, []byte("[mesh]\nnats = \"nats://u:secret@hub:4222\"\ntoken_file = \"/hub.token\"\n[serve]\nlisten = \"0.0.0.0:9000\"\n"+
+		"[runner]\nkind = \"t3\"\ncheckouts = \"\"\n[models]\nlead = \"claude-sonnet-5-5\"\nlead_effort = \"\"\n[update]\nrepo = \"app\"\n"), 0o600)
+	out, errs, code = runInit(t, cfg, repo, "", "init")
+	if code != 0 || !strings.Contains(out, "exists; leaving it") {
+		t.Fatalf("%d %q %q", code, out, errs)
+	}
+	lines := settingsLines(t, out)
+	check(lines, map[string][]string{
+		"setup":     {"several boxes", "([mesh] nats)"},
+		"hub":       {"nats://u:xxxxx@hub:4222, token from /hub.token", "([mesh] nats, token_file)"},
+		"runner":    {"t3. Each lead and proposal round is a thread in this box's T3 Code ([runner] kind)"},
+		"worktrees": {"T3 keeps its own threads' checkouts"},
+		"map":       {"http://127.0.0.1:9000/"},
+		"leads":     {"claude-sonnet-5-5 at the runner's default effort"},
+		"updates":   {"from app", "([update] repo)"},
+		"routines":  {"off", "([runner] checkouts)"},
+	})
+	if strings.Contains(out, "secret") {
+		t.Fatalf("the hub's password was printed:\n%s", out)
+	}
+}
