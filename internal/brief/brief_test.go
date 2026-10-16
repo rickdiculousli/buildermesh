@@ -71,9 +71,9 @@ func TestBuildBriefEmbedsSpecAndNode(t *testing.T) {
 	}
 	for _, s := range []string{"## Opportunity", "docs/proposals/012-a.md", "Your node is `pb-012`.", "{{nope}}",
 		"`bmesh --node pb-012 routine run verify`", "`bmesh --node pb-012 result record review --ok|--fail --model <m>`",
-		"`bmesh --node pb-012 spec verified --write`", "bmesh spec set --repo . --id 012 --status done --from building",
+		"`bmesh --node pb-012 land`", "sets spec 012 `done` with `merged` and the branch your worktree is on",
 		"follow the `buildermesh:lead` skill", "## Landing it", "landing the branch your worktree is on (`git branch --show-current`), never the name in your brief",
-		"adding `--field branch=<that name>` when the spec's `branch` field is missing or differs from `git branch --show-current`", "`git push origin HEAD`", "pushed to `example/pb`",
+		"`git push origin HEAD`", "pushed to `example/pb`",
 		"`npm test`"} {
 		if !strings.Contains(out, s) {
 			t.Errorf("missing %q", s)
@@ -182,7 +182,7 @@ func TestLeadSkillLandsTheWorktreesBranch(t *testing.T) {
 		t.Fatal("no section 7")
 	}
 	sec, _, _ = strings.Cut(sec, "\n## ")
-	for _, s := range []string{"`git branch --show-current`", "never the name in your brief", "--field branch=<that name>"} {
+	for _, s := range []string{"`bmesh land`", "`git branch --show-current`", "never the name in your brief"} {
 		if !strings.Contains(sec, s) {
 			t.Errorf("lead skill §7 missing %q", s)
 		}
