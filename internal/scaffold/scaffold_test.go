@@ -168,13 +168,24 @@ func TestTargetsCheckThenWriteIsStable(t *testing.T) {
 	if err != nil || Plan(again) != "" {
 		t.Fatalf("not idempotent: %v\n%s", err, Plan(again))
 	}
-	// An existing kind is left alone, even when it differs from the example.
+	// An existing kind is left alone, even when it differs from the example,
+	// but for the verify kind's command, which follows the row.
+	if err := os.WriteFile(filepath.Join(repo, ".bmesh", "routines", "review.toml"), []byte("model = \"mine\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	kindPath := filepath.Join(repo, ".bmesh", "routines", "verify.toml")
-	if err := os.WriteFile(kindPath, []byte("command = \"mine\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(kindPath, []byte("# mine\nmode = \"inline\"\ncommand = \"mine\"\ntimeout = \"5m\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	again, _, _ = Targets(repo, pb, snippet)
-	if Plan(again) != "" {
+	if d := Plan(again); d != "--- a/.bmesh/routines/verify.toml\n+++ b/.bmesh/routines/verify.toml\n@@ -1,4 +1,4 @@\n"+
+		" # mine\n mode = \"inline\"\n-command = \"mine\"\n+command = \"npm test\"\n timeout = \"5m\"\n" {
+		t.Fatal(d)
+	}
+	if _, err := Write(repo, again); err != nil {
+		t.Fatal(err)
+	}
+	if again, _, _ = Targets(repo, pb, snippet); Plan(again) != "" {
 		t.Fatal(Plan(again))
 	}
 	// A new verify text or snippet rewrites only the block.
@@ -262,5 +273,85 @@ func TestApplyMigratesLegacyBlocksInPlace(t *testing.T) {
 	mixed := "<!-- command-center:done -->\nx\n<!-- /bmesh:done -->\n"
 	if out := Apply(mixed, "D", "P", "M"); !strings.HasPrefix(out, mixed) {
 		t.Fatalf("a mismatched pair was rewritten:\n%s", out)
+	}
+}
+
+func TestFollowVerify(t *testing.T) {
+	for _, c := range []struct{ name, text, want, err string }{
+		{"follows already", "mode = \"inline\"\ncommand = 'npm test'\n", "mode = \"inline\"\ncommand = 'npm test'\n", ""},
+		{"rewritten", "command   = \"old\" # was\nmode = \"inline\"\n", "command = \"npm test\"\nmode = \"inline\"\n", ""},
+		{"a model kind", "model = \"opus\"\n", "model = \"opus\"\n", ""},
+		{"multi-line", "command = \"\"\"\nold\n\"\"\"\n", "", "not on one line"},
+		{"not a kind", "command = \n", "", "verify.toml"},
+	} {
+		got, err := FollowVerify("verify.toml", c.text, pb)
+		if got != c.want || (c.err == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), c.err)) {
+			t.Errorf("%s: %q, %v", c.name, got, err)
+		}
+	}
+}
+
+func TestDriftIsTheBranchsOwn(t *testing.T) {
+	repo := t.TempDir()
+	row := config.Repo{Name: "pb", Mode: "ship", Verify: []string{"npm test"}}
+	targets, _, err := Targets(repo, row, snippet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Write(repo, targets); err != nil {
+		t.Fatal(err)
+	}
+	kindPath := filepath.Join(repo, ".bmesh", "routines", "verify.toml")
+	verify := "mode = \"inline\"\ncommand = \"npm test\"\n"
+	writeTest(t, kindPath, verify)
+	agents, _ := os.ReadFile(filepath.Join(repo, Agents))
+	base := map[string]string{Agents: string(agents), ".bmesh/routines/verify.toml": verify}
+	at := func(rel string) (string, bool, error) { s, ok := base[rel]; return s, ok, nil }
+
+	if d, ok, err := Drift(repo, row, snippet, true, at); d != "" || !ok || err != nil {
+		t.Fatalf("a clean branch: %q %v %v", d, ok, err)
+	}
+	// The row moved; the branch touched nothing: not its drift.
+	moved := row
+	moved.Verify = []string{"npm test", "npm run lint"}
+	if d, _, _ := Drift(repo, moved, snippet, true, at); d != "" {
+		t.Fatalf("untouched files drifted: %s", d)
+	}
+	// Text outside the blocks is the repo's own.
+	writeTest(t, filepath.Join(repo, Agents), "# Mine\n\n"+string(agents))
+	if d, _, _ := Drift(repo, row, snippet, true, at); d != "" {
+		t.Fatalf("outside the blocks: %s", d)
+	}
+	// The branch's own edit of a block or of the verify command is drift.
+	writeTest(t, filepath.Join(repo, Agents), strings.ReplaceAll(string(agents), "`npm test`", "`npm test`, `npm run lint`"))
+	writeTest(t, kindPath, "mode = \"inline\"\ncommand = \"npm test && npm run lint\"\n")
+	d, _, _ := Drift(repo, row, snippet, true, at)
+	for _, w := range []string{"--- a/AGENTS.md", "--- a/.bmesh/routines/verify.toml", "+command = \"npm test\""} {
+		if !strings.Contains(d, w) {
+			t.Errorf("drift lacks %q:\n%s", w, d)
+		}
+	}
+	// Unless the row says the same.
+	if d, _, _ := Drift(repo, moved, snippet, true, at); d != "" {
+		t.Fatalf("following the row: %s", d)
+	}
+	// Without agents only the verify kind is compared.
+	if d, _, _ := Drift(repo, row, snippet, false, at); strings.Contains(d, "AGENTS.md") || !strings.Contains(d, "verify.toml") {
+		t.Fatalf("without agents: %s", d)
+	}
+	// A repo with no bmesh: marker was never scaffolded.
+	writeTest(t, filepath.Join(repo, Agents), "# Mine\n")
+	if d, ok, err := Drift(repo, row, snippet, true, at); d != "" || ok || err != nil {
+		t.Fatalf("unscaffolded: %q %v %v", d, ok, err)
+	}
+}
+
+func writeTest(t *testing.T, p, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -163,8 +163,9 @@ func (t Target) Changed() bool { return !t.Exists || t.Current != t.Want }
 
 // Targets is every file scaffold would write for the row in the repo at
 // repoPath: AGENTS.md (created when missing), the proposals README and
-// .gitkeep when missing, and a kind file for each of the row's routines
-// that the repo lacks. A routine with no embedded example is an error; a
+// .gitkeep when missing, a kind file for each of the row's routines that
+// the repo lacks, and an existing verify kind whose command is not the
+// row's verify commands. A routine with no embedded example is an error; a
 // verify kind for a row with no verify commands is skipped and named in
 // skipped.
 func Targets(repoPath string, r config.Repo, snippet string) (targets []Target, skipped []string, err error) {
@@ -215,7 +216,138 @@ func Targets(repoPath string, r config.Repo, snippet string) (targets []Target, 
 		t.Want = text
 		targets = append(targets, t)
 	}
+	if len(r.Verify) > 0 {
+		t, err := read(repoPath, verifyRel(rc))
+		if err != nil {
+			return nil, nil, err
+		}
+		if t.Exists {
+			if t.Want, err = FollowVerify(t.Rel, t.Current, r); err != nil {
+				return nil, nil, err
+			}
+			if t.Changed() {
+				targets = append(targets, t)
+			}
+		}
+	}
 	return targets, skipped, nil
+}
+
+func verifyRel(rc kind.RepoConfig) string {
+	return filepath.ToSlash(filepath.Join(rc.RoutinesDir, "verify.toml"))
+}
+
+// commandRE is a kind file's command line, when it is on one line.
+var commandRE = regexp.MustCompile(`(?m)^command[ \t]*=.*$`)
+
+// FollowVerify is an existing verify kind's text (rel is its path, for the
+// error) with its command the row's verify commands joined with " && ", the
+// rest of the file kept; text itself when the command already reads so, or
+// when the kind runs a model rather than a command. A command not on one
+// line it can rewrite is an error naming the file.
+func FollowVerify(rel, text string, r config.Repo) (string, error) {
+	want := strings.Join(r.Verify, " && ")
+	if cmd, err := verifyCommand(text); err != nil {
+		return "", fmt.Errorf("%s: %w", rel, err)
+	} else if cmd == "" || cmd == trimCommand(want) {
+		return text, nil
+	}
+	if n := len(commandRE.FindAllStringIndex(text, -1)); n == 1 {
+		out := commandRE.ReplaceAllLiteralString(text, "command = "+tomlString(want))
+		if cmd, err := verifyCommand(out); err == nil && cmd == trimCommand(want) {
+			return out, nil
+		}
+	}
+	return "", fmt.Errorf("%s: its command is not on one line scaffold can rewrite; set it to the row's verify (%s) by hand", rel, want)
+}
+
+// verifyCommand is the command a verify kind's text runs, as the kind
+// loader reads it.
+func verifyCommand(text string) (string, error) {
+	k, err := kind.Parse("verify", []byte(text))
+	if err != nil {
+		return "", err
+	}
+	return k.Command, nil
+}
+
+// trimCommand trims a command as the kind loader does.
+func trimCommand(s string) string { return strings.TrimRight(s, " \t\r\n;") }
+
+// Drift is the unified diff of the scaffolded text a branch changed that the
+// row doesn't write: AGENTS.md's marked blocks (when agents), and the verify
+// kind's command, each only when it differs from the base's (at reads a
+// repo-relative file there: its text and whether it exists). So a row or a
+// snippet that moved under an untouched file is not the branch's drift, and
+// a file scaffold would create is not drift at all. A repo whose AGENTS.md
+// has no bmesh: marker was never scaffolded: scaffolded is false and
+// nothing is compared.
+func Drift(repoPath string, r config.Repo, snippet string, agents bool, at func(rel string) (string, bool, error)) (diff string, scaffolded bool, err error) {
+	cur, err := read(repoPath, Agents)
+	if err != nil {
+		return "", false, err
+	}
+	if !cur.Exists || !strings.Contains(cur.Current, "<!-- "+MarkerPrefix) {
+		return "", false, nil
+	}
+	var drift []Target
+	if agents {
+		base, _, err := at(Agents)
+		if err != nil {
+			return "", true, err
+		}
+		if blocks(base) != blocks(cur.Current) {
+			mesh, err := Mesh(r, snippet)
+			if err != nil {
+				return "", true, err
+			}
+			if cur.Want = Apply(cur.Current, Done(r), Proposals(), mesh); cur.Changed() {
+				drift = append(drift, cur)
+			}
+		}
+	}
+	rc, err := kind.LoadRepoConfig(repoPath)
+	if err != nil {
+		return "", true, err
+	}
+	t, err := read(repoPath, verifyRel(rc))
+	if err != nil {
+		return "", true, err
+	}
+	if t.Exists && len(r.Verify) > 0 {
+		base, ok, err := at(t.Rel)
+		if err != nil {
+			return "", true, err
+		}
+		was := ""
+		if ok {
+			was, _ = verifyCommand(base)
+		}
+		now, err := verifyCommand(t.Current)
+		if err != nil {
+			return "", true, fmt.Errorf("%s: %w", t.Rel, err)
+		}
+		if now != was {
+			if t.Want, err = FollowVerify(t.Rel, t.Current, r); err != nil {
+				return "", true, err
+			}
+			if t.Changed() {
+				drift = append(drift, t)
+			}
+		}
+	}
+	return Plan(drift), true, nil
+}
+
+// blocks is the text of text's marked blocks, the first of each name under
+// either prefix, in Blocks order.
+func blocks(text string) string {
+	var b strings.Builder
+	for _, name := range Blocks {
+		b.WriteString(blockRE(name).FindString(text))
+		b.WriteByte(0)
+	}
+	return b.String()
 }
 
 // Example is the embedded example kind, filled for the row: verify's

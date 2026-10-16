@@ -718,3 +718,117 @@ func TestLandAFixedReviewOnVerifyAlone(t *testing.T) {
 func gitQuiet(dir string, args ...string) error {
 	return exec.Command("git", append([]string{"-C", dir}, args...)...).Run()
 }
+
+// scaffoldLandRepo is newLandRepo with a ship row for it whose verify is
+// the verify kind's command, and main scaffolded from that row by bmesh
+// scaffold (committed and pushed), the branch rebased onto it.
+func scaffoldLandRepo(t *testing.T, c *mesh.Client, ctx context.Context) landRepo {
+	t.Helper()
+	r := newLandRepo(t)
+	writeLandRow(t, r, `"sh \"$HOOK\""`)
+	if out, errs, code := runCLI(t, nil, "scaffold", "repo"); code != 0 || !strings.Contains(out, "wrote AGENTS.md\n") {
+		t.Fatalf("scaffold: %d %q %q", code, out, errs)
+	}
+	if out, errs, code := runCLI(t, nil, "scaffold", "repo", "--check"); code != 0 || out != "" {
+		t.Fatalf("scaffold left drift: %d %q %q", code, out, errs)
+	}
+	meshtest.Git(t, r.repo, "add", "-A")
+	meshtest.Git(t, r.repo, "commit", "-m", "scaffold")
+	meshtest.Git(t, r.repo, "push", "-q", "origin", "main")
+	meshtest.Git(t, r.wt, "rebase", "-q", "main")
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	return r
+}
+
+// writeLandRow writes the registry with r's main checkout as ship row
+// "repo", verify the TOML array items given.
+func writeLandRow(t *testing.T, r landRepo, verify string) {
+	t.Helper()
+	writeRepos(t, "[repos.repo]\npath = \""+r.repo+"\"\nverify = ["+verify+"]\nroutines = [\"verify\"]\n")
+}
+
+func TestLandRefusesAVerifyKindTheRowDoesntWrite(t *testing.T) {
+	c, ctx := setup(t)
+	r := scaffoldLandRepo(t, c, ctx)
+	// The lead adds a command to the verify kind by hand.
+	writeFile(t, filepath.Join(r.wt, ".bmesh", "routines", "verify.toml"),
+		"mode = \"inline\"\ndeterministic = true\ncommand = \"sh \\\"$HOOK\\\" && true\"\n")
+	meshtest.Git(t, r.wt, "commit", "-qam", "verify by hand")
+	base := r.originMain(t)
+	out, errs, code := runCLI(t, as("app-012"), "land")
+	if code != 3 || errs != "bmesh: refused: the branch's scaffolded files differ from what bmesh scaffold writes from repo's row; "+
+		"the row's verify is the source: bmesh repos propose with the new verify, or restore the scaffolded files\n" {
+		t.Fatalf("land: %d\n%s\n%q", code, out, errs)
+	}
+	for _, w := range []string{"--- a/.bmesh/routines/verify.toml\n", "-command = \"sh \\\"$HOOK\\\" && true\"\n", "+command = \"sh \\\"$HOOK\\\"\"\n"} {
+		if !strings.Contains(out, w) {
+			t.Errorf("land's drift lacks %q:\n%s", w, out)
+		}
+	}
+	if strings.Contains(out, "verify ok") || r.originMain(t) != base {
+		t.Fatalf("land went on past the drift:\n%s", out)
+	}
+	// The same edit in AGENTS.md's blocks is refused with that diff too.
+	meshtest.Git(t, r.wt, "reset", "-q", "--hard", "HEAD~1")
+	agents := filepath.Join(r.wt, "AGENTS.md")
+	b, err := os.ReadFile(agents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, agents, strings.ReplaceAll(string(b), "`sh \"$HOOK\"`", "`sh \"$HOOK\"`, `true`"))
+	meshtest.Git(t, r.wt, "commit", "-qam", "AGENTS.md by hand")
+	out, errs, code = runCLI(t, as("app-012"), "land")
+	if code != 3 || !strings.Contains(errs, "the row's verify is the source") || !strings.Contains(out, "--- a/AGENTS.md\n") {
+		t.Fatalf("land: %d\n%s\n%q", code, out, errs)
+	}
+}
+
+func TestLandABranchThatFollowsTheRow(t *testing.T) {
+	c, ctx := setup(t)
+	r := scaffoldLandRepo(t, c, ctx)
+	// The row gained a command and the lead scaffolds the branch from it, in
+	// its worktree, the main checkout untouched.
+	writeLandRow(t, r, `"sh \"$HOOK\"", "true"`)
+	out, errs, code := runCLI(t, nil, "scaffold", r.wt)
+	if code != 0 || out != "wrote AGENTS.md\nwrote .bmesh/routines/verify.toml\n" {
+		t.Fatalf("scaffold the worktree: %d %q %q", code, out, errs)
+	}
+	if st := gitOut(t, "-C", r.repo, "status", "--porcelain"); st != "" {
+		t.Fatalf("the main checkout changed: %s", st)
+	}
+	meshtest.Git(t, r.wt, "add", "-A")
+	meshtest.Git(t, r.wt, "commit", "-qm", "rescaffold")
+	if b, _ := os.ReadFile(filepath.Join(r.wt, ".bmesh", "routines", "verify.toml")); !strings.Contains(string(b), `command = "sh \"$HOOK\" && true"`) {
+		t.Fatalf("scaffold didn't follow the row's verify:\n%s", b)
+	}
+	out, errs, code = runCLI(t, as("app-012"), "land")
+	if code != 0 || !strings.Contains(out, "scaffold: follows the row\n") || !strings.Contains(out, "\nlanded ") {
+		t.Fatalf("land: %d\n%s\n%q", code, out, errs)
+	}
+}
+
+func TestLandARowThatMovedUnderAnUntouchedBranch(t *testing.T) {
+	c, ctx := setup(t)
+	r := scaffoldLandRepo(t, c, ctx)
+	// A row published mid-build drifts files the branch never touched: not
+	// the branch's drift.
+	writeLandRow(t, r, `"sh \"$HOOK\"", "true"`)
+	out, errs, code := runCLI(t, as("app-012"), "land")
+	if code != 0 || !strings.Contains(out, "scaffold: follows the row\n") {
+		t.Fatalf("land: %d\n%s\n%q", code, out, errs)
+	}
+}
+
+func TestLandAnUnscaffoldedRepo(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	writeLandRow(t, r, `"sh \"$HOOK\""`)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	writeFile(t, filepath.Join(r.wt, ".bmesh", "routines", "verify.toml"),
+		"mode = \"inline\"\ndeterministic = true\ncommand = \"sh \\\"$HOOK\\\" && true\"\n")
+	meshtest.Git(t, r.wt, "commit", "-qam", "verify by hand")
+	out, errs, code := runCLI(t, as("app-012"), "land")
+	if code != 0 || !strings.Contains(out, "scaffold: not scaffolded, not checked\n") || !strings.Contains(out, "\nlanded ") {
+		t.Fatalf("land: %d\n%s\n%q", code, out, errs)
+	}
+}

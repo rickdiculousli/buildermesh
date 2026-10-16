@@ -24,6 +24,8 @@ In:
 - **The lead skill and the template say it.** The lead skill's verify section and the template's Verification guide line: a spec that changes the verify commands changes the row (through `repos propose`, named in the spec's "Needs from the operator") and lets `bmesh scaffold` write the files.
 - **Fix buildermesh's row**: named in Needs from the operator, since only the admin publishes it.
 
+As built: land compares only the scaffolded text the branch changed from `origin/main` (each marked block of AGENTS.md, the verify kind's command), so a row published mid-build, a newer snippet or another box's older binary never refuses a landing, and a tree of bmesh's own module has only its verify kind compared (its AGENTS.md is rendered by its own code, which the landing binary may predate). For `bmesh scaffold` to write the files, an existing verify kind's `command` now follows the row (the rest of the file kept), and `bmesh scaffold <worktree>` scaffolds a lead's worktree in place. That crosses scaffold and land, so it is reviewed as an M.
+
 Out: moving the source of truth from the row to `verify.toml` (the row also feeds briefs on boxes without the checkout), and letting leads publish the registry.
 
 Judge: opus, because land gains a refusal and a false one would block every landing on a scaffolded repo.
