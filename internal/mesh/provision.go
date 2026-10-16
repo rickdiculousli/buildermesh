@@ -25,7 +25,7 @@ func Provision(ctx context.Context, c *Client, keepResults time.Duration) error 
 		name    string
 		history uint8
 		ttl     time.Duration
-	}{{BucketNodes, 1, 0}, {BucketState, 16, 0}, {BucketRunner, 1, 0}, {BucketResults, 1, keepResults}, {BucketLeases, 1, 0}} {
+	}{{BucketNodes, 1, 0}, {BucketState, 16, 0}, {BucketRunner, 1, 0}, {BucketResults, 1, keepResults}, {BucketLeases, 1, 0}, {BucketJobs, 1, 0}} {
 		if _, err := c.JS.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{
 			Bucket: b.name, History: b.history, TTL: b.ttl, Storage: jetstream.FileStorage,
 		}); err != nil {

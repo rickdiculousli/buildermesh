@@ -35,7 +35,7 @@ func (r *routineSet) pooledInstance(g *group, p *pool, path string, goCh chan st
 	w.begin()
 	defer w.end()
 	for {
-		batch := collect(g, p, goCh)
+		batch := collect(g, p, path, goCh)
 		for i, dl := range batch {
 			if g.ctx.Err() != nil {
 				for _, rest := range batch[i:] {
@@ -72,8 +72,9 @@ func (r *routineSet) pooledInstance(g *group, p *pool, path string, goCh chan st
 // collect holds jobs from p until batch_idle passes after the last one, a
 // go arrives (taking whatever already waits in p), or a job with go
 // arrives. With nothing held it waits on. It returns nil when the group
-// stops, returning what it held to the inbox.
-func collect(g *group, p *pool, goCh <-chan struct{}) []*delivery {
+// stops, returning what it held to the inbox. What it holds is noted as
+// held by path.
+func collect(g *group, p *pool, path string, goCh <-chan struct{}) []*delivery {
 	select { // a go from before this batch is spent
 	case <-goCh:
 	default:
@@ -94,6 +95,7 @@ func collect(g *group, p *pool, goCh <-chan struct{}) []*delivery {
 			}
 			return nil
 		case dl := <-p.jobs:
+			dl.note(path, "held")
 			held = append(held, dl)
 			if dl.job.Go {
 				return held
@@ -107,6 +109,7 @@ func collect(g *group, p *pool, goCh <-chan struct{}) []*delivery {
 			for waiting := true; waiting; {
 				select {
 				case dl := <-p.jobs:
+					dl.note(path, "held")
 					held = append(held, dl)
 				default:
 					waiting = false
@@ -125,16 +128,17 @@ func collect(g *group, p *pool, goCh <-chan struct{}) []*delivery {
 // checkout of its own, removed afterwards with the instance's node.
 func (r *routineSet) freshRun(g *group, dl *delivery, model string) {
 	path := "routine." + g.k.Name + ".f" + freshID(dl.job.ID)
+	dl.note(path, "held")
 	release := r.claimPath(r.ctx, path)
 	if release == nil {
-		dl.abandon()
+		dl.nak()
 		return
 	}
 	defer release()
 	dir, err := r.ensureCheckout(g.repoPath, path)
 	if err != nil {
 		if r.ctx.Err() != nil {
-			dl.abandon()
+			dl.nak()
 			return
 		}
 		r.reply(dl, mesh.Reply{Output: err.Error(), By: path})

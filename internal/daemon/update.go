@@ -120,8 +120,10 @@ func (r *routineSet) checkUpdate(dir string) bool {
 	return true
 }
 
-// drain stops every kind's feed, so no further job is taken (held ones go
-// back to the inbox), and waits until every job in flight has replied.
+// drain stops every kind's feed, so no further job is taken, then ends the
+// loop's ctx, killing every running job's process group, and waits until
+// every job it held or ran has gone back to the inbox (NAK), for the
+// restarted daemon to take at once.
 func (r *routineSet) drain() {
 	r.mu.Lock()
 	for name, f := range r.feeds {
@@ -130,5 +132,6 @@ func (r *routineSet) drain() {
 	}
 	r.drained = true
 	r.mu.Unlock()
+	r.cancel()
 	r.wg.Wait()
 }

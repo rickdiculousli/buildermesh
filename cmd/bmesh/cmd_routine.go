@@ -45,14 +45,15 @@ func (a *app) cmdRoutine(args []string) error {
 // routineRow is one kind as list and status print it. A kind seen only in
 // the mesh has no Mode.
 type routineRow struct {
-	Kind          string          `json:"kind"`
-	Mode          string          `json:"mode"`
-	Deterministic bool            `json:"deterministic"`
-	Command       string          `json:"command,omitempty"`
-	Models        []string        `json:"models,omitempty"`
-	Instances     int             `json:"instances"`
-	Depth         int             `json:"depth"`
-	Members       []routineMember `json:"members,omitempty"`
+	Kind          string           `json:"kind"`
+	Mode          string           `json:"mode"`
+	Deterministic bool             `json:"deterministic"`
+	Command       string           `json:"command,omitempty"`
+	Models        []string         `json:"models,omitempty"`
+	Instances     int              `json:"instances"`
+	Depth         int              `json:"depth"`
+	Members       []routineMember  `json:"members,omitempty"`
+	Jobs          []mesh.QueuedJob `json:"jobs,omitempty"`
 }
 
 type routineMember struct {
@@ -118,13 +119,19 @@ func (a *app) routineRows(ctx context.Context, names []string, files map[string]
 		if r.Depth, err = mesh.Depth(ctx, a.client, name); err != nil {
 			return nil, err
 		}
+		if members {
+			if r.Jobs, err = mesh.KindJobs(ctx, a.client, name); err != nil {
+				return nil, err
+			}
+		}
 		rows = append(rows, r)
 	}
 	return rows, nil
 }
 
 // printRows prints one JSON object per row, or a table; status adds a line
-// per instance.
+// per instance, then a table of the kinds' unanswered jobs when there are
+// any.
 func (a *app) printRows(rows []routineRow, members bool) error {
 	if a.json {
 		for _, r := range rows {
@@ -151,6 +158,24 @@ func (a *app) printRows(rows []routineRow, members bool) error {
 		for _, m := range r.Members {
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", head, m.Path, m.State, dash(m.Model))
 		}
+	}
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	var jobs []string
+	for _, r := range rows {
+		for _, j := range r.Jobs {
+			jobs = append(jobs, fmt.Sprintf("%s\t%s\t%s\t%s\t%s\n", j.ID, r.Kind, j.State, dash(j.Holder), j.From))
+		}
+	}
+	if len(jobs) == 0 {
+		return nil
+	}
+	fmt.Fprintln(a.stdout)
+	tw = tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "JOB\tKIND\tSTATE\tHOLDER\tFROM")
+	for _, l := range jobs {
+		fmt.Fprint(tw, l)
 	}
 	return tw.Flush()
 }
