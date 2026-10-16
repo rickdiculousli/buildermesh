@@ -306,3 +306,67 @@ func TestNodeForgetIdle(t *testing.T) {
 		}
 	}
 }
+
+// node forget --worktree of another box's node asks that box: it removes
+// the worktree there and both forget the node; with that box's daemon
+// stopped, the job waits and the node stays.
+func TestNodeForgetWorktreeOnAnotherBox(t *testing.T) {
+	tb := twoBoxSetup(t)
+	wt := tb.doneNode(t, tb.mac, "app-001", "bmesh/a")
+	_, stopMac := serveBox(t, tb.mac)
+
+	out, errs, code := tb.k16.run(t, "", "node", "forget", "app-001", "--worktree", "--wait", "20s")
+	want := "mac: removed worktree " + wt + "; deleted branch bmesh/a; forgot app-001\nforgot app-001\n"
+	if code != 0 || out != want {
+		t.Fatalf("forget: %d %q %s, want %q", code, out, errs, want)
+	}
+	if dirExists(wt) {
+		t.Fatal("worktree kept")
+	}
+	if _, ok, _ := mesh.GetNode(tb.ctx, tb.c, "app-001"); ok {
+		t.Fatal("node kept")
+	}
+
+	// A refusal there: exit 3, nothing forgotten.
+	wt = filepath.Join(tb.wts["mac"], "app", "app-002")
+	meshtest.Git(t, tb.repo["mac"], "worktree", "add", "-q", "-b", "bmesh/b", wt)
+	meshtest.CommitFiles(t, wt, map[string]string{"b.txt": "b\n"})
+	if err := mesh.PutNode(tb.ctx, tb.c, mesh.Node{Path: "app-002", Role: "lead", Host: "mac", Worktree: wt}); err != nil {
+		t.Fatal(err)
+	}
+	meshtest.ForceState(t, tb.c, "app-002", mesh.State{State: "done", By: "node"})
+	_, errs, code = tb.k16.run(t, "", "node", "forget", "app-002", "--worktree", "--wait", "20s")
+	if code != exitRefused || errs != "bmesh: mac: refused: branch bmesh/b is not merged into main\n" {
+		t.Fatalf("unmerged: %d %q", code, errs)
+	}
+	if _, ok, _ := mesh.GetNode(tb.ctx, tb.c, "app-002"); !ok || !dirExists(wt) {
+		t.Fatal("a refusal forgot the node or removed its worktree")
+	}
+
+	// mac asleep: queued, the node stays.
+	stopMac()
+	meshtest.Git(t, tb.repo["mac"], "merge", "-q", "--ff-only", "bmesh/b")
+	out, errs, code = tb.k16.run(t, "", "node", "forget", "app-002", "--worktree", "--wait", "1s")
+	if code != 0 || out != "queued; the node stays until mac answers\n" {
+		t.Fatalf("asleep: %d %q %s", code, out, errs)
+	}
+	if _, ok, _ := mesh.GetNode(tb.ctx, tb.c, "app-002"); !ok {
+		t.Fatal("an unanswered forget forgot the node")
+	}
+	// mac wakes and takes it.
+	serveBox(t, tb.mac)
+	waitFor(t, "mac forgets app-002", func() bool {
+		_, ok, _ := mesh.GetNode(tb.ctx, tb.c, "app-002")
+		return !ok && !dirExists(wt)
+	})
+}
+
+func TestNodeForgetWorktreeOnAnotherBoxWithHostsOff(t *testing.T) {
+	c, ctx := setup(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-001", Host: "otherhost", Worktree: "/there/app-001"})
+	stateAt(t, c, "app-001", "done", time.Now())
+	_, errs, code := runCLI(t, nil, "node", "forget", "app-001", "--worktree")
+	if code != exitRefused || errs != "bmesh: refused: worktree /there/app-001 is on otherhost; run it there\n" {
+		t.Fatalf("%d %q", code, errs)
+	}
+}
