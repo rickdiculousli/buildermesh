@@ -78,6 +78,10 @@ func TestSchtasksLines(t *testing.T) {
 		{`C:\100%\bmesh.exe`, `C:\c\config.toml`},
 		{`C:\b\bmesh.exe`, `C:\%USERPROFILE%\config.toml`},
 		{`C:\b"\bmesh.exe`, `C:\c\config.toml`},
+		{`C:\Users\R&D\bmesh.exe`, `C:\c\config.toml`},
+		{`C:\b\bmesh.exe`, `C:\a^b\config.toml`},
+		{`C:\b|c\bmesh.exe`, `C:\c\config.toml`},
+		{`C:\b\bmesh.exe`, `C:\<c>\config.toml`},
 		{`C:\b\bmesh.exe`, `C:\` + strings.Repeat("x", 250) + `\config.toml`},
 	} {
 		if lines, err := schtasksLines(c[0], c[1], `C:\l\serve.log`); err == nil {
