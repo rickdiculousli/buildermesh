@@ -38,8 +38,9 @@ or a config.toml): a terminal run runs init first, a non-interactive one is refu
 
 commands:
   init [--service] [--force] [--hub URL] [--token-file F] [--runner K] [--no-repo]
-                                           set this box up: config.toml, this repo in repos.toml, --service the
-                                           unit for bmesh serve; asks what the flags don't say
+                                           set this box up: config.toml, this repo in repos.toml (it needs a main
+                                           branch), --service the unit for bmesh serve; asks what the flags don't
+                                           say, then prints every setting in effect and the key that changes it
   init --hosts [--admin]                   join this box to the mesh with a one-time invite code (asked at the
                                            prompt), or --admin make it the admin; writes only [hosts] and, with
                                            routines off, [runner] checkouts = "" (keeps config.toml.prev)
