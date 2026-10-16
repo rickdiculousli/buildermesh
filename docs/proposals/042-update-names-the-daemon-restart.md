@@ -1,5 +1,5 @@
 ---
-id: 039
+id: 042
 title: bmesh update says when this box's daemon still runs the old binary, and how to restart it
 kind: refinement
 size: S

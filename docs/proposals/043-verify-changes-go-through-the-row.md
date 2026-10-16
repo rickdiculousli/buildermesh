@@ -1,5 +1,5 @@
 ---
-id: 040
+id: 043
 title: A spec that changes a repo's verify commands changes its registry row, and land notices when it didn't
 kind: refinement
 size: S
