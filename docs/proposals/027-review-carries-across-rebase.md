@@ -4,11 +4,14 @@ title: A review carries across a rebase that leaves the diff unchanged
 kind: refinement
 size: S
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
 from_feedback: retrospective of 007-016 and 018 (buildermesh-008, -012, -016)
+built_by: 29ae067a-1fd3-4374-9962-bddd11163c0c
+host: k16
+family: buildermesh-build-2
 ---
 
 ## Opportunity
