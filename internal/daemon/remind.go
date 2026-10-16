@@ -15,6 +15,10 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/web"
 )
 
+// minAt is the shortest delay a post is scheduled with: ntfy refuses an At
+// under 10 s ahead, so a reset closer than this is posted at once.
+const minAt = 30 * time.Second
+
 // remindEvery is how often the daemon reads quota for the reset reminders;
 // the reading goes through the map's 5-minute gate, so the upstream page is
 // never asked more often than the map alone would ask it.
@@ -83,7 +87,8 @@ func TopicURL(ntfy, topic string) (string, error) {
 
 // remindOnce reads quota through q and, for each used window no daemon has
 // claimed, claims it in bm-claims and posts its reminder to [quota]
-// remind_topic, scheduled for the reset with ntfy's At header. A post that
+// remind_topic, scheduled for the reset with ntfy's At header (at once when
+// the reset is under minAt away). A post that
 // fails gives the claim back, so the next reading tries again.
 func remindOnce(ctx context.Context, d Deps, q *web.Quota) {
 	now := d.Now()
@@ -101,7 +106,7 @@ func remindOnce(ctx context.Context, d Deps, q *web.Quota) {
 		if !won {
 			continue
 		}
-		if err := postReminder(ctx, target, r); err != nil {
+		if err := postReminder(ctx, target, r, now); err != nil {
 			d.Log.Warn("remind: post", "key", r.Key(), "err", err)
 			uctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), deliverTimeout)
 			err := mesh.Unclaim(uctx, d.Client, r.Key())
@@ -115,7 +120,9 @@ func remindOnce(ctx context.Context, d Deps, q *web.Quota) {
 	}
 }
 
-func postReminder(ctx context.Context, target string, r Reminder) error {
+// postReminder posts r, scheduled for r.At unless that is under minAt from
+// now.
+func postReminder(ctx context.Context, target string, r Reminder, now time.Time) error {
 	ctx, cancel := context.WithTimeout(ctx, deliverTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader([]byte(r.Body)))
@@ -123,7 +130,9 @@ func postReminder(ctx context.Context, target string, r Reminder) error {
 		return err
 	}
 	req.Header.Set("Title", r.Title)
-	req.Header.Set("At", strconv.FormatInt(r.At.Unix(), 10))
+	if r.At.Sub(now) >= minAt {
+		req.Header.Set("At", strconv.FormatInt(r.At.Unix(), 10))
+	}
 	req.Header.Set("Tags", "hourglass")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

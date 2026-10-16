@@ -100,6 +100,21 @@ func TestRemindFailedPostGivesClaimBack(t *testing.T) {
 	}
 }
 
+func TestRemindCloseToTheResetPostsAtOnce(t *testing.T) {
+	f := setup(t)
+	rec := &ntfyRecorder{}
+	srv := httptest.NewServer(rec)
+	defer srv.Close()
+	f.now = time.Date(2026, 10, 16, 10, 59, 55, 0, time.UTC)
+	f.d.Cfg.Notify.Ntfy = srv.URL + "/bmesh"
+	f.d.Cfg.Quota.RemindTopic = "quota-reset"
+	q := &web.Quota{Command: quotaCommand(t, `[{"reading":{"provider":"claude","five_hour":5,"week":1,"five_reset":"2026-10-16T11:00:00.2Z","week_reset":"2026-10-20T00:00:00Z"}}]`)}
+	remindOnce(f.ctx, f.d, q)
+	if len(rec.posts) != 1 || rec.posts[0].Header.Get("At") != "" {
+		t.Fatalf("posts = %d, want one without At (ntfy refuses one under 10s ahead)", len(rec.posts))
+	}
+}
+
 func TestRemindersSkipUnusedAndPast(t *testing.T) {
 	now := time.Date(2026, 10, 16, 11, 0, 0, 0, time.UTC)
 	rs := Reminders([]web.Reading{
