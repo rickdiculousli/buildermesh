@@ -114,6 +114,9 @@ func (a *app) idleForgettable(ctx context.Context, n mesh.Node) error {
 			return fail(exitRefused, "refused: %s is idle but published %s; only an idle node that never reported is forgotten", n.Path, ev.Event)
 		}
 	}
+	if n.Host == "" {
+		return fail(exitRefused, "refused: %s is idle and names no host", n.Path)
+	}
 	if n.Host != a.cfg.HostName() {
 		return fail(exitRefused, "refused: %s is idle and its thread is on %s; run it on %s", n.Path, n.Host, n.Host)
 	}
@@ -149,6 +152,9 @@ func (a *app) removeNodeWorktree(ctx context.Context, n mesh.Node, nodes []mesh.
 	if n.Worktree == "" {
 		fmt.Fprintf(a.stdout, "%s has no worktree\n", n.Path)
 		return nil
+	}
+	if n.Host == "" {
+		return fail(exitRefused, "refused: %s is idle and names no host", n.Path)
 	}
 	if n.Host != a.cfg.HostName() {
 		return fail(exitRefused, "refused: worktree %s is on %s; run it there", n.Worktree, n.Host)

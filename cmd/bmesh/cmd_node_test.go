@@ -279,6 +279,15 @@ func TestNodeForgetIdle(t *testing.T) {
 	if _, errs, code := forget("app-004", nil); code != 3 || errs != "bmesh: refused: app-004 is idle and its thread is on otherhost; run it on otherhost\n" {
 		t.Fatalf("other host: %d %q", code, errs)
 	}
+	idle("app-006", mesh.Node{})
+	n6, _, _ := mesh.GetNode(ctx, c, "app-006")
+	n6.Host = ""
+	if err := mesh.PutNode(ctx, c, n6); err != nil {
+		t.Fatal(err)
+	}
+	if _, errs, code := forget("app-006", nil); code != 3 || errs != "bmesh: refused: app-006 is idle and names no host\n" {
+		t.Fatalf("no host: %d %q", code, errs)
+	}
 	idle("app-005", mesh.Node{Runner: mesh.NodeRunner{Kind: "tmux", Thread: "w"}})
 	if _, errs, code := forget("app-005", nil); code != 3 || errs != "bmesh: refused: app-005 is idle and its runner is \"tmux\", not this box's t3; run it on "+testHost+"\n" {
 		t.Fatalf("other kind: %d %q", code, errs)
