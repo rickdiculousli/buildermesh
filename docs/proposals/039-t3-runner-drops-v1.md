@@ -4,10 +4,13 @@ title: The t3 runner speaks only T3 0.1.0; the V1 path and t3_dispatch.py go
 kind: maintenance
 size: S
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
+built_by: bfc829a7-d5e3-4168-97e9-4e3eea19463a
+host: k16
+family: buildermesh-build-5
 ---
 
 ## Opportunity
