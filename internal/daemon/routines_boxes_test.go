@@ -18,11 +18,11 @@ import (
 // Two daemons share each kind's consumer: these run two on one server,
 // each with a host, a registry and checkouts of its own.
 
-// withRepos gives a daemon a registry of its own.
 // twoBoxes shortens the rescan, so a box whose first scan failed (both
 // boxes add worktrees of one repo) retries within the test's waits.
 func twoBoxes() { kindRescan = 300 * time.Millisecond }
 
+// withRepos gives a daemon a registry of its own.
 func withRepos(repos map[string]config.Repo) func(*Deps) {
 	return func(d *Deps) {
 		cfg := *d.Cfg
@@ -425,7 +425,7 @@ command = "if [ \"$1\" = block ]; then while [ ! -f ` + release + ` ]; do sleep 
 		t.Fatalf("fetched %q", got)
 	}
 	// The blockers end: this box fetches the first job again and the later
-	// second, holds both, and finds the go behind the second.
+	// second, holds both, and finds the go that sits between them.
 	if err := os.WriteFile(release, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
