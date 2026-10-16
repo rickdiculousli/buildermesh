@@ -4,11 +4,14 @@ title: Every command says what it did, and the brief stops the small detours lea
 kind: refinement
 size: M
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-15
 from_feedback: retrospective of 007-016 and 018 (buildermesh-007, -008, -009, -010, -011, -012, -013, -014, -015, -016, -018)
+built_by: c184e544-9943-465a-b943-da1ef21989da
+host: k16
+family: buildermesh-build-1
 ---
 
 ## Opportunity
