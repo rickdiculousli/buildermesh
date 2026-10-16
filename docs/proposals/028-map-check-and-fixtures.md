@@ -4,11 +4,14 @@ title: The map's browser check and test fixtures are in the repo
 kind: maintenance
 size: M
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
 from_feedback: retrospective of 007-016 and 018 (buildermesh-010, -011, -012, -013, -014, -015, -016)
+built_by: 461c7934-b80b-413c-9546-e47b933666f2
+host: k16
+family: buildermesh-build-2
 ---
 
 ## Opportunity
