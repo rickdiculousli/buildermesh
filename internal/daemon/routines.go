@@ -64,7 +64,8 @@ type routineSet struct {
 	holdMu sync.Mutex                      // serializes writes of holds
 	holds  map[string]map[uint64]mesh.Hold // kind → job sequence → this daemon's unsettled job
 
-	missing map[string]bool // registered repos with no path on this box, logged once; rescan's own
+	missing map[string]bool   // registered repos with no path on this box, logged once; rescan's own
+	readErr map[string]string // repo → the main commit whose kinds failed to read, logged once per commit; rescan's own
 
 	updateRepo string // [update] repo when the update can run, else ""
 	updateSeen string // the main commit the update last acted on
@@ -152,7 +153,8 @@ func routines(ctx context.Context, d Deps) {
 	defer cancel()
 	r := &routineSet{d: d, ctx: ctx, cancel: cancel, root: d.Checkouts, claude: d.ClaudeBin,
 		feeds: map[string]*feed{}, paths: map[string]chan struct{}{}, missing: map[string]bool{},
-		holds: map[string]map[uint64]mesh.Hold{}, updateRepo: updateRepo(d)}
+		readErr: map[string]string{},
+		holds:   map[string]map[uint64]mesh.Hold{}, updateRepo: updateRepo(d)}
 	if strings.TrimSpace(r.claude) == "" {
 		r.claude = "claude"
 	}
@@ -206,6 +208,20 @@ func (r *routineSet) discover(repo, repoPath string) (dir string, kinds []kind.K
 	return dir, kinds, err
 }
 
+// mainCommit is the commit discover reads kinds at, origin/main when the
+// repo has an origin, else main; "" when that doesn't resolve.
+func mainCommit(repoPath string) string {
+	ref := "main"
+	if exec.Command("git", "-C", repoPath, "remote", "get-url", "origin").Run() == nil {
+		ref = "origin/main"
+	}
+	out, err := exec.Command("git", "-C", repoPath, "rev-parse", "--verify", "-q", ref+"^{commit}").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
 // rescan reads every repo's kinds and brings the feeds in line. A repo that
 // cannot be read keeps what it had; one whose path does not exist on this
 // box has no kinds here and is logged once per daemon start. With [update] on, the update repo's main
@@ -246,10 +262,17 @@ func (r *routineSet) rescan() {
 			updateDir = dir
 		}
 		if err != nil {
-			r.d.Log.Warn("routines: read kinds", "repo", name, "err", err)
+			// Once per repo and main commit: a repo with no main fails
+			// the same way every minute.
+			at := mainCommit(path)
+			if seen, ok := r.readErr[name]; !ok || seen != at {
+				r.readErr[name] = at
+				r.d.Log.Warn("routines: read kinds", "repo", name, "err", err)
+			}
 			failed[name] = true
 			continue
 		}
+		delete(r.readErr, name)
 		for _, k := range kinds {
 			if want[k.Name] == nil {
 				want[k.Name] = map[string]kind.Kind{}
