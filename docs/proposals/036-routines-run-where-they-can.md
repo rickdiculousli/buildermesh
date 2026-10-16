@@ -4,10 +4,13 @@ title: A routine kind can say it needs a Mac, and only a Mac takes its jobs
 kind: feature
 size: M
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
+built_by: ae866914-0010-40e5-b884-1c7dd2b2cf00
+host: k16
+family: buildermesh-build-3
 ---
 
 ## North star
