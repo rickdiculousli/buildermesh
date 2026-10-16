@@ -94,8 +94,8 @@ func TestInitSkipsUnregisterableDirectory(t *testing.T) {
 func TestInitMultiBoxFromStdinAndFlags(t *testing.T) {
 	root := t.TempDir()
 	cfg := filepath.Join(root, "config.toml")
-	// Answers typed: multi, the hub, the token file, then no to registering.
-	out, _, code := runInit(t, cfg, root, "Multi\nnats://User:S3cret@hub:4222\n/home/Rick/Hub.token\n", "init", "--runner", "tmux", "--no-repo")
+	// Answers typed: multi, client, the hub, the token file.
+	out, _, code := runInit(t, cfg, root, "Multi\nClient\nnats://User:S3cret@hub:4222\n/home/Rick/Hub.token\n", "init", "--runner", "tmux", "--no-repo")
 	if code != 0 {
 		t.Fatalf("%d %q", code, out)
 	}
@@ -114,7 +114,7 @@ func TestInitMultiBoxFromStdinAndFlags(t *testing.T) {
 	}
 	// A token file given by flag survives the multi answer at the prompt.
 	cfg3 := filepath.Join(root, "three", "config.toml")
-	if _, _, code := runInit(t, cfg3, root, "multi\nnats://h:2\n", "init", "--token-file", "/tok3", "--runner", "claude", "--no-repo"); code != 0 {
+	if _, _, code := runInit(t, cfg3, root, "multi\n\nnats://h:2\n", "init", "--token-file", "/tok3", "--runner", "claude", "--no-repo"); code != 0 {
 		t.Fatalf("code %d", code)
 	}
 	if c, _ := config.Load(cfg3); c.Mesh.NATS != "nats://h:2" || c.Mesh.TokenFile != "/tok3" {

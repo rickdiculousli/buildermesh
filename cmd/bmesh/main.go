@@ -39,11 +39,14 @@ Every command but init, help, version, hosts --here and update --notice needs th
 refused (exit 3).
 
 commands:
-  init [--service] [--force] [--hub URL] [--token-file F] [--runner K] [--no-repo]
-                                           set this box up: config.toml, this repo in repos.toml (it needs a main
-                                           branch), --service the unit for bmesh serve (on Windows, the schtasks
-                                           commands for a logon task running serve --restart); asks what the flags don't
-                                           say, then prints every setting in effect and the key that changes it
+  init [--service] [--force] [--role hub|leaf|client] [--hub URL] [--token-file F] [--runner K] [--no-repo]
+                                           set this box up: config.toml (multi-box: [hub] and [mesh] for a hub,
+                                           leaf or client; a hub makes <config dir>/nats.token), this repo in
+                                           repos.toml (it needs a main branch), --service the unit for bmesh serve
+                                           (on Windows, the schtasks commands for a logon task running serve
+                                           --restart) and with [hub] role the one for bmesh hub; asks what the
+                                           flags don't say, then prints every setting in effect and the key that
+                                           changes it
   init --hosts [--admin]                   join this box to the mesh with a one-time invite code (asked at the
                                            prompt), or --admin make it the admin; writes only [hosts] and, with
                                            routines off, [runner] checkouts = "" (keeps config.toml.prev)
@@ -129,6 +132,10 @@ commands:
                                            else every [update] check_every it writes the notice when behind;
                                            --restart runs it as a child, started again 5s after every exit;
                                            --detach (Windows) starts that with no console window and returns
+  hub                                      run this box's NATS hub or leaf from [hub] (role hub: JetStream, the
+                                           leaf port; role leaf: dials [hub] remote forever) until stopped; its
+                                           own process apart from serve, so an update never drops the mesh;
+                                           exit 3 naming the key when role, listen or the token file won't do
   t3 login [--server URL] [--callback-port 52299] [--timeout D]
                                            sign bmesh in to this box's T3 0.1.0 (default [runner] t3_server):
                                            print the authorize URL, take the redirect on localhost or pasted,
@@ -293,6 +300,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdScaffold(rest)
 	case "serve":
 		return a.cmdServe(rest)
+	case "hub":
+		return a.cmdHub(rest)
 	case "land":
 		return a.cmdLand(rest)
 	case "result":

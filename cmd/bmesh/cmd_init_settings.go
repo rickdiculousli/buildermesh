@@ -26,6 +26,8 @@ const (
 	whyEmbedded = "bmesh serve runs the message hub itself; nothing to install"
 	whyHub      = "The message hub every box's nodes talk through"
 	whyToken    = "The hub's token is read from this file"
+	whyHubRole  = "bmesh hub runs the mesh's hub on this box, apart from bmesh serve, so an update never drops the mesh"
+	whyLeafRole = "bmesh hub runs a leaf of the mesh's hub on this box, which redials the hub whenever the link drops"
 )
 
 // whyRunner is what a runner kind means.
@@ -60,6 +62,13 @@ func settings(c *config.Config, service string) []setting {
 			setting{"setup", "several boxes", "This box shares a hub with other boxes (README: Several boxes)", "[mesh] nats"},
 			setting{"hub", redact(hub) + ", " + token, whyHub, "[mesh] nats, token_file"})
 	}
+	switch h := c.Hub; h.Role {
+	case "hub":
+		out = append(out, setting{"server", "the mesh's hub on " + h.Listen + ", leaves dial " + orNone(h.LeafListen) + ", store " + c.HubStore(),
+			whyHubRole, "[hub] role, listen, leaf_listen, store"})
+	case "leaf":
+		out = append(out, setting{"server", "a leaf on " + h.Listen + ", dialing " + h.Remote, whyLeafRole, "[hub] role, listen, remote"})
+	}
 	out = append(out, setting{"runner", c.Runner.Kind, whyRunner(c.Runner.Kind), "[runner] kind"})
 	names := c.RepoNames()
 	if len(names) == 0 {
@@ -93,7 +102,11 @@ func settings(c *config.Config, service string) []setting {
 	if service == "" {
 		out = append(out, setting{"service", "none", "Run bmesh serve yourself and keep it running, or have the OS do it", "bmesh init --service"})
 	} else {
-		out = append(out, setting{"service", service, "Keeps bmesh serve running, and starts it again after a reboot", "bmesh init --service"})
+		what := "bmesh serve"
+		if strings.Contains(service, hubUnit.name) {
+			what = "bmesh serve and bmesh hub"
+		}
+		out = append(out, setting{"service", service, "Keeps " + what + " running, and starts it again after a reboot", "bmesh init --service"})
 	}
 	if c.Runner.Checkouts == "" {
 		out = append(out, setting{"routines", "off", "This box runs no routine jobs (verify, review); another box on the mesh must", "[runner] checkouts"})
@@ -141,17 +154,18 @@ func redact(u string) string {
 	return u
 }
 
-// installedService is the service file init --service writes on this OS
-// when it exists, else "".
+// installedService is the service files init --service writes on this OS
+// (serve's, then the hub's) that exist, joined with ", "; "" for none.
 func installedService() string {
-	p, err := serviceFile()
-	if err != nil || p == "" {
-		return ""
+	var have []string
+	for _, u := range []unit{serveUnit, hubUnit} {
+		if p, err := serviceFile(u); err == nil && p != "" {
+			if _, ok := statOK(p); ok {
+				have = append(have, p)
+			}
+		}
 	}
-	if _, ok := statOK(p); !ok {
-		return ""
-	}
-	return p
+	return strings.Join(have, ", ")
 }
 
 // hasMain reports whether the repo at root has a main branch: on origin as

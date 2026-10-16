@@ -2,8 +2,6 @@ package mesh
 
 import (
 	"fmt"
-	"net"
-	"strconv"
 	"time"
 
 	"github.com/nats-io/nats-server/v2/server"
@@ -14,16 +12,9 @@ type Embedded struct{ srv *server.Server }
 
 // StartEmbedded starts the server on listen ("host:port"; port 0 or -1 picks a free one).
 func StartEmbedded(store, listen string) (*Embedded, error) {
-	host, portStr, err := net.SplitHostPort(listen)
+	host, port, err := hostPort(listen)
 	if err != nil {
-		return nil, fmt.Errorf("listen %q: %w", listen, err)
-	}
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		return nil, fmt.Errorf("listen %q: %w", listen, err)
-	}
-	if port == 0 {
-		port = -1
+		return nil, err
 	}
 	s, err := server.NewServer(&server.Options{
 		Host: host, Port: port, JetStream: true, JetStreamDomain: "hub",

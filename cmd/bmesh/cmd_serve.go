@@ -124,6 +124,9 @@ func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Wri
 	var restarting atomic.Bool
 	host := cfg.HostName()
 	url, token, domain, mode := cfg.Mesh.NATS, "", cfg.Mesh.Domain, "hub"
+	if url == "" && cfg.Hub.Role != "" {
+		return fail(exitRefused, "serve: [hub] role is %s, so bmesh hub runs this box's server: set [mesh] nats to it (nats://<[hub] listen>) rather than embed a second", cfg.Hub.Role)
+	}
 	if url == "" {
 		emb, err := mesh.StartEmbedded(cfg.Expand(cfg.Mesh.Store), cfg.Mesh.Listen)
 		if err != nil {

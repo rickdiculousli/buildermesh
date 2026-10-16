@@ -26,6 +26,58 @@ type MeshConfig struct {
 
 type HostConfig struct{ Name string }
 
+// HubConfig is the server `bmesh hub` runs on this box (040): Role "" for
+// none (a single box's serve embeds the hub; a client dials another box's),
+// "hub" for the mesh's hub with JetStream, "leaf" for a leaf of it. Listen
+// is the client port, LeafListen the hub's leaf port, Remote the hub's leaf
+// URL a leaf dials, Store the hub's store ("" = <state dir>/hub/jetstream).
+// The sizes are as nats-server's config takes them ("8GB" is 8 GiB).
+type HubConfig struct {
+	Role           string
+	Listen         string
+	LeafListen     string `toml:"leaf_listen"`
+	Remote         string
+	Store          string
+	MaxFileStore   string `toml:"max_file_store"`
+	MaxMemoryStore string `toml:"max_memory_store"`
+}
+
+// HubRoles are the [hub] role values.
+var HubRoles = []string{"", "hub", "leaf"}
+
+// HubStore is [hub] store, expanded, else <state dir>/hub/jetstream.
+func (c *Config) HubStore() string {
+	if c.Hub.Store != "" {
+		return c.Expand(c.Hub.Store)
+	}
+	return filepath.Join(StateDir(), "hub", "jetstream")
+}
+
+// ParseSize reads a byte size the way nats-server's config does: a whole
+// number with an optional suffix, k/m/g/t powers of 1000 and kb/mb/gb/tb
+// (or ki/kib...) powers of 1024, case-insensitive.
+func ParseSize(s string) (int64, error) {
+	t := strings.ToLower(strings.TrimSpace(s))
+	i := 0
+	for i < len(t) && t[i] >= '0' && t[i] <= '9' {
+		i++
+	}
+	n, err := strconv.ParseInt(t[:i], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("size %q: want a whole number with an optional unit (256MB, 8GB)", s)
+	}
+	mult := map[string]int64{"": 1, "k": 1e3, "m": 1e6, "g": 1e9, "t": 1e12}
+	for i, u := range []string{"k", "m", "g", "t"} {
+		p := int64(1) << (10 * (i + 1))
+		mult[u+"b"], mult[u+"i"], mult[u+"ib"] = p, p, p
+	}
+	m, ok := mult[strings.TrimSpace(t[i:])]
+	if !ok {
+		return 0, fmt.Errorf("size %q: unknown unit %q (want k, kb, m, mb, g, gb, t or tb)", s, t[i:])
+	}
+	return n * m, nil
+}
+
 type ServeConfig struct{ Listen string }
 
 type RunnerConfig struct {
@@ -153,6 +205,7 @@ func (h HostsConfig) KeyStoreKind() string {
 type Config struct {
 	Mesh     MeshConfig
 	Host     HostConfig
+	Hub      HubConfig
 	Serve    ServeConfig
 	Runner   RunnerConfig
 	Notify   NotifyConfig
@@ -217,6 +270,7 @@ func FormatDuration(d time.Duration) string {
 type file struct {
 	Mesh   MeshConfig `toml:"mesh"`
 	Host   HostConfig `toml:"host"`
+	Hub    HubConfig  `toml:"hub"`
 	Serve  ServeConfig
 	Runner RunnerConfig
 	Notify struct {
@@ -254,6 +308,7 @@ type file struct {
 func defaults() *Config {
 	return &Config{
 		Mesh:  MeshConfig{Domain: "hub", Store: DefaultStore(), Listen: "127.0.0.1:4222"},
+		Hub:   HubConfig{MaxFileStore: "8GB", MaxMemoryStore: "256MB"},
 		Serve: ServeConfig{Listen: "127.0.0.1:3774"},
 		Runner: RunnerConfig{Kind: "t3", T3Dispatch: "t3_dispatch.py", T3Server: "http://127.0.0.1:3773", T3Runtime: "auto", TmuxSession: "bmesh",
 			Worktrees: "~/.bmesh/worktrees", Checkouts: "~/.bmesh/checkouts", Claude: "claude"},
@@ -356,7 +411,7 @@ func Load(path string) (*Config, error) {
 		return c, nil
 	}
 	f := file{
-		Mesh: c.Mesh, Host: c.Host, Serve: c.Serve, Runner: c.Runner, Spec: c.Spec, Models: c.Models,
+		Mesh: c.Mesh, Host: c.Host, Hub: c.Hub, Serve: c.Serve, Runner: c.Runner, Spec: c.Spec, Models: c.Models,
 		Quota: c.Quota, Console: c.Console, Hosts: c.Hosts,
 	}
 	f.Update.Repo, f.Update.CheckEvery, f.Update.Upstream = c.Update.Repo, duration(c.Update.CheckEvery), c.Update.Upstream
@@ -370,7 +425,15 @@ func Load(path string) (*Config, error) {
 	if _, err := toml.DecodeFile(path, &f); err != nil {
 		return nil, fmt.Errorf("config %s: %w", path, err)
 	}
-	c.Mesh, c.Host, c.Serve, c.Runner, c.Spec, c.Models = f.Mesh, f.Host, f.Serve, f.Runner, f.Spec, f.Models
+	c.Mesh, c.Host, c.Hub, c.Serve, c.Runner, c.Spec, c.Models = f.Mesh, f.Host, f.Hub, f.Serve, f.Runner, f.Spec, f.Models
+	if !slices.Contains(HubRoles, c.Hub.Role) {
+		return nil, fmt.Errorf("config %s: [hub] role %q: want \"\" (no hub here), hub or leaf", path, c.Hub.Role)
+	}
+	for key, v := range map[string]string{"max_file_store": c.Hub.MaxFileStore, "max_memory_store": c.Hub.MaxMemoryStore} {
+		if _, err := ParseSize(v); err != nil {
+			return nil, fmt.Errorf("config %s: [hub] %s: %w", path, key, err)
+		}
+	}
 	c.Quota, c.Console, c.Hosts = f.Quota, f.Console, f.Hosts
 	c.Update = UpdateConfig{Repo: f.Update.Repo, CheckEvery: time.Duration(f.Update.CheckEvery), Upstream: f.Update.Upstream}
 	if k := c.Hosts.KeyStore; k != "" && k != "keychain" && k != "file" {
