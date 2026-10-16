@@ -117,6 +117,10 @@ func TestDescribeAndStamp(t *testing.T) {
 	if got := Describe(dir, shas[0]); got != "" {
 		t.Fatalf("before the tag: %q", got)
 	}
+	meshtest.Git(t, dir, "tag", "v0.2.0-rc1", shas[2]) // nearer, and not a release
+	if got := Describe(dir, shas[2]); got != "v0.1.0+1" {
+		t.Fatalf("past a pre-release: %q", got)
+	}
 	if f, err := stampFlags(dir, shas[2]); err != nil || !strings.HasSuffix(f, ".stampRelease=v0.1.0+1") {
 		t.Fatalf("flags %q %v", f, err)
 	}

@@ -95,9 +95,10 @@ func TestRelease(t *testing.T) {
 		t.Fatalf("message %q", msg)
 	}
 
-	// Only specs since the tag: nothing to release.
-	if _, errs, exit := runCLI(t, nil, "release", "demo"); exit != exitRefused || errs != "bmesh: nothing to release since v0.1.0: only specs changed\n" {
-		t.Fatalf("spec-only: %d %q", exit, errs)
+	// Run again, with 020's done commit after the tag: the release on the
+	// code head is reported, not cut again.
+	if out, errs, exit := runCLI(t, nil, "release", "demo"); exit != 0 || out != "already released demo v0.1.0 at "+code[:8]+"\n" {
+		t.Fatalf("again: %d %q %q", exit, out, errs)
 	}
 
 	// A refinement bumps the patch version, a feature the minor; --patch
@@ -150,5 +151,19 @@ func TestRelease(t *testing.T) {
 	v := selfupdate.Version{Revision: past, Time: "2026-10-16T22:38:04Z", Release: "v0.2.1+2"}
 	if v.String() != "v0.2.1+2 ("+past[:8]+" 2026-10-16T22:38:04Z)" {
 		t.Fatalf("version %q", v.String())
+	}
+
+	// A tag cut by hand on a ledger commit, then only specs since it:
+	// nothing to release.
+	if err := os.WriteFile(filepath.Join(repo, "docs", "proposals", "026-spec.md"), []byte("---\nid: 026\ntitle: Spec 026\nkind: feature\nsize: S\nstatus: proposed\n---\n\n## Proposal\nx\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-qm", "Propose 026")
+	meshtest.Git(t, repo, "tag", "-a", "-m", "by hand", "v0.2.2")
+	meshtest.Git(t, repo, "commit", "-q", "--allow-empty", "-m", "Review: 026 accepted")
+	meshtest.Git(t, repo, "push", "-q", "origin", "main", "v0.2.2")
+	if _, errs, exit := runCLI(t, nil, "release", "demo"); exit != exitRefused || errs != "bmesh: nothing to release since v0.2.2: only specs changed\n" {
+		t.Fatalf("spec-only: %d %q", exit, errs)
 	}
 }

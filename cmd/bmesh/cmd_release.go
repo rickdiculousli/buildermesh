@@ -66,9 +66,9 @@ type released struct {
 // annotated tag listing the specs landed since the last release, and
 // pushes the tag. The first release is v0.1.0; after it the minor version
 // goes up when a spec landed since is a feature, else the patch version,
-// unless --minor or --patch says which. A release on main's head itself
-// is reported and left; it refuses (exit 3) when only specs changed since
-// the last release, while a lead of the repo is still working or a family of
+// unless --minor or --patch says which. A release already on the code
+// head is reported and left; it refuses (exit 3) when only specs changed
+// since a release on another commit, while a lead of the repo is still working or a family of
 // the repo has feedback pending (heldBy, with no family of its own), and
 // while verify at the code head isn't ok (verifyMain). --dry-run prints
 // the tag and its message and tags nothing.
@@ -120,11 +120,11 @@ func (a *app) cmdRelease(args []string) error {
 			return err
 		}
 		if code == "" {
-			since, err := gitIn(ctx, repoPath, "rev-list", "-1", revs)
+			tagged, err := gitIn(ctx, repoPath, "rev-parse", "--verify", last+"^{commit}")
 			if err != nil {
 				return err
 			}
-			if since == "" { // the tag is on main's head itself
+			if tagged == head {
 				fmt.Fprintf(a.stdout, "already released %s %s at %s\n", row.Name, last, head[:8])
 				return nil
 			}

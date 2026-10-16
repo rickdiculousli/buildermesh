@@ -263,10 +263,11 @@ func (e *Refused) Error() string {
 var describeRE = regexp.MustCompile(`^(v[0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)-g[0-9a-f]+$`)
 
 // Describe is the release head is, `vX.Y.Z`, or follows, `vX.Y.Z+N` with N
-// the commits past it, from the newest vX.Y.Z tag in head's history; "" when
-// there is none.
+// the commits past it, from the nearest vX.Y.Z tag in head's history (a
+// pre-release such as v0.2.0-rc1 is passed over); "" when there is none.
 func Describe(dir, head string) string {
-	out, err := git(dir, "describe", "--tags", "--long", "--match", "v[0-9]*", "--end-of-options", head)
+	out, err := git(dir, "describe", "--tags", "--long", "--match", "v[0-9]*.[0-9]*.[0-9]*",
+		"--exclude", "*-*", "--exclude", "*+*", "--end-of-options", head)
 	m := describeRE.FindStringSubmatch(out)
 	if err != nil || m == nil {
 		return ""
