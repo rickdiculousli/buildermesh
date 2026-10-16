@@ -4,7 +4,7 @@ title: The t3 runner speaks T3 Code 0.1.0 (Orchestrator V2) through its MCP tool
 kind: maintenance
 size: L
 judge: opus
-status: proposed
+status: adjusting
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
@@ -37,6 +37,7 @@ Both boxes run 0.0.45 today and must move one at a time (k16 first, then the Mac
 - **Links.** The web route is still `/<environmentId>/<threadId>`. A V2 thread id has a colon, which the link must encode.
 
 ## Proposal
+Adjust (2026-10-16): The operator accepts that on V2 a round's threads are filed under the target repo's T3 project.
 The `t3` runner keeps one interface and gets two paths. In, all in buildermesh:
 
 - **Picking the path.**
