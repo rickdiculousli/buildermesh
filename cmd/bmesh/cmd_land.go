@@ -477,7 +477,11 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA string) ([]s
 	}
 	for _, e := range entries {
 		if !e.OK {
-			return nil, fail(exitRefused, "refused: %s fails at t:%s; fix it, commit and run bmesh land again", e.Kind, e.Tree8)
+			at := e.Tree8
+			if e.Carried != "" {
+				at = e.Carried + ", the same diff"
+			}
+			return nil, fail(exitRefused, "refused: %s fails at t:%s; fix it, commit and run bmesh land again", e.Kind, at)
 		}
 	}
 	return entries, nil

@@ -13,7 +13,7 @@ import (
 )
 
 // Result is the record of one job of a kind run against a tree. PatchID is
-// the `git patch-id --stable` of the diff a model was asked to read (the job
+// the `git patch-id --verbatim` of the diff a model was asked to read (the job
 // text's `base: <sha>` to the commit), so a review carries to another tree
 // with the same diff.
 type Result struct {

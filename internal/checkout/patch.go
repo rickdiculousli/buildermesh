@@ -23,9 +23,10 @@ func BaseFromText(text string) string {
 	return m[1]
 }
 
-// PatchID is the `git patch-id --stable` of the diff from..to in dir, read
-// with plumbing (diff-tree) so no user config (renames, prefixes, external
-// diffs) changes it; "" for an empty diff.
+// PatchID is the `git patch-id --verbatim` of the diff from..to in dir
+// (`--stable` with whitespace kept: a re-indented hunk is another diff),
+// read with plumbing (diff-tree) so no user config (renames, prefixes,
+// external diffs) changes it; "" for an empty diff.
 func PatchID(ctx context.Context, dir, from, to string) (string, error) {
 	diff := exec.CommandContext(ctx, "git", "-C", dir, "diff-tree", "-r", "-p", "--binary", "--full-index",
 		"--no-renames", "--no-color", "--no-ext-diff", "--no-textconv", "--end-of-options", from, to)
@@ -39,7 +40,7 @@ func PatchID(ctx context.Context, dir, from, to string) (string, error) {
 	if len(patch) == 0 {
 		return "", nil
 	}
-	cmd := exec.CommandContext(ctx, "git", "-C", dir, "patch-id", "--stable")
+	cmd := exec.CommandContext(ctx, "git", "-C", dir, "patch-id", "--verbatim")
 	cmd.Stdin = bytes.NewReader(patch)
 	id, err := cmd.Output()
 	if err != nil {
@@ -66,3 +67,31 @@ func ReviewedPatch(ctx context.Context, dir, text, commit string) (string, error
 	}
 	return PatchID(ctx, dir, sha, commit)
 }
+
+// LandedFrom reports whether some first-parent ancestor of merged (among
+// its nearest maxBase) is a base from which merged's diff has patch-id
+// patch: the diff a carried result read is the one that landed.
+func LandedFrom(ctx context.Context, dir, merged, patch string) (bool, error) {
+	if patch == "" {
+		return false, nil
+	}
+	out, err := git(dir, "rev-list", "--first-parent", fmt.Sprintf("--max-count=%d", maxBase+1), "--end-of-options", merged)
+	if err != nil {
+		return false, err
+	}
+	revs := strings.Fields(out)
+	for _, base := range revs[min(1, len(revs)):] {
+		id, err := PatchID(ctx, dir, base, merged)
+		if err != nil {
+			return false, err
+		}
+		if id == patch {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// maxBase is how far back LandedFrom looks for the base of a landed diff:
+// a lead's branch is its commits on a base, rarely more than a few.
+const maxBase = 100

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/rickdiculousli/buildermesh/internal/checkout"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
@@ -183,8 +184,8 @@ func short8(sha string) string {
 // checkSpecDone refuses done unless the node's spec has landed as done with
 // merged on main; a lead's spec must also carry a verified line with no
 // failing entry, every entry matched by a recorded result for the merged
-// commit's tree (any args), or a carried entry by a model result with a
-// patch-id at the tree it names.
+// commit's tree (any args), or a carried entry by a model result at the
+// tree it names whose patch-id is merged's diff from an ancestor on main.
 func (a *app) checkSpecDone(ctx context.Context, n mesh.Node) error {
 	d, err := spec.CheckDone(n.RepoPath, a.cfg.Spec.Glob, n.Spec)
 	if err != nil {
@@ -217,7 +218,7 @@ func (a *app) checkSpecDone(ctx context.Context, n mesh.Node) error {
 			return err
 		}
 		// A carried entry is matched at the tree its result was recorded
-		// at, by a model result that recorded the diff it read.
+		// at, by a model result whose recorded diff is the one merged landed.
 		at := tree[:8]
 		if e.Carried != "" {
 			at = e.Carried
@@ -227,8 +228,18 @@ func (a *app) checkSpecDone(ctx context.Context, n mesh.Node) error {
 			if !strings.HasPrefix(r.Tree, at) || r.OK != e.OK || e.Model != "" && r.Model != e.Model {
 				continue
 			}
-			if e.Carried == "" && r.Tree == tree || e.Carried != "" && r.Model != "" && r.PatchID != "" {
-				matched = true
+			if e.Carried == "" {
+				if matched = r.Tree == tree; matched {
+					break
+				}
+				continue
+			}
+			if r.Model == "" || r.PatchID == "" {
+				continue
+			}
+			if matched, err = checkout.LandedFrom(ctx, n.RepoPath, d.Merged, r.PatchID); err != nil {
+				return err
+			} else if matched {
 				break
 			}
 		}

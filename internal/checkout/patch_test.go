@@ -50,6 +50,12 @@ func TestPatchIDFollowsTheDiffNotTheBase(t *testing.T) {
 	if p3, err := PatchID(ctx, repo, base2, work3); err != nil || p3 == p1 {
 		t.Fatalf("changed hunk: %q %v", p3, err)
 	}
+	// Whitespace is part of the diff: a re-indented line is another one.
+	work4 := meshtest.CommitFiles(t, repo, map[string]string{"a.txt": "ONE\ntwo\nthree\nfour\nfive\nsix\n  SEVEN\n"})
+	p3, _ := PatchID(ctx, repo, base2, work3)
+	if p4, err := PatchID(ctx, repo, base2, work4); err != nil || p4 == p3 {
+		t.Fatalf("re-indented hunk: %q %v", p4, err)
+	}
 	if p, err := PatchID(ctx, repo, work1, work1); err != nil || p != "" {
 		t.Fatalf("empty diff: %q %v", p, err)
 	}
@@ -61,5 +67,15 @@ func TestPatchIDFollowsTheDiffNotTheBase(t *testing.T) {
 	}
 	if _, err := ReviewedPatch(ctx, repo, "base: 0000000000", work2); err == nil {
 		t.Fatal("unknown base: no error")
+	}
+	// work2's diff from base2 is p1; work3 on top of it lands another diff.
+	if ok, err := LandedFrom(ctx, repo, work2, p1); err != nil || !ok {
+		t.Fatalf("landed from base2: %v %v", ok, err)
+	}
+	if ok, err := LandedFrom(ctx, repo, work3, p1); err != nil || ok {
+		t.Fatalf("work3 landed p1: %v %v", ok, err)
+	}
+	if ok, err := LandedFrom(ctx, repo, work2, ""); err != nil || ok {
+		t.Fatalf("empty patch: %v %v", ok, err)
 	}
 }

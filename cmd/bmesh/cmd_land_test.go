@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/checkout"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
@@ -386,8 +387,8 @@ func TestLandPutsACarriedReviewOnTheLine(t *testing.T) {
 	}
 }
 
-// done matches a carried entry by a model result with a patch-id at the
-// tree the entry names, and refuses one with no such result.
+// done matches a carried entry by a model result at the tree it names whose
+// patch-id is the diff merged landed, and refuses any other.
 func TestDoneMatchesCarriedEntryAtItsTree(t *testing.T) {
 	c, ctx := setup(t)
 	r := newLandRepo(t)
@@ -395,32 +396,50 @@ func TestDoneMatchesCarriedEntryAtItsTree(t *testing.T) {
 	if _, errs, code := runCLI(t, as("app-012"), "started"); code != 0 {
 		t.Fatal(code, errs)
 	}
+	lead := gitOut(t, "rev-parse", "HEAD")
 	reviewed := gitOut(t, "rev-parse", "HEAD^{tree}")
-	put := func(res mesh.Result) {
+	patch, err := checkout.PatchID(ctx, r.wt, "HEAD~1", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	put := func(p string) {
 		t.Helper()
-		res.Kind, res.Tree, res.OK, res.Model, res.By = "review", reviewed, true, "claude-opus-5-5", "h"
-		if err := mesh.PutResult(ctx, c, res); err != nil {
+		if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "review", Tree: reviewed, Commit: lead, OK: true,
+			Model: "claude-opus-5-5", By: "h", PatchID: p}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	// Recorded without a patch-id: the entry claims what no result shows.
-	put(mesh.Result{})
+	// The lead's work lands on a main that moved: the same diff, a new tree.
+	meshtest.Git(t, r.repo, "pull", "-q", "--ff-only", "origin", "main")
+	writeFile(t, filepath.Join(r.repo, "c.txt"), "c\n")
+	meshtest.Git(t, r.repo, "add", "-A")
+	meshtest.Git(t, r.repo, "commit", "-qm", "other")
+	meshtest.Git(t, r.repo, "cherry-pick", lead)
 	merged := gitOut(t, "-C", r.repo, "rev-parse", "main")
 	tree := gitOut(t, "-C", r.repo, "rev-parse", "main^{tree}")
 	if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "verify", Tree: tree, OK: true, By: "h"}); err != nil {
 		t.Fatal(err)
 	}
-	line := "verify ok t:" + tree[:8] + "; review ok t:" + tree[:8] + " m:claude-opus-5-5 c:" + reviewed[:8]
+	line := "review ok t:" + tree[:8] + " m:claude-opus-5-5 c:" + reviewed[:8] + "; verify ok t:" + tree[:8]
 	writeFile(t, filepath.Join(r.repo, "docs", "proposals", "012-thing.md"),
 		"---\nid: 12\nstatus: done\nbranch: lead\nmerged: "+merged+"\nverified: "+line+"\n---\nbody\n")
 	meshtest.Git(t, r.repo, "commit", "-qam", "012 done")
 	meshtest.Git(t, r.repo, "push", "-q", "origin", "main")
 	rec := gitOut(t, "-C", r.repo, "rev-parse", "main")
-	if _, errs, code := runCLI(t, as("app-012"), "done", "--commit", rec); code != 3 ||
-		!strings.Contains(errs, "not done: verified names review but no result for tree "+reviewed[:8]) {
-		t.Fatalf("no patch-id: %d %q", code, errs)
+	refused := func(what string) {
+		t.Helper()
+		if _, errs, code := runCLI(t, as("app-012"), "done", "--commit", rec); code != 3 ||
+			!strings.Contains(errs, "not done: verified names review but no result for tree "+reviewed[:8]) {
+			t.Fatalf("%s: %d %q", what, code, errs)
+		}
 	}
-	put(mesh.Result{PatchID: "0123456789abcdef0123456789abcdef01234567"})
+	// Recorded without a patch-id, or with another diff's: the entry claims
+	// what no result shows.
+	put("")
+	refused("no patch-id")
+	put("0123456789abcdef0123456789abcdef01234567")
+	refused("another diff")
+	put(patch)
 	if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", rec); code != 0 {
 		t.Fatalf("done: %d %q %q", code, out, errs)
 	}
