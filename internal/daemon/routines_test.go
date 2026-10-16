@@ -281,14 +281,18 @@ command = "echo $BMESH_JOB >> ` + log + `; echo ran $BMESH_JOB"
 	}
 }
 
-func TestJobDeliveredOnceAndRedeliveredAfterDeath(t *testing.T) {
+// A running job is kept in progress past AckWait, never handed to a second
+// instance; a stop kills it and hands it back, so the next daemon reruns it
+// at once rather than after AckWait.
+func TestJobDeliveredOnceAndHandedBackOnStop(t *testing.T) {
 	runs := filepath.Join(t.TempDir(), "runs")
+	alive := filepath.Join(t.TempDir(), "alive")
 	f := routineSetup(t, map[string]string{".bmesh/routines/slow.toml": `
 mode = "pooled"
 pool = 2
 timeout = "1m"
 batch_idle = "1s"
-command = "echo x >> ` + runs + `; if [ $(wc -l < ` + runs + `) -ge 2 ]; then echo second; else sleep 30; fi; true"
+command = "echo x >> ` + runs + `; if [ $(wc -l < ` + runs + `) -ge 2 ]; then echo second; else sleep 30; echo late >> ` + alive + `; fi; true"
 `})
 	ackWaitExtra = 3*time.Second - time.Minute // AckWait = timeout + extra = 3s
 	stop := f.start(t)
@@ -311,19 +315,18 @@ command = "echo x >> ` + runs + `; if [ $(wc -l < ` + runs + `) -ge 2 ]; then ec
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	died := time.Now()
-	stop() // the instance dies mid-job: no ack, no reply
-	f.noReply(t, id, 200*time.Millisecond)
-
-	// Redelivered only after AckWait (3s, the last heartbeat at most 1s
-	// before the death), not at once as a NAK would.
-	f.start(t)
-	for time.Since(died) < 1800*time.Millisecond {
-		if n := len(lines(t, runs)); n != 1 {
-			t.Fatalf("rerun %s after the death, before AckWait", time.Since(died))
-		}
-		time.Sleep(50 * time.Millisecond)
+	if jobs, err := mesh.KindJobs(f.ctx, f.c, "slow"); err != nil || len(jobs) != 1 || jobs[0].ID != id ||
+		jobs[0].State != "running" || !strings.HasPrefix(jobs[0].Holder, "routine.slow.cmd-") {
+		t.Fatalf("jobs while running %+v %v", jobs, err)
 	}
+	stop() // mid-job: the run is killed and the job handed back, unanswered
+	f.noReply(t, id, 200*time.Millisecond)
+	if jobs, err := mesh.KindJobs(f.ctx, f.c, "slow"); err != nil || len(jobs) != 1 || jobs[0].State != "waiting" {
+		t.Fatalf("jobs after stop %+v %v", jobs, err)
+	}
+
+	ackWaitExtra = time.Minute // the next daemon's AckWait is 2m: only a NAK explains a quick rerun
+	f.start(t)
 	r := f.reply(t, id, 20*time.Second)
 	if !r.OK || r.Output != "second\n" {
 		t.Fatalf("reply %+v", r)
@@ -331,7 +334,47 @@ command = "echo x >> ` + runs + `; if [ $(wc -l < ` + runs + `) -ge 2 ]; then ec
 	if n := len(lines(t, runs)); n != 2 {
 		t.Fatalf("runs %d, want 2", n)
 	}
+	if got := lines(t, alive); len(got) != 0 {
+		t.Fatalf("the killed run went on: %q", got)
+	}
 	f.poll(t, time.Second) // a second reply would fail the test
+	if jobs, err := mesh.KindJobs(f.ctx, f.c, "slow"); err != nil || len(jobs) != 0 {
+		t.Fatalf("jobs after the reply %+v %v", jobs, err)
+	}
+}
+
+// A job held in a batch when the daemon stops goes back to the inbox, and
+// the next daemon runs it without waiting out AckWait.
+func TestHeldJobHandedBackOnStop(t *testing.T) {
+	runs := filepath.Join(t.TempDir(), "runs")
+	f := routineSetup(t, map[string]string{".bmesh/routines/slow.toml": `
+mode = "pooled"
+timeout = "1m"
+batch_idle = "2s"
+command = "echo $BMESH_JOB >> ` + runs + `"
+`})
+	ackWaitExtra = time.Minute // AckWait 2m
+	stop := f.start(t)
+	f.waitStarted(t, "routine.slow.cmd-1", 1)
+
+	id := f.queue(t, mesh.Job{Kind: "slow"})
+	waitFor(t, 5*time.Second, "the job held", func() bool {
+		jobs, err := mesh.KindJobs(f.ctx, f.c, "slow")
+		return err == nil && len(jobs) == 1 && jobs[0].State == "held" && jobs[0].Holder == "routine.slow.cmd-1"
+	})
+	stop()
+	if got := lines(t, runs); len(got) != 0 {
+		t.Fatalf("ran before the stop: %q", got)
+	}
+	stopped := time.Now()
+	f.start(t)
+	r := f.reply(t, id, 20*time.Second)
+	if !r.OK || time.Since(stopped) > 15*time.Second {
+		t.Fatalf("reply %+v after %s", r, time.Since(stopped))
+	}
+	if got := lines(t, runs); len(got) != 1 || got[0] != id {
+		t.Fatalf("runs %q", got)
+	}
 }
 
 func TestFreshKindSpawnsPerJob(t *testing.T) {

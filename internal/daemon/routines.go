@@ -40,7 +40,8 @@ var (
 // on a pooled instance of the job's model or on a fresh run of its own.
 type routineSet struct {
 	d      Deps
-	ctx    context.Context // the loop's: running jobs and heartbeats end with it
+	ctx    context.Context    // the loop's: running jobs and heartbeats end with it
+	cancel context.CancelFunc // ends ctx: an update's drain kills running jobs with it
 	root   string
 	claude string
 	wg     sync.WaitGroup
@@ -57,6 +58,9 @@ type routineSet struct {
 	worktreeMu sync.Mutex
 
 	fetchMu sync.Mutex // serializes fetches, which lock a repo's refs
+
+	holdMu sync.Mutex                      // serializes writes of holds
+	holds  map[string]map[uint64]mesh.Hold // kind → job sequence → this daemon's unsettled job
 
 	missing map[string]bool // registered repos with no path on this box, logged once; rescan's own
 
@@ -119,9 +123,11 @@ type pool struct {
 	gos   []chan struct{}
 }
 
-// routines runs the routine loop until ctx ends: on start and every
-// kindRescan it reads each repo's kinds from its main and starts, restarts
-// or stops the kinds' feeds, pools and instances to match.
+// routines runs the routine loop until ctx ends (or an update drained it):
+// on start and every kindRescan it reads each repo's kinds from its main and
+// starts, restarts or stops the kinds' feeds, pools and instances to match.
+// When it ends, every job it held or ran has been handed back (NAK) or
+// answered, and the NAKs have reached the server.
 func routines(ctx context.Context, d Deps) {
 	d.defaults()
 	if d.Checkouts == "" {
@@ -131,10 +137,18 @@ func routines(ctx context.Context, d Deps) {
 		}
 		return
 	}
-	r := &routineSet{d: d, ctx: ctx, root: d.Checkouts, claude: d.ClaudeBin,
-		feeds: map[string]*feed{}, paths: map[string]chan struct{}{}, missing: map[string]bool{}, updateRepo: updateRepo(d)}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	r := &routineSet{d: d, ctx: ctx, cancel: cancel, root: d.Checkouts, claude: d.ClaudeBin,
+		feeds: map[string]*feed{}, paths: map[string]chan struct{}{}, missing: map[string]bool{},
+		holds: map[string]map[uint64]mesh.Hold{}, updateRepo: updateRepo(d)}
 	if strings.TrimSpace(r.claude) == "" {
 		r.claude = "claude"
+	}
+	// What a daemon that died here held is back in the inbox after AckWait,
+	// not held.
+	if err := mesh.ClearHolds(ctx, d.Client, d.Host, d.Now().UTC().Format(time.RFC3339)); err != nil {
+		d.Log.Warn("routines: clear holds", "err", err)
 	}
 	every(ctx, kindRescan, r.rescan)
 	r.mu.Lock()
@@ -144,6 +158,11 @@ func routines(ctx context.Context, d Deps) {
 	}
 	r.mu.Unlock()
 	r.wg.Wait()
+	// A NAK is a publish; flush so it reaches the server before serve
+	// closes the connection.
+	if err := d.Client.NC.FlushTimeout(settleTimeout); err != nil {
+		d.Log.Warn("routines: flush", "err", err)
+	}
 }
 
 // discover returns the kinds on repoPath's main: origin/main after a fetch
@@ -417,7 +436,8 @@ func (r *routineSet) startFeed(name string, cons jetstream.Consumer) *feed {
 	return f
 }
 
-// stop ends the dispatcher and every group; running jobs finish.
+// stop ends the dispatcher and every group; running jobs finish (until
+// the loop's ctx ends).
 func (f *feed) stop() {
 	f.cancel()
 	f.mu.Lock()
@@ -643,6 +663,7 @@ func (r *routineSet) handOff(f *feed, dl *delivery) string {
 		}()
 	default:
 		dl.hold()
+		dl.note(r.d.from(), "held")
 		select {
 		case g.pools[model].jobs <- dl:
 		default:

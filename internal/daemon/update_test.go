@@ -187,16 +187,21 @@ func TestUpdateLeavesRollbackAlone(t *testing.T) {
 	}
 }
 
-func TestUpdateDrainsRunningJobFirst(t *testing.T) {
+// An update kills a running job and hands it back before the restart; the
+// restarted daemon runs it at once, not after AckWait.
+func TestUpdateHandsRunningJobBack(t *testing.T) {
 	runs := filepath.Join(t.TempDir(), "runs")
+	alive := filepath.Join(t.TempDir(), "alive")
 	u := updateSetup(t, map[string]string{".bmesh/routines/slow.toml": `
 mode = "pooled"
 timeout = "1m"
 batch_idle = "1s"
-command = "echo $BMESH_JOB >> ` + runs + `; sleep 2; echo slow $BMESH_JOB"
+command = "echo $BMESH_JOB >> ` + runs + `; if [ $(wc -l < ` + runs + `) -ge 2 ]; then echo slow $BMESH_JOB; else sleep 30; echo late >> ` + alive + `; fi"
 `})
+	ackWaitExtra = time.Minute // AckWait 2m
 	inbox := mesh.InboxSubject(mesh.Path{requester})
 	var atRestart []string // reply texts in the requester's inbox when Restart is called
+	var jobsAtRestart []mesh.QueuedJob
 	u.onRestart = func() {
 		hist, err := mesh.History(u.ctx, u.c, inbox, time.Time{})
 		if err != nil {
@@ -208,6 +213,9 @@ command = "echo $BMESH_JOB >> ` + runs + `; sleep 2; echo slow $BMESH_JOB"
 				atRestart = append(atRestart, m.Reply.Job)
 			}
 		}
+		if jobsAtRestart, err = mesh.KindJobs(u.ctx, u.c, "slow"); err != nil {
+			t.Error(err)
+		}
 	}
 	u.start(t)
 	u.waitStarted(t, "routine.slow.cmd-1", 1)
@@ -215,19 +223,22 @@ command = "echo $BMESH_JOB >> ` + runs + `; sleep 2; echo slow $BMESH_JOB"
 	id1 := u.queue(t, mesh.Job{Kind: "slow", Go: true})
 	waitFor(t, 10*time.Second, "the job running", func() bool { return len(lines(t, runs)) == 1 })
 	u.land(t, "a.txt")
-	waitFor(t, 10*time.Second, "the update", func() bool { return len(u.daemonEvents(t, "update")) == 1 })
-	id2 := u.queue(t, mesh.Job{Kind: "slow", Go: true})
-	u.restarted(t, 20*time.Second)
+	u.restarted(t, 15*time.Second) // well before the run's 30s
 
-	if len(atRestart) != 1 || atRestart[0] != id1 {
-		t.Fatalf("replies at restart %v, want %s", atRestart, id1)
+	if len(atRestart) != 0 {
+		t.Fatalf("replies at restart %v, want none", atRestart)
 	}
-	if r := u.reply(t, id1, 5*time.Second); !r.OK || r.Output != "slow "+id1+"\n" {
+	if len(jobsAtRestart) != 1 || jobsAtRestart[0].ID != id1 || jobsAtRestart[0].State != "waiting" {
+		t.Fatalf("jobs at restart %+v, want %s waiting", jobsAtRestart, id1)
+	}
+	// The restarted daemon (no update to make) runs it at once.
+	u.d.Cfg.Update.Repo = ""
+	u.start(t)
+	if r := u.reply(t, id1, 20*time.Second); !r.OK || r.Output != "slow "+id1+"\n" {
 		t.Fatalf("reply %+v", r)
 	}
-	u.noReply(t, id2, 2*time.Second)
-	if got := lines(t, runs); len(got) != 1 {
-		t.Fatalf("runs %q: a job was taken while draining", got)
+	if got := lines(t, alive); len(got) != 0 {
+		t.Fatalf("the killed run went on: %q", got)
 	}
 }
 

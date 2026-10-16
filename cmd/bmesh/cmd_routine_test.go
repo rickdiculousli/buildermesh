@@ -156,9 +156,25 @@ func TestRoutineListStatusAndGo(t *testing.T) {
 	if code != 0 || strings.Count(out, "\n") != 2 || !strings.Contains(out, `"kind":"review"`) {
 		t.Fatalf("list json: %d %q", code, out)
 	}
+	out, errs, code = runCLI(t, as("app-001"), "routine", "queue", "review")
+	id, ok := strings.CutPrefix(strings.TrimSpace(out), "queued ")
+	if code != 0 || !ok {
+		t.Fatalf("queue: %d %q %q", code, out, errs)
+	}
 	out, errs, code = runCLI(t, nil, "routine", "status", "review")
 	if code != 0 || !strings.Contains(out, "routine.review.m1-1") || !strings.Contains(out, " m1") {
 		t.Fatalf("status: %d %q %q", code, out, errs)
+	}
+	// Then the kind's unanswered jobs: waiting, as no daemon holds it.
+	_, jobs, _ := strings.Cut(out, "\n\n")
+	jl := strings.Split(strings.TrimSpace(jobs), "\n")
+	if len(jl) != 2 || strings.Join(strings.Fields(jl[0]), " ") != "JOB KIND STATE HOLDER FROM" ||
+		strings.Join(strings.Fields(jl[1]), " ") != id+" review waiting - app-001" {
+		t.Fatalf("status jobs: %q", out)
+	}
+	out, _, code = runCLI(t, nil, "routine", "status", "review", "--json")
+	if code != 0 || !strings.Contains(out, `"jobs":[{"id":"`+id+`","from":"app-001","state":"waiting"`) {
+		t.Fatalf("status json: %d %q", code, out)
 	}
 	// Without a kind: the kinds in the mesh, found from node paths and consumers.
 	t.Chdir(t.TempDir())

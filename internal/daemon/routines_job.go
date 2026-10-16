@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -25,12 +27,15 @@ const settleTimeout = 10 * time.Second
 
 // delivery is a fetched job until it is settled. While unsettled it is kept
 // in progress every AckWait/3, so a job held in a batch or running past the
-// kind's timeout is not redelivered; only an instance that dies (the loop's
-// ctx ends) stops that, and the job is redelivered after AckWait.
+// kind's timeout is not redelivered. A loop that stops hands it back with a
+// NAK (a running job's process group killed first), so the next daemon takes
+// it at once; only a daemon that dies leaves it to be redelivered after
+// AckWait.
 type delivery struct {
 	msg  jetstream.Msg
 	job  mesh.Job
 	from mesh.Path
+	seq  uint64 // the job's stream sequence; 0 when unknown
 	f    *feed
 	r    *routineSet
 	stop chan struct{}
@@ -38,6 +43,7 @@ type delivery struct {
 
 	held   bool // counted in f.held until started or settled
 	unheld sync.Once
+	noted  atomic.Bool // in the kind's bm-jobs entry until settled
 }
 
 // hold counts dl as waiting in a pool; call before handing it over.
@@ -55,6 +61,9 @@ func (dl *delivery) start() {
 
 func (r *routineSet) newDelivery(f *feed, m jetstream.Msg, j mesh.Job, from mesh.Path) *delivery {
 	dl := &delivery{msg: m, job: j, from: from, f: f, r: r, stop: make(chan struct{})}
+	if meta, err := m.Metadata(); err == nil {
+		dl.seq = meta.Sequence.Stream
+	}
 	f.inflight.Add(1)
 	every := max(time.Duration(f.ackWait.Load())/3, 100*time.Millisecond)
 	r.wg.Add(1)
@@ -83,13 +92,49 @@ func (dl *delivery) settle(how string, do func() error) {
 	dl.once.Do(func() {
 		close(dl.stop)
 		dl.f.inflight.Add(-1)
-		if do == nil {
-			return
-		}
 		if err := do(); err != nil {
 			dl.r.d.Log.Warn("routines: "+how, "job", dl.job.ID, "err", err)
 		}
+		if dl.noted.Load() {
+			dl.r.writeHolds(dl.f.name, func(m map[uint64]mesh.Hold) { delete(m, dl.seq) })
+		}
 	})
+}
+
+// note records dl in its kind's bm-jobs entry as held or running by holder.
+func (dl *delivery) note(holder, state string) {
+	if dl.seq == 0 {
+		return
+	}
+	dl.noted.Store(true)
+	h := mesh.Hold{Seq: dl.seq, Job: dl.job.ID, From: dl.from.String(), Holder: holder, State: state,
+		Since: dl.r.d.Now().UTC().Format(time.RFC3339)}
+	dl.r.writeHolds(dl.f.name, func(m map[uint64]mesh.Hold) { m[dl.seq] = h })
+}
+
+// writeHolds applies change to this daemon's unsettled jobs of kindName
+// and writes them to the kind's bm-jobs entry. Writes are serialized, so
+// the entry ends as the last change left it.
+func (r *routineSet) writeHolds(kindName string, change func(map[uint64]mesh.Hold)) {
+	r.holdMu.Lock()
+	defer r.holdMu.Unlock()
+	m := r.holds[kindName]
+	if m == nil {
+		m = map[uint64]mesh.Hold{}
+		r.holds[kindName] = m
+	}
+	change(m)
+	jobs := make([]mesh.Hold, 0, len(m))
+	for _, h := range m {
+		jobs = append(jobs, h)
+	}
+	slices.SortFunc(jobs, func(a, b mesh.Hold) int { return cmp.Compare(a.Seq, b.Seq) })
+	ctx, cancel := r.settleCtx()
+	defer cancel()
+	h := mesh.Holds{Kind: kindName, Host: r.d.Host, At: r.d.Now().UTC().Format(time.RFC3339), Jobs: jobs}
+	if err := mesh.PutHolds(ctx, r.d.Client, h); err != nil {
+		r.d.Log.Warn("routines: write holds", "kind", kindName, "err", err)
+	}
 }
 
 // ack removes the job for good.
@@ -107,9 +152,6 @@ func (dl *delivery) nak() { dl.settle("nak", dl.msg.Nak) }
 func (dl *delivery) nakDelay(d time.Duration) {
 	dl.settle("nak", func() error { return dl.msg.NakWithDelay(d) })
 }
-
-// abandon leaves the job unacked, as a dead instance would.
-func (dl *delivery) abandon() { dl.settle("abandon", nil) }
 
 // settleCtx is a context for writes that must happen even as the loop stops.
 func (r *routineSet) settleCtx() (context.Context, context.CancelFunc) {
@@ -212,15 +254,15 @@ func (w *worker) end() {
 }
 
 // handle runs one job to its end: reply, record and ack, or a NAK when its
-// slots are busy, or nothing when the loop stops mid-run (the job stays
-// unacked and is redelivered after AckWait).
+// slots are busy, or when the loop stops (mid-run, its process group
+// killed), so the next daemon runs it at once.
 func (w *worker) handle(dl *delivery) {
 	dl.start()
 	r, j := w.r, dl.job
 	ctx := r.ctx
 	fail := func(text string) {
 		if ctx.Err() != nil { // the step failed because the loop is stopping
-			dl.abandon()
+			dl.nak()
 			return
 		}
 		r.reply(dl, mesh.Reply{Output: text, By: w.path})
@@ -280,6 +322,7 @@ func (w *worker) handle(dl *delivery) {
 		return
 	}
 
+	dl.note(w.path, "running")
 	w.setState("working")
 	w.event("progress", fmt.Sprintf("job %s started", j.ID), dl.from.String())
 	start := time.Now()
@@ -287,9 +330,9 @@ func (w *worker) handle(dl *delivery) {
 		Args: j.Args, Text: j.Text, Dir: w.dir}
 	rep, lost := w.run(w.instanceFor(kc), ij, keys, ttl)
 	held := slices.DeleteFunc(slices.Clone(keys), func(k string) bool { return k == lost })
-	w.release(held) // never the lost one: it may be someone else's now
-	if ctx.Err() != nil {
-		dl.abandon()
+	w.release(held)       // never the lost one: it may be someone else's now
+	if ctx.Err() != nil { // killed by the stop: handed back, not answered
+		dl.nak()
 		return
 	}
 	ok := rep.OK && lost == ""
