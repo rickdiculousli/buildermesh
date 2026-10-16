@@ -27,7 +27,8 @@ func buildModule() string {
 	return ""
 }
 
-// cmdVersion prints `bmesh <rev8> <time> [modified]`, or `bmesh unknown`.
+// cmdVersion prints `bmesh <rev8> <time> [modified]`, or `bmesh unknown`;
+// a build stamped with a release prints `bmesh <release> (<rev8> <time>)`.
 func (a *app) cmdVersion(args []string) error {
 	fs := a.flags("version")
 	pos, err := parse(fs, args)

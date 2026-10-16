@@ -152,7 +152,11 @@ func (a *app) cmdBuild(args []string) error {
 		}
 	}
 	if gate {
-		if err := a.verifyMain(ctx, row, repoPath, note, *force); err != nil {
+		head, err := a.codeHead(ctx, repoPath, "main")
+		if err != nil {
+			return err
+		}
+		if err := a.verifyMain(ctx, row, repoPath, head, note, *force, "build its fix with --force"); err != nil {
 			return err
 		}
 	}

@@ -130,19 +130,13 @@ func Notice(dir, own, head string) (string, error) {
 	if err != nil || count == 0 {
 		return "", err
 	}
-	subjects, err := git(dir, "log", "--reverse", "--format=%s", own+".."+head)
+	ids, err := Landed(dir, own+".."+head)
 	if err != nil {
 		return "", err
 	}
 	var specs []string
-	seen := map[string]bool{}
-	for _, s := range strings.Split(subjects, "\n") {
-		m := doneAt.FindStringSubmatch(s)
-		if m == nil || seen[m[1]] {
-			continue
-		}
-		seen[m[1]] = true
-		specs = append(specs, specTitle(dir, head, m[1]))
+	for _, id := range ids {
+		specs = append(specs, specTitle(dir, head, id))
 	}
 	line := fmt.Sprintf("bmesh: %d commits behind main", count)
 	if count == 1 {
@@ -152,6 +146,27 @@ func Notice(dir, own, head string) (string, error) {
 		line += " (landed since: " + strings.Join(specs, ", ") + ")"
 	}
 	return line + "; run bmesh update, then update the buildermesh plugin", nil
+}
+
+// Landed is the ids of the specs whose `NNN: done at` subjects are in
+// revs (a git revision range, or a commit and its history), oldest first,
+// each once.
+func Landed(dir, revs string) ([]string, error) {
+	subjects, err := git(dir, "log", "--reverse", "--format=%s", "--end-of-options", revs)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	seen := map[string]bool{}
+	for _, s := range strings.Split(subjects, "\n") {
+		m := doneAt.FindStringSubmatch(s)
+		if m == nil || seen[m[1]] {
+			continue
+		}
+		seen[m[1]] = true
+		ids = append(ids, m[1])
+	}
+	return ids, nil
 }
 
 // specTitle is `NNN <title>` from docs/proposals/NNN-*.md on head, or the

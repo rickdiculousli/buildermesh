@@ -35,7 +35,8 @@ func (h buildHold) line() string { return fmt.Sprintf("held: %s %s %s", h.who, h
 // (by name) with a lead of repo that is not done or blocked (a lead with
 // no family holds as itself), else the first other family of the repo's
 // (one a lead of repo is in, or named <repo>-build-<N>) with feedback
-// pending. Nil when nothing does.
+// pending. Nil when nothing does. A release passes no family: every
+// family is another.
 func (a *app) heldBy(ctx context.Context, repo, family string) (*buildHold, error) {
 	nodes, err := mesh.ListNodes(ctx, a.client)
 	if err != nil {
@@ -56,7 +57,7 @@ func (a *app) heldBy(ctx context.Context, repo, family string) (*buildHold, erro
 			continue
 		}
 		repoFamilies[n.Family] = true
-		if s := states[n.Path].State; n.Family == family || s == "done" || s == "blocked" {
+		if s := states[n.Path].State; (family != "" && n.Family == family) || s == "done" || s == "blocked" {
 			continue
 		}
 		who := cmp.Or(n.Family, n.Path)
@@ -78,7 +79,7 @@ func (a *app) heldBy(ctx context.Context, repo, family string) (*buildHold, erro
 	}
 	base := mesh.RepoToken(repo)
 	for _, p := range pending {
-		if p.Family == family {
+		if family != "" && p.Family == family {
 			continue
 		}
 		if m := familyNRE.FindStringSubmatch(p.Family); !repoFamilies[p.Family] && (m == nil || m[1] != base) {
@@ -90,26 +91,30 @@ func (a *app) heldBy(ctx context.Context, repo, family string) (*buildHold, erro
 	return nil, nil
 }
 
-// verifyMain checks main before a lead branches from it. The commit
-// checked is main's code head, the newest commit that changes anything
-// outside the spec directory, so ledger commits don't ask for a verify of
-// their own. A verify result recorded for its tree answers; else the
-// repo's verify kind, as that commit defines it, runs inline in a bmesh
-// worktree there and records, as land runs it. A repo with no verify kind
-// says so and passes; a failing verify refuses (exit 3) with the tail of
-// its output. With force, a fail or a missing result is said and passed,
-// and nothing runs. Each line goes to note.
-func (a *app) verifyMain(ctx context.Context, row config.Repo, repoPath string, note io.Writer, force bool) error {
-	dir := filepath.ToSlash(spec.Dir(a.cfg.Spec.Glob))
-	sha, err := gitIn(ctx, repoPath, "rev-list", "-1", "main", "--", ".", ":(exclude)"+dir)
-	if err != nil {
-		return err
+// codeHead is the newest commit of ref that changes anything outside the
+// spec directory (ref itself when only specs ever changed), so ledger
+// commits don't count as code: the commit a build verifies and a release
+// tags.
+func (a *app) codeHead(ctx context.Context, repoPath, ref string) (string, error) {
+	sha, err := gitIn(ctx, repoPath, "rev-list", "-1", ref, "--", ".", ":(exclude)"+a.specDir())
+	if err != nil || sha != "" {
+		return sha, err
 	}
-	if sha == "" { // nothing on main but specs
-		if sha, err = gitIn(ctx, repoPath, "rev-parse", "main"); err != nil {
-			return err
-		}
-	}
+	return gitIn(ctx, repoPath, "rev-parse", "--verify", ref+"^{commit}")
+}
+
+// specDir is the spec directory, as a git pathspec.
+func (a *app) specDir() string { return filepath.ToSlash(spec.Dir(a.cfg.Spec.Glob)) }
+
+// verifyMain checks sha, main's code head (codeHead), before a lead
+// branches from it or a release tags it. A verify result recorded for its
+// tree answers; else the repo's verify kind, as that commit defines it,
+// runs inline in a bmesh worktree there and records, as land runs it. A
+// repo with no verify kind says so and passes; a failing verify refuses
+// (exit 3) with fix and the tail of its output. With force, a fail or a
+// missing result is said and passed, and nothing runs. Each line goes to
+// note.
+func (a *app) verifyMain(ctx context.Context, row config.Repo, repoPath, sha string, note io.Writer, force bool, fix string) error {
 	tree, err := gitIn(ctx, repoPath, "rev-parse", sha+"^{tree}")
 	if err != nil {
 		return err
@@ -179,7 +184,7 @@ func (a *app) verifyMain(ctx context.Context, row config.Repo, repoPath string, 
 		fmt.Fprintf(note, "--force: past %s\n", red)
 		return nil
 	}
-	return fail(exitRefused, "%s; build its fix with --force\n%s", red, lastLines(output, redTail))
+	return fail(exitRefused, "%s; %s\n%s", red, fix, lastLines(output, redTail))
 }
 
 // lastLines is the last n lines of s, without a trailing newline.
