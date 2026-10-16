@@ -83,14 +83,51 @@ func TestVersionFromBuildInfo(t *testing.T) {
 			t.Fatalf("stamp only: %+v", v)
 		}
 	}
+	// The stamped release goes with the stamped commit: on the vcs
+	// revision it names, not on another.
+	stampRelease = "v0.1.0+3"
+	if s := FromBuildInfo(&debug.BuildInfo{}, true).String(); s != "v0.1.0+3 (9f8e7d6c 2026-10-16T08:00:00Z)" {
+		t.Fatalf("stamped release: %q", s)
+	}
+	if s := FromBuildInfo(bi, true).String(); s != "1a2b3c4d 2026-10-15T09:00:00Z modified" {
+		t.Fatalf("release of another commit: %q", s)
+	}
+	bi.Settings[0].Value = stampRevision
+	if s := FromBuildInfo(bi, true).String(); s != "v0.1.0+3 (9f8e7d6c 2026-10-15T09:00:00Z modified)" {
+		t.Fatalf("release of the vcs revision: %q", s)
+	}
+}
+
+func TestDescribeAndStamp(t *testing.T) {
+	dir, shas := repo(t, "one", "two", "three")
+	if got := Describe(dir, shas[2]); got != "" {
+		t.Fatalf("untagged: %q", got)
+	}
+	if f, err := stampFlags(dir, shas[2]); err != nil || strings.Contains(f, "stampRelease") {
+		t.Fatalf("untagged flags %q %v", f, err)
+	}
+	meshtest.Git(t, dir, "tag", "v1-rc", shas[0]) // not a release
+	meshtest.Git(t, dir, "tag", "-a", "-m", "bm v0.1.0", "v0.1.0", shas[1])
+	if got := Describe(dir, shas[1]); got != "v0.1.0" {
+		t.Fatalf("at the tag: %q", got)
+	}
+	if got := Describe(dir, shas[2]); got != "v0.1.0+1" {
+		t.Fatalf("past the tag: %q", got)
+	}
+	if got := Describe(dir, shas[0]); got != "" {
+		t.Fatalf("before the tag: %q", got)
+	}
+	if f, err := stampFlags(dir, shas[2]); err != nil || !strings.HasSuffix(f, ".stampRelease=v0.1.0+1") {
+		t.Fatalf("flags %q %v", f, err)
+	}
 }
 
 // stamp sets what Install's -ldflags would, for the test.
 func stamp(t *testing.T, rev, at string) {
 	t.Helper()
-	savedRev, savedTime := stampRevision, stampTime
-	t.Cleanup(func() { stampRevision, stampTime = savedRev, savedTime })
-	stampRevision, stampTime = rev, at
+	savedRev, savedTime, savedRelease := stampRevision, stampTime, stampRelease
+	t.Cleanup(func() { stampRevision, stampTime, stampRelease = savedRev, savedTime, savedRelease })
+	stampRevision, stampTime, stampRelease = rev, at, ""
 }
 
 func TestInstallSwapsAndKeepsPrev(t *testing.T) {
@@ -118,6 +155,27 @@ func TestInstallSwapsAndKeepsPrev(t *testing.T) {
 	}
 	if left, _ := filepath.Glob(filepath.Join(filepath.Dir(exe), ".bmesh-update-*")); len(left) != 0 {
 		t.Fatalf("temporary files left: %v", left)
+	}
+}
+
+// A build at a release prints `bmesh <release> (<rev8> ...)`, which the
+// swap reads as its revision.
+func TestInstallReadsReleaseVersion(t *testing.T) {
+	fakeGo(t)
+	dir, shas := repo(t, "one")
+	meshtest.Git(t, dir, "tag", "-a", "-m", "bm v0.1.0", "v0.1.0")
+	exe := filepath.Join(t.TempDir(), "bmesh")
+	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := Install(context.Background(), dir, exe, shas[0]); err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := exec.Command(exe, "version").Output(); string(out) != "bmesh v0.1.0 ("+shas[0][:8]+" 2026-10-16T00:00:00Z)\n" {
+		t.Fatalf("version %q", out)
+	}
+	if got := Installed(context.Background(), exe); got != shas[0][:8] {
+		t.Fatalf("installed %q", got)
 	}
 }
 
@@ -239,6 +297,8 @@ func TestInstallRealBuildInWorktree(t *testing.T) {
 	meshtest.Git(t, src, "init", "-q", "-b", "main")
 	meshtest.Git(t, src, "add", "-A")
 	meshtest.Git(t, src, "commit", "-q", "-m", "copy")
+	meshtest.Git(t, src, "tag", "-a", "-m", "bm v0.1.0", "v0.1.0")
+	meshtest.Git(t, src, "commit", "-q", "--allow-empty", "-m", "past the release")
 	want := meshtest.Git(t, src, "rev-parse", "HEAD")
 	wt := filepath.Join(t.TempDir(), "main")
 	meshtest.Git(t, src, "worktree", "add", "-q", "--detach", wt, "main")
@@ -253,7 +313,7 @@ func TestInstallRealBuildInWorktree(t *testing.T) {
 	at := meshtest.Git(t, src, "show", "-s", "--format=%ct", "HEAD")
 	sec, _ := strconv.ParseInt(at, 10, 64)
 	out, err := exec.Command(exe, "version").Output()
-	if w := "bmesh " + want[:8] + " " + time.Unix(sec, 0).UTC().Format(time.RFC3339) + "\n"; err != nil || string(out) != w {
+	if w := "bmesh v0.1.0+1 (" + want[:8] + " " + time.Unix(sec, 0).UTC().Format(time.RFC3339) + ")\n"; err != nil || string(out) != w {
 		t.Fatalf("version %q %v, want %q", out, err, w)
 	}
 }

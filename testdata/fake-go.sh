@@ -3,7 +3,8 @@
 # appends "build <commit of the cwd>" to $FAKE_GO_LOG, sleeps $FAKE_GO_SLEEP
 # seconds when set, then exits $FAKE_GO_EXIT when it is set and not 0
 # (printing "fake build failed"), else writes <out> as a script that prints
-# "bmesh <rev8>" for `version` and "fake bmesh <commit>" otherwise. <rev8> is
+# "bmesh <rev8>" for `version` ("bmesh <release> (<rev8> ...)" when the flags
+# stamp a stampRelease) and "fake bmesh <commit>" otherwise. <rev8> is
 # $FAKE_GO_REVISION when set, else the stampRevision in the flags (unknown
 # without one).
 # `install [-ldflags <flags>] <module>/cmd/bmesh@<commit>` appends "install
@@ -47,4 +48,7 @@ if [ -n "$FAKE_GO_EXIT" ] && [ "$FAKE_GO_EXIT" != 0 ]; then
 fi
 rev=${FAKE_GO_REVISION:-$(printf '%s\n' "$flags" | sed -n 's/.*stampRevision=\([0-9a-f]*\).*/\1/p')}
 rev=$(printf '%.8s' "${rev:-unknown}")
-printf '#!/bin/sh\n[ "$1" = version ] && { echo "bmesh %s 2026-10-16T00:00:00Z"; exit 0; }\necho fake bmesh %s\n' "$rev" "$commit" > "$out"
+release=$(printf '%s\n' "$flags" | sed -n 's/.*stampRelease=\([^ ]*\).*/\1/p')
+said="$rev 2026-10-16T00:00:00Z"
+[ -n "$release" ] && said="$release ($said)"
+printf '#!/bin/sh\n[ "$1" = version ] && { echo "bmesh %s"; exit 0; }\necho fake bmesh %s\n' "$said" "$commit" > "$out"

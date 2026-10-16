@@ -28,18 +28,21 @@ type Version struct {
 	Revision string // the full commit; "" when built without VCS
 	Time     string // the commit's time (RFC 3339)
 	Modified bool   // built from a tree with uncommitted changes
+	Release  string // the release the commit is (v0.1.0) or follows (v0.1.0+3); "" when none is stamped
 }
 
 // stampRevision and stampTime are the commit and its time Install stamps
 // into a build with -ldflags -X, since go writes no VCS stamp in a git
-// worktree such as the daemon's main checkout.
-var stampRevision, stampTime string
+// worktree such as the daemon's main checkout; stampRelease is the release
+// Describe named for that commit.
+var stampRevision, stampTime, stampRelease string
 
 // FromBuildInfo reads the vcs.* settings of bi (nil or !ok: none); a build
 // without vcs.revision falls back to Install's stamp, then to the main
 // module's pseudo-version (a `go install <module>@<commit>` build: its
 // 12-hex suffix is the revision, its timestamp the time), and one with none
-// of them is unknown.
+// of them is unknown. The stamped release is the version's when the stamp
+// names the same commit.
 func FromBuildInfo(bi *debug.BuildInfo, ok bool) Version {
 	var v Version
 	if ok && bi != nil {
@@ -59,6 +62,9 @@ func FromBuildInfo(bi *debug.BuildInfo, ok bool) Version {
 	}
 	if v.Revision == "" && ok && bi != nil {
 		v = fromPseudo(bi.Main.Version)
+	}
+	if Same(v.Revision, stampRevision) {
+		v.Release = stampRelease
 	}
 	return v
 }
@@ -94,7 +100,8 @@ func Same(a, b string) bool {
 	return strings.HasPrefix(b, a)
 }
 
-// String is `<rev8> <time> [modified]`, or `unknown`.
+// String is `<rev8> <time> [modified]`, or `unknown`; with a release it
+// is `<release> (<rev8> <time> [modified])`.
 func (v Version) String() string {
 	if v.Revision == "" {
 		return Unknown
@@ -105,6 +112,9 @@ func (v Version) String() string {
 	}
 	if v.Modified {
 		s += " modified"
+	}
+	if v.Release != "" {
+		s = v.Release + " (" + s + ")"
 	}
 	return s
 }
@@ -248,8 +258,27 @@ func (e *Refused) Error() string {
 	return fmt.Sprintf("built binary reports %s, not %s; keeping this binary", e.Reported, Short(e.Head))
 }
 
-// stampFlags is the -ldflags value that stamps head and its commit time
-// (UTC, as go writes vcs.time) into the build.
+// describeRE reads `git describe --long`: the release tag, the commits
+// past it and the abbreviated commit.
+var describeRE = regexp.MustCompile(`^(v[0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)-g[0-9a-f]+$`)
+
+// Describe is the release head is, `vX.Y.Z`, or follows, `vX.Y.Z+N` with N
+// the commits past it, from the newest vX.Y.Z tag in head's history; "" when
+// there is none.
+func Describe(dir, head string) string {
+	out, err := git(dir, "describe", "--tags", "--long", "--match", "v[0-9]*", "--end-of-options", head)
+	m := describeRE.FindStringSubmatch(out)
+	if err != nil || m == nil {
+		return ""
+	}
+	if m[2] == "0" {
+		return m[1]
+	}
+	return m[1] + "+" + m[2]
+}
+
+// stampFlags is the -ldflags value that stamps head, its commit time (UTC,
+// as go writes vcs.time) and its release (Describe) into the build.
 func stampFlags(dir, head string) (string, error) {
 	ct, err := git(dir, "show", "-s", "--format=%ct", "--end-of-options", head)
 	if err != nil {
@@ -260,15 +289,20 @@ func stampFlags(dir, head string) (string, error) {
 		return "", fmt.Errorf("commit time of %s: %q", Short(head), ct)
 	}
 	pkg := reflect.TypeOf(Version{}).PkgPath()
-	return fmt.Sprintf("-X %s.stampRevision=%s -X %s.stampTime=%s",
-		pkg, head, pkg, time.Unix(sec, 0).UTC().Format(time.RFC3339)), nil
+	flags := fmt.Sprintf("-X %s.stampRevision=%s -X %s.stampTime=%s",
+		pkg, head, pkg, time.Unix(sec, 0).UTC().Format(time.RFC3339))
+	if rel := Describe(dir, head); rel != "" {
+		flags += fmt.Sprintf(" -X %s.stampRelease=%s", pkg, rel)
+	}
+	return flags, nil
 }
 
 // versionTimeout bounds the built binary's `version`.
 const versionTimeout = 30 * time.Second
 
 // reports is the revision bin's `version` prints: `<rev8>`, `unknown`, or
-// its output (or error) when that is not `bmesh <rev8> ...`.
+// its output (or error) when that is not `bmesh <rev8> ...` or `bmesh
+// <release> (<rev8> ...)`.
 func reports(ctx context.Context, bin string) string {
 	ctx, cancel := context.WithTimeout(ctx, versionTimeout)
 	defer cancel()
@@ -281,6 +315,8 @@ func reports(ctx context.Context, bin string) string {
 		return fmt.Sprintf("%q (%v)", tail(string(out)), err)
 	case len(f) < 2 || f[0] != "bmesh":
 		return strconv.Quote(tail(string(out)))
+	case len(f) > 2 && strings.HasPrefix(f[2], "("):
+		return strings.TrimRight(strings.TrimPrefix(f[2], "("), ")")
 	}
 	return f[1]
 }

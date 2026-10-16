@@ -112,6 +112,10 @@ commands:
   build --accepted <repo> [--model M] [--effort E] [--family F]
                                            dispatch every accepted spec, lowest id first, a spec naming a lower id
                                            after that one is done, three leads at a time; print what waits
+  release <repo> [--minor|--patch] [--dry-run]
+                                           tag main's code head as the next vX.Y.Z (v0.1.0 first; minor up when a
+                                           feature landed since, else patch) and push the tag; refused while a lead
+                                           works, feedback is pending, verify isn't ok or only specs changed
   feedback "<text>" [--repo R] [--where <file|command>] [--fixed SHA]
                                            a lead's lesson for its build family's coordinator, before done
   feedback list <family> [--json]          the family's pending feedback, each with its stream sequence
@@ -134,7 +138,8 @@ commands:
                                            print the authorize URL, take the redirect on localhost or pasted,
                                            write <config dir>/t3-token.json; lasts 30 days
   t3 login --status                        print the sign-in: <host>: <access>, N days left; server and scopes
-  version                                  print this binary's commit: <rev8> <time> [modified], or unknown
+  version                                  print this binary's commit: <rev8> <time> [modified], or unknown;
+                                           <release> (<rev8> <time>) when built at or past a release tag
   update [--repo R]                        build R's main (default [update] repo, else the row this binary's
                                            module is from; with none, go install the module's main) over this
                                            binary, keeping it as bmesh.prev; print <old8> -> <new8>, or up to date
@@ -284,6 +289,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdChooseIdeas(rest)
 	case "build":
 		return a.cmdBuild(rest)
+	case "release":
+		return a.cmdRelease(rest)
 	case "feedback":
 		return a.cmdFeedback(rest)
 	case "scaffold":
