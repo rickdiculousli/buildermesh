@@ -4,7 +4,7 @@ title: The t3 runner speaks T3 Code 0.1.0 (Orchestrator V2) through its MCP tool
 kind: maintenance
 size: L
 judge: opus
-status: adjusting
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
