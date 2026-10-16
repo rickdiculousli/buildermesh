@@ -136,7 +136,7 @@ func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Wri
 		}
 		daemonDone <- daemon.Run(dctx, daemon.Deps{
 			Client: c, Cfg: cfg, Runner: r, Host: host,
-			T3Token: t3Token, StateDir: config.StateDir(),
+			T3Token: t3Token, StateDir: config.StateDir(), ConfigDir: cfg.ConfigDir(),
 			Log:       log,
 			Checkouts: cfg.Expand(cfg.Runner.Checkouts), ClaudeBin: claude,
 			Quota:    quota,

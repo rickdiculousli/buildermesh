@@ -109,6 +109,30 @@ type ConsoleConfig struct {
 // whose main it builds itself from ("" = off).
 type UpdateConfig struct{ Repo string }
 
+// HostsConfig is the hosts layer (boxes joined by the admin's roster):
+// nothing of it runs unless Enabled, which only `bmesh init --hosts` sets.
+// Admin marks the admin box, Secure a box that holds for the operator what
+// others ask of it, KeyStore where the admin or approval key lives
+// (keychain or file; "" = keychain on macOS, file elsewhere).
+type HostsConfig struct {
+	Enabled  bool
+	Admin    bool
+	Secure   bool
+	KeyStore string `toml:"key_store"`
+}
+
+// KeyStoreKind is [hosts] key_store, else keychain on macOS and file
+// elsewhere.
+func (h HostsConfig) KeyStoreKind() string {
+	if h.KeyStore != "" {
+		return h.KeyStore
+	}
+	if goos == "darwin" {
+		return "keychain"
+	}
+	return "file"
+}
+
 // Config is the parsed config.toml plus the registry read from repos.toml
 // beside it. Path-valued fields are stored as written; callers pass them
 // through Expand.
@@ -127,6 +151,7 @@ type Config struct {
 	Status   StatusConfig
 	Routines RoutinesConfig
 	Update   UpdateConfig
+	Hosts    HostsConfig
 
 	dir  string // directory of the config file; "" when none was read
 	path string // the config file's path as given to Load
@@ -205,6 +230,7 @@ type file struct {
 		KeepResults duration `toml:"keep_results"`
 	}
 	Update UpdateConfig
+	Hosts  HostsConfig
 }
 
 func defaults() *Config {
@@ -300,7 +326,7 @@ func Load(path string) (*Config, error) {
 	}
 	f := file{
 		Mesh: c.Mesh, Host: c.Host, Serve: c.Serve, Runner: c.Runner, Spec: c.Spec, Models: c.Models,
-		Quota: c.Quota, Console: c.Console, Update: c.Update,
+		Quota: c.Quota, Console: c.Console, Update: c.Update, Hosts: c.Hosts,
 	}
 	f.Notify.DigestEvery = duration(c.Notify.DigestEvery)
 	f.Notify.CatchUp = duration(c.Notify.CatchUp)
@@ -313,7 +339,10 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("config %s: %w", path, err)
 	}
 	c.Mesh, c.Host, c.Serve, c.Runner, c.Spec, c.Models = f.Mesh, f.Host, f.Serve, f.Runner, f.Spec, f.Models
-	c.Quota, c.Console, c.Update = f.Quota, f.Console, f.Update
+	c.Quota, c.Console, c.Update, c.Hosts = f.Quota, f.Console, f.Update, f.Hosts
+	if k := c.Hosts.KeyStore; k != "" && k != "keychain" && k != "file" {
+		return nil, fmt.Errorf("config %s: [hosts] key_store %q: want keychain or file", path, k)
+	}
 	for key, e := range map[string]string{"lead_effort": c.Models.LeadEffort, "proposer_effort": c.Models.ProposerEffort} {
 		if err := CheckEffort(e); err != nil {
 			return nil, fmt.Errorf("config %s: [models] %s: %w", path, key, err)
@@ -364,6 +393,15 @@ func Load(path string) (*Config, error) {
 
 // Path is the config file's path as loaded.
 func (c *Config) Path() string { return c.path }
+
+// ConfigDir is the directory of the config file, else Dir: where host.key
+// and the file store's keys live.
+func (c *Config) ConfigDir() string {
+	if c.dir != "" {
+		return c.dir
+	}
+	return Dir()
+}
 
 // T3TokenPath is the T3 sign-in `bmesh t3 login` writes: t3-token.json
 // beside the config file (in Dir when no file was read).
