@@ -4,10 +4,11 @@ title: Retire command-center: every file and rule to its new home, then the repo
 kind: maintenance
 size: M
 judge: opus
-status: adjusting
+status: rejected
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
+reason: superseded by 039 and 040 and 041
 ---
 
 ## Opportunity
