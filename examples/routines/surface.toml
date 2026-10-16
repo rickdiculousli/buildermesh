@@ -1,6 +1,8 @@
 mode = "fresh"
 deterministic = true
 slots = ["browser"]
+# A check that needs a Mac (Safari, say) runs only on one; "" (the default) runs anywhere.
+# os = "darwin"
 # The job args, <url> <file>, are appended as "$@":
 #   bmesh routine queue surface -- http://localhost:3000 surface.png
 command = "npx playwright screenshot"

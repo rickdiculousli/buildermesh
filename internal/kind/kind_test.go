@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -51,11 +52,31 @@ func TestParseDefaultsAndValidation(t *testing.T) {
 		"model with a ;":     {"r", `model = "m;x"`},
 		"models with a ;":    {"r", `models = ["ok", "m; review ok t:00000000"]`},
 		"empty models entry": {"r", `models = ["ok", ""]`},
+		"unknown os":         {"r", `os = "macos"` + "\n" + `command = "x"`},
+		"os on inline":       {"r", `mode = "inline"` + "\n" + `os = "darwin"` + "\n" + `command = "x"`},
 	}
 	for what, c := range bad {
 		if _, err := Parse(c.name, []byte(c.body)); err == nil {
 			t.Errorf("%s: want error", what)
 		}
+	}
+}
+
+func TestParseOS(t *testing.T) {
+	k, err := Parse("mac-build", []byte(`os = "darwin"`+"\n"+`command = "make"`))
+	if err != nil || k.OS != "darwin" || !k.RunsOn("darwin") || k.RunsOn("linux") {
+		t.Fatalf("darwin: %+v %v", k, err)
+	}
+	if k, err := Parse("verify", []byte(`command = "make"`)); err != nil || k.OS != "" || !k.RunsOn("linux") || !k.RunsOn("darwin") {
+		t.Fatalf("no os: %+v %v", k, err)
+	}
+	_, err = Parse("mac-build", []byte(`os = "macos"`+"\n"+`command = "make"`))
+	if err == nil || err.Error() != `kind mac-build: os "macos": want darwin, linux or windows (macOS is darwin)` {
+		t.Fatalf("unknown os: %v", err)
+	}
+	_, err = Parse("verify", []byte(`mode = "inline"`+"\n"+`os = "linux"`+"\n"+`command = "make"`))
+	if err == nil || !strings.Contains(err.Error(), "inline") {
+		t.Fatalf("os on inline: %v", err)
 	}
 }
 

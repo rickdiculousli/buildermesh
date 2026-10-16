@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -21,6 +23,9 @@ import (
 const routineUsage = "usage: bmesh routine list [--json] | status [<kind>] [--json] | " +
 	"queue <kind> [--commit C] [--model M] [--go] [--rerun] [--again] [--text T] [-- args...] | go <kind> | wait <job id> [--timeout D] | " +
 	"run <kind> [--commit HEAD] [--model M] [--here] [--rerun] [--text T] [-- args...]"
+
+// hostOS is the OS a kind's os is matched against: this box's; tests set it.
+var hostOS = runtime.GOOS
 
 func (a *app) cmdRoutine(args []string) error {
 	if len(args) > 0 {
@@ -58,6 +63,7 @@ type routineRow struct {
 
 type routineMember struct {
 	Path  string `json:"path"`
+	Host  string `json:"host"`
 	State string `json:"state"`
 	Model string `json:"model"`
 }
@@ -113,7 +119,7 @@ func (a *app) routineRows(ctx context.Context, names []string, files map[string]
 				if s, ok := states[n.Path]; ok {
 					st = s.State
 				}
-				r.Members = append(r.Members, routineMember{Path: n.Path, State: st, Model: n.Model})
+				r.Members = append(r.Members, routineMember{Path: n.Path, Host: n.Host, State: st, Model: n.Model})
 			}
 		}
 		if r.Depth, err = mesh.Depth(ctx, a.client, name); err != nil {
@@ -149,14 +155,14 @@ func (a *app) printRows(rows []routineRow, members bool) error {
 		}
 		return tw.Flush()
 	}
-	fmt.Fprintln(tw, "KIND\tMODE\tDETERMINISTIC\tRUN\tDEPTH\tINSTANCE\tSTATE\tMODEL")
+	fmt.Fprintln(tw, "KIND\tMODE\tDETERMINISTIC\tRUN\tDEPTH\tINSTANCE\tHOST\tSTATE\tMODEL")
 	for _, r := range rows {
 		head := fmt.Sprintf("%s\t%s\t%s\t%s\t%d", r.Kind, dash(r.Mode), r.deterministic(), r.run(), r.Depth)
 		if len(r.Members) == 0 {
-			fmt.Fprintf(tw, "%s\t-\t-\t-\n", head)
+			fmt.Fprintf(tw, "%s\t-\t-\t-\t-\n", head)
 		}
 		for _, m := range r.Members {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", head, m.Path, m.State, dash(m.Model))
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", head, m.Path, dash(m.Host), m.State, dash(m.Model))
 		}
 	}
 	if err := tw.Flush(); err != nil {
@@ -354,6 +360,24 @@ func (a *app) cmdRoutineQueue(args []string) error {
 			return nil
 		}
 	}
+	if err := refuseCommitOS(ctx, top, name, *commit); err != nil {
+		return err
+	}
+	elsewhere := !k.RunsOn(hostOS)
+	if elsewhere {
+		// The box that runs it fetches the commit from origin.
+		sha, err := gitIn(ctx, top, "rev-parse", "--verify", "--end-of-options", *commit+"^{commit}")
+		if err != nil {
+			return err
+		}
+		on, err := gitIn(ctx, top, "branch", "-r", "--contains", sha, "--list", "origin/*")
+		if err != nil {
+			return err
+		}
+		if on == "" {
+			return fail(exitRefused, "push first: %s runs on %s, which fetches the commit from origin", name, k.OS)
+		}
+	}
 	repo, err := a.repoName(ctx, self, top)
 	if err != nil {
 		return err
@@ -368,8 +392,56 @@ func (a *app) cmdRoutineQueue(args []string) error {
 	if dup {
 		verb = "duplicate"
 	}
-	fmt.Fprintf(a.stdout, "%s %s\n", verb, j.ID)
+	where := ""
+	if elsewhere {
+		where = " (runs on " + k.OS + ")"
+	}
+	fmt.Fprintf(a.stdout, "%s %s%s\n", verb, j.ID, where)
 	return nil
+}
+
+// refuseCommitOS refuses (exit 3) a job whose commit gives the kind an os
+// that main doesn't: which boxes take the kind's jobs is read from main
+// (origin/main when the repo has an origin), so such a job could reach a box
+// that can't run it. A commit without an os, or without the kind, runs
+// anywhere and is not checked.
+func refuseCommitOS(ctx context.Context, top, name, commit string) error {
+	at, err := kind.LoadAt(top, commit, name)
+	if errors.Is(err, kind.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if at.OS == "" {
+		return nil
+	}
+	ref := "main"
+	if hasOrigin(ctx, top) {
+		ref = "origin/main"
+	}
+	onMain, err := kind.LoadAt(top, ref, name)
+	switch {
+	case errors.Is(err, kind.ErrNotFound):
+		return fail(exitRefused, "%s is not on main: land it first", name)
+	case err != nil:
+		return fail(exitRefused, "cannot read kind %s on %s: %v", name, ref, err)
+	case onMain.OS == at.OS:
+		return nil
+	}
+	sha, err := gitIn(ctx, top, "rev-parse", "--verify", "--end-of-options", commit+"^{commit}")
+	if err != nil {
+		return err
+	}
+	mainSays, box := "anywhere", "a box that isn't "+at.OS
+	switch {
+	case onMain.OS != "":
+		mainSays, box = "on "+onMain.OS, "a "+onMain.OS+" box"
+	case hostOS != at.OS:
+		box = "a " + hostOS + " box"
+	}
+	return fail(exitRefused, "%s runs on %s at %.8s but %s on main, so a job could reach %s: "+
+		"land the os change first, or give it a kind name of its own", name, at.OS, sha, mainSays, box)
 }
 
 // repoName is the name the daemon resolves a job's repo by: the node's repo
@@ -462,7 +534,8 @@ func (a *app) cmdRoutineWait(args []string) error {
 	defer cancel()
 	timedOut := func(err error) error {
 		if ctx.Err() != nil {
-			return fail(exitTimeout, "timed out waiting for %s", id)
+			return fail(exitTimeout, "timed out waiting for %s; the job may still be queued or running, and its reply stays in the stream "+
+				"for 30 days: run bmesh routine wait %s again rather than queueing it twice", id, id)
 		}
 		return err
 	}
@@ -534,6 +607,10 @@ func (a *app) cmdRoutineRun(args []string) error {
 		return fail(exitRefused, "no kind %s in %s", name, top)
 	}
 	k := kinds[i]
+	// Run here, it would record this OS's result as the kind's for the tree.
+	if !k.RunsOn(hostOS) {
+		return fail(exitRefused, "%s runs on %s; this box is %s: queue it", name, k.OS, hostOS)
+	}
 	if k.Mode != "inline" && !*here {
 		return fail(exitRefused, "kind %s is %s; queue it, or pass --here to run it in this worktree", name, k.Mode)
 	}

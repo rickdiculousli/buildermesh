@@ -785,3 +785,81 @@ func TestRescanSkipsRepoMissingHereLoggingOnce(t *testing.T) {
 		t.Fatalf("reply %+v", r)
 	}
 }
+
+// startAs runs a second routine loop on the fixture's server as host, its
+// kinds matched against goos, with checkouts of its own.
+func (f *rfix) startAs(t *testing.T, host, goos string) (stop func()) {
+	t.Helper()
+	d := f.d
+	d.Host, d.GOOS, d.Checkouts = host, goos, filepath.Join(t.TempDir(), "checkouts")
+	ctx, cancel := context.WithCancel(f.ctx)
+	done := make(chan struct{})
+	go func() { routines(ctx, d); close(done) }()
+	var once sync.Once
+	stop = func() {
+		once.Do(func() {
+			cancel()
+			select {
+			case <-done:
+			case <-time.After(30 * time.Second):
+				t.Error("routines did not return")
+			}
+		})
+	}
+	t.Cleanup(stop)
+	return stop
+}
+
+func TestOSKindRunsOnlyOnItsOS(t *testing.T) {
+	mark := filepath.Join(t.TempDir(), "mark")
+	f := routineSetup(t, map[string]string{
+		".bmesh/routines/mac-build.toml": "os = \"darwin\"\ntimeout = \"30s\"\ncommand = \"echo $BMESH_JOB >> " + mark + "; echo built\"\n",
+		".bmesh/routines/verify.toml":    "mode = \"fresh\"\ntimeout = \"30s\"\ncommand = \"echo ran >> " + mark + "; echo verified\"\n",
+	})
+	stopMac := f.startAs(t, "mac-box", "darwin")
+	f.startAs(t, "linux-box", "linux")
+	f.waitStarted(t, "routine.mac-build.cmd-1", 1)
+	for i := 0; i < 3; i++ {
+		r := f.reply(t, f.queue(t, mesh.Job{Kind: "mac-build", Go: true}), 20*time.Second)
+		if !r.OK || r.Output != "built\n" || r.By != "routine.mac-build.cmd-1" {
+			t.Fatalf("mac-build reply %+v", r)
+		}
+	}
+	n, ok, err := mesh.GetNode(f.ctx, f.c, "routine.mac-build.cmd-1")
+	if err != nil || !ok || n.Host != "mac-box" {
+		t.Fatalf("instance %+v %v %v", n, ok, err)
+	}
+	nodes, err := mesh.ListNodes(f.ctx, f.c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range nodes {
+		if strings.HasPrefix(n.Path, "routine.mac-build.") && n.Host != "mac-box" {
+			t.Fatalf("mac-build instance on %s: %+v", n.Host, n)
+		}
+	}
+
+	// A branch moves verify, which main runs anywhere, to darwin: the linux
+	// box answers its job without running or recording it.
+	stopMac()
+	meshtest.Git(t, f.repo, "checkout", "-q", "-b", "side")
+	side := meshtest.CommitFiles(t, f.repo, map[string]string{
+		".bmesh/routines/verify.toml": "mode = \"fresh\"\nos = \"darwin\"\ntimeout = \"30s\"\ncommand = \"echo ran >> " + mark + "; echo verified\"\n",
+	})
+	meshtest.Git(t, f.repo, "checkout", "-q", "main")
+	before := len(lines(t, mark))
+	r := f.reply(t, f.queue(t, mesh.Job{Kind: "verify", Commit: side, Go: true}), 20*time.Second)
+	if want := "kind verify at " + side[:8] + " runs on darwin; this box is linux"; r.OK || r.Output != want {
+		t.Fatalf("wrong-box reply %+v, want %q", r, want)
+	}
+	if got := len(lines(t, mark)); got != before {
+		t.Fatalf("ran on the wrong box: %d lines, was %d", got, before)
+	}
+	tree := meshtest.Git(t, f.repo, "rev-parse", side+"^{tree}")
+	if _, ok, err := mesh.GetResult(f.ctx, f.c, mesh.ResultKey("verify", tree, nil, "")); err != nil || ok {
+		t.Fatalf("recorded on the wrong box: %v %v", ok, err)
+	}
+	if n, err := mesh.Depth(f.ctx, f.c, "verify"); err != nil || n != 0 {
+		t.Fatalf("verify depth %d %v: the answer is acked", n, err)
+	}
+}
