@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -139,6 +140,7 @@ func fail(code int, format string, a ...any) error {
 // app is one invocation's shared state.
 type app struct {
 	stdin          io.Reader
+	in             *bufio.Reader // stdin's one buffered reader (lines)
 	stdout, stderr io.Writer
 	configPath     string
 	node           string
@@ -253,6 +255,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdVersion(rest)
 	case "update":
 		return a.cmdUpdate(rest)
+	case "hosts":
+		return a.cmdHosts(rest)
 	case "help":
 		fmt.Fprint(a.stdout, usage)
 		return nil

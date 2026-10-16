@@ -207,9 +207,10 @@ func scan(ctx context.Context, js jetstream.JetStream, filter string, f func(sub
 
 // WaitReplies follows caller's reply subject for the jobs in want until
 // each has a reply that checks or ctx ends, calling got for each such
-// reply as it arrives (replies that fail the check are dropped).
+// reply as it arrives (replies that fail the check are dropped). ready is
+// closed once it follows, so the jobs can be sent.
 func WaitReplies(ctx context.Context, js jetstream.JetStream, caller string, want map[string]Job, roster *Roster,
-	got func(Job, Reply)) error {
+	ready chan<- struct{}, got func(Job, Reply)) error {
 	cons, err := js.OrderedConsumer(ctx, stream, jetstream.OrderedConsumerConfig{
 		FilterSubjects: []string{ReplySubject(caller, "*")}, DeliverPolicy: jetstream.DeliverNewPolicy,
 	})
@@ -223,6 +224,7 @@ func WaitReplies(ctx context.Context, js jetstream.JetStream, caller string, wan
 	defer it.Stop()
 	stop := context.AfterFunc(ctx, it.Stop)
 	defer stop()
+	close(ready)
 	left := len(want)
 	for left > 0 {
 		m, err := it.Next()
