@@ -41,6 +41,9 @@ type Deps struct {
 	PushRetry []time.Duration // waits before each push retry; nil = 5s, 30s
 	PushGrace time.Duration   // how long a push in flight may finish at shutdown; 0 = 10s
 
+	T3Token  string // the T3 sign-in file `bmesh t3 login` writes; "" = no expiry warnings
+	StateDir string // where the daemon's push record lives
+
 	Revision string // this binary's commit (vcs.revision); "" = unknown
 	Exe      string // the binary's path, which [update] replaces
 	Restart  func() // ends serve so the binary re-execs; called after an update drained
@@ -152,6 +155,9 @@ func Run(ctx context.Context, d Deps) error {
 		}
 		since := d.Now()
 		start(func() { every(ctx, digestEvery, func() { digestOnce(ctx, d, &since) }) })
+	}
+	if d.T3Token != "" && (d.Cfg.Notify.Ntfy != "" || d.Cfg.Notify.Command != "") {
+		start(func() { every(ctx, time.Hour, func() { t3LoginOnce(ctx, d) }) })
 	}
 	if pushEnabled(d.Cfg.Notify) {
 		start(func() { pushLoop(ctx, d) })
