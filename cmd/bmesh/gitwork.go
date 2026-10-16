@@ -103,7 +103,7 @@ func (a *app) repoLock(repoPath string) (unlock func(), err error) {
 		return func() {}, nil
 	}
 	name, _, err := a.cfg.RepoPath(repoPath)
-	if err != nil || name == "" {
+	if _, ok := a.cfg.Repos[name]; err != nil || !ok {
 		return func() {}, nil
 	}
 	return level.Lock(config.StateDir(), name)

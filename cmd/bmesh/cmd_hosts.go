@@ -21,7 +21,8 @@ import (
 )
 
 const hostsUsage = "usage: bmesh hosts [--json] | hosts --here | hosts --notes | hosts invite <name> [--secure] [--accept a,b] [--replace] | " +
-	"hosts set <name> [--secure=true|false] [--accept a,b] | hosts revoke <name> | hosts ping [<host>] [--wait D] | hosts replies [--json]"
+	"hosts set <name> [--secure=true|false] [--accept a,b] | hosts revoke <name> | hosts ping [<host>] [--wait D] | hosts replies [--json] | " +
+	"hosts held [--json] | hosts approve <id> | hosts deny <id>"
 
 // defaultAccept is what a box accepts when the admin names nothing: ping,
 // which shows the mesh works and changes nothing.
@@ -49,6 +50,12 @@ func (a *app) cmdHosts(args []string) error {
 			return a.cmdHostsPing(args[1:])
 		case "replies":
 			return a.cmdHostsReplies(args[1:])
+		case "held":
+			return a.cmdHostsHeld(args[1:])
+		case "approve":
+			return a.cmdHostsApprove(args[1:])
+		case "deny":
+			return a.cmdHostsDeny(args[1:])
 		}
 		return fail(exitUsage, hostsUsage)
 	}
