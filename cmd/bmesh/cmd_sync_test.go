@@ -211,4 +211,3 @@ func TestSyncWithHostsOffIsRefused(t *testing.T) {
 		t.Fatalf("%d %s", code, errs)
 	}
 }
-
