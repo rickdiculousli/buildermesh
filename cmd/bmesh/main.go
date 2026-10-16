@@ -52,9 +52,11 @@ commands:
   hosts revoke <name>                      (admin) publish the next roster without the box
   hosts ping [<host>] [--wait D]           ping every roster box (or one); print each answer, or asleep: queued
   hosts replies [--json]                   the replies this box's jobs got, checked
-  hosts held [--json]                      the levels this secure box holds for the operator
+  hosts held [--json]                      the levels this secure box holds for the operator, and on the admin
+                                           box the registry proposals
   hosts approve <id>                       show a hold's log, sign the approval with the approve key (the
-                                           announced Keychain dialog) and level; asks again when origin moved
+                                           announced Keychain dialog) and level; asks again when origin moved;
+                                           a registry proposal is published as the next registry version
   hosts deny <id>                          drop a hold, answering its sender
   sync [--repo R | --all] [--wait 30s]     level this box's checkout (pushing when ahead and allowed), then send
                                            level with origin's head to every box that has the repo; print each
@@ -62,6 +64,18 @@ commands:
   repos [--json]                           the registry (repos.toml): name, mode, remote, verify, host, ux_host,
                                            surfaces, pin; --json prints the rows
   repos show <name> [--json]               one row
+  repos publish                            (admin) print the row diff from the current registry and publish this
+                                           box's repos.toml as its next version, signed with the admin key
+  repos propose [--wait 30s]               send this box's repos.toml, as a diff from its registry, to the admin
+                                           box, which holds it for the operator's approval
+  repos remove <name> [--checkouts [--ignored-ok]] [--apply] [--wait 1m]
+                                           (admin) publish the registry without the row; --checkouts first asks
+                                           every box that lists it to nix its checkout, and publishes only once
+                                           each answered removed or absent; with [hosts] off, edit repos.toml
+  prune [--repo R | --all] [--apply] [--wait 30s]
+                                           judge this box's bmesh worktrees and bmesh/* branches (keep or remove,
+                                           with the reason), then every other box that accepts prune; a dry run
+                                           unless --apply
   whoami                                   print this node's path
   started|progress|blocked|ask [--text T]  report an event; print <event> <path>
   done --commit SHA [--text T]             report done (a lead's spec must have landed, verified by results); print
@@ -71,9 +85,11 @@ commands:
   thread-status [<path>] [--json]          print a node's state
   mesh-status [--all] [--json]             every node's state, runner and unread count; nodes done longer than
                                            [status] keep_done are counted, not listed, unless --all (or --json)
-  node forget <path> [--worktree]          delete a done or blocked node (or an idle one that never reported and
+  node forget <path> [--worktree [--wait 30s]]
+                                           delete a done or blocked node (or an idle one that never reported and
                                            whose thread isn't running), its state and inbox; --worktree also
-                                           removes its clean worktree and merged branch on this host
+                                           removes its clean worktree and merged branch, on another box through
+                                           a forget-worktree job (the node stays until that box answers)
   watch --nodes a,b [--since T] [--timeout D]
                                            follow nodes until all are done, blocked or silent
   lead start --repo R --spec NNN --brief FILE [--model M] [--effort E] [--title T] [--path P]

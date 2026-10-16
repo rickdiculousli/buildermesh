@@ -282,7 +282,11 @@ func (a *app) cmdHostsDeny(args []string) error {
 	if err := hosts.DropHeld(b.stateDir, x.ID); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.stdout, "denied %s: %s stays at %s\n", x.ID, x.Repo, short8(x.Head))
+	if x.Kind == hosts.HeldRegistry {
+		fmt.Fprintf(a.stdout, "denied %s: the registry stays at v%d without %s's proposal\n", x.ID, x.Base, x.From())
+	} else {
+		fmt.Fprintf(a.stdout, "denied %s: %s stays at %s\n", x.ID, x.Repo, short8(x.Head))
+	}
 	if x.Self {
 		return nil
 	}

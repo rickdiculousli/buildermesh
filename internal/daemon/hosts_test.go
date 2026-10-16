@@ -240,7 +240,7 @@ func TestHostsReplayGetsTheStoredReply(t *testing.T) {
 func TestHostsInterruptedAfterARestart(t *testing.T) {
 	h := hostsSetup(t, "ping", "nix")
 	h.stop()
-	j := hosts.NewJob(hostKey("mac"), "mac", testHost, "nix", "", nil, 2, time.Now(), time.Hour)
+	j := hosts.NewJob(hostKey("admin"), "mac", testHost, "nix", "", nil, 2, time.Now(), time.Hour)
 	// The daemon died mid-job: the record says started.
 	if err := hosts.OpenSalts(h.d.StateDir).Put(j.Salt, hosts.SaltRecord{State: hosts.SaltStarted, JobID: j.ID, Op: j.Op, Expires: j.Expires}); err != nil {
 		t.Fatal(err)
