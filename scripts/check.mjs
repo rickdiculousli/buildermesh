@@ -60,13 +60,15 @@ const profile = mkdtempSync(join(tmpdir(), "bmesh-check-"));
 // Port 0: Chromium picks a free port and writes it to DevToolsActivePort.
 const proc = spawn(chrome, ["--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars", "--no-first-run",
   "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore" });
-let exited = false;
+let exited = false, spawnErr = "";
 proc.on("exit", () => { exited = true; });
+// A missing or non-executable $CHROME is an error event, not an exit.
+proc.on("error", (e) => { exited = true; spawnErr = e.message; });
 let code = 2;
 try {
   let port = "";
   for (let i = 0; !port; i++) {
-    if (exited) throw new Error("chromium exited at start");
+    if (exited) throw new Error(`chromium exited at start${spawnErr ? `: ${spawnErr}` : ""}`);
     if (i > 100) throw new Error("chromium did not open its DevTools port in 20 s");
     await sleep(200);
     try { port = readFileSync(join(profile, "DevToolsActivePort"), "utf8").split("\n")[0].trim(); } catch { /* not yet */ }
@@ -81,6 +83,11 @@ try {
   });
   let id = 0;
   const waiting = new Map();
+  // A closed socket (Chromium gone) fails every call still waiting.
+  ws.addEventListener("close", () => {
+    for (const settle of waiting.values()) settle({ error: { message: "DevTools websocket closed" } });
+    waiting.clear();
+  });
   ws.addEventListener("message", (m) => {
     const d = JSON.parse(m.data);
     if (d.id && waiting.has(d.id)) {
@@ -89,6 +96,7 @@ try {
     }
   });
   const send = (method, params = {}) => new Promise((resolve, reject) => {
+    if (ws.readyState !== WebSocket.OPEN) return reject(new Error(`${method}: DevTools websocket closed`));
     const n = ++id;
     waiting.set(n, (d) => (d.error ? reject(new Error(`${method}: ${d.error.message}`)) : resolve(d.result)));
     ws.send(JSON.stringify({ id: n, method, params }));
