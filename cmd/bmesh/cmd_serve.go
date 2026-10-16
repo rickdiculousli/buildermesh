@@ -125,8 +125,13 @@ func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Wri
 	daemonDone := make(chan error, 1)
 	log := slog.New(slog.NewTextHandler(stderr, nil))
 	go func() {
+		t3Token := ""
+		if cfg.Runner.Kind == "t3" {
+			t3Token = cfg.T3TokenPath()
+		}
 		daemonDone <- daemon.Run(dctx, daemon.Deps{
 			Client: c, Cfg: cfg, Runner: r, Host: host,
+			T3Token: t3Token, StateDir: config.StateDir(),
 			Log:       log,
 			Checkouts: cfg.Expand(cfg.Runner.Checkouts), ClaudeBin: claude,
 			Revision: buildVersion().Revision, Exe: exe,

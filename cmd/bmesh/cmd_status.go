@@ -11,6 +11,7 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/runner/t3mcp"
 )
 
 func (a *app) cmdWhoami(args []string) error {
@@ -158,6 +159,18 @@ func (a *app) cmdMeshStatus(args []string) error {
 	}
 	for _, p := range pending {
 		fmt.Fprintf(a.stdout, "feedback: %d pending in %s\n", p.Pending, p.Family)
+	}
+	if a.cfg.Runner.Kind == "t3" {
+		if tok, err := t3mcp.ReadToken(a.cfg.T3TokenPath()); err == nil && tok.Left(time.Now()) < 7*24*time.Hour {
+			host := a.cfg.HostName()
+			if n := tok.DaysLeft(time.Now()); n == 0 {
+				fmt.Fprintf(a.stdout, "t3 sign-in on %s: expired (bmesh t3 login)\n", host)
+			} else if n == 1 {
+				fmt.Fprintf(a.stdout, "t3 sign-in on %s: expires in 1 day (bmesh t3 login)\n", host)
+			} else {
+				fmt.Fprintf(a.stdout, "t3 sign-in on %s: expires in %d days (bmesh t3 login)\n", host, n)
+			}
+		}
 	}
 	return nil
 }
