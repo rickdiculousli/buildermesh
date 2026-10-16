@@ -52,4 +52,4 @@ The repo's verify. New tests:
 Defaulting the dial to `listen` points a multi-box config with an empty `nats` at localhost. That config is already broken today, and the "no hub" line names the cause. The alternative for #1.1 was having `init` write `nats = "nats://127.0.0.1:4222"` and having `serve` embed when the URL is local. That changes what `nats` means and breaks configs already written. Dialing `listen` is the smaller change.
 
 ## Needs from the operator
-Agreement that the lead may push `Fixes #N` (which closes the friend's issues) and comment on #1. Both are public.
+Agreed on 2026-10-16: the lead pushes `Fixes #2, Fixes #3` and comments on #1.

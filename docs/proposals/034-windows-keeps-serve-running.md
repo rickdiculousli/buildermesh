@@ -41,10 +41,9 @@ The repo's verify, plus the new `GOOS=windows go vet ./...`. New tests:
 - the `schtasks` lines for paths with spaces, and the refusal of `"` and `%` (a pure function, tested on any OS);
 - an unsupervised Windows daemon refuses to update (build-tagged and type-checked by the Windows vet).
 
-A live check on Windows: run `init --service` and the two commands, log out and in, open the map, push a no-op commit with `[update] upstream = true` set, and see `serve.log`.
+No live check on Windows: the operator chose to land on vet and the tests alone (2026-10-16).
 
 ## Risks and the alternative considered
 No box in the fleet runs Windows. Every Windows-only line is checked only by vet and by the live check, so this is the least-tested path in the repo. The alternative is the Startup-folder VBS from #1, written by `init`. It hides the window, but it can't restart a crashed or updated daemon, so it fixes only half of the problem. A real Windows service needs admin rights and a service wrapper, which is too much for a single-user install.
 
 ## Needs from the operator
-The live check needs a Windows box: ask the friend who filed #1, or skip it and land on vet and the tests alone.
