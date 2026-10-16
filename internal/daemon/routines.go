@@ -486,9 +486,13 @@ func (r *routineSet) applyKind(name string, defs map[string]kind.Kind, repoPaths
 			r.d.Log.Warn("routines: consumer", "kind", name, "err", err)
 			return
 		}
-		f = r.startFeed(name, cons, capacity)
+		f = r.newFeed(name, cons)
 		f.ackWait.Store(int64(ackWait))
 		r.feeds[name] = f
+		// Its dispatcher starts once its groups and deferred repos are in
+		// place (it waits on f.mu), so no job meets a feed that knows
+		// neither.
+		defer r.runFeed(f)
 	case time.Duration(f.ackWait.Load()) != ackWait:
 		if _, err := mesh.KindConsumer(r.ctx, r.d.Client, name, -1, ackWait); err != nil {
 			r.d.Log.Warn("routines: consumer", "kind", name, "err", err)
@@ -566,17 +570,19 @@ func (r *routineSet) convergeConsumer(f *feed) {
 	}
 }
 
-func (r *routineSet) startFeed(name string, cons jetstream.Consumer, capacity int) *feed {
+func (r *routineSet) newFeed(name string, cons jetstream.Consumer) *feed {
 	ctx, cancel := context.WithCancel(r.ctx)
-	f := &feed{name: name, cons: cons, ctx: ctx, cancel: cancel, groups: map[string]*group{},
+	return &feed{name: name, cons: cons, ctx: ctx, cancel: cancel, groups: map[string]*group{},
 		held: map[*delivery]uint64{}}
-	f.capacity.Store(int64(capacity))
+}
+
+// runFeed starts f's dispatcher.
+func (r *routineSet) runFeed(f *feed) {
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
-		r.dispatch(ctx, f)
+		r.dispatch(f.ctx, f)
 	}()
-	return f
 }
 
 // stop ends the dispatcher and every group; running jobs finish (until
@@ -669,10 +675,12 @@ func isGo(m mesh.Message) bool {
 // fetch, and every fetchWait while its capacity is full. A message fetched
 // once ctx has ended goes back to the inbox.
 func (r *routineSet) dispatch(ctx context.Context, f *feed) {
-	var goSeen uint64 // stream sequence of the last go acted on
+	var goSeen, scanned uint64 // stream sequence of the last go acted on; of the last message a peek read
 	peek := func() {
 		if oldest, ok := f.oldestHeld(); ok {
-			if seq, ok := r.peekGo(ctx, f.name, max(oldest, goSeen)); ok {
+			seq, last, ok := r.peekGo(ctx, f.name, max(oldest, goSeen, scanned))
+			scanned = max(scanned, last)
+			if ok {
 				goSeen = seq
 				f.signalGo()
 			}
@@ -749,26 +757,28 @@ func (f *feed) oldestHeld() (uint64, bool) {
 	return oldest, true
 }
 
-// peekGo looks at the kind's inbox past sequence after for a go.
-func (r *routineSet) peekGo(ctx context.Context, kindName string, after uint64) (uint64, bool) {
+// peekGo looks at up to 100 messages of the kind's inbox past sequence
+// after for a go; last is the sequence of the last message it read without
+// finding one, so the next look starts past it (a message read is never a
+// go later).
+func (r *routineSet) peekGo(ctx context.Context, kindName string, after uint64) (seq, last uint64, ok bool) {
 	st, err := r.d.Client.JS.Stream(ctx, mesh.StreamMesh)
 	if err != nil {
-		return 0, false
+		return 0, 0, false
 	}
 	subject := mesh.InboxSubject(mesh.RoutinePath(kindName))
-	seq := after + 1
 	for range 100 {
-		raw, err := st.GetMsg(ctx, seq, jetstream.WithGetMsgSubject(subject))
+		raw, err := st.GetMsg(ctx, after+1, jetstream.WithGetMsgSubject(subject))
 		if err != nil {
-			return 0, false // ErrMsgNotFound: nothing further
+			return 0, last, false // ErrMsgNotFound: nothing further
 		}
 		var m mesh.Message
 		if json.Unmarshal(raw.Data, &m) == nil && isGo(m) {
-			return raw.Sequence, true
+			return raw.Sequence, last, true
 		}
-		seq = raw.Sequence + 1
+		last, after = raw.Sequence, raw.Sequence
 	}
-	return 0, false
+	return 0, last, false
 }
 
 // route settles what the dispatcher can decide (a kind not on the repo's
@@ -796,7 +806,7 @@ func (r *routineSet) route(f *feed, m jetstream.Msg, msg mesh.Message) {
 	if _, ok := r.d.Cfg.Repos[j.Repo]; !ok {
 		// serve reads repos.toml only when it starts: a box that has the
 		// row now runs it once restarted, and another box may have it.
-		r.deferJob(dl, "is not in the registry serve read at start, so not")
+		r.deferJob(dl, "is not in the registry serve read at start, so not judged")
 		return
 	}
 	if text := r.handOff(f, dl); text != "" {

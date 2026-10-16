@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"encoding/json"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -18,6 +19,10 @@ import (
 // each with a host, a registry and checkouts of its own.
 
 // withRepos gives a daemon a registry of its own.
+// twoBoxes shortens the rescan, so a box whose first scan failed (both
+// boxes add worktrees of one repo) retries within the test's waits.
+func twoBoxes() { kindRescan = 300 * time.Millisecond }
+
 func withRepos(repos map[string]config.Repo) func(*Deps) {
 	return func(d *Deps) {
 		cfg := *d.Cfg
@@ -66,6 +71,7 @@ func TestDeferDelayGrowsAndCaps(t *testing.T) {
 func TestJobForARepoOneBoxLacksIsDeferredThere(t *testing.T) {
 	kindFile := map[string]string{".bmesh/routines/verify.toml": "timeout = \"30s\"\ncommand = \"echo ran\"\n"}
 	f := routineSetup(t, kindFile)
+	twoBoxes()
 	deferBase, deferCap = 200*time.Millisecond, 800*time.Millisecond
 	t.Cleanup(func() { deferBase, deferCap = 2*time.Second, time.Minute })
 	lib := libRepo(t, kindFile)
@@ -118,6 +124,7 @@ func TestJobForARepoOneBoxLacksIsDeferredThere(t *testing.T) {
 // naming the commit main was read at.
 func TestKindNotOnMainAnsweredNamingTheCommit(t *testing.T) {
 	f := routineSetup(t, map[string]string{".bmesh/routines/verify.toml": "timeout = \"30s\"\ncommand = \"echo ran\"\n"})
+	twoBoxes()
 	lib := libRepo(t, map[string]string{".bmesh/routines/lint.toml": "timeout = \"30s\"\ncommand = \"echo linted\"\n"})
 	repos := map[string]config.Repo{"app": {Path: f.repo}, "lib": {Path: lib}}
 	f.startAs(t, "box-a", "linux", withRepos(repos))
@@ -147,6 +154,7 @@ timeout = "30s"
 batch_idle = "1s"
 command = "touch ` + dir + `/started-$BMESH_JOB; while [ ! -f ` + release + ` ]; do sleep 0.1; done; echo done"
 `})
+	twoBoxes()
 	f.startAs(t, "box-a", "linux")
 	f.startAs(t, "box-b", "linux")
 	f.waitStarted(t, "routine.slow.box-a-cmd-1", 1)
@@ -158,6 +166,10 @@ command = "touch ` + dir + `/started-$BMESH_JOB; while [ ! -f ` + release + ` ];
 		return len(m)
 	}
 	waitFor(t, 15*time.Second, "two jobs running", func() bool { return started() == 2 })
+	cons, err := f.c.JS.Consumer(f.ctx, mesh.StreamMesh, mesh.InboxConsumer(mesh.RoutinePath("slow")))
+	if err != nil {
+		t.Fatal(err)
+	}
 	for deadline := time.Now().Add(1500 * time.Millisecond); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
 		if n := started(); n != 2 {
 			t.Fatalf("%d jobs started, want 2", n)
@@ -166,16 +178,22 @@ command = "touch ` + dir + `/started-$BMESH_JOB; while [ ! -f ` + release + ` ];
 		if err != nil {
 			t.Fatal(err)
 		}
-		per := map[string]int{}
+		per := map[string]int{} // a box's dispatcher holds as daemon.<host>, its instances as routine.slow.<host>-cmd-1
 		for _, j := range jobs {
 			if j.Holder != "" {
-				per[j.Holder]++
+				host := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(j.Holder, "daemon."), "routine.slow."), "-cmd-1")
+				per[host]++
 			}
 		}
-		for holder, n := range per {
-			if n > 1 {
-				t.Fatalf("%s holds %d jobs: %+v", holder, n, jobs)
-			}
+		if per["box-a"] != 1 || per["box-b"] != 1 || len(per) != 2 {
+			t.Fatalf("jobs per box %v, want one each: %+v", per, jobs)
+		}
+		info, err := cons.Info(f.ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.NumAckPending != 2 || info.NumPending != 1 {
+			t.Fatalf("consumer: %d out, %d waiting; want 2 and 1", info.NumAckPending, info.NumPending)
 		}
 	}
 	if err := os.WriteFile(release, nil, 0o644); err != nil {
@@ -256,6 +274,7 @@ timeout = "30s"
 batch_idle = "30s"
 command = "echo ran"
 `})
+	twoBoxes()
 	f.startAs(t, "box-a", "linux")
 	f.startAs(t, "box-b", "linux")
 	f.waitStarted(t, "routine.verify.box-a-cmd-1", 1)
@@ -264,7 +283,7 @@ command = "echo ran"
 	var holder string
 	waitFor(t, 10*time.Second, "the job held", func() bool {
 		jobs, err := mesh.KindJobs(f.ctx, f.c, "verify")
-		if err == nil && len(jobs) == 1 && jobs[0].State == "held" {
+		if err == nil && len(jobs) == 1 && jobs[0].State == "held" && strings.HasPrefix(jobs[0].Holder, "routine.verify.") {
 			holder = jobs[0].Holder
 		}
 		return holder != ""
@@ -285,6 +304,7 @@ command = "echo ran"
 // and each still runs in the checkout its host-less name had.
 func TestPooledInstancesCarryTheHost(t *testing.T) {
 	f := routineSetup(t, map[string]string{".bmesh/routines/verify.toml": "timeout = \"30s\"\ncommand = \"pwd\"\n"})
+	twoBoxes()
 	roots := map[string]string{"box-a": filepath.Join(t.TempDir(), "a"), "box-b": filepath.Join(t.TempDir(), "b")}
 	warm := map[string]string{}
 	for host, root := range roots {
@@ -347,5 +367,77 @@ func TestKindOfAnotherOSIsDeferred(t *testing.T) {
 	r := f.reply(t, libJob.ID, 20*time.Second)
 	if !r.OK || r.Output != "built\n" {
 		t.Fatalf("lib reply %+v", r)
+	}
+}
+
+// A go another box fetched starts this box's held batch though this box
+// has since fetched a later job: the peek starts after the oldest held job,
+// not after the last fetched.
+func TestGoBehindALaterFetchStillStartsTheBatch(t *testing.T) {
+	release := filepath.Join(t.TempDir(), "release")
+	f := routineSetup(t, map[string]string{".bmesh/routines/verify.toml": `
+pool = 2
+timeout = "30s"
+batch_idle = "30s"
+command = "if [ \"$1\" = block ]; then while [ ! -f ` + release + ` ]; do sleep 0.1; done; fi; echo ran"
+`})
+	drainWait = time.Millisecond // a job fetched after the blockers is held, not run in their drain
+	f.start(t)
+	f.waitStarted(t, "routine.verify.testhost-cmd-1", 1)
+	f.waitStarted(t, "routine.verify.testhost-cmd-2", 1)
+	// Two running blockers fill this box's capacity: it fetches nothing.
+	blockers := []string{f.queue(t, mesh.Job{Kind: "verify", Args: []string{"block"}, Go: true}),
+		f.queue(t, mesh.Job{Kind: "verify", Args: []string{"block", "2"}, Go: true})}
+	waitFor(t, 10*time.Second, "both blockers running", func() bool {
+		jobs, err := mesh.KindJobs(f.ctx, f.c, "verify")
+		return err == nil && len(jobs) == 2 && jobs[0].State == "running" && jobs[1].State == "running"
+	})
+	id1 := f.queue(t, mesh.Job{Kind: "verify"})
+	if _, err := mesh.Send(f.ctx, f.c, mesh.Message{Kind: "message", Text: "go", From: requester, To: "routine.verify"}); err != nil {
+		t.Fatal(err)
+	}
+	id2 := f.queue(t, mesh.Job{Kind: "verify"})
+	// Another box fetches the first job and the go: it acks the go and
+	// hands the job back.
+	cons, err := f.c.JS.Consumer(f.ctx, mesh.StreamMesh, mesh.InboxConsumer(mesh.RoutinePath("verify")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch, err := cons.FetchNoWait(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for m := range batch.Messages() {
+		var msg mesh.Message
+		if err := json.Unmarshal(m.Data(), &msg); err != nil {
+			t.Fatal(err)
+		}
+		if isGo(msg) {
+			got = append(got, "go")
+			m.Ack()
+		} else {
+			got = append(got, msg.Job.ID)
+			m.Nak()
+		}
+	}
+	if strings.Join(got, " ") != id1+" go" {
+		t.Fatalf("fetched %q", got)
+	}
+	// The blockers end: this box fetches the first job again and the later
+	// second, holds both, and finds the go behind the second.
+	if err := os.WriteFile(release, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range blockers {
+		if r := f.reply(t, id, 10*time.Second); !r.OK {
+			t.Fatalf("blocker %+v", r)
+		}
+	}
+	start := time.Now()
+	for _, id := range []string{id1, id2} {
+		if r := f.reply(t, id, 10*time.Second); !r.OK || time.Since(start) > 8*time.Second {
+			t.Fatalf("reply %+v after %s", r, time.Since(start))
+		}
 	}
 }
