@@ -4,7 +4,7 @@ title: A finished build batch cuts a release tag, starting at v0.1.0
 kind: feature
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
@@ -12,6 +12,8 @@ built_by: a2af4a6d-59d2-415c-9b55-f6d9926a36e5
 host: k16
 family: buildermesh-build-5
 branch: bmesh/a2af4a6d-59d2-415c-9b55-f6d9926a36e5
+merged: b2b96c92a46679a613d82aba7a53818f5125734c
+verified: verify ok t:adab4d6f
 ---
 
 ## Opportunity
