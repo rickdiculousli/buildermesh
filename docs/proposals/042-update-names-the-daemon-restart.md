@@ -4,11 +4,14 @@ title: bmesh update says when this box's daemon still runs the old binary, and h
 kind: refinement
 size: S
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: 56979e66-321a-467e-9cbc-a2165df787ff
 proposed_on: 2026-10-16
 from_feedback: buildermesh-build-3 (the operator's Mac update during the family)
+built_by: 5e40fd56-b2f9-4b2b-8bde-110f2110102d
+host: k16
+family: buildermesh-build-4
 ---
 
 ## Opportunity
