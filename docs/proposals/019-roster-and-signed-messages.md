@@ -4,7 +4,7 @@ title: Boxes join the mesh: an admin's roster, one-time invites and signed messa
 kind: feature
 size: L
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
@@ -12,6 +12,8 @@ built_by: f1feaf6f-dcf7-441e-a362-44f90eedbdbc
 host: k16
 family: buildermesh-build-2
 branch: bmesh/f1feaf6f-dcf7-441e-a362-44f90eedbdbc
+verified: review ok t:720eaa33 m:claude-opus-5-5; verify ok t:720eaa33
+merged: 92fbe32bb76dd743247cc6b9fcb98a2b77cf582d
 ---
 
 ## Opportunity
