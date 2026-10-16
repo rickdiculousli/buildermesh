@@ -4,7 +4,7 @@ title: The admin's registry, and pruning and removing across boxes
 kind: feature
 size: L
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
@@ -12,6 +12,8 @@ built_by: dae7b2d4-6538-46a8-9d14-117b1a4301d5
 host: k16
 family: buildermesh-build-2
 branch: bmesh/dae7b2d4-6538-46a8-9d14-117b1a4301d5
+merged: b700eead912267bc0c2109688748e13929d5d44d
+verified: verify ok t:08634917
 ---
 
 ## Opportunity
