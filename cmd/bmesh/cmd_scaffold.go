@@ -11,7 +11,8 @@ const scaffoldUsage = "usage: bmesh scaffold <repo> [--check]"
 
 // cmdScaffold gives a ship repo its AGENTS.md sections, its proposals
 // directory and the routine kinds its row names: bmesh scaffold <repo>
-// [--check]. --check prints the unified diff of what would change and
+// [--check], <repo> a row's name, its checkout or a worktree of it (which
+// is written in place). --check prints the unified diff of what would change and
 // exits 1 when there is any; a row that is not ship, or a repo without a
 // row, exits 2.
 func (a *app) cmdScaffold(args []string) error {
@@ -32,6 +33,13 @@ func (a *app) cmdScaffold(args []string) error {
 		return fail(exitUsage, "%v", err)
 	}
 	row, ok := a.cfg.Repos[name]
+	if !ok {
+		// A lead's worktree of the row's checkout is scaffolded in place.
+		if n := a.repoNameAt(repoPath); n != name {
+			name = n
+			row, ok = a.cfg.Repos[name]
+		}
+	}
 	if !ok {
 		return fail(exitUsage, "%s is not in repos.toml; scaffold needs its row (verify, remote, routines)", name)
 	}

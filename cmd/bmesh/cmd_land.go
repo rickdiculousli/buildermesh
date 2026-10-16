@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -13,10 +14,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh"
 	"github.com/rickdiculousli/buildermesh/internal/checkout"
 	"github.com/rickdiculousli/buildermesh/internal/daemon"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/scaffold"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
@@ -36,6 +39,7 @@ type lander struct {
 	id       int       // the spec
 	holder   string    // the node (or host) holding the lease and recording results
 	node     mesh.Path // the landing node, whose inbox is read; nil outside a node
+	repo     string    // the registry row's name, else the lease's
 	branch   string
 	origin   bool
 	base     string // origin/main, or main without an origin
@@ -128,6 +132,7 @@ func (a *app) cmdLand(args []string) error {
 		return fail(exitRefused, "refused: %s is not a worktree of a repo with a main checkout", top)
 	}
 	l.repoPath = filepath.Dir(common)
+	l.repo = repo
 	if err := l.prepare(ctx); err != nil {
 		return err
 	}
@@ -439,6 +444,10 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 		return false, fail(exitRefused, "refused: spec %03d reads %s, not building", l.id, s.Status())
 	}
 
+	if err := l.scaffolded(ctx, baseSHA); err != nil {
+		return false, err
+	}
+
 	entries, err := l.results(ctx, merged, tree, baseSHA)
 	if err != nil {
 		return false, err
@@ -504,6 +513,57 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 	}
 	l.landed = rec
 	return false, nil
+}
+
+// landDriftLines is how much of the scaffold drift a refusal prints.
+const landDriftLines = 20
+
+// scaffolded refuses a rebased tree whose scaffolded text the branch changed
+// to read otherwise than scaffold writes it from the repo's ship row (see
+// scaffold.Drift): the row's verify is the source of the verify kind's
+// command and of AGENTS.md's blocks. A repo with no ship row, or never
+// scaffolded, is not checked. A tree of this binary's own module renders its
+// own blocks, which this binary may not, so there only the verify kind is.
+func (l *lander) scaffolded(ctx context.Context, baseSHA string) error {
+	row, ok := l.a.cfg.Repos[l.repo]
+	if !ok || row.Mode != "ship" {
+		return nil
+	}
+	bi, ok := readBuildInfo()
+	own := ok && bi.Main.Path != "" && modulePath(filepath.Join(l.top, "go.mod")) == bi.Main.Path
+	at := func(rel string) (string, bool, error) {
+		obj := baseSHA + ":" + rel
+		if exec.CommandContext(ctx, "git", "-C", l.top, "cat-file", "-e", obj).Run() != nil {
+			return "", false, nil
+		}
+		b, err := exec.CommandContext(ctx, "git", "-C", l.top, "cat-file", "blob", obj).Output()
+		if err != nil {
+			return "", false, fmt.Errorf("git cat-file %s: %w", obj, err)
+		}
+		return string(b), true, nil
+	}
+	diff, done, err := scaffold.Drift(l.top, row, buildermesh.AgentsSnippet, !own, at)
+	if err != nil {
+		return err
+	}
+	switch {
+	case !done:
+		fmt.Fprintln(l.a.stdout, "scaffold: not scaffolded, not checked")
+		return nil
+	case diff != "":
+		lines := strings.SplitAfter(diff, "\n")
+		if len(lines) > landDriftLines {
+			lines = append(lines[:landDriftLines], "...\n")
+		}
+		fmt.Fprint(l.a.stdout, strings.Join(lines, ""))
+		return fail(exitRefused, "refused: the branch's scaffolded files differ from what bmesh scaffold writes from %s's row; "+
+			"the row's verify is the source: bmesh repos propose with the new verify, or restore the scaffolded files", l.repo)
+	case own:
+		fmt.Fprintln(l.a.stdout, "scaffold: the verify kind follows the row (AGENTS.md is rendered by this tree's own bmesh, not checked)")
+	default:
+		fmt.Fprintln(l.a.stdout, "scaffold: follows the row")
+	}
+	return nil
 }
 
 // mainMoved reports whether main (origin's, fetched again, when there is
