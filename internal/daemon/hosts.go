@@ -323,6 +323,14 @@ func (h *hostsNode) run(ctx context.Context, m jetstream.Msg, j *hosts.Job) (boo
 		return true, fmt.Sprintf("%s, roster v%d", h.revision(), h.roster().Version)
 	case "level":
 		return h.levelJob(ctx, j)
+	case "prune":
+		return h.pruneJob(ctx, j)
+	case "forget-worktree":
+		return h.forgetWorktreeJob(ctx, j)
+	case "nix":
+		return h.nixJob(ctx, j)
+	case "propose":
+		return h.proposeJob(ctx, j)
 	}
 	return false, fmt.Sprintf("unknown op %s (this bmesh is %s)", cut(j.Op, 32), h.revision())
 }

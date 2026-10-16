@@ -285,6 +285,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdHosts(rest)
 	case "sync":
 		return a.cmdSync(rest)
+	case "prune":
+		return a.cmdPrune(rest)
 	case "help":
 		fmt.Fprint(a.stdout, usage)
 		return nil
