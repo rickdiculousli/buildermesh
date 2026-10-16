@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,7 +31,7 @@ const (
 const usage = `usage: bmesh [--config FILE] [--node PATH] [--json] <command> [args]
 
 --config, --node and --json are accepted before or after the command.
-Every command but init, help and version needs the box set up (the flag <config dir>/.setup-complete
+Every command but init, help, version and hosts --here needs the box set up (the flag <config dir>/.setup-complete
 or a config.toml): a terminal run runs init first, a non-interactive one is refused (exit 3).
 
 commands:
@@ -41,6 +42,9 @@ commands:
                                            prompt), or --admin make it the admin; writes only [hosts] and, with
                                            routines off, [runner] checkouts = "" (keeps config.toml.prev)
   hosts [--json]                           the roster joined with presence: awake, asleep, unverified or absent
+  hosts --here                             this box's session line (<state dir>/this-box.txt, the daemon's);
+                                           nothing when [hosts] is off or the file is missing; never dials the hub
+  hosts --notes [--json]                   every box's verified notes (<config dir>/notes.md, in its presence)
   hosts invite <name> [--secure] [--accept a,b] [--replace]
                                            (admin) print a one-time code for a box to join with; waits 10m
   hosts set <name> [--secure=true|false] [--accept a,b]
@@ -208,7 +212,11 @@ func (a *app) dispatch(args []string) error {
 		return fail(exitUsage, "")
 	}
 	cmd, rest := rest[0], rest[1:]
-	if cmd != "init" && cmd != "help" && cmd != "version" {
+	// hosts --here runs from a session hook: it reads one file and never
+	// sets the box up or refuses, so a session on a box without bmesh set
+	// up opens as quietly as one with [hosts] off.
+	here := cmd == "hosts" && slices.Contains(rest, "--here")
+	if cmd != "init" && cmd != "help" && cmd != "version" && !here {
 		if err := a.ensureSetup(rest); err != nil {
 			return err
 		}

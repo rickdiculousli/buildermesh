@@ -52,11 +52,14 @@ type hostsNode struct {
 	mu    sync.Mutex
 	local hosts.Local
 	wake  wakeClock
+
+	notesCut bool // notes.md was over 16 KB at the last read: logged once
 }
 
 // hostsRun runs the hosts layer until ctx ends: each minute it notes a
 // wake, syncs the roster (taking a newer one, putting its own back when the
-// hub's is missing, unsigned or lower) and writes signed presence; and it
+// hub's is missing, unsigned or lower), writes signed presence and the
+// session line (this-box.txt); and it
 // takes this box's jobs one at a time. A box that hasn't joined logs so and
 // does nothing.
 func hostsRun(ctx context.Context, d Deps) {
@@ -107,6 +110,24 @@ func (h *hostsNode) tick(ctx context.Context) {
 	if err := h.putPresence(ctx, now); err != nil {
 		h.d.Log.Warn("hosts: presence", "err", err)
 	}
+	if err := h.writeHere(ctx, now); err != nil {
+		h.d.Log.Warn("hosts: this-box.txt", "err", err)
+	}
+}
+
+// writeHere writes the session line, <state dir>/this-box.txt, from the
+// roster and every box's presence.
+func (h *hostsNode) writeHere(ctx context.Context, now time.Time) error {
+	kv, err := hosts.Bucket(ctx, h.d.Client.JS, hosts.BucketHosts)
+	if err != nil {
+		return err
+	}
+	r := h.roster()
+	seen, err := hosts.ReadPresence(ctx, kv, r, now)
+	if err != nil {
+		return err
+	}
+	return hosts.WriteHere(h.d.StateDir, hosts.HereLine(h.d.Host, r, seen, now))
 }
 
 // syncRoster reads the hub's roster key (kv.Get), taking a newer valid
@@ -135,7 +156,8 @@ func (h *hostsNode) roster() hosts.Roster {
 func (h *hostsNode) revision() string { return selfupdate.Short(h.d.Revision) }
 
 // putPresence writes this box's signed presence: revision, OS, whether it
-// runs routines and its registered repos with their origins.
+// runs routines, its registered repos with their origins and its notes
+// (<config dir>/notes.md, cut to 16 KB).
 func (h *hostsNode) putPresence(ctx context.Context, now time.Time) error {
 	kv, err := hosts.Bucket(ctx, h.d.Client.JS, hosts.BucketHosts)
 	if err != nil {
@@ -150,9 +172,15 @@ func (h *hostsNode) putPresence(ctx context.Context, now time.Time) error {
 		}
 		p.Repos = append(p.Repos, hosts.PresenceRepo{Name: name, Path: path, Origin: origin(ctx, path, h.d.Cfg.Repos[name].Remote)})
 	}
-	if r := h.d.Cfg.Update.Repo; r != "" {
-		p.Notes = "self-updates from " + r
+	notes, cut, err := hosts.ReadNotes(h.d.ConfigDir)
+	if err != nil {
+		h.d.Log.Warn("hosts: notes", "err", err)
 	}
+	if cut && !h.notesCut {
+		h.d.Log.Warn("hosts: notes.md is over 16 KB; the rest is cut", "path", hosts.NotesPath(h.d.ConfigDir))
+	}
+	h.notesCut = cut
+	p.Notes = notes
 	p.Sign(h.key)
 	return hosts.PutPresence(ctx, kv, p)
 }

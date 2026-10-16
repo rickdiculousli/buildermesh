@@ -341,3 +341,36 @@ func TestPushRefusedNeedsHosts(t *testing.T) {
 	f.event(t, mesh.Event{From: "daemon.k16", Event: "refused", Body: "mac signature"})
 	n.waitRequests(t, 0)
 }
+
+func TestHostsWritesNotesAndTheSessionLine(t *testing.T) {
+	h := hostsSetup(t, "ping")
+	if err := os.WriteFile(hosts.NotesPath(h.d.ConfigDir), []byte("Run commands here directly.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want := "this box is testhost; secure: no; on the mesh: mac (absent, secure, admin); notes: `bmesh hosts --notes`\n"
+	deadline := time.Now().Add(5 * time.Second)
+	var got string
+	for time.Now().Before(deadline) {
+		b, _ := os.ReadFile(hosts.HerePath(h.d.StateDir))
+		if got = string(b); got == want {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if got != want {
+		t.Fatalf("this-box.txt = %q, want %q", got, want)
+	}
+	pkv, err := hosts.Bucket(h.ctx, h.c.JS, hosts.BucketHosts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen, err := hosts.ReadPresence(h.ctx, pkv, h.roster, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range seen {
+		if s.Host.Name == testHost && (s.State != hosts.Awake || s.Presence.Notes != "Run commands here directly.") {
+			t.Fatalf("presence %s %q", s.State, s.Presence.Notes)
+		}
+	}
+}
