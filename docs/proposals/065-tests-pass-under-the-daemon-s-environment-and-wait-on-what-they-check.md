@@ -4,7 +4,7 @@ title: The two tests the first Mac soak failed pass there: one stops reading the
 kind: maintenance
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: buildermesh-fix-1
 proposed_on: 2026-10-17
@@ -15,6 +15,8 @@ built_by: 80faf68d-037b-4ea5-9092-2082241e5d90
 host: k16
 family: buildermesh-fix-1
 branch: bmesh/80faf68d-037b-4ea5-9092-2082241e5d90
+merged: ce6a08dfac438ff8e08a4131e86bcd0a5a46b00a
+verified: review ok t:28fda8e3 m:claude-opus-5-5 c:ff475ff8; verify ok t:28fda8e3
 ---
 
 ## Opportunity
