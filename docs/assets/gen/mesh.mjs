@@ -12,6 +12,9 @@ import { fileURLToPath } from "node:url";
 const NAMES = ["build", "coordinate", "route", "push", "level"];
 const VARIANT = process.env.MESH_VARIANT ?? "";
 if (!VARIANT) {
+  // the README's colour key: a dot for each kind of chain, beside the word in the page's own font
+  for (const [name, fill] of [["grey", "#8b949e"], ["teal", "#2b9d94"]])
+    writeFileSync(join(process.argv[2], `dot-${name}.svg`), `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" width="12" height="12" role="img" aria-label="${name}"><circle cx="6" cy="6" r="5" fill="${fill}"/></svg>\n`);
   // one run per picture: the demo, then each scene
   for (const v of ["demo", "one", ...NAMES]) execFileSync(process.execPath, [fileURLToPath(import.meta.url), ...process.argv.slice(2)], { env: { ...process.env, MESH_VARIANT: v }, stdio: "inherit" });
   process.exit(0);

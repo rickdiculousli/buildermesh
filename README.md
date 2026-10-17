@@ -55,7 +55,7 @@ Agents write half-page specs; you accept or reject them in plain words. A *lead*
 - **bmesh on every box.** Only `bmesh` talks to the hub: `bmesh serve`, the daemon, always on, which wakes quiet leads, runs routines, sends phone notifications and draws the map; and the `bmesh` commands sessions run. A box set to update itself installs each bmesh release; on others, each session opens with a line to run `bmesh update`.
 - **Signed jobs.** Boxes joined with `bmesh init --hosts` share a signed roster, and every job between them is signed and checked. The signing and approval keys sit where no agent can read them (on macOS, behind the Keychain password dialog). A secure box holds an update of its plugins, or of the repo bmesh updates itself from, until you approve it there.
 
-Each picture below plays one of the demo's steps on its own, on a loop. $\color{#8b949e}{\textbf{Grey}}$ lights a command, $\color{#2b9d94}{\textbf{teal}}$ a message.
+Each picture below plays one of the demo's steps on its own, on a loop. <img src="docs/assets/dot-grey.svg" width="10" height="10" alt="">&nbsp;**Grey** lights a command, <img src="docs/assets/dot-teal.svg" width="10" height="10" alt="">&nbsp;**teal** a message.
 
 **Every box builds.** Each box runs its own leads and executors, each in its own git worktree, all at once.
 
