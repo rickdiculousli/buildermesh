@@ -19,62 +19,73 @@ text{fill:var(--fg)}
 .wkp .pb{stroke:var(--wk)}.wkp .pt{fill:var(--wk)}
 .akp .pb{stroke:var(--am)}.akp .pt{fill:var(--am)}
 .rg{fill:none;stroke-width:2}
+.lc{fill:none;stroke-width:2.5}.lg{fill:none;stroke-width:8;stroke-linecap:round;opacity:.22}
 .hdc{fill:var(--hd)}.tl-s{stroke:var(--tl)}.am-s{stroke:var(--am)}.pu-s{stroke:var(--pu)}
 .am-f2{fill:var(--am);opacity:.3}
 .nt{fill:none;stroke:var(--ps);stroke-width:1.5}
 .notch{fill:var(--ps)}
-.dot,.an{animation-duration:16s;animation-iteration-count:infinite;animation-timing-function:ease-in-out}
+.dot,.an{animation-duration:38.7s;animation-iteration-count:infinite;animation-timing-function:ease-in-out}
 .dot,.hide{opacity:0}.dimb{opacity:.5}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
-@keyframes k0{0%{opacity:1}68.44%{opacity:1}70%{opacity:0}83.13%{opacity:0}84.69%{opacity:1}100%{opacity:1}}
-@keyframes k1{0%{opacity:0}68.44%{opacity:0}70%{opacity:1}83.13%{opacity:1}84.69%{opacity:0}100%{opacity:0}}
-@keyframes k2{0%{opacity:0}0%{opacity:0}0%{opacity:1}7.81%{opacity:1}9.06%{opacity:0}96.25%{opacity:0}97.5%{opacity:1}100%{opacity:1}100%{opacity:0}100%{opacity:0}}
-@keyframes k3{0%{opacity:0}9.06%{opacity:0}10.31%{opacity:1}16.88%{opacity:1}18.13%{opacity:0}100%{opacity:0}}
-@keyframes k4{0%{opacity:0}18.13%{opacity:0}19.38%{opacity:1}43.44%{opacity:1}44.69%{opacity:0}100%{opacity:0}}
-@keyframes k5{0%{opacity:0}44.69%{opacity:0}45.94%{opacity:1}67.81%{opacity:1}69.06%{opacity:0}100%{opacity:0}}
-@keyframes k6{0%{opacity:0}69.06%{opacity:0}70.31%{opacity:1}81.25%{opacity:1}82.5%{opacity:0}100%{opacity:0}}
-@keyframes k7{0%{opacity:0}82.5%{opacity:0}83.75%{opacity:1}95%{opacity:1}96.25%{opacity:0}100%{opacity:0}}
-@keyframes k8{0%{opacity:0}69.69%{opacity:0}71.25%{opacity:1}82.81%{opacity:1}84.38%{opacity:0}100%{opacity:0}}
-@keyframes k9{0%{opacity:0}70.94%{opacity:0}71.56%{opacity:1}72.5%{opacity:1}73.13%{opacity:0}76.56%{opacity:0}77.19%{opacity:1}78.13%{opacity:1}78.75%{opacity:0}100%{opacity:0}}
-@keyframes ka{0%{opacity:0}51.25%{opacity:0}52.81%{opacity:1}81.25%{opacity:1}82.81%{opacity:0}100%{opacity:0}}
-@keyframes kb{0%{opacity:0}40.94%{opacity:0}42.19%{opacity:1}44.38%{opacity:1}45.63%{opacity:0}100%{opacity:0}}
-@keyframes kc{0%{opacity:0}14.56%{opacity:0}15.31%{opacity:1}15.75%{opacity:1}16.5%{opacity:0}51.75%{opacity:0}52.5%{opacity:1}53%{opacity:1}53.75%{opacity:0}100%{opacity:0}}
-@keyframes kd{0%{opacity:0}29.38%{opacity:0}30.63%{opacity:1}33.75%{opacity:1}35%{opacity:0}100%{opacity:0}}
-@keyframes ke{0%{opacity:1}28.13%{opacity:1}29.38%{opacity:0}35%{opacity:0}36.25%{opacity:1}100%{opacity:1}}
-@keyframes kf{0%{opacity:0}29.38%{opacity:0}30.63%{opacity:1}33.75%{opacity:1}35%{opacity:0}100%{opacity:0}}
-@keyframes kg{0%{opacity:1}68.75%{opacity:1}71.25%{opacity:0.5}82.5%{opacity:0.5}85%{opacity:1}100%{opacity:1}}
-@keyframes kh{0%{opacity:0}69.06%{opacity:0}70.63%{opacity:1}82.5%{opacity:1}84.06%{opacity:0}100%{opacity:0}}
-@keyframes ki{0%{opacity:1}88.31%{opacity:1}89.06%{opacity:0}99.38%{opacity:0}100%{opacity:1}100%{opacity:1}}
-@keyframes kj{0%{opacity:0}89.06%{opacity:0}89.81%{opacity:1}98.63%{opacity:1}99.37%{opacity:0}100%{opacity:0}}
-@keyframes kk{0%{opacity:0}92.81%{opacity:0}93.56%{opacity:1}98.63%{opacity:1}99.37%{opacity:0}100%{opacity:0}}
-@keyframes kl{0%{opacity:0}69.06%{opacity:0}70.63%{opacity:1}82.5%{opacity:1}84.06%{opacity:0}100%{opacity:0}}
-@keyframes km{0%{opacity:1}73.75%{opacity:1}75.31%{opacity:0}87.81%{opacity:0}89.38%{opacity:1}100%{opacity:1}}
-@keyframes kn{0%{opacity:0}75.31%{opacity:0}76.88%{opacity:1}86.25%{opacity:1}87.81%{opacity:0}100%{opacity:0}}
-@keyframes ko{0%{opacity:0}11.06%{opacity:0}12%{opacity:1}12.63%{opacity:1}13.56%{opacity:0}47.94%{opacity:0}48.88%{opacity:1}49.5%{opacity:1}50.44%{opacity:0}100%{opacity:0}}
-@keyframes kp{0%{opacity:0}21.56%{opacity:0}22.5%{opacity:1}25.31%{opacity:1}26.25%{opacity:0}75.31%{opacity:0}76.25%{opacity:1}76.88%{opacity:1}77.81%{opacity:0}80.94%{opacity:0}81.88%{opacity:1}82.5%{opacity:1}83.44%{opacity:0}100%{opacity:0}}
-@keyframes kq{0%{opacity:0}36.56%{opacity:0}37.5%{opacity:1}38.13%{opacity:1}39.06%{opacity:0}100%{opacity:0}}
-@keyframes kr{0%{opacity:0}21.75%{opacity:0}22.5%{opacity:1}25.62%{opacity:1}26.38%{opacity:0}100%{opacity:0}}
-@keyframes ks{0%{opacity:0}75.5%{opacity:0}76.25%{opacity:1}85.63%{opacity:1}86.37%{opacity:0}100%{opacity:0}}
-@keyframes kt{0%{opacity:0;transform:translate(0px,0px)}81.13%{opacity:0;transform:translate(0px,0px)}81.88%{opacity:1;transform:translate(0px,0px)}85.63%{opacity:1;transform:translate(0px,0px)}87.5%{opacity:1;transform:translate(18px,0px)}89.38%{opacity:1;transform:translate(18px,0px)}90.13%{opacity:0;transform:translate(18px,0px)}100%{opacity:0;transform:translate(0px,0px)}}
-@keyframes ku{0%{opacity:0}15.63%{opacity:0}17.19%{opacity:1}18.75%{opacity:1}20.31%{opacity:0}100%{opacity:0}}
-@keyframes kv{0%{opacity:1}49.69%{opacity:1}51.25%{opacity:0}82.81%{opacity:0}84.38%{opacity:1}100%{opacity:1}}
-@keyframes kw{0%{opacity:0}51.25%{opacity:0}52.81%{opacity:1}81.25%{opacity:1}82.81%{opacity:0}100%{opacity:0}}
-@keyframes kx{0%{opacity:1}55%{opacity:1}56.56%{opacity:0}69.69%{opacity:0}71.25%{opacity:1}100%{opacity:1}}
-@keyframes ky{0%{opacity:0}56.56%{opacity:0}58.13%{opacity:1}68.13%{opacity:1}69.69%{opacity:0}100%{opacity:0}}
-@keyframes kz{0%{opacity:0;transform:translate(294px,102px)}7.38%{opacity:0;transform:translate(294px,102px)}8.13%{opacity:1;transform:translate(294px,102px)}11.88%{opacity:1;transform:translate(380px,102px)}12.63%{opacity:0;transform:translate(380px,102px)}100%{opacity:0;transform:translate(380px,102px)}}
-@keyframes k10{0%{opacity:0;transform:translate(380px,102px)}12.06%{opacity:0;transform:translate(380px,102px)}12.81%{opacity:1;transform:translate(380px,102px)}15.31%{opacity:1;transform:translate(310px,102px)}16.06%{opacity:0;transform:translate(310px,102px)}100%{opacity:0;transform:translate(310px,102px)}}
-@keyframes k11{0%{opacity:0;transform:translate(165px,234px)}14.88%{opacity:0;transform:translate(165px,234px)}15.63%{opacity:1;transform:translate(165px,234px)}16.88%{opacity:1;transform:translate(165px,262px)}17.63%{opacity:0;transform:translate(165px,262px)}100%{opacity:0;transform:translate(165px,262px)}}
-@keyframes k12{0%{opacity:0;transform:translate(294px,102px)}18%{opacity:0;transform:translate(294px,102px)}18.75%{opacity:1;transform:translate(294px,102px)}22.5%{opacity:1;transform:translate(380px,102px)}23.25%{opacity:0;transform:translate(380px,102px)}100%{opacity:0;transform:translate(380px,102px)}}
-@keyframes k13{0%{opacity:0;transform:translate(568px,179px)}24.87%{opacity:0;transform:translate(568px,179px)}25.62%{opacity:1;transform:translate(568px,179px)}26.96%{opacity:1;transform:translate(580px,133px)}29.38%{opacity:1;transform:translate(666px,133px)}30.13%{opacity:0;transform:translate(666px,133px)}100%{opacity:0;transform:translate(666px,133px)}}
-@keyframes k14{0%{opacity:0;transform:translate(666px,133px)}33%{opacity:0;transform:translate(666px,133px)}33.75%{opacity:1;transform:translate(666px,133px)}37.5%{opacity:1;transform:translate(580px,133px)}38.25%{opacity:0;transform:translate(580px,133px)}100%{opacity:0;transform:translate(580px,133px)}}
-@keyframes k15{0%{opacity:0;transform:translate(380px,102px)}37.69%{opacity:0;transform:translate(380px,102px)}38.44%{opacity:1;transform:translate(380px,102px)}42.19%{opacity:1;transform:translate(294px,102px)}42.94%{opacity:0;transform:translate(294px,102px)}100%{opacity:0;transform:translate(294px,102px)}}
-@keyframes k16{0%{opacity:0;transform:translate(294px,102px)}44.25%{opacity:0;transform:translate(294px,102px)}45%{opacity:1;transform:translate(294px,102px)}48.75%{opacity:1;transform:translate(380px,102px)}49.5%{opacity:0;transform:translate(380px,102px)}100%{opacity:0;transform:translate(380px,102px)}}
-@keyframes k17{0%{opacity:0;transform:translate(380px,102px)}48.94%{opacity:0;transform:translate(380px,102px)}49.69%{opacity:1;transform:translate(380px,102px)}52.5%{opacity:1;transform:translate(310px,102px)}53.25%{opacity:0;transform:translate(310px,102px)}100%{opacity:0;transform:translate(310px,102px)}}
-@keyframes k18{0%{opacity:0;transform:translate(290px,234px)}52.38%{opacity:0;transform:translate(290px,234px)}53.13%{opacity:1;transform:translate(290px,234px)}53.37%{opacity:1;transform:translate(290px,248px)}54.34%{opacity:1;transform:translate(345px,248px)}55.91%{opacity:1;transform:translate(345px,337px)}56.88%{opacity:1;transform:translate(400px,337px)}57.62%{opacity:0;transform:translate(400px,337px)}100%{opacity:0;transform:translate(400px,337px)}}
-@keyframes k19{0%{opacity:0;transform:translate(304px,50px)}71.13%{opacity:0;transform:translate(304px,50px)}71.88%{opacity:1;transform:translate(304px,50px)}73.74%{opacity:1;transform:translate(310px,102px)}76.25%{opacity:1;transform:translate(380px,102px)}77%{opacity:0;transform:translate(380px,102px)}100%{opacity:0;transform:translate(380px,102px)}}
-@keyframes k1a{0%{opacity:0;transform:translate(304px,50px)}76.75%{opacity:0;transform:translate(304px,50px)}77.5%{opacity:1;transform:translate(304px,50px)}79.37%{opacity:1;transform:translate(310px,102px)}81.88%{opacity:1;transform:translate(380px,102px)}82.63%{opacity:0;transform:translate(380px,102px)}100%{opacity:0;transform:translate(380px,102px)}}
-@keyframes k1b{0%{opacity:0;transform:translate(550px,213px)}84.88%{opacity:0;transform:translate(550px,213px)}85.63%{opacity:1;transform:translate(550px,213px)}89.06%{opacity:1;transform:translate(650px,213px)}89.81%{opacity:0;transform:translate(650px,213px)}100%{opacity:0;transform:translate(650px,213px)}}
-@keyframes k1c{0%{opacity:0;transform:translate(550px,213px)}88.63%{opacity:0;transform:translate(550px,213px)}89.38%{opacity:1;transform:translate(550px,213px)}92.81%{opacity:1;transform:translate(650px,213px)}93.56%{opacity:0;transform:translate(650px,213px)}100%{opacity:0;transform:translate(650px,213px)}}
+@keyframes k0{0%{opacity:1}66.8%{opacity:1}67.44%{opacity:0}81.4%{opacity:0}82.04%{opacity:1}100%{opacity:1}}
+@keyframes k1{0%{opacity:0}66.8%{opacity:0}67.44%{opacity:1}81.4%{opacity:1}82.04%{opacity:0}100%{opacity:0}}
+@keyframes k2{0%{opacity:0}4.39%{opacity:0}5.17%{opacity:1}15.37%{opacity:1}16.41%{opacity:0}45.74%{opacity:0}46.51%{opacity:1}56.72%{opacity:1}57.75%{opacity:0}100%{opacity:0}}
+@keyframes k3{0%{opacity:0}12.79%{opacity:0}13.57%{opacity:1}17.44%{opacity:1}18.48%{opacity:0}100%{opacity:0}}
+@keyframes k4{0%{opacity:0}54.13%{opacity:0}54.91%{opacity:1}61.11%{opacity:1}62.14%{opacity:0}100%{opacity:0}}
+@keyframes k5{0%{opacity:0}19.64%{opacity:0}20.41%{opacity:1}25.58%{opacity:1}26.61%{opacity:0}68.09%{opacity:0}68.86%{opacity:1}77.78%{opacity:1}78.81%{opacity:0}100%{opacity:0}}
+@keyframes k6{0%{opacity:0}25.32%{opacity:0}26.1%{opacity:1}31.78%{opacity:1}32.82%{opacity:0}100%{opacity:0}}
+@keyframes k7{0%{opacity:0}35.4%{opacity:0}36.18%{opacity:1}41.34%{opacity:1}42.38%{opacity:0}100%{opacity:0}}
+@keyframes k8{0%{opacity:0}38.76%{opacity:0}39.53%{opacity:1}44.7%{opacity:1}45.74%{opacity:0}100%{opacity:0}}
+@keyframes k9{0%{opacity:0}80.88%{opacity:0}81.65%{opacity:1}90.18%{opacity:1}91.21%{opacity:0}100%{opacity:0}}
+@keyframes ka{0%{opacity:1}4.39%{opacity:1}4.91%{opacity:0}95.99%{opacity:0}96.51%{opacity:1}100%{opacity:1}}
+@keyframes kb{0%{opacity:0}5.04%{opacity:0}5.56%{opacity:1}19.64%{opacity:1}20.16%{opacity:0}100%{opacity:0}}
+@keyframes kc{0%{opacity:0}20.28%{opacity:0}20.8%{opacity:1}45.48%{opacity:1}45.99%{opacity:0}100%{opacity:0}}
+@keyframes kd{0%{opacity:0}46.12%{opacity:0}46.64%{opacity:1}66.67%{opacity:1}67.18%{opacity:0}100%{opacity:0}}
+@keyframes ke{0%{opacity:0}67.31%{opacity:0}67.83%{opacity:1}79.59%{opacity:1}80.1%{opacity:0}100%{opacity:0}}
+@keyframes kf{0%{opacity:0}80.23%{opacity:0}80.75%{opacity:1}95.35%{opacity:1}95.87%{opacity:0}100%{opacity:0}}
+@keyframes kg{0%{opacity:0}66.93%{opacity:0}67.7%{opacity:1}80.1%{opacity:1}80.88%{opacity:0}100%{opacity:0}}
+@keyframes kh{0%{opacity:0}68.09%{opacity:0}68.48%{opacity:1}70.54%{opacity:1}70.93%{opacity:0}71.71%{opacity:0}72.09%{opacity:1}74.16%{opacity:1}74.55%{opacity:0}100%{opacity:0}}
+@keyframes ki{0%{opacity:0}67.7%{opacity:0}68.48%{opacity:1}77.78%{opacity:1}78.81%{opacity:0}100%{opacity:0}}
+@keyframes kj{0%{opacity:0}54.01%{opacity:0}54.65%{opacity:1}66.93%{opacity:1}67.57%{opacity:0}100%{opacity:0}}
+@keyframes kk{0%{opacity:0}42.12%{opacity:0}42.64%{opacity:1}46.51%{opacity:1}47.55%{opacity:0}100%{opacity:0}}
+@keyframes kl{0%{opacity:0}12.79%{opacity:0}13.31%{opacity:1}15.37%{opacity:1}16.41%{opacity:0}54.13%{opacity:0}54.65%{opacity:1}56.72%{opacity:1}57.75%{opacity:0}100%{opacity:0}}
+@keyframes km{0%{opacity:0}29.2%{opacity:0}29.72%{opacity:1}36.69%{opacity:1}37.21%{opacity:0}100%{opacity:0}}
+@keyframes kn{0%{opacity:1}29.07%{opacity:1}29.59%{opacity:0}37.34%{opacity:0}37.86%{opacity:1}100%{opacity:1}}
+@keyframes ko{0%{opacity:0}29.72%{opacity:0}30.23%{opacity:1}36.69%{opacity:1}37.21%{opacity:0}100%{opacity:0}}
+@keyframes kp{0%{opacity:1}66.93%{opacity:1}67.96%{opacity:0.5}80.62%{opacity:0.5}81.65%{opacity:1}100%{opacity:1}}
+@keyframes kq{0%{opacity:0}67.05%{opacity:0}67.7%{opacity:1}81.14%{opacity:1}81.78%{opacity:0}100%{opacity:0}}
+@keyframes kr{0%{opacity:0}5.48%{opacity:0}5.79%{opacity:1}86.2%{opacity:1}86.51%{opacity:0}100%{opacity:0}}
+@keyframes ks{0%{opacity:1}5.17%{opacity:1}5.48%{opacity:0}86.51%{opacity:0}86.82%{opacity:1}100%{opacity:1}}
+@keyframes kt{0%{opacity:1}5.17%{opacity:1}5.48%{opacity:0}89.87%{opacity:0}90.18%{opacity:1}100%{opacity:1}}
+@keyframes ku{0%{opacity:0}67.05%{opacity:0}67.7%{opacity:1}81.14%{opacity:1}81.78%{opacity:0}100%{opacity:0}}
+@keyframes kv{0%{opacity:0}25.06%{opacity:0}25.84%{opacity:1}31.78%{opacity:1}32.82%{opacity:0}100%{opacity:0}}
+@keyframes kw{0%{opacity:1}71.06%{opacity:1}71.71%{opacity:0}83.33%{opacity:0}83.98%{opacity:1}100%{opacity:1}}
+@keyframes kx{0%{opacity:0}71.71%{opacity:0}72.35%{opacity:1}82.69%{opacity:1}83.33%{opacity:0}100%{opacity:0}}
+@keyframes ky{0%{opacity:0}7.75%{opacity:0}8.27%{opacity:1}12.79%{opacity:1}13.82%{opacity:0}49.1%{opacity:0}49.61%{opacity:1}54.13%{opacity:1}55.17%{opacity:0}100%{opacity:0}}
+@keyframes kz{0%{opacity:0}23%{opacity:0}23.51%{opacity:1}27.91%{opacity:1}28.94%{opacity:0}71.58%{opacity:0}72.09%{opacity:1}77.78%{opacity:1}78.81%{opacity:0}100%{opacity:0}}
+@keyframes k10{0%{opacity:0}38.76%{opacity:0}39.28%{opacity:1}41.6%{opacity:1}42.64%{opacity:0}100%{opacity:0}}
+@keyframes k11{0%{opacity:0}23.13%{opacity:0}23.51%{opacity:1}27.91%{opacity:1}28.29%{opacity:0}100%{opacity:0}}
+@keyframes k12{0%{opacity:0}71.71%{opacity:0}72.09%{opacity:1}83.72%{opacity:1}84.11%{opacity:0}100%{opacity:0}}
+@keyframes k13{0%{opacity:0;transform:translate(0px,0px)}75.32%{opacity:0;transform:translate(0px,0px)}75.71%{opacity:1;transform:translate(0px,0px)}83.72%{opacity:1;transform:translate(0px,0px)}84.5%{opacity:1;transform:translate(18px,0px)}87.08%{opacity:1;transform:translate(18px,0px)}87.47%{opacity:0;transform:translate(18px,0px)}100%{opacity:0;transform:translate(0px,0px)}}
+@keyframes k14{0%{opacity:0}14.34%{opacity:0}14.86%{opacity:1}22.22%{opacity:1}23.26%{opacity:0}100%{opacity:0}}
+@keyframes k15{0%{opacity:1}53.88%{opacity:1}54.52%{opacity:0}67.57%{opacity:0}68.22%{opacity:1}100%{opacity:1}}
+@keyframes k16{0%{opacity:0}54.52%{opacity:0}55.17%{opacity:1}66.93%{opacity:1}67.57%{opacity:0}100%{opacity:0}}
+@keyframes k17{0%{opacity:1}58.27%{opacity:1}58.91%{opacity:0}67.57%{opacity:0}68.22%{opacity:1}100%{opacity:1}}
+@keyframes k18{0%{opacity:0}58.91%{opacity:0}59.56%{opacity:1}66.93%{opacity:1}67.57%{opacity:0}100%{opacity:0}}
+@keyframes k19{0%{opacity:0;transform:translate(294px,102px)}4.78%{opacity:0;transform:translate(294px,102px)}5.17%{opacity:1;transform:translate(294px,102px)}8.27%{opacity:1;transform:translate(380px,102px)}8.66%{opacity:0;transform:translate(380px,102px)}100%{opacity:0;transform:translate(380px,102px)}}
+@keyframes k1a{0%{opacity:0;transform:translate(380px,102px)}10.34%{opacity:0;transform:translate(380px,102px)}10.72%{opacity:1;transform:translate(380px,102px)}13.31%{opacity:1;transform:translate(310px,102px)}13.7%{opacity:0;transform:translate(310px,102px)}100%{opacity:0;transform:translate(310px,102px)}}
+@keyframes k1b{0%{opacity:0;transform:translate(165px,234px)}13.18%{opacity:0;transform:translate(165px,234px)}13.57%{opacity:1;transform:translate(165px,234px)}14.86%{opacity:1;transform:translate(165px,262px)}15.25%{opacity:0;transform:translate(165px,262px)}100%{opacity:0;transform:translate(165px,262px)}}
+@keyframes k1c{0%{opacity:0;transform:translate(294px,102px)}20.03%{opacity:0;transform:translate(294px,102px)}20.41%{opacity:1;transform:translate(294px,102px)}23.51%{opacity:1;transform:translate(380px,102px)}23.9%{opacity:0;transform:translate(380px,102px)}100%{opacity:0;transform:translate(380px,102px)}}
+@keyframes k1d{0%{opacity:0;transform:translate(550px,179px)}25.45%{opacity:0;transform:translate(550px,179px)}25.84%{opacity:1;transform:translate(550px,179px)}26.41%{opacity:1;transform:translate(574px,179px)}27.51%{opacity:1;transform:translate(574px,133px)}29.72%{opacity:1;transform:translate(666px,133px)}30.1%{opacity:0;transform:translate(666px,133px)}100%{opacity:0;transform:translate(666px,133px)}}
+@keyframes k1e{0%{opacity:0;transform:translate(666px,133px)}35.79%{opacity:0;transform:translate(666px,133px)}36.18%{opacity:1;transform:translate(666px,133px)}39.28%{opacity:1;transform:translate(580px,133px)}39.66%{opacity:0;transform:translate(580px,133px)}100%{opacity:0;transform:translate(580px,133px)}}
+@keyframes k1f{0%{opacity:0;transform:translate(380px,102px)}39.15%{opacity:0;transform:translate(380px,102px)}39.53%{opacity:1;transform:translate(380px,102px)}42.64%{opacity:1;transform:translate(294px,102px)}43.02%{opacity:0;transform:translate(294px,102px)}100%{opacity:0;transform:translate(294px,102px)}}
+@keyframes k1g{0%{opacity:0;transform:translate(294px,102px)}46.12%{opacity:0;transform:translate(294px,102px)}46.51%{opacity:1;transform:translate(294px,102px)}49.61%{opacity:1;transform:translate(380px,102px)}50%{opacity:0;transform:translate(380px,102px)}100%{opacity:0;transform:translate(380px,102px)}}
+@keyframes k1h{0%{opacity:0;transform:translate(380px,102px)}51.68%{opacity:0;transform:translate(380px,102px)}52.07%{opacity:1;transform:translate(380px,102px)}54.65%{opacity:1;transform:translate(310px,102px)}55.04%{opacity:0;transform:translate(310px,102px)}100%{opacity:0;transform:translate(310px,102px)}}
+@keyframes k1i{0%{opacity:0;transform:translate(290px,234px)}54.52%{opacity:0;transform:translate(290px,234px)}54.91%{opacity:1;transform:translate(290px,234px)}55.18%{opacity:1;transform:translate(290px,248px)}56.25%{opacity:1;transform:translate(345px,248px)}57.98%{opacity:1;transform:translate(345px,337px)}59.04%{opacity:1;transform:translate(400px,337px)}59.43%{opacity:0;transform:translate(400px,337px)}100%{opacity:0;transform:translate(400px,337px)}}
+@keyframes k1j{0%{opacity:0;transform:translate(304px,44px)}68.09%{opacity:0;transform:translate(304px,44px)}68.48%{opacity:1;transform:translate(304px,44px)}68.85%{opacity:1;transform:translate(318px,44px)}70.42%{opacity:1;transform:translate(318px,102px)}72.09%{opacity:1;transform:translate(380px,102px)}72.48%{opacity:0;transform:translate(380px,102px)}100%{opacity:0;transform:translate(380px,102px)}}
+@keyframes k1k{0%{opacity:0;transform:translate(304px,44px)}71.71%{opacity:0;transform:translate(304px,44px)}72.09%{opacity:1;transform:translate(304px,44px)}72.47%{opacity:1;transform:translate(318px,44px)}74.04%{opacity:1;transform:translate(318px,102px)}75.71%{opacity:1;transform:translate(380px,102px)}76.1%{opacity:0;transform:translate(380px,102px)}100%{opacity:0;transform:translate(380px,102px)}}
+@keyframes k1l{0%{opacity:0;transform:translate(550px,213px)}81.27%{opacity:0;transform:translate(550px,213px)}81.65%{opacity:1;transform:translate(550px,213px)}84.75%{opacity:1;transform:translate(650px,213px)}85.14%{opacity:0;transform:translate(650px,213px)}100%{opacity:0;transform:translate(650px,213px)}}
+@keyframes k1m{0%{opacity:0;transform:translate(550px,213px)}84.63%{opacity:0;transform:translate(550px,213px)}85.01%{opacity:1;transform:translate(550px,213px)}88.11%{opacity:1;transform:translate(650px,213px)}88.5%{opacity:0;transform:translate(650px,213px)}100%{opacity:0;transform:translate(650px,213px)}}
 </style>
 <line class="ln" x1="294" y1="102" x2="380" y2="102"/>
 <line class="ln" x1="580" y1="133" x2="666" y2="133"/>
@@ -85,27 +96,36 @@ text{fill:var(--fg)}
 <text x="615" y="199" class="s13 mu" text-anchor="middle">leaf</text>
 <text x="615" y="119" class="s13 mu" text-anchor="middle">client</text>
 <text x="357" y="300" class="s13 mu">ntfy</text>
-<g class="an hide" style="animation-name:k2"><text x="480" y="44" class="s14" text-anchor="middle">one NATS hub on a tailnet; every box</text><text x="480" y="64" class="s14" text-anchor="middle">runs its own <tspan class="m14">bmesh serve</tspan></text></g>
-<g class="an hide" style="animation-name:k3"><text x="480" y="44" class="s14" text-anchor="middle">a lead's <tspan class="tl">progress</tspan> event goes</text><text x="480" y="64" class="s14" text-anchor="middle">through the hub to hub-box's map</text></g>
-<g class="an hide" style="animation-name:k4"><text x="480" y="44" class="s14" text-anchor="middle">a <tspan class="am">review</tspan> job waits in its kind's inbox;</text><text x="480" y="64" class="s14" text-anchor="middle">a box running review takes it, <tspan class="pu">replies</tspan></text></g>
-<g class="an hide" style="animation-name:k5"><text x="480" y="44" class="s14" text-anchor="middle">hub-box's daemon pushes the lead's <tspan class="tl">ask</tspan></text><text x="480" y="64" class="s14" text-anchor="middle">to your phone (ntfy, sent once)</text></g>
-<g class="an" style="animation-name:k6"><text x="480" y="44" class="s14" text-anchor="middle">the laptop sleeps: <tspan class="m14 am">level</tspan> jobs from</text><text x="480" y="64" class="s14" text-anchor="middle"><tspan class="m14">bmesh sync</tspan> on hub-box wait on the hub</text></g>
-<g class="an hide" style="animation-name:k7"><text x="480" y="44" class="s14" text-anchor="middle">it wakes, its leaf reconnects; it levels</text><text x="480" y="64" class="s14" text-anchor="middle">one repo and holds a plugin's for approval</text></g>
+<g class="an hide" style="animation-name:k2"><path class="lg tl-s" d="M294 102 L380 102"/><path class="lc tl-s" d="M294 102 L380 102"/></g>
+<g class="an hide" style="animation-name:k3"><path class="lg tl-s" d="M165 234 L165 262"/><path class="lc tl-s" d="M165 234 L165 262"/></g>
+<g class="an hide" style="animation-name:k4"><path class="lg tl-s" d="M290 234 L290 248 L345 248 L345 337 L400 337"/><path class="lc tl-s" d="M290 234 L290 248 L345 248 L345 337 L400 337"/></g>
+<g class="an hide" style="animation-name:k5"><path class="lg am-s" d="M294 102 L380 102"/><path class="lc am-s" d="M294 102 L380 102"/></g>
+<g class="an hide" style="animation-name:k6"><path class="lg am-s" d="M580 133 L666 133"/><path class="lc am-s" d="M580 133 L666 133"/></g>
+<g class="an hide" style="animation-name:k7"><path class="lg pu-s" d="M580 133 L666 133"/><path class="lc pu-s" d="M580 133 L666 133"/></g>
+<g class="an hide" style="animation-name:k8"><path class="lg pu-s" d="M294 102 L380 102"/><path class="lc pu-s" d="M294 102 L380 102"/></g>
+<g class="an hide" style="animation-name:k9"><path class="lg am-s" d="M580 213 L650 213"/><path class="lc am-s" d="M580 213 L650 213"/></g>
+<g class="an hide" style="animation-name:ka"><text x="480" y="44" class="s14" text-anchor="middle">one NATS hub on a tailnet; every box</text><text x="480" y="64" class="s14" text-anchor="middle">runs its own <tspan class="m14">bmesh serve</tspan></text></g>
+<g class="an hide" style="animation-name:kb"><text x="480" y="44" class="s14" text-anchor="middle">a lead's <tspan class="tl">progress</tspan> event goes</text><text x="480" y="64" class="s14" text-anchor="middle">through the hub to hub-box's map</text></g>
+<g class="an hide" style="animation-name:kc"><text x="480" y="44" class="s14" text-anchor="middle">a <tspan class="am">review</tspan> job waits in its kind's inbox;</text><text x="480" y="64" class="s14" text-anchor="middle">a box running review takes it, <tspan class="pu">replies</tspan></text></g>
+<g class="an hide" style="animation-name:kd"><text x="480" y="44" class="s14" text-anchor="middle">hub-box's daemon pushes the lead's <tspan class="tl">ask</tspan></text><text x="480" y="64" class="s14" text-anchor="middle">to your phone (ntfy, sent once)</text></g>
+<g class="an" style="animation-name:ke"><text x="480" y="44" class="s14" text-anchor="middle">the laptop sleeps: <tspan class="m14 am">level</tspan> jobs from</text><text x="480" y="64" class="s14" text-anchor="middle"><tspan class="m14">bmesh sync</tspan> on hub-box wait on the hub</text></g>
+<g class="an hide" style="animation-name:kf"><text x="480" y="44" class="s14" text-anchor="middle">it wakes, its leaf reconnects; it levels</text><text x="480" y="64" class="s14" text-anchor="middle">one repo and holds a plugin's for approval</text></g>
 <rect x="20" y="20" width="290" height="214" rx="10" class="pn"/>
 <circle cx="38" cy="44" r="5" fill="var(--ok)"/>
 <text x="51" y="49.5" class="s16 b">hub-box</text>
 <g class="pl"><rect x="130" y="33" width="76" height="22" rx="11" class="pb"/><text x="168" y="48.5" class="s13 pt" text-anchor="middle">always on</text></g>
-<g class="an" style="animation-name:k8"><rect x="212" y="33" width="92" height="22" rx="6" class="nd am-s"/><text x="258" y="48.5" class="m13 am" text-anchor="middle">bmesh sync</text></g>
-<rect x="209" y="30" width="98" height="28" rx="8" class="rg am-s an hide" style="animation-name:k9"/>
+<g class="an" style="animation-name:kg"><rect x="212" y="33" width="92" height="22" rx="6" class="nd am-s"/><path class="ln" d="M304 44 L318 44 L318 102"/><text x="258" y="48.5" class="m13 am" text-anchor="middle">bmesh sync</text></g>
+<rect x="209" y="30" width="98" height="28" rx="8" class="rg am-s an hide" style="animation-name:kh"/>
+<g class="an hide" style="animation-name:ki"><path class="lg am-s" d="M304 44 L318 44 L318 102"/><path class="lc am-s" d="M304 44 L318 44 L318 102"/></g>
 <text x="36" y="74" class="s13"><tspan class="m13">bmesh serve</tspan><tspan class="mu"> · leads, routines, map</tspan></text>
 <g><rect x="36" y="86" width="258" height="32" rx="6" class="nd"/><circle cx="50" cy="102" r="4.5" fill="var(--wk)"/><text x="63" y="106.9" class="m14">app-012</text><text x="282" y="106.5" class="s13 mu" text-anchor="end">lead</text></g>
-<circle class="an hide" style="animation-name:ka" cx="50" cy="102" r="4.5" fill="var(--am)"/>
-<rect x="36" y="86" width="258" height="32" rx="6" class="rg pu-s an hide" style="animation-name:kb"/>
+<circle class="an hide" style="animation-name:kj" cx="50" cy="102" r="4.5" fill="var(--am)"/>
+<rect x="36" y="86" width="258" height="32" rx="6" class="rg pu-s an hide" style="animation-name:kk"/>
 <path class="tr" d="M50 118 V174 H56 M50 140 H56"/>
 <g><rect x="56" y="126" width="238" height="28" rx="6" class="nd"/><circle cx="70" cy="140" r="4.5" fill="var(--wk)"/><text x="83" y="144.55" class="m13">app-012.alpha</text><text x="282" y="144.5" class="s13 mu" text-anchor="end">executor</text></g>
 <g><rect x="56" y="160" width="238" height="28" rx="6" class="nd"/><circle cx="70" cy="174" r="4.5" fill="var(--wk)"/><text x="83" y="178.55" class="m13">app-012.beta</text><text x="282" y="178.5" class="s13 mu" text-anchor="end">executor</text></g>
 <g><rect x="36" y="196" width="258" height="28" rx="6" class="nd"/><circle cx="50" cy="210" r="4.5" fill="var(--mu)"/><text x="63" y="214.55" class="m13">routine.review</text><text x="282" y="214.5" class="s13 mu" text-anchor="end">routine</text></g>
-<rect x="20" y="20" width="290" height="214" rx="10" class="rg tl-s an hide" style="animation-name:kc"/>
+<rect x="20" y="20" width="290" height="214" rx="10" class="rg tl-s an hide" style="animation-name:kl"/>
 <rect x="650" y="20" width="290" height="146" rx="10" class="pn"/>
 <circle cx="668" cy="44" r="5" fill="var(--ok)"/>
 <text x="681" y="49.5" class="s16 b">build-box</text>
@@ -113,23 +133,23 @@ text{fill:var(--fg)}
 <text x="666" y="74" class="s13"><tspan class="m13">bmesh serve</tspan><tspan class="mu"> · routines</tspan></text>
 <g><rect x="666" y="84" width="258" height="28" rx="6" class="nd"/><circle cx="680" cy="98" r="4.5" fill="var(--mu)"/><text x="693" y="102.55" class="m13">routine.verify</text><text x="912" y="102.5" class="s13 mu" text-anchor="end">routine</text></g>
 <g><rect x="666" y="118" width="258" height="30" rx="6" class="nd"/><circle cx="680" cy="133" r="4.5" fill="var(--mu)"/><text x="693" y="137.55" class="m13">routine.review</text></g>
-<rect x="666" y="118" width="258" height="30" rx="6" class="rg am-s an hide" style="animation-name:kd"/>
-<g class="an" style="animation-name:ke"><text x="912" y="137.5" class="s13 mu" text-anchor="end">routine</text></g>
-<g class="an hide" style="animation-name:kf"><text x="912" y="137.5" class="s13 am" text-anchor="end">running</text></g>
-<g class="an dimb" style="animation-name:kg">
+<rect x="666" y="118" width="258" height="30" rx="6" class="rg am-s an hide" style="animation-name:km"/>
+<g class="an" style="animation-name:kn"><text x="912" y="137.5" class="s13 mu" text-anchor="end">routine</text></g>
+<g class="an hide" style="animation-name:ko"><text x="912" y="137.5" class="s13 am" text-anchor="end">running</text></g>
+<g class="an dimb" style="animation-name:kp">
 <rect x="650" y="190" width="290" height="134" rx="10" class="pn"/>
 <circle cx="668" cy="214" r="5" fill="var(--ok)"/>
-<circle class="an" style="animation-name:kh" cx="668" cy="214" r="5" fill="var(--mu)"/>
+<circle class="an" style="animation-name:kq" cx="668" cy="214" r="5" fill="var(--mu)"/>
 <text x="681" y="219.5" class="s16 b">laptop</text>
 <g class="pl"><rect x="742" y="203" width="101" height="22" rx="11" class="pb"/><text x="792.5" y="218.5" class="s13 pt" text-anchor="middle">leaf · secure</text></g>
 <text x="666" y="246" class="s13"><tspan class="m13">bmesh hub</tspan><tspan class="mu"> · leaf, redials the hub</tspan></text>
 <text x="666" y="268" class="s13"><tspan class="m13">bmesh serve</tspan><tspan class="mu"> · daemon, map</tspan></text>
 <rect x="662" y="284" width="266" height="28" rx="6" class="nd"/>
-<g class="an" style="animation-name:ki"><text x="676" y="302" class="s13 mu">on wake: takes the jobs it missed</text></g>
-<g class="an hide" style="animation-name:kj"><text x="676" y="302" class="s13 ok"><tspan class="m13">level</tspan>: 1 repo fast-forwarded</text></g>
-<g class="an hide" style="animation-name:kk"><text x="676" y="302" class="s13"><tspan fill-opacity="0"><tspan class="m13">level</tspan>: 1 repo fast-forwarded</tspan><tspan class="hdc">, 1 held</tspan></text></g>
+<g class="an" style="animation-name:kr"><text x="676" y="302" class="s13 mu">on wake: takes the jobs it missed</text></g>
+<g class="an hide" style="animation-name:ks"><text x="676" y="302" class="s13 ok"><tspan class="m13">level</tspan>: 1 repo fast-forwarded</text></g>
+<g class="an hide" style="animation-name:kt"><text x="676" y="302" class="s13"><tspan fill-opacity="0"><tspan class="m13">level</tspan>: 1 repo fast-forwarded</tspan><tspan class="hdc">, 1 held</tspan></text></g>
 </g>
-<g class="an" style="animation-name:kl"><g class="pl sl"><rect x="848" y="203" width="78" height="22" rx="11" class="pb"/><text x="887" y="218.5" class="s13 pt" text-anchor="middle">asleep 2h</text></g></g>
+<g class="an" style="animation-name:ku"><g class="pl sl"><rect x="848" y="203" width="78" height="22" rx="11" class="pb"/><text x="887" y="218.5" class="s13 pt" text-anchor="middle">asleep 2h</text></g></g>
 <rect x="380" y="84" width="200" height="178" rx="10" class="pn"/>
 <text x="396" y="110" class="s16 b">hub</text>
 <text x="564" y="110" class="m13 mu" text-anchor="end">bmesh hub</text>
@@ -137,48 +157,78 @@ text{fill:var(--fg)}
 <text x="394" y="158" class="m13 mu">bm.inbox.</text>
 <rect x="392" y="166" width="176" height="26" rx="6" class="nd"/>
 <text x="402" y="183.5" class="m13">routine.review</text>
+<path class="ln" d="M568 179 L574 179 L574 133"/>
+<g class="an hide" style="animation-name:kv"><path class="lg am-s" d="M568 179 L574 179 L574 133"/><path class="lc am-s" d="M568 179 L574 179 L574 133"/></g>
 <rect x="392" y="200" width="176" height="26" rx="6" class="nd"/>
 <text x="402" y="217.5" class="m13">host.laptop</text>
-<g class="an hide" style="animation-name:km"><text x="480" y="250" class="s13 mu" text-anchor="middle">runs on hub-box</text></g>
-<g class="an" style="animation-name:kn"><text x="480" y="250" class="s13 am" text-anchor="middle">queued until Sat 09:40</text></g>
-<rect x="380" y="84" width="200" height="178" rx="10" class="rg tl-s an hide" style="animation-name:ko"/>
-<rect x="380" y="84" width="200" height="178" rx="10" class="rg am-s an hide" style="animation-name:kp"/>
-<rect x="380" y="84" width="200" height="178" rx="10" class="rg pu-s an hide" style="animation-name:kq"/>
-<g class="an hide" style="animation-name:kr"><circle cx="550" cy="179" r="9" class="am-f2"/><circle cx="550" cy="179" r="5" fill="var(--am)"/></g>
-<g class="an" style="animation-name:ks"><circle cx="550" cy="213" r="9" class="am-f2"/><circle cx="550" cy="213" r="5" fill="var(--am)"/></g>
-<g class="an" style="animation-name:kt"><circle cx="532" cy="213" r="9" class="am-f2"/><circle cx="532" cy="213" r="5" fill="var(--am)"/></g>
+<g class="an hide" style="animation-name:kw"><text x="480" y="250" class="s13 mu" text-anchor="middle">runs on hub-box</text></g>
+<g class="an" style="animation-name:kx"><text x="480" y="250" class="s13 am" text-anchor="middle">queued until Sat 09:40</text></g>
+<rect x="380" y="84" width="200" height="178" rx="10" class="rg tl-s an hide" style="animation-name:ky"/>
+<rect x="380" y="84" width="200" height="178" rx="10" class="rg am-s an hide" style="animation-name:kz"/>
+<rect x="380" y="84" width="200" height="178" rx="10" class="rg pu-s an hide" style="animation-name:k10"/>
+<g class="an hide" style="animation-name:k11"><circle cx="550" cy="179" r="9" class="am-f2"/><circle cx="550" cy="179" r="5" fill="var(--am)"/></g>
+<g class="an" style="animation-name:k12"><circle cx="550" cy="213" r="9" class="am-f2"/><circle cx="550" cy="213" r="5" fill="var(--am)"/></g>
+<g class="an" style="animation-name:k13"><circle cx="532" cy="213" r="9" class="am-f2"/><circle cx="532" cy="213" r="5" fill="var(--am)"/></g>
 <rect x="20" y="262" width="290" height="132" rx="10" class="pn"/>
 <text x="36" y="289" class="s16 b">map</text>
 <text x="294" y="289" class="s13 mu" text-anchor="end">hub-box · <tspan class="m13">127.0.0.1:3774</tspan></text>
 <g><rect x="32" y="302" width="266" height="28" rx="6" class="nd"/><circle cx="46" cy="316" r="4.5" fill="var(--wk)"/><text x="59" y="320.55" class="m13">app-012</text></g>
-<rect x="32" y="302" width="266" height="28" rx="6" class="rg tl-s an hide" style="animation-name:ku"/>
-<g class="an" style="animation-name:kv"><g class="pl wkp"><rect x="218" y="305" width="72" height="22" rx="11" class="pb"/><text x="254" y="320.5" class="s13 pt" text-anchor="middle">working</text></g></g>
-<g class="an hide" style="animation-name:kw"><circle cx="46" cy="316" r="4.5" fill="var(--am)"/><g class="pl akp"><rect x="218" y="305" width="72" height="22" rx="11" class="pb"/><text x="254" y="320.5" class="s13 pt" text-anchor="middle">asking</text></g></g>
+<rect x="32" y="302" width="266" height="28" rx="6" class="rg tl-s an hide" style="animation-name:k14"/>
+<g class="an" style="animation-name:k15"><g class="pl wkp"><rect x="218" y="305" width="72" height="22" rx="11" class="pb"/><text x="254" y="320.5" class="s13 pt" text-anchor="middle">working</text></g></g>
+<g class="an hide" style="animation-name:k16"><circle cx="46" cy="316" r="4.5" fill="var(--am)"/><g class="pl akp"><rect x="218" y="305" width="72" height="22" rx="11" class="pb"/><text x="254" y="320.5" class="s13 pt" text-anchor="middle">asking</text></g></g>
 <path class="tr" d="M46 330 V350 H62"/>
 <text x="66" y="354.5" class="s13"><tspan class="m13">.alpha · .beta</tspan>  <tspan class="mu">working</tspan></text>
 <text x="36" y="380" class="s13 mu">every node on the mesh, live</text>
 <rect x="400" y="280" width="160" height="114" rx="18" class="pn"/>
 <rect x="462" y="289" width="36" height="5" rx="2.5" class="notch"/>
 <text x="480" y="314" class="s13 mu" text-anchor="middle">phone</text>
-<g class="an" style="animation-name:kx"><text x="480" y="348" class="s13 mu" text-anchor="middle">a lead's pushes:</text><text x="480" y="368" class="s13 mu" text-anchor="middle">ask · blocked · done</text></g>
-<g class="an hide" style="animation-name:ky"><rect x="410" y="326" width="140" height="54" rx="8" class="nt"/><circle cx="424" cy="344" r="4" fill="var(--tl)"/><text x="435" y="348.5" class="m13 b">app-012 asks</text><text x="420" y="369" class="s13 mu">ntfy · high</text></g>
+<g class="an" style="animation-name:k17"><text x="480" y="348" class="s13 mu" text-anchor="middle">a lead's pushes:</text><text x="480" y="368" class="s13 mu" text-anchor="middle">ask · blocked · done</text></g>
+<g class="an hide" style="animation-name:k18"><rect x="410" y="326" width="140" height="54" rx="8" class="nt"/><circle cx="424" cy="344" r="4" fill="var(--tl)"/><text x="435" y="348.5" class="m13 b">app-012 asks</text><text x="420" y="369" class="s13 mu">ntfy · high</text></g>
 <circle cx="664" cy="366" r="5" fill="var(--tl)"/><text x="675" y="370.5" class="s13 mu">event</text>
 <circle cx="730" cy="366" r="5" fill="var(--am)"/><text x="741" y="370.5" class="s13 mu">job</text>
 <circle cx="784" cy="366" r="5" fill="var(--pu)"/><text x="795" y="370.5" class="s13 mu">reply</text>
 <line class="ln dash" x1="846" y1="366" x2="870" y2="366"/>
 <text x="876" y="370.5" class="s13 mu">waits</text>
-<g class="dot" style="animation-name:kz"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k10"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k11"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k12"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k13;animation-timing-function:linear"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k14"><circle r="9" fill="var(--pu)" opacity=".3"/><circle r="5" fill="var(--pu)"/></g>
-<g class="dot" style="animation-name:k15"><circle r="9" fill="var(--pu)" opacity=".3"/><circle r="5" fill="var(--pu)"/></g>
-<g class="dot" style="animation-name:k16"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k17"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k18;animation-timing-function:linear"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k19;animation-timing-function:linear"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k1a;animation-timing-function:linear"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k1b"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
+<g class="dot" style="animation-name:k19"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
+<g class="dot" style="animation-name:k19;animation-delay:0.4s"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
+<g class="dot" style="animation-name:k19;animation-delay:0.8s"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
+<g class="dot" style="animation-name:k1a"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
+<g class="dot" style="animation-name:k1a;animation-delay:0.4s"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
+<g class="dot" style="animation-name:k1a;animation-delay:0.8s"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
+<g class="dot" style="animation-name:k1b"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
+<g class="dot" style="animation-name:k1b;animation-delay:0.5s"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
+<g class="dot" style="animation-name:k1b;animation-delay:1s"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
 <g class="dot" style="animation-name:k1c"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
+<g class="dot" style="animation-name:k1c;animation-delay:0.4s"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
+<g class="dot" style="animation-name:k1c;animation-delay:0.8s"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
+<g class="dot" style="animation-name:k1d;animation-timing-function:linear"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
+<g class="dot" style="animation-name:k1d;animation-delay:0.4s;animation-timing-function:linear"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
+<g class="dot" style="animation-name:k1d;animation-delay:0.8s;animation-timing-function:linear"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
+<g class="dot" style="animation-name:k1e"><circle r="9" fill="var(--pu)" opacity=".3"/><circle r="5" fill="var(--pu)"/></g>
+<g class="dot" style="animation-name:k1e;animation-delay:0.4s"><circle r="9" fill="var(--pu)" opacity=".3"/><circle r="5" fill="var(--pu)"/></g>
+<g class="dot" style="animation-name:k1e;animation-delay:0.8s"><circle r="9" fill="var(--pu)" opacity=".3"/><circle r="5" fill="var(--pu)"/></g>
+<g class="dot" style="animation-name:k1f"><circle r="9" fill="var(--pu)" opacity=".3"/><circle r="5" fill="var(--pu)"/></g>
+<g class="dot" style="animation-name:k1f;animation-delay:0.4s"><circle r="9" fill="var(--pu)" opacity=".3"/><circle r="5" fill="var(--pu)"/></g>
+<g class="dot" style="animation-name:k1f;animation-delay:0.8s"><circle r="9" fill="var(--pu)" opacity=".3"/><circle r="5" fill="var(--pu)"/></g>
+<g class="dot" style="animation-name:k1g"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
+<g class="dot" style="animation-name:k1g;animation-delay:0.4s"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
+<g class="dot" style="animation-name:k1g;animation-delay:0.8s"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
+<g class="dot" style="animation-name:k1h"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
+<g class="dot" style="animation-name:k1h;animation-delay:0.4s"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
+<g class="dot" style="animation-name:k1h;animation-delay:0.8s"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
+<g class="dot" style="animation-name:k1i;animation-timing-function:linear"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
+<g class="dot" style="animation-name:k1i;animation-delay:0.4s;animation-timing-function:linear"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
+<g class="dot" style="animation-name:k1i;animation-delay:0.8s;animation-timing-function:linear"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
+<g class="dot" style="animation-name:k1j;animation-timing-function:linear"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
+<g class="dot" style="animation-name:k1j;animation-delay:0.4s;animation-timing-function:linear"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
+<g class="dot" style="animation-name:k1j;animation-delay:0.8s;animation-timing-function:linear"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
+<g class="dot" style="animation-name:k1k;animation-timing-function:linear"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
+<g class="dot" style="animation-name:k1k;animation-delay:0.4s;animation-timing-function:linear"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
+<g class="dot" style="animation-name:k1k;animation-delay:0.8s;animation-timing-function:linear"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
+<g class="dot" style="animation-name:k1l"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
+<g class="dot" style="animation-name:k1l;animation-delay:0.4s"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
+<g class="dot" style="animation-name:k1l;animation-delay:0.8s"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
+<g class="dot" style="animation-name:k1m"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
+<g class="dot" style="animation-name:k1m;animation-delay:0.4s"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
+<g class="dot" style="animation-name:k1m;animation-delay:0.8s"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
 </svg>
