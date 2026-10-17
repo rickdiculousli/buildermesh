@@ -1,258 +1,374 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 526" width="960" height="526" class="light" role="img" aria-label="buildermesh across boxes, in five scenes: every box builds and its leads' events go through the NATS hub; a review job runs on whichever box is free; a lead's ask is pushed to your phone; a sleeping laptop's jobs wait on the hub; it wakes and catches up in order">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 656" width="960" height="656" class="light" role="img" aria-label="buildermesh across three boxes, in five scenes: every box builds at once; a coordinator on hub-box follows leads on every box through the NATS hub and holds one before it lands until another has landed; a lead queues a check that needs macOS and only the laptop takes it; leads' asks, blocks and finishes reach your phone as push notifications; after a change lands, bmesh sync levels every box's checkout, and the sleeping laptop levels when it wakes">
 <title>buildermesh across boxes</title>
 <style>
-svg{--fg:#e6edf3;--mu:#8b949e;--pf:#161b22;--ps:#30363d;--ed:#3d4652;--sc:#0d1117;--wk:#58a6ff;--tl:#39c5bb;--am:#d29922;--pu:#a371f7;--ok:#3fb950;--hd:#8fa7c4}
-svg.light{--fg:#1f2328;--mu:#59636e;--pf:#f6f8fa;--ps:#d0d7de;--ed:#c3ccd5;--sc:#ffffff;--wk:#0969da;--tl:#1a7f72;--am:#9a6700;--pu:#8250df;--ok:#1a7f37;--hd:#57728f}
+svg{--fg:#e6edf3;--mu:#8b949e;--pf:#161b22;--ps:#30363d;--ed:#3d4652;--sc:#0d1117;--cp:#1c2129;--wk:#58a6ff;--tl:#39c5bb;--am:#d29922;--pu:#a371f7;--ok:#3fb950;--hd:#8fa7c4;--rd:#f85149}
+svg.light{--fg:#1f2328;--mu:#59636e;--pf:#f6f8fa;--ps:#d0d7de;--ed:#c3ccd5;--sc:#ffffff;--cp:#ffffff;--wk:#0969da;--tl:#1a7f72;--am:#9a6700;--pu:#8250df;--ok:#1a7f37;--hd:#57728f;--rd:#cf222e}
 text{fill:var(--fg)}
 .s13,.s14,.s16,.s20{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif}
 .s13{font-size:13px}.s14{font-size:14px}.s16{font-size:16px}.s20{font-size:20px}
 .m13,.m14{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace}
 .m13{font-size:13px}.m14{font-size:14px}.m13,.m14{word-spacing:-0.3em}
-.b{font-weight:600}.mu{fill:var(--mu)}.tl{fill:var(--tl)}.am{fill:var(--am)}.pu{fill:var(--pu)}.ok{fill:var(--ok)}
+.b{font-weight:600}.mu{fill:var(--mu)}.tl{fill:var(--tl)}.am{fill:var(--am)}.pu{fill:var(--pu)}.ok{fill:var(--ok)}.wk{fill:var(--wk)}.hd{fill:var(--hd)}
 .pn{fill:var(--pf);stroke:var(--ps);stroke-width:1.5}
+.cmp{fill:var(--cp);stroke:var(--ed);stroke-width:1.5}
 .nd{fill:none;stroke:var(--ps);stroke-width:1.5}
 .ln{stroke:var(--ed);stroke-width:1.5;fill:none}
-.dash{stroke-dasharray:4 6;stroke:var(--am)}.dofs{stroke-dashoffset:4}
-.tr{stroke:var(--ps);stroke-width:1.5;fill:none}
+.dash{stroke-dasharray:4 6;stroke:var(--am)}
+.tr,.br{stroke:var(--ps);stroke-width:1.5;fill:none}.br{stroke:var(--mu);stroke-linecap:round}
+.ck{fill:none;stroke:var(--ok);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .pb{fill:none;stroke:var(--ps);stroke-width:1.5}.pt{fill:var(--mu)}
 .sl .pb{stroke:var(--hd)}.sl .pt{fill:var(--hd)}
 .rg{fill:none;stroke-width:2}
 .lc{fill:none;stroke-width:2.5}.lg{fill:none;stroke-width:8;stroke-linecap:round;opacity:.22}
-.hdc{fill:var(--hd)}.tl-s{stroke:var(--tl)}.am-s{stroke:var(--am)}.pu-s{stroke:var(--pu)}
+.tl-s{stroke:var(--tl)}.am-s{stroke:var(--am)}.pu-s{stroke:var(--pu)}.hd-s{stroke:var(--hd)}.wk-s{stroke:var(--wk)}
 .am-f2{fill:var(--am);opacity:.3}
 .scr{fill:var(--sc);stroke:var(--ps);stroke-width:1}.card{fill:var(--pf);stroke:var(--ps);stroke-width:1.5}
 .notch{fill:var(--ps)}
-.qh{stroke:var(--ps);stroke-width:1.5;stroke-dasharray:4 6;fill:none}svg.light .bf{fill-opacity:.35}
+.qh{stroke:var(--ed);stroke-width:1.5;stroke-dasharray:4 6;fill:none}svg.light .bf{fill-opacity:.35}
 .trk{fill:var(--ps)}.bf{fill:var(--mu);fill-opacity:.6;transform-box:fill-box;transform-origin:left center}.b0{transform:scaleX(0)}
-.dot,.an{animation-duration:38.5s;animation-iteration-count:infinite;animation-timing-function:ease-in-out}
-.dot,.hide{opacity:0}.dimb{opacity:.5}
-@media (prefers-reduced-motion:reduce){*{animation:none!important}}
-@keyframes k0{0%{opacity:1}67.14%{opacity:1}67.79%{opacity:0}82.34%{opacity:0}82.99%{opacity:1}100%{opacity:1}}
-@keyframes k1{0%{opacity:0}67.14%{opacity:0}67.79%{opacity:1}82.34%{opacity:1}82.99%{opacity:0}100%{opacity:0}}
-@keyframes k2{0%{opacity:0}1.3%{opacity:0}2.08%{opacity:1}6.75%{opacity:1}7.79%{opacity:0}45.45%{opacity:0}46.23%{opacity:1}55.97%{opacity:1}57.01%{opacity:0}100%{opacity:0}}
-@keyframes k3{0%{opacity:0}3.9%{opacity:0}4.68%{opacity:1}9.35%{opacity:1}10.39%{opacity:0}100%{opacity:0}}
-@keyframes k4{0%{opacity:0}6.49%{opacity:0}7.27%{opacity:1}13.51%{opacity:1}14.55%{opacity:0}100%{opacity:0}}
-@keyframes k5{0%{opacity:0}53.38%{opacity:0}54.16%{opacity:1}60.13%{opacity:1}61.17%{opacity:0}100%{opacity:0}}
-@keyframes k6{0%{opacity:0}16.88%{opacity:0}17.66%{opacity:1}24.16%{opacity:1}25.19%{opacity:0}67.53%{opacity:0}68.31%{opacity:1}77.66%{opacity:1}78.7%{opacity:0}100%{opacity:0}}
-@keyframes k7{0%{opacity:0}23.38%{opacity:0}24.16%{opacity:1}29.61%{opacity:1}30.65%{opacity:0}100%{opacity:0}}
-@keyframes k8{0%{opacity:0}33.51%{opacity:0}34.29%{opacity:1}38.96%{opacity:1}40%{opacity:0}100%{opacity:0}}
-@keyframes k9{0%{opacity:0}36.36%{opacity:0}37.14%{opacity:1}41.82%{opacity:1}42.86%{opacity:0}100%{opacity:0}}
-@keyframes ka{0%{opacity:0}83.12%{opacity:0}83.9%{opacity:1}93.25%{opacity:1}94.29%{opacity:0}100%{opacity:0}}
-@keyframes kb{0%{opacity:0}0%{opacity:0}0.78%{opacity:1}16.36%{opacity:1}16.88%{opacity:0}100%{opacity:0}}
-@keyframes kc{0%{opacity:0}17.01%{opacity:0}17.53%{opacity:1}44.42%{opacity:1}44.94%{opacity:0}100%{opacity:0}}
-@keyframes kd{0%{opacity:0}45.06%{opacity:0}45.58%{opacity:1}66.49%{opacity:1}67.01%{opacity:0}100%{opacity:0}}
-@keyframes ke{0%{opacity:0}67.14%{opacity:0}67.66%{opacity:1}81.56%{opacity:1}82.08%{opacity:0}100%{opacity:0}}
-@keyframes kf{0%{opacity:0}82.21%{opacity:0}82.73%{opacity:1}98.7%{opacity:1}99.22%{opacity:0}100%{opacity:0}}
-@keyframes kg{0%{opacity:0}66.75%{opacity:0}67.53%{opacity:1}80.52%{opacity:1}81.3%{opacity:0}100%{opacity:0}}
-@keyframes kh{0%{opacity:0}67.92%{opacity:0}68.31%{opacity:1}70.39%{opacity:1}70.78%{opacity:0}71.56%{opacity:0}71.95%{opacity:1}74.03%{opacity:1}74.42%{opacity:0}100%{opacity:0}}
-@keyframes ki{0%{opacity:0}45.58%{opacity:0}46.23%{opacity:1}66.23%{opacity:1}66.88%{opacity:0}100%{opacity:0}}
-@keyframes kj{0%{opacity:0}1.56%{opacity:0}2.08%{opacity:1}4.16%{opacity:1}5.19%{opacity:0}45.71%{opacity:0}46.23%{opacity:1}48.31%{opacity:1}49.35%{opacity:0}100%{opacity:0}}
-@keyframes kk{0%{opacity:0}17.14%{opacity:0}17.66%{opacity:1}19.74%{opacity:1}20.78%{opacity:0}100%{opacity:0}}
-@keyframes kl{0%{opacity:0}39.22%{opacity:0}39.74%{opacity:1}44.94%{opacity:1}45.97%{opacity:0}100%{opacity:0}}
-@keyframes km{0%{opacity:0}16.88%{opacity:0}17.4%{opacity:1}34.81%{opacity:1}35.32%{opacity:0}100%{opacity:0}}
-@keyframes kn{0%{opacity:0}16.88%{opacity:0}17.4%{opacity:1}34.81%{opacity:1}35.32%{opacity:0}100%{opacity:0}}
-@keyframes ko{0%{opacity:1}16.36%{opacity:1}16.88%{opacity:0}35.45%{opacity:0}35.97%{opacity:1}100%{opacity:1}}
-@keyframes kp{0%{opacity:0}17.01%{opacity:0}17.53%{opacity:1}34.81%{opacity:1}35.32%{opacity:0}100%{opacity:0}}
-@keyframes kq{0%{opacity:0}53.38%{opacity:0}53.9%{opacity:1}55.97%{opacity:1}57.01%{opacity:0}100%{opacity:0}}
-@keyframes kr{0%{opacity:0}4.16%{opacity:0}4.68%{opacity:1}6.75%{opacity:1}7.79%{opacity:0}100%{opacity:0}}
-@keyframes ks{0%{opacity:0}27.01%{opacity:0}27.53%{opacity:1}34.81%{opacity:1}35.32%{opacity:0}100%{opacity:0}}
-@keyframes kt{0%{opacity:1}26.88%{opacity:1}27.4%{opacity:0}35.45%{opacity:0}35.97%{opacity:1}100%{opacity:1}}
-@keyframes ku{0%{opacity:0}27.53%{opacity:0}28.05%{opacity:1}34.81%{opacity:1}35.32%{opacity:0}100%{opacity:0}}
-@keyframes kv{0%{opacity:0}33.77%{opacity:0}34.29%{opacity:1}36.36%{opacity:1}37.4%{opacity:0}100%{opacity:0}}
-@keyframes kw{0%{opacity:1}67.01%{opacity:1}68.05%{opacity:0.5}82.08%{opacity:0.5}83.12%{opacity:1}100%{opacity:1}}
-@keyframes kx{0%{opacity:0}67.14%{opacity:0}67.79%{opacity:1}82.34%{opacity:1}82.99%{opacity:0}100%{opacity:0}}
-@keyframes ky{0%{opacity:0}6.75%{opacity:0}7.27%{opacity:1}9.35%{opacity:1}10.39%{opacity:0}100%{opacity:0}}
-@keyframes kz{0%{opacity:1}89.25%{opacity:1}89.56%{opacity:0}98.96%{opacity:0}99.74%{opacity:1}100%{opacity:1}}
-@keyframes k10{0%{opacity:0}89.56%{opacity:0}89.87%{opacity:1}98.65%{opacity:1}98.96%{opacity:0}100%{opacity:0}}
-@keyframes k11{0%{opacity:0}92.94%{opacity:0}93.25%{opacity:1}98.65%{opacity:1}98.96%{opacity:0}100%{opacity:0}}
-@keyframes k12{0%{opacity:0}67.14%{opacity:0}67.79%{opacity:1}82.34%{opacity:1}82.99%{opacity:0}100%{opacity:0}}
-@keyframes k13{0%{opacity:0}71.56%{opacity:0}72.21%{opacity:1}84.68%{opacity:1}85.32%{opacity:0}100%{opacity:0}}
-@keyframes k14{0%{opacity:0}4.16%{opacity:0}4.68%{opacity:1}13.51%{opacity:1}14.55%{opacity:0}48.31%{opacity:0}48.83%{opacity:1}53.38%{opacity:1}54.42%{opacity:0}100%{opacity:0}}
-@keyframes k15{0%{opacity:0}21.56%{opacity:0}22.08%{opacity:1}25.97%{opacity:1}27.01%{opacity:0}71.43%{opacity:0}71.95%{opacity:1}77.66%{opacity:1}78.7%{opacity:0}100%{opacity:0}}
-@keyframes k16{0%{opacity:0}36.36%{opacity:0}36.88%{opacity:1}39.22%{opacity:1}40.26%{opacity:0}100%{opacity:0}}
-@keyframes k17{0%{opacity:0}21.69%{opacity:0}22.08%{opacity:1}25.97%{opacity:1}26.36%{opacity:0}100%{opacity:0}}
-@keyframes k18{0%{opacity:0}71.56%{opacity:0}71.95%{opacity:1}85.71%{opacity:1}86.1%{opacity:0}100%{opacity:0}}
-@keyframes k19{0%{opacity:0;transform:translate(0px,0px)}75.19%{opacity:0;transform:translate(0px,0px)}75.58%{opacity:1;transform:translate(0px,0px)}85.71%{opacity:1;transform:translate(0px,0px)}86.49%{opacity:1;transform:translate(18px,0px)}89.09%{opacity:1;transform:translate(18px,0px)}89.48%{opacity:0;transform:translate(18px,0px)}100%{opacity:0;transform:translate(0px,0px)}}
-@keyframes k1a{0%{opacity:0}57.92%{opacity:0}58.57%{opacity:1}66.23%{opacity:1}66.88%{opacity:0}100%{opacity:0}}
-@keyframes k1b{0%{transform:scaleX(0)}0%{transform:scaleX(0)}16.88%{transform:scaleX(1)}100%{transform:scaleX(1)}}
-@keyframes k1c{0%{opacity:1}16.62%{opacity:1}16.88%{opacity:0}100%{opacity:0}}
-@keyframes k1d{0%{transform:scaleX(0)}16.88%{transform:scaleX(0)}44.94%{transform:scaleX(1)}100%{transform:scaleX(1)}}
-@keyframes k1e{0%{opacity:0}16.88%{opacity:0}17.14%{opacity:1}44.68%{opacity:1}44.94%{opacity:0}100%{opacity:0}}
-@keyframes k1f{0%{transform:scaleX(0)}44.94%{transform:scaleX(0)}67.01%{transform:scaleX(1)}100%{transform:scaleX(1)}}
-@keyframes k1g{0%{opacity:0}44.94%{opacity:0}45.19%{opacity:1}66.75%{opacity:1}67.01%{opacity:0}100%{opacity:0}}
-@keyframes k1h{0%{transform:scaleX(0)}67.01%{transform:scaleX(0)}82.08%{transform:scaleX(1)}100%{transform:scaleX(1)}}
-@keyframes k1i{0%{opacity:0}67.01%{opacity:0}67.27%{opacity:1}81.82%{opacity:1}82.08%{opacity:0}100%{opacity:0}}
-@keyframes k1j{0%{transform:scaleX(0)}82.08%{transform:scaleX(0)}100%{transform:scaleX(1)}100%{transform:scaleX(1)}}
-@keyframes k1k{0%{opacity:0}82.08%{opacity:0}82.34%{opacity:1}100%{opacity:1}}
-@keyframes k1l{0%{opacity:0;transform:translate(310px,200px)}1.69%{opacity:0;transform:translate(310px,200px)}2.08%{opacity:1;transform:translate(310px,200px)}4.68%{opacity:1;transform:translate(380px,200px)}5.06%{opacity:0;transform:translate(380px,200px)}100%{opacity:0;transform:translate(380px,200px)}}
-@keyframes k1m{0%{opacity:0;transform:translate(650px,200px)}4.29%{opacity:0;transform:translate(650px,200px)}4.68%{opacity:1;transform:translate(650px,200px)}7.27%{opacity:1;transform:translate(580px,200px)}7.66%{opacity:0;transform:translate(580px,200px)}100%{opacity:0;transform:translate(580px,200px)}}
-@keyframes k1n{0%{opacity:0;transform:translate(650px,340px)}6.88%{opacity:0;transform:translate(650px,340px)}7.27%{opacity:1;transform:translate(650px,340px)}9.35%{opacity:1;transform:translate(560px,340px)}11.43%{opacity:1;transform:translate(560px,250px)}11.82%{opacity:0;transform:translate(560px,250px)}100%{opacity:0;transform:translate(560px,250px)}}
-@keyframes k1o{0%{opacity:0;transform:translate(310px,200px)}17.27%{opacity:0;transform:translate(310px,200px)}17.66%{opacity:1;transform:translate(310px,200px)}22.08%{opacity:1;transform:translate(560px,200px)}22.47%{opacity:0;transform:translate(560px,200px)}100%{opacity:0;transform:translate(560px,200px)}}
-@keyframes k1p{0%{opacity:0;transform:translate(560px,200px)}23.51%{opacity:0;transform:translate(560px,200px)}23.9%{opacity:1;transform:translate(560px,200px)}27.53%{opacity:1;transform:translate(650px,200px)}27.92%{opacity:0;transform:translate(650px,200px)}100%{opacity:0;transform:translate(650px,200px)}}
-@keyframes k1q{0%{opacity:0;transform:translate(650px,200px)}33.9%{opacity:0;transform:translate(650px,200px)}34.29%{opacity:1;transform:translate(650px,200px)}36.88%{opacity:1;transform:translate(580px,200px)}37.27%{opacity:0;transform:translate(580px,200px)}100%{opacity:0;transform:translate(580px,200px)}}
-@keyframes k1r{0%{opacity:0;transform:translate(380px,200px)}36.75%{opacity:0;transform:translate(380px,200px)}37.14%{opacity:1;transform:translate(380px,200px)}39.74%{opacity:1;transform:translate(310px,200px)}40.13%{opacity:0;transform:translate(310px,200px)}100%{opacity:0;transform:translate(310px,200px)}}
-@keyframes k1s{0%{opacity:0;transform:translate(310px,200px)}45.84%{opacity:0;transform:translate(310px,200px)}46.23%{opacity:1;transform:translate(310px,200px)}48.83%{opacity:1;transform:translate(380px,200px)}49.22%{opacity:0;transform:translate(380px,200px)}100%{opacity:0;transform:translate(380px,200px)}}
-@keyframes k1t{0%{opacity:0;transform:translate(380px,200px)}50.91%{opacity:0;transform:translate(380px,200px)}51.3%{opacity:1;transform:translate(380px,200px)}53.9%{opacity:1;transform:translate(310px,200px)}54.29%{opacity:0;transform:translate(310px,200px)}100%{opacity:0;transform:translate(310px,200px)}}
-@keyframes k1u{0%{opacity:0;transform:translate(290px,318px)}53.77%{opacity:0;transform:translate(290px,318px)}54.16%{opacity:1;transform:translate(290px,318px)}55.1%{opacity:1;transform:translate(290px,365px)}58.05%{opacity:1;transform:translate(436px,365px)}58.44%{opacity:0;transform:translate(436px,365px)}100%{opacity:0;transform:translate(436px,365px)}}
-@keyframes k1v{0%{opacity:0;transform:translate(310px,200px)}67.92%{opacity:0;transform:translate(310px,200px)}68.31%{opacity:1;transform:translate(310px,200px)}71.95%{opacity:1;transform:translate(560px,200px)}72.34%{opacity:0;transform:translate(560px,200px)}100%{opacity:0;transform:translate(560px,200px)}}
-@keyframes k1w{0%{opacity:0;transform:translate(310px,200px)}71.56%{opacity:0;transform:translate(310px,200px)}71.95%{opacity:1;transform:translate(310px,200px)}75.58%{opacity:1;transform:translate(542px,200px)}75.97%{opacity:0;transform:translate(542px,200px)}100%{opacity:0;transform:translate(542px,200px)}}
-@keyframes k1x{0%{opacity:0;transform:translate(560px,200px)}83.25%{opacity:0;transform:translate(560px,200px)}83.64%{opacity:1;transform:translate(560px,200px)}84.54%{opacity:1;transform:translate(560px,250px)}86.17%{opacity:1;transform:translate(560px,340px)}87.79%{opacity:1;transform:translate(650px,340px)}88.18%{opacity:0;transform:translate(650px,340px)}100%{opacity:0;transform:translate(650px,340px)}}
-@keyframes k1y{0%{opacity:0;transform:translate(560px,200px)}86.62%{opacity:0;transform:translate(560px,200px)}87.01%{opacity:1;transform:translate(560px,200px)}87.92%{opacity:1;transform:translate(560px,250px)}89.54%{opacity:1;transform:translate(560px,340px)}91.17%{opacity:1;transform:translate(650px,340px)}91.56%{opacity:0;transform:translate(650px,340px)}100%{opacity:0;transform:translate(650px,340px)}}
+.dot,.an{animation-duration:78.3s;animation-iteration-count:infinite;animation-timing-function:ease-in-out}
+.ws{word-spacing:normal}.dot,.hide,.st{opacity:0}.dot circle:first-child{opacity:.3}.dot,.lit{animation-timing-function:linear}.lit{stroke-dasharray:100 100}
+.down{stroke-dasharray:4 6}
+.tlf{fill:var(--tl)}.amf{fill:var(--am)}.puf{fill:var(--pu)}.hdf{fill:var(--hd)}
+.spin{transform-box:fill-box;transform-origin:center;animation:sp .96s steps(8) infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}.st{opacity:1}}
+@keyframes k0{0%,1.02%,11.11%,100%{opacity:1}1.66%,10.47%{opacity:0.28}}
+@keyframes k1{0%,1.02%,11.11%,40.23%,56.7%,100%{opacity:1}1.66%,10.47%,40.87%,56.07%{opacity:0.28}}
+@keyframes k2{0%,1.02%,11.11%,12.64%,38.7%,40.23%,56.7%,76.25%,98.47%,100%{opacity:1}1.66%,10.47%,13.28%,38.06%,40.87%,56.07%,76.88%,97.83%{opacity:0.28}}
+@keyframes k3{0%,76.25%,86.53%,100%{opacity:1}76.63%,86.15%{opacity:0}}
+@keyframes k4{0%,76.25%,84.62%,100%{opacity:0}76.63%,84.24%{opacity:1}}
+@keyframes k5{0%,83.98%,86.53%,100%{opacity:0}84.36%,86.15%{opacity:1}}
+@keyframes k6{0%,15.26%,100%{opacity:0;stroke-dashoffset:100}15.33%{opacity:1;stroke-dashoffset:100}16.35%,16.73%{opacity:1;stroke-dashoffset:0}17.24%{opacity:0;stroke-dashoffset:0}}
+@keyframes k7{0%,15.64%,100%{opacity:0;stroke-dashoffset:100}15.71%{opacity:1;stroke-dashoffset:100}16.73%,17.11%{opacity:1;stroke-dashoffset:0}17.62%{opacity:0;stroke-dashoffset:0}}
+@keyframes k8{0%,16.03%,100%{opacity:0;stroke-dashoffset:100}16.09%{opacity:1;stroke-dashoffset:100}19.66%,20.05%{opacity:1;stroke-dashoffset:0}20.56%{opacity:0;stroke-dashoffset:0}}
+@keyframes k9{0%,19.73%,100%{opacity:0;stroke-dashoffset:100}19.79%{opacity:1;stroke-dashoffset:100}20.81%,21.19%{opacity:1;stroke-dashoffset:0}21.71%{opacity:0;stroke-dashoffset:0}}
+@keyframes ka{0%,21.51%,100%{opacity:0;stroke-dashoffset:100}21.58%{opacity:1;stroke-dashoffset:100}22.6%,22.98%{opacity:1;stroke-dashoffset:0}23.49%{opacity:0;stroke-dashoffset:0}}
+@keyframes kb{0%,22.73%,100%{opacity:0;stroke-dashoffset:100}22.79%{opacity:1;stroke-dashoffset:100}23.81%,24.2%{opacity:1;stroke-dashoffset:0}24.71%{opacity:0;stroke-dashoffset:0}}
+@keyframes kc{0%,25.41%,100%{opacity:0;stroke-dashoffset:100}25.47%{opacity:1;stroke-dashoffset:100}26.5%,26.88%{opacity:1;stroke-dashoffset:0}27.39%{opacity:0;stroke-dashoffset:0}}
+@keyframes kd{0%,26.56%,100%{opacity:0;stroke-dashoffset:100}26.62%{opacity:1;stroke-dashoffset:100}27.64%,28.03%{opacity:1;stroke-dashoffset:0}28.54%{opacity:0;stroke-dashoffset:0}}
+@keyframes ke{0%,28.47%,100%{opacity:0;stroke-dashoffset:100}28.54%{opacity:1;stroke-dashoffset:100}29.56%,29.94%{opacity:1;stroke-dashoffset:0}30.45%{opacity:0;stroke-dashoffset:0}}
+@keyframes kf{0%,29.69%,100%{opacity:0;stroke-dashoffset:100}29.75%{opacity:1;stroke-dashoffset:100}30.77%,31.16%{opacity:1;stroke-dashoffset:0}31.67%{opacity:0;stroke-dashoffset:0}}
+@keyframes kg{0%,31.35%,100%{opacity:0;stroke-dashoffset:100}31.41%{opacity:1;stroke-dashoffset:100}32.43%,32.82%{opacity:1;stroke-dashoffset:0}33.33%{opacity:0;stroke-dashoffset:0}}
+@keyframes kh{0%,32.56%,100%{opacity:0;stroke-dashoffset:100}32.63%{opacity:1;stroke-dashoffset:100}33.65%,34.03%{opacity:1;stroke-dashoffset:0}34.54%{opacity:0;stroke-dashoffset:0}}
+@keyframes ki{0%,41.06%,100%{opacity:0;stroke-dashoffset:100}41.12%{opacity:1;stroke-dashoffset:100}43.16%,43.54%{opacity:1;stroke-dashoffset:0}44.06%{opacity:0;stroke-dashoffset:0}}
+@keyframes kj{0%,44.63%,100%{opacity:0;stroke-dashoffset:100}44.69%{opacity:1;stroke-dashoffset:100}47.22%,47.6%{opacity:1;stroke-dashoffset:0}48.11%{opacity:0;stroke-dashoffset:0}}
+@keyframes kk{0%,49.71%,100%{opacity:0;stroke-dashoffset:100}49.78%{opacity:1;stroke-dashoffset:100}54.34%,54.72%{opacity:1;stroke-dashoffset:0}55.23%{opacity:0;stroke-dashoffset:0}}
+@keyframes kl{0%,58.94%,100%{opacity:0;stroke-dashoffset:100}59%{opacity:1;stroke-dashoffset:100}60.03%,60.41%{opacity:1;stroke-dashoffset:0}60.92%{opacity:0;stroke-dashoffset:0}}
+@keyframes km{0%,60.09%,100%{opacity:0;stroke-dashoffset:100}60.15%{opacity:1;stroke-dashoffset:100}61.17%,61.56%{opacity:1;stroke-dashoffset:0}62.07%{opacity:0;stroke-dashoffset:0}}
+@keyframes kn{0%,61.24%,100%{opacity:0;stroke-dashoffset:100}61.3%{opacity:1;stroke-dashoffset:100}63.02%,63.4%{opacity:1;stroke-dashoffset:0}63.91%{opacity:0;stroke-dashoffset:0}}
+@keyframes ko{0%,62.39%,100%{opacity:0;stroke-dashoffset:100}62.45%{opacity:1;stroke-dashoffset:100}63.47%,63.86%{opacity:1;stroke-dashoffset:0}64.37%{opacity:0;stroke-dashoffset:0}}
+@keyframes kp{0%,63.54%,100%{opacity:0;stroke-dashoffset:100}63.6%{opacity:1;stroke-dashoffset:100}64.62%,65.01%{opacity:1;stroke-dashoffset:0}65.52%{opacity:0;stroke-dashoffset:0}}
+@keyframes kq{0%,64.69%,100%{opacity:0;stroke-dashoffset:100}64.75%{opacity:1;stroke-dashoffset:100}66.47%,66.85%{opacity:1;stroke-dashoffset:0}67.36%{opacity:0;stroke-dashoffset:0}}
+@keyframes kr{0%,65.84%,100%{opacity:0;stroke-dashoffset:100}65.9%{opacity:1;stroke-dashoffset:100}69.47%,69.85%{opacity:1;stroke-dashoffset:0}70.36%{opacity:0;stroke-dashoffset:0}}
+@keyframes ks{0%,69.53%,100%{opacity:0;stroke-dashoffset:100}69.6%{opacity:1;stroke-dashoffset:100}70.62%,71%{opacity:1;stroke-dashoffset:0}71.51%{opacity:0;stroke-dashoffset:0}}
+@keyframes kt{0%,70.68%,100%{opacity:0;stroke-dashoffset:100}70.75%{opacity:1;stroke-dashoffset:100}72.46%,72.85%{opacity:1;stroke-dashoffset:0}73.36%{opacity:0;stroke-dashoffset:0}}
+@keyframes ku{0%,77.71%,100%{opacity:0;stroke-dashoffset:100}77.78%{opacity:1;stroke-dashoffset:100}78.8%,79.18%{opacity:1;stroke-dashoffset:0}79.69%{opacity:0;stroke-dashoffset:0}}
+@keyframes kv{0%,78.86%,100%{opacity:0;stroke-dashoffset:100}78.93%{opacity:1;stroke-dashoffset:100}79.95%,80.33%{opacity:1;stroke-dashoffset:0}80.84%{opacity:0;stroke-dashoffset:0}}
+@keyframes kw{0%,81.55%,100%{opacity:0;stroke-dashoffset:100}81.61%{opacity:1;stroke-dashoffset:100}82.63%,83.01%{opacity:1;stroke-dashoffset:0}83.52%{opacity:0;stroke-dashoffset:0}}
+@keyframes kx{0%,82.69%,100%{opacity:0;stroke-dashoffset:100}82.76%{opacity:1;stroke-dashoffset:100}84.11%,84.49%{opacity:1;stroke-dashoffset:0}85%{opacity:0;stroke-dashoffset:0}}
+@keyframes ky{0%,83.08%,100%{opacity:0;stroke-dashoffset:100}83.14%{opacity:1;stroke-dashoffset:100}84.36%,84.75%{opacity:1;stroke-dashoffset:0}85.26%{opacity:0;stroke-dashoffset:0}}
+@keyframes kz{0%,86.85%,100%{opacity:0;stroke-dashoffset:100}86.92%{opacity:1;stroke-dashoffset:100}89.62%,90%{opacity:1;stroke-dashoffset:0}90.52%{opacity:0;stroke-dashoffset:0}}
+@keyframes k10{0%,84.55%,100%{opacity:0;stroke-dashoffset:100}84.62%{opacity:1;stroke-dashoffset:100}86.51%,86.89%{opacity:1;stroke-dashoffset:0}87.4%{opacity:0;stroke-dashoffset:0}}
+@keyframes k11{0%,90.07%,100%{opacity:0;stroke-dashoffset:100}90.13%{opacity:1;stroke-dashoffset:100}94.6%,94.98%{opacity:1;stroke-dashoffset:0}95.49%{opacity:0;stroke-dashoffset:0}}
+@keyframes k12{0%,1.4%,10.22%,100%{opacity:0}1.66%,9.83%{opacity:1}}
+@keyframes k13{0%,2.17%,10.34%,100%{opacity:0}2.43%,9.96%{opacity:1}}
+@keyframes k14{0%,3.19%,10.47%,100%{opacity:0}3.45%,10.09%{opacity:1}}
+@keyframes k15{0%,3.96%,10.6%,100%{opacity:0}4.21%,10.22%{opacity:1}}
+@keyframes k16{0%,4.98%,10.73%,100%{opacity:0}5.24%,10.34%{opacity:1}}
+@keyframes k17{0%,1.28%,2.94%,100%{opacity:0}1.66%,2.17%{opacity:1}}
+@keyframes k18{0%,3.07%,4.73%,100%{opacity:0}3.45%,3.96%{opacity:1}}
+@keyframes k19{0%,4.85%,6.51%,100%{opacity:0}5.24%,5.75%{opacity:1}}
+@keyframes k1a{0%,12.9%,38.19%,100%{opacity:0}13.15%,37.8%{opacity:1}}
+@keyframes k1b{0%,13.54%,28.41%,100%{opacity:0}13.79%,28.03%{opacity:1}}
+@keyframes k1c{0%,28.03%,38.31%,100%{opacity:0}28.28%,37.93%{opacity:1}}
+@keyframes k1d{0%,14.05%,25.47%,33.39%,38.19%,100%{opacity:0}14.3%,25.09%,33.65%,37.8%{opacity:1}}
+@keyframes k1e{0%,25.09%,33.77%,100%{opacity:0}25.35%,33.39%{opacity:1}}
+@keyframes k1f{0%,14.56%,38.19%,100%{opacity:0}14.81%,37.8%{opacity:1}}
+@keyframes k1g{0%,15.07%,16.6%,28.28%,29.82%,100%{opacity:0}15.33%,16.09%,28.54%,29.3%{opacity:1}}
+@keyframes k1h{0%,15.45%,16.99%,25.22%,26.75%,100%{opacity:0}15.71%,16.48%,25.47%,26.24%{opacity:1}}
+@keyframes k1i{0%,15.84%,17.37%,100%{opacity:0}16.09%,16.86%{opacity:1}}
+@keyframes k1j{0%,20.56%,22.09%,27.39%,28.92%,30.52%,32.05%,100%{opacity:0}20.81%,21.58%,27.64%,28.41%,30.77%,31.54%{opacity:1}}
+@keyframes k1k{0%,21.32%,22.86%,31.16%,32.69%,100%{opacity:0}21.58%,22.34%,31.41%,32.18%{opacity:1}}
+@keyframes k1l{0%,23.56%,25.09%,33.39%,34.92%,100%{opacity:0}23.81%,24.58%,33.65%,34.41%{opacity:1}}
+@keyframes k1m{0%,40.87%,42.4%,100%{opacity:0}41.12%,41.89%{opacity:1}}
+@keyframes k1n{0%,46.97%,49.9%,100%{opacity:0}47.22%,49.52%{opacity:1}}
+@keyframes k1o{0%,46.97%,48.5%,100%{opacity:0}47.22%,47.99%{opacity:1}}
+@keyframes k1p{0%,54.08%,56%,100%{opacity:0}54.34%,55.49%{opacity:1}}
+@keyframes k1q{0%,58.75%,60.28%,100%{opacity:0}59%,59.77%{opacity:1}}
+@keyframes k1r{0%,58.75%,74.2%,100%{opacity:0}59%,73.95%{opacity:1}}
+@keyframes k1s{0%,62.2%,63.73%,100%{opacity:0}62.45%,63.22%{opacity:1}}
+@keyframes k1t{0%,62.2%,74.2%,100%{opacity:0}62.45%,73.95%{opacity:1}}
+@keyframes k1u{0%,65.64%,67.18%,100%{opacity:0}65.9%,66.67%{opacity:1}}
+@keyframes k1v{0%,65.64%,74.2%,100%{opacity:0}65.9%,73.95%{opacity:1}}
+@keyframes k1w{0%,60.92%,62.45%,64.37%,65.9%,70.36%,71.9%,100%{opacity:0}61.17%,61.94%,64.62%,65.39%,70.62%,71.39%{opacity:1}}
+@keyframes k1x{0%,77.14%,98.08%,100%{opacity:0}77.39%,97.7%{opacity:1}}
+@keyframes k1y{0%,77.52%,79.05%,100%{opacity:0}77.78%,78.54%{opacity:1}}
+@keyframes k1z{0%,79.69%,80.84%,100%{opacity:0}79.95%,80.33%{opacity:1}}
+@keyframes k20{0%,86.25%,87.78%,94.34%,95.87%,100%{opacity:0}86.51%,87.27%,94.6%,95.36%{opacity:1}}
+@keyframes k21{0%,84.36%,85.9%,100%{opacity:0}84.62%,85.39%{opacity:1}}
+@keyframes k22{0%,89.88%,91.41%,100%{opacity:0}90.13%,90.9%{opacity:1}}
+@keyframes k23{0%,80.84%,82.76%,100%{opacity:0}81.1%,82.25%{opacity:1}}
+@keyframes k24{0%,79.95%,95.49%,100%{opacity:0}80.2%,95.11%{opacity:1}}
+@keyframes k25{0%,80.84%,98.53%,100%{opacity:1}81.1%,98.15%{opacity:0}}
+@keyframes k26{0%,81.16%,98.08%,100%{opacity:0}81.42%,97.7%{opacity:1}}
+@keyframes k27{0%,77.65%,98.53%,100%{opacity:1}77.91%,98.15%{opacity:0}}
+@keyframes k28{0%,77.97%,84.3%,100%{opacity:0}78.22%,83.92%{opacity:1}}
+@keyframes k29{0%,84.3%,98.08%,100%{opacity:0}84.55%,97.7%{opacity:1}}
+@keyframes k2a{0%,89.37%,98.53%,100%{opacity:1}89.62%,98.15%{opacity:0}}
+@keyframes k2b{0%,89.69%,98.08%,100%{opacity:0}89.94%,97.7%{opacity:1}}
+@keyframes k2c{0%,83.85%,85.39%,100%{opacity:0}84.11%,84.87%{opacity:1}}
+@keyframes k2d{0%,77.14%,79.05%,100%{opacity:0}77.39%,78.54%{opacity:1}}
+@keyframes k2e{0%,89.37%,90.9%,100%{opacity:0}89.62%,90.39%{opacity:1}}
+@keyframes k2f{0%,90.39%,98.53%,100%{opacity:1}90.64%,98.15%{opacity:0}}
+@keyframes k2g{0%,90.71%,98.08%,100%{opacity:0}90.96%,97.7%{opacity:1}}
+@keyframes k2h{0%,90.39%,92.3%,100%{opacity:0}90.64%,91.79%{opacity:1}}
+@keyframes k2i{0%,1.02%,11.11%,12.64%,38.7%,40.23%,56.7%,58.24%,74.71%,76.25%,98.47%,100%{opacity:1}1.66%,10.47%,13.28%,38.06%,40.87%,56.07%,58.88%,74.07%,76.88%,97.83%{opacity:0.28}}
+@keyframes k2j{0%,100%{opacity:1}}
+@keyframes k2k{0%,12.64%,38.7%,40.23%,56.7%,58.24%,74.71%,76.25%,98.47%,100%{opacity:1}13.28%,38.06%,40.87%,56.07%,58.88%,74.07%,76.88%,97.83%{opacity:0.28}}
+@keyframes k2l{0%,1.02%,11.11%,12.64%,38.7%,40.23%,56.7%,58.24%,74.71%,100%{opacity:1}1.66%,10.47%,13.28%,38.06%,40.87%,56.07%,58.88%,74.07%{opacity:0.28}}
+@keyframes k2m{0%,1.02%,11.11%,40.23%,56.7%,58.24%,74.71%,100%{opacity:1}1.66%,10.47%,40.87%,56.07%,58.88%,74.07%{opacity:0.28}}
+@keyframes k2n{0%,40.23%,56.7%,76.25%,98.47%,100%{opacity:1}40.87%,56.07%,76.88%,97.83%{opacity:0.28}}
+@keyframes k2o{0%,42.97%,44.89%,100%{opacity:0}43.16%,44.69%{opacity:1}}
+@keyframes k2p{0%,84.17%,87.11%,100%{opacity:0}84.36%,86.92%{opacity:1}}
+@keyframes k2q{0%,42.91%,45.21%,84.11%,87.43%,100%{opacity:0}43.16%,44.69%,84.36%,86.92%{opacity:1}}
+@keyframes k2r{0%,15.9%,17.69%,17.88%,20.75%,26.05%,27.58%,29.11%,30.71%,59.58%,61.11%,63.03%,64.56%,67.69%,70.56%,78.35%,79.89%,100%{opacity:0}16.16%,17.18%,18.14%,20.24%,26.3%,27.07%,29.37%,30.2%,59.83%,60.6%,63.28%,64.05%,67.95%,70.05%,78.61%,79.37%{opacity:1}}
+@keyframes k2s{0%,22.15%,23.75%,31.99%,33.58%,100%{opacity:0}22.41%,23.24%,32.24%,33.07%{opacity:1}}
+@keyframes k2t{0%,41.49%,44.12%,44.25%,45.76%,82.18%,85.32%,86.47%,87.99%,100%{opacity:0}41.75%,43.61%,44.5%,45.25%,82.44%,84.81%,86.73%,87.48%{opacity:1}}
+@keyframes k2u{0%,51.74%,54.48%,85.52%,86.93%,92.28%,95.02%,100%{opacity:0}52%,53.97%,85.78%,86.42%,92.53%,94.51%{opacity:1}}
+@keyframes k2v{0%,16.11%,18.89%,65.91%,68.7%,100%{opacity:0}16.36%,18.38%,66.17%,68.19%{opacity:1}}
+@keyframes k2w{0%,44.76%,47.54%,86.98%,89.76%,100%{opacity:0}45.01%,47.03%,87.24%,89.25%{opacity:1}}
+@keyframes k2x{0%,49.97%,52.75%,90.5%,93.28%,100%{opacity:0}50.22%,52.24%,90.76%,92.77%{opacity:1}}
+@keyframes k2y{0%,1.02%,11.11%,12.64%,38.7%,58.24%,74.71%,76.25%,98.47%,100%{opacity:1}1.66%,10.47%,13.28%,38.06%,58.88%,74.07%,76.88%,97.83%{opacity:0.28}}
+@keyframes k2z{0%,76.12%,86.66%,100%{opacity:1}76.63%,86.15%{opacity:0.45}}
+@keyframes k30{0%,76.25%,86.53%,100%{opacity:0}76.63%,86.15%{opacity:1}}
+@keyframes k31{0%,62.95%,100%{opacity:0;transform:translate(0px,0px)}63.47%,65.7%{opacity:1;transform:translate(0px,0px)}66.28%,71.7%{opacity:1;transform:translate(0px,40px)}72.27%,73.95%{opacity:1;transform:translate(0px,80px)}74.58%{opacity:0;transform:translate(0px,80px)}}
+@keyframes k32{0%,66.4%,100%{opacity:0;transform:translate(0px,0px)}66.91%,71.7%{opacity:1;transform:translate(0px,0px)}72.27%,73.95%{opacity:1;transform:translate(0px,40px)}74.58%{opacity:0;transform:translate(0px,40px)}}
+@keyframes k33{0%,72.4%,74.58%,100%{opacity:0;transform:translate(0px,0px)}72.91%,73.95%{opacity:1;transform:translate(0px,0px)}}
+@keyframes k34{0%,0.89%,10.73%,100%{opacity:0}1.28%,10.34%{opacity:1}}
+@keyframes k35{0%,12.52%,38.31%,100%{opacity:0}12.9%,37.93%{opacity:1}}
+@keyframes k36{0%,40.1%,56.32%,100%{opacity:0}40.49%,55.94%{opacity:1}}
+@keyframes k37{0%,58.11%,74.33%,100%{opacity:0}58.49%,73.95%{opacity:1}}
+@keyframes k38{0%,76.12%,98.08%,100%{opacity:0}76.5%,97.7%{opacity:1}}
+@keyframes k39{0%,0.64%,10.98%,12.26%,38.57%,39.85%,56.58%,57.85%,74.58%,75.86%,98.34%,100%{opacity:1}1.02%,10.6%,12.64%,38.19%,40.23%,56.19%,58.24%,74.2%,76.25%,97.96%{opacity:0}}
+@keyframes k3a{0%,1.02%{transform:scaleX(0)}10.6%,100%{transform:scaleX(1)}}
+@keyframes k3b{0%,0.96%,10.66%,100%{opacity:0}1.15%,10.47%{opacity:1}}
+@keyframes k3c{0%,12.64%{transform:scaleX(0)}38.19%,100%{transform:scaleX(1)}}
+@keyframes k3d{0%,12.58%,38.25%,100%{opacity:0}12.77%,38.06%{opacity:1}}
+@keyframes k3e{0%,40.23%{transform:scaleX(0)}56.19%,100%{transform:scaleX(1)}}
+@keyframes k3f{0%,40.17%,56.26%,100%{opacity:0}40.36%,56.07%{opacity:1}}
+@keyframes k3g{0%,58.24%{transform:scaleX(0)}74.2%,100%{transform:scaleX(1)}}
+@keyframes k3h{0%,58.17%,74.27%,100%{opacity:0}58.37%,74.07%{opacity:1}}
+@keyframes k3i{0%,76.25%{transform:scaleX(0)}97.96%,100%{transform:scaleX(1)}}
+@keyframes k3j{0%,76.18%,98.02%,100%{opacity:0}76.37%,97.83%{opacity:1}}
+@keyframes k3k{0%,15.13%{opacity:0;transform:translate(364px,305px)}15.33%{opacity:1;transform:translate(364px,305px)}15.44%{transform:translate(349px,305px)}16.23%{transform:translate(349px,206px)}16.35%{opacity:1;transform:translate(364px,206px)}16.54%,100%{opacity:0;transform:translate(364px,206px)}}
+@keyframes k3l{0%,15.52%{opacity:0;transform:translate(284px,273px)}15.71%{opacity:1;transform:translate(284px,273px)}15.77%{transform:translate(292px,273px)}16.23%{transform:translate(292px,206px)}16.73%{opacity:1;transform:translate(364px,206px)}16.92%,100%{opacity:0;transform:translate(364px,206px)}}
+@keyframes k3m{0%,15.9%{opacity:0;transform:translate(924px,273px)}16.09%{opacity:1;transform:translate(924px,273px)}16.14%{transform:translate(932px,273px)}16.51%{transform:translate(932px,206px)}19.66%{opacity:1;transform:translate(364px,206px)}19.85%,100%{opacity:0;transform:translate(364px,206px)}}
+@keyframes k3n{0%,19.6%{opacity:0;transform:translate(364px,206px)}19.79%{opacity:1;transform:translate(364px,206px)}19.95%{transform:translate(349px,206px)}20.65%{transform:translate(349px,273px)}20.81%{opacity:1;transform:translate(364px,273px)}21%,100%{opacity:0;transform:translate(364px,273px)}}
+@keyframes k3o{0%,21.39%{opacity:0;transform:translate(364px,273px)}21.58%{opacity:1;transform:translate(364px,273px)}21.74%{transform:translate(349px,273px)}22.44%{transform:translate(349px,206px)}22.6%{opacity:1;transform:translate(364px,206px)}22.79%,100%{opacity:0;transform:translate(364px,206px)}}
+@keyframes k3p{0%,22.6%{opacity:0;transform:translate(364px,206px)}22.79%{opacity:1;transform:translate(364px,206px)}23.29%{transform:translate(292px,206px)}23.76%{transform:translate(292px,273px)}23.81%{opacity:1;transform:translate(284px,273px)}24.01%,100%{opacity:0;transform:translate(284px,273px)}}
+@keyframes k3q{0%,25.28%{opacity:0;transform:translate(284px,273px)}25.47%{opacity:1;transform:translate(284px,273px)}25.53%{transform:translate(292px,273px)}25.99%{transform:translate(292px,206px)}26.5%{opacity:1;transform:translate(364px,206px)}26.69%,100%{opacity:0;transform:translate(364px,206px)}}
+@keyframes k3r{0%,26.43%{opacity:0;transform:translate(364px,206px)}26.62%{opacity:1;transform:translate(364px,206px)}26.78%{transform:translate(349px,206px)}27.49%{transform:translate(349px,273px)}27.64%{opacity:1;transform:translate(364px,273px)}27.84%,100%{opacity:0;transform:translate(364px,273px)}}
+@keyframes k3s{0%,28.35%{opacity:0;transform:translate(364px,305px)}28.54%{opacity:1;transform:translate(364px,305px)}28.66%{transform:translate(349px,305px)}29.44%{transform:translate(349px,206px)}29.56%{opacity:1;transform:translate(364px,206px)}29.75%,100%{opacity:0;transform:translate(364px,206px)}}
+@keyframes k3t{0%,29.56%{opacity:0;transform:translate(364px,206px)}29.75%{opacity:1;transform:translate(364px,206px)}29.91%{transform:translate(349px,206px)}30.62%{transform:translate(349px,273px)}30.77%{opacity:1;transform:translate(364px,273px)}30.97%,100%{opacity:0;transform:translate(364px,273px)}}
+@keyframes k3u{0%,31.22%{opacity:0;transform:translate(364px,273px)}31.41%{opacity:1;transform:translate(364px,273px)}31.57%{transform:translate(349px,273px)}32.28%{transform:translate(349px,206px)}32.43%{opacity:1;transform:translate(364px,206px)}32.63%,100%{opacity:0;transform:translate(364px,206px)}}
+@keyframes k3v{0%,32.43%{opacity:0;transform:translate(364px,206px)}32.63%{opacity:1;transform:translate(364px,206px)}33.13%{transform:translate(292px,206px)}33.59%{transform:translate(292px,273px)}33.65%{opacity:1;transform:translate(284px,273px)}33.84%,100%{opacity:0;transform:translate(284px,273px)}}
+@keyframes k3w{0%,40.93%{opacity:0;transform:translate(284px,273px)}41.12%{opacity:1;transform:translate(284px,273px)}41.17%{transform:translate(292px,273px)}41.54%{transform:translate(292px,206px)}41.94%{transform:translate(364px,206px)}43.16%{opacity:1;transform:translate(584px,206px)}43.35%,100%{opacity:0;transform:translate(584px,206px)}}
+@keyframes k3x{0%,44.5%{opacity:0;transform:translate(584px,206px)}44.69%{opacity:1;transform:translate(584px,206px)}44.81%{transform:translate(604px,206px)}46.63%{transform:translate(932px,206px)}47.18%{transform:translate(932px,305px)}47.22%{opacity:1;transform:translate(924px,305px)}47.41%,100%{opacity:0;transform:translate(924px,305px)}}
+@keyframes k3y{0%,49.58%{opacity:0;transform:translate(924px,305px)}49.78%{opacity:1;transform:translate(924px,305px)}49.82%{transform:translate(932px,305px)}50.37%{transform:translate(932px,206px)}53.52%{transform:translate(364px,206px)}53.92%{transform:translate(292px,206px)}54.3%{transform:translate(292px,273px)}54.34%{opacity:1;transform:translate(284px,273px)}54.53%,100%{opacity:0;transform:translate(284px,273px)}}
+@keyframes k3z{0%,58.81%{opacity:0;transform:translate(364px,305px)}59%{opacity:1;transform:translate(364px,305px)}59.12%{transform:translate(349px,305px)}59.91%{transform:translate(349px,206px)}60.03%{opacity:1;transform:translate(364px,206px)}60.22%,100%{opacity:0;transform:translate(364px,206px)}}
+@keyframes k40{0%,59.96%{opacity:0;transform:translate(364px,206px)}60.15%{opacity:1;transform:translate(364px,206px)}60.39%{transform:translate(349px,206px)}60.94%{transform:translate(349px,241px)}61.17%{opacity:1;transform:translate(364px,241px)}61.37%,100%{opacity:0;transform:translate(364px,241px)}}
+@keyframes k41{0%,61.11%{opacity:0;transform:translate(604px,241px)}61.3%{opacity:1;transform:translate(604px,241px)}61.35%{transform:translate(612px,241px)}62.62%{transform:translate(612px,470px)}63.02%{opacity:1;transform:translate(540px,470px)}63.21%,100%{opacity:0;transform:translate(540px,470px)}}
+@keyframes k42{0%,62.26%{opacity:0;transform:translate(284px,273px)}62.45%{opacity:1;transform:translate(284px,273px)}62.51%{transform:translate(292px,273px)}62.97%{transform:translate(292px,206px)}63.47%{opacity:1;transform:translate(364px,206px)}63.67%,100%{opacity:0;transform:translate(364px,206px)}}
+@keyframes k43{0%,63.41%{opacity:0;transform:translate(364px,206px)}63.6%{opacity:1;transform:translate(364px,206px)}63.84%{transform:translate(349px,206px)}64.39%{transform:translate(349px,241px)}64.62%{opacity:1;transform:translate(364px,241px)}64.81%,100%{opacity:0;transform:translate(364px,241px)}}
+@keyframes k44{0%,64.56%{opacity:0;transform:translate(604px,241px)}64.75%{opacity:1;transform:translate(604px,241px)}64.8%{transform:translate(612px,241px)}66.07%{transform:translate(612px,470px)}66.47%{opacity:1;transform:translate(540px,470px)}66.66%,100%{opacity:0;transform:translate(540px,470px)}}
+@keyframes k45{0%,65.71%{opacity:0;transform:translate(924px,273px)}65.9%{opacity:1;transform:translate(924px,273px)}65.95%{transform:translate(932px,273px)}66.32%{transform:translate(932px,206px)}69.47%{opacity:1;transform:translate(364px,206px)}69.66%,100%{opacity:0;transform:translate(364px,206px)}}
+@keyframes k46{0%,69.41%{opacity:0;transform:translate(364px,206px)}69.6%{opacity:1;transform:translate(364px,206px)}69.83%{transform:translate(349px,206px)}70.38%{transform:translate(349px,241px)}70.62%{opacity:1;transform:translate(364px,241px)}70.81%,100%{opacity:0;transform:translate(364px,241px)}}
+@keyframes k47{0%,70.56%{opacity:0;transform:translate(604px,241px)}70.75%{opacity:1;transform:translate(604px,241px)}70.79%{transform:translate(612px,241px)}72.06%{transform:translate(612px,470px)}72.46%{opacity:1;transform:translate(540px,470px)}72.66%,100%{opacity:0;transform:translate(540px,470px)}}
+@keyframes k48{0%,77.59%{opacity:0;transform:translate(284px,273px)}77.78%{opacity:1;transform:translate(284px,273px)}77.83%{transform:translate(292px,273px)}78.3%{transform:translate(292px,206px)}78.8%{opacity:1;transform:translate(364px,206px)}78.99%,100%{opacity:0;transform:translate(364px,206px)}}
+@keyframes k49{0%,78.74%{opacity:0;transform:translate(364px,206px)}78.93%{opacity:1;transform:translate(364px,206px)}79.09%{transform:translate(349px,206px)}79.79%{transform:translate(349px,273px)}79.95%{opacity:1;transform:translate(364px,273px)}80.14%,100%{opacity:0;transform:translate(364px,273px)}}
+@keyframes k4a{0%,81.42%{opacity:0;transform:translate(364px,273px)}81.61%{opacity:1;transform:translate(364px,273px)}81.77%{transform:translate(349px,273px)}82.47%{transform:translate(349px,206px)}82.63%{opacity:1;transform:translate(364px,206px)}82.82%,100%{opacity:0;transform:translate(364px,206px)}}
+@keyframes k4b{0%,82.57%{opacity:0;transform:translate(364px,206px)}82.76%{opacity:1;transform:translate(364px,206px)}83.16%{transform:translate(292px,206px)}84.06%{transform:translate(292px,369px)}84.11%{opacity:1;transform:translate(284px,369px)}84.3%,100%{opacity:0;transform:translate(284px,369px)}}
+@keyframes k4c{0%,82.95%{opacity:0;transform:translate(364px,206px)}83.14%{opacity:1;transform:translate(364px,206px)}84.36%{opacity:1;transform:translate(584px,206px)}84.56%,100%{opacity:0;transform:translate(584px,206px)}}
+@keyframes k4d{0%,86.73%{opacity:0;transform:translate(584px,206px)}86.92%{opacity:1;transform:translate(584px,206px)}87.03%{transform:translate(604px,206px)}88.85%{transform:translate(932px,206px)}89.58%{transform:translate(932px,337px)}89.62%{opacity:1;transform:translate(924px,337px)}89.81%,100%{opacity:0;transform:translate(924px,337px)}}
+@keyframes k4e{0%,84.43%{opacity:0;transform:translate(284px,369px)}84.62%{opacity:1;transform:translate(284px,369px)}84.66%{transform:translate(292px,369px)}85.57%{transform:translate(292px,206px)}85.97%{transform:translate(364px,206px)}86.05%{transform:translate(349px,206px)}86.42%{transform:translate(349px,273px)}86.51%{opacity:1;transform:translate(364px,273px)}86.7%,100%{opacity:0;transform:translate(364px,273px)}}
+@keyframes k4f{0%,89.94%{opacity:0;transform:translate(924px,337px)}90.13%{opacity:1;transform:translate(924px,337px)}90.18%{transform:translate(932px,337px)}90.9%{transform:translate(932px,206px)}94.06%{transform:translate(364px,206px)}94.14%{transform:translate(349px,206px)}94.51%{transform:translate(349px,273px)}94.6%{opacity:1;transform:translate(364px,273px)}94.79%,100%{opacity:0;transform:translate(364px,273px)}}
 </style>
-<path class="ln" d="M310 200 L380 200"/>
-<path class="ln" d="M580 200 L650 200"/>
-<path class="ln" d="M290 318 L290 365 L436 365"/>
-<path class="ln an hide" style="animation-name:k0" d="M560 250 L560 340 L650 340"/>
-<path class="ln dash dofs an" style="animation-name:k1" d="M560 250 L560 340 L650 340"/>
-<text x="615" y="190" class="s13 mu" text-anchor="middle">client</text>
-<text x="568" y="300" class="s13 mu">leaf</text>
-<text x="298" y="352" class="s13 mu">ntfy</text>
-<g class="an hide" style="animation-name:k2"><path class="lg tl-s" d="M310 200 L380 200"/><path class="lc tl-s" d="M310 200 L380 200"/></g>
-<g class="an hide" style="animation-name:k3"><path class="lg tl-s" d="M580 200 L650 200"/><path class="lc tl-s" d="M580 200 L650 200"/></g>
-<g class="an hide" style="animation-name:k4"><path class="lg tl-s" d="M560 250 L560 340 L650 340"/><path class="lc tl-s" d="M560 250 L560 340 L650 340"/></g>
-<g class="an hide" style="animation-name:k5"><path class="lg tl-s" d="M290 318 L290 365 L436 365"/><path class="lc tl-s" d="M290 318 L290 365 L436 365"/></g>
-<g class="an hide" style="animation-name:k6"><path class="lg am-s" d="M310 200 L380 200"/><path class="lc am-s" d="M310 200 L380 200"/></g>
-<g class="an hide" style="animation-name:k7"><path class="lg am-s" d="M580 200 L650 200"/><path class="lc am-s" d="M580 200 L650 200"/></g>
-<g class="an hide" style="animation-name:k8"><path class="lg pu-s" d="M580 200 L650 200"/><path class="lc pu-s" d="M580 200 L650 200"/></g>
-<g class="an hide" style="animation-name:k9"><path class="lg pu-s" d="M310 200 L380 200"/><path class="lc pu-s" d="M310 200 L380 200"/></g>
-<g class="an hide" style="animation-name:ka"><path class="lg am-s" d="M560 250 L560 340 L650 340"/><path class="lc am-s" d="M560 250 L560 340 L650 340"/></g>
-<g class="an hide" style="animation-name:kb"><text x="480" y="40" class="s20 b" text-anchor="middle">1. Every box builds.</text><text x="480" y="64" class="s14" text-anchor="middle">Every box runs leads through its own runner;</text><text x="480" y="84" class="s14" text-anchor="middle">their progress events go through the NATS hub.</text></g>
-<g class="an hide" style="animation-name:kc"><text x="480" y="40" class="s20 b" text-anchor="middle">2. A review runs on whichever box is free.</text><text x="480" y="64" class="s14" text-anchor="middle">app-012 queues a <tspan class="m14 am">review</tspan> job; it waits at the hub for a box that runs the kind.</text><text x="480" y="84" class="s14" text-anchor="middle">hub-box's is busy, so build-box takes it; its <tspan class="pu">reply</tspan> goes back to app-012.</text></g>
-<g class="an hide" style="animation-name:kd"><text x="480" y="40" class="s20 b" text-anchor="middle">3. A lead asks; your phone hears.</text><text x="480" y="64" class="s14" text-anchor="middle">app-012's <tspan class="tl">ask</tspan> goes through the hub to hub-box's daemon,</text><text x="480" y="84" class="s14" text-anchor="middle">which pushes it to your phone with ntfy, once.</text></g>
-<g class="an" style="animation-name:ke"><text x="480" y="40" class="s20 b" text-anchor="middle">4. The laptop sleeps; work waits on the hub.</text><text x="480" y="64" class="s14" text-anchor="middle"><tspan class="m14">bmesh sync</tspan> on hub-box sends it two <tspan class="m14 am">level</tspan> jobs;</text><text x="480" y="84" class="s14" text-anchor="middle">they stay queued until it wakes (a job lives 24h).</text></g>
-<g class="an hide" style="animation-name:kf"><text x="480" y="40" class="s20 b" text-anchor="middle">5. It wakes and catches up, in order.</text><text x="480" y="64" class="s14" text-anchor="middle">Its leaf reconnects, and it takes the jobs it missed in order:</text><text x="480" y="84" class="s14" text-anchor="middle">one repo fast-forwards; a plugin's level waits for your approval.</text></g>
-<rect x="20" y="104" width="290" height="214" rx="10" class="pn"/>
-<circle cx="38" cy="128" r="5" fill="var(--ok)"/><text x="51" y="133.5" class="s16 b">hub-box</text>
-<g class="pl"><rect x="130" y="117" width="76" height="22" rx="11" class="pb"/><text x="168" y="132.5" class="s13 pt" text-anchor="middle">always on</text></g>
-<g class="an" style="animation-name:kg"><rect x="36" y="159" width="92" height="22" rx="6" class="nd am-s"/><text x="82" y="174.5" class="m13 am" text-anchor="middle">bmesh sync</text></g>
-<rect x="33" y="156" width="98" height="28" rx="8" class="rg am-s an hide" style="animation-name:kh"/>
-<text x="36" y="152" class="s13"><tspan class="m13">bmesh serve</tspan><tspan class="mu"> · daemon, routines</tspan></text>
-<g><rect x="36" y="186" width="258" height="28" rx="6" class="nd"/><circle cx="50" cy="200" r="4.5" fill="var(--wk)"/><text x="63" y="204.9" class="m14">app-012</text><text x="282" y="204.5" class="s13 mu" text-anchor="end">lead</text></g>
-<circle class="an hide" style="animation-name:ki" cx="50" cy="200" r="4.5" fill="var(--am)"/>
-<rect x="36" y="186" width="258" height="28" rx="6" class="rg tl-s an hide" style="animation-name:kj"/>
-<rect x="36" y="186" width="258" height="28" rx="6" class="rg am-s an hide" style="animation-name:kk"/>
-<rect x="36" y="186" width="258" height="28" rx="6" class="rg pu-s an hide" style="animation-name:kl"/>
-<path class="tr" d="M50 214 V262 H56 M50 232 H56"/>
-<g><rect x="56" y="220" width="238" height="24" rx="6" class="nd"/><circle cx="70" cy="232" r="4.5" fill="var(--wk)"/><text x="83" y="236.55" class="m13">app-012.alpha</text><text x="282" y="236.5" class="s13 mu" text-anchor="end">executor</text></g>
-<g><rect x="56" y="250" width="238" height="24" rx="6" class="nd"/><circle cx="70" cy="262" r="4.5" fill="var(--wk)"/><text x="83" y="266.55" class="m13">app-012.beta</text><text x="282" y="266.5" class="s13 mu" text-anchor="end">executor</text></g>
-<g><rect x="36" y="282" width="258" height="24" rx="6" class="nd"/><circle cx="50" cy="294" r="4.5" fill="var(--mu)"/><text x="63" y="298.55" class="m13">routine.review</text></g>
-<rect x="36" y="282" width="258" height="24" rx="6" class="rg am-s an hide" style="animation-name:km"/>
-<circle class="an hide" style="animation-name:kn" cx="50" cy="294" r="4.5" fill="var(--am)"/>
-<g class="an" style="animation-name:ko"><text x="282" y="298.5" class="s13 mu" text-anchor="end">routine</text></g>
-<g class="an hide" style="animation-name:kp"><text x="282" y="298.5" class="s13 am" text-anchor="end">busy</text></g>
-<rect x="28" y="137" width="274" height="22" rx="6" class="rg tl-s an hide" style="animation-name:kq"/>
-<rect x="650" y="104" width="290" height="180" rx="10" class="pn"/>
-<circle cx="668" cy="128" r="5" fill="var(--ok)"/><text x="681" y="133.5" class="s16 b">build-box</text>
-<g class="pl"><rect x="768" y="117" width="56" height="22" rx="11" class="pb"/><text x="796" y="132.5" class="s13 pt" text-anchor="middle">client</text></g>
-<text x="666" y="156" class="s13 mu">dials the hub; no NATS here</text>
-<text x="666" y="176" class="s13"><tspan class="m13">bmesh serve</tspan><tspan class="mu"> · daemon, routines</tspan></text>
-<g><rect x="666" y="186" width="258" height="28" rx="6" class="nd"/><circle cx="680" cy="200" r="4.5" fill="var(--wk)"/><text x="693" y="204.9" class="m14">web-007</text><text x="912" y="204.5" class="s13 mu" text-anchor="end">lead</text></g>
-<rect x="666" y="186" width="258" height="28" rx="6" class="rg tl-s an hide" style="animation-name:kr"/>
-<g><rect x="666" y="222" width="258" height="24" rx="6" class="nd"/><circle cx="680" cy="234" r="4.5" fill="var(--mu)"/><text x="693" y="238.55" class="m13">routine.verify</text><text x="912" y="238.5" class="s13 mu" text-anchor="end">routine</text></g>
-<g><rect x="666" y="252" width="258" height="24" rx="6" class="nd"/><circle cx="680" cy="264" r="4.5" fill="var(--mu)"/><text x="693" y="268.55" class="m13">routine.review</text></g>
-<rect x="666" y="252" width="258" height="24" rx="6" class="rg am-s an hide" style="animation-name:ks"/>
-<g class="an" style="animation-name:kt"><text x="912" y="268.5" class="s13 mu" text-anchor="end">routine</text></g>
-<g class="an hide" style="animation-name:ku"><text x="912" y="268.5" class="s13 am" text-anchor="end">running</text></g>
-<rect x="666" y="252" width="258" height="24" rx="6" class="rg pu-s an hide" style="animation-name:kv"/>
-<g class="an dimb" style="animation-name:kw">
-<rect x="650" y="300" width="290" height="170" rx="10" class="pn"/>
-<circle cx="668" cy="324" r="5" fill="var(--ok)"/><text x="681" y="329.5" class="s16 b">laptop</text>
-<circle class="an" style="animation-name:kx" cx="668" cy="324" r="5" fill="var(--mu)"/>
-<g class="pl"><rect x="742" y="313" width="101" height="22" rx="11" class="pb"/><text x="792.5" y="328.5" class="s13 pt" text-anchor="middle">leaf · secure</text></g>
-<text x="666" y="352" class="s13"><tspan class="m13">bmesh hub</tspan><tspan class="mu"> runs a local NATS relay</tspan></text>
-<text x="666" y="370" class="s13 mu">that redials the hub</text>
-<text x="666" y="390" class="s13"><tspan class="m13">bmesh serve</tspan><tspan class="mu"> · daemon</tspan></text>
-<g><rect x="666" y="400" width="258" height="26" rx="6" class="nd"/><circle cx="680" cy="413" r="4.5" fill="var(--wk)"/><text x="693" y="417.9" class="m14">docs-003</text><text x="912" y="417.5" class="s13 mu" text-anchor="end">lead</text></g>
-<rect x="666" y="400" width="258" height="26" rx="6" class="rg tl-s an hide" style="animation-name:ky"/>
-<rect x="666" y="434" width="258" height="26" rx="6" class="nd"/>
-<g class="an" style="animation-name:kz"><text x="678" y="451.5" class="s13 mu">on wake: takes the jobs it missed</text></g>
-<g class="an hide" style="animation-name:k10"><text x="678" y="451.5" class="s13 ok"><tspan class="m13">level</tspan>: 1 repo fast-forwarded</text></g>
-<g class="an hide" style="animation-name:k11"><text x="678" y="451.5" class="s13"><tspan fill-opacity="0"><tspan class="m13">level</tspan>: 1 repo fast-forwarded</tspan><tspan class="hdc">, 1 held</tspan></text></g>
+<g class="an hide" style="animation-name:k34"><text x="480" y="40" class="s20 b" text-anchor="middle">1. Every box builds.</text><text x="480" y="64" class="s14" text-anchor="middle">Each box runs its own leads and executors through its own runner,</text><text x="480" y="84" class="s14" text-anchor="middle">each in its own git worktree, all at once.</text></g>
+<g class="an hide" style="animation-name:k35"><text x="480" y="40" class="s20 b" text-anchor="middle">2. A coordinator keeps leads on every box in step.</text><text x="480" y="64" class="s14" text-anchor="middle">Your coordinator session starts leads on all three boxes and follows their events through the hub;</text><text x="480" y="84" class="s14" text-anchor="middle">it holds web-007 before it lands until app-012 has landed, then releases it.</text></g>
+<g class="an hide" style="animation-name:k36"><text x="480" y="40" class="s20 b" text-anchor="middle">3. A lead sends a check to the box that can run it.</text><text x="480" y="64" class="s14" text-anchor="middle">web-007 queues <tspan class="m14 am">mac-build</tspan>, a kind with <tspan class="m14">os = "darwin"</tspan>: the job waits on the hub</text><text x="480" y="84" class="s14" text-anchor="middle">until the laptop, the one Mac, takes it, and the result comes back to web-007 as a <tspan class="pu">reply</tspan>.</text></g>
+<g class="an hide" style="animation-name:k37"><text x="480" y="40" class="s20 b" text-anchor="middle">4. Push notifications reach your phone.</text><text x="480" y="64" class="s14" text-anchor="middle">When a lead asks, is blocked or is done, its event goes through the hub</text><text x="480" y="84" class="s14" text-anchor="middle">to the daemon with ntfy set, which pushes it to your phone, once.</text></g>
+<g class="an hide" style="animation-name:k38"><text x="480" y="40" class="s20 b" text-anchor="middle">5. A change that lands reaches every box.</text><text x="480" y="64" class="s14" text-anchor="middle">web-007 lands, which moves build-box's checkout; you run <tspan class="m14">bmesh sync</tspan>, which levels hub-box and sends each other box a <tspan class="m14 am">level</tspan> job.</text><text x="480" y="84" class="s14" text-anchor="middle">The laptop slept through it: it levels when it wakes, and holds a new plugins commit for your approval.</text></g>
+<g class="st an" style="animation-name:k39"><text x="480" y="40" class="s20 b" text-anchor="middle">Three boxes, one NATS hub.</text><text x="480" y="64" class="s14" text-anchor="middle">hub-box runs the hub; build-box dials it; the laptop's leaf relays to it.</text><text x="480" y="84" class="s14" text-anchor="middle">Events, jobs and replies on every box go through it.</text></g>
+<rect x="20" y="104" width="280" height="290" rx="10" class="pn"/>
+<circle cx="38" cy="128" r="5" fill="var(--ok)"/><text x="51" y="133.5" class="s16 b">build-box</text><g class="pl"><rect x="143.8" y="117" width="56" height="22" rx="11" class="pb"/><text x="171.8" y="132.5" class="s13 pt" text-anchor="middle">client</text></g><text x="284" y="133.5" class="s13 mu" text-anchor="end">linux</text>
+<rect x="340" y="104" width="280" height="290" rx="10" class="pn"/>
+<circle cx="358" cy="128" r="5" fill="var(--ok)"/><text x="371" y="133.5" class="s16 b">hub-box</text><g class="pl"><rect x="445.4" y="117" width="114" height="22" rx="11" class="pb"/><text x="502.4" y="132.5" class="s13 pt" text-anchor="middle">hub · always on</text></g><text x="604" y="133.5" class="s13 mu" text-anchor="end">linux</text>
+<g class="an" style="animation-name:k0"><path class="ln" d="M292 206 V369 M292 273 H284 M292 369 H284 M292 206 H364"/></g>
+<g class="an" style="animation-name:k1"><path class="ln" d="M364 206 H349 V305 M349 273 H357 M349 305 H357"/></g>
+<g class="an" style="animation-name:k2"><path class="ln" d="M364 206 H349 V241 H364"/></g>
+<g class="an" style="animation-name:k0"><path class="ln an" style="animation-name:k3" d="M604 206 H676"/><path class="ln down an hide" style="animation-name:k4" d="M604 206 H676"/><path class="ln dash an hide" style="animation-name:k5" d="M604 206 H676"/></g>
+<g class="an" style="animation-name:k2"><path class="ln" d="M604 241 L612 241 L612 470 L540 470"/><text x="620" y="462" class="s13 mu">ntfy</text></g>
+<rect x="340" y="104" width="280" height="290" rx="10" class="rg wk-s an hide" style="animation-name:k17"/>
+<rect x="20" y="104" width="280" height="290" rx="10" class="rg wk-s an hide" style="animation-name:k18"/>
+<rect x="660" y="104" width="280" height="290" rx="10" class="rg wk-s an hide" style="animation-name:k19"/>
+<g class="an" style="animation-name:k0"><text x="36" y="168" class="s13 mu">no NATS here: its daemon</text><text x="36" y="187" class="s13 mu">and leads dial hub-box's hub</text></g>
+<g class="an" style="animation-name:k2i"><rect x="36" y="228" width="248" height="26" rx="6" class="nd"/><circle cx="50" cy="241" r="4.5" fill="var(--mu)"/><text x="63" y="245.55" class="m13">bmesh serve</text><text x="272" y="245.5" class="s13 mu" text-anchor="end">daemon</text></g>
+<g class="an" style="animation-name:k2j"><rect x="36" y="260" width="248" height="26" rx="6" class="nd"/><circle cx="50" cy="273" r="4.5" fill="var(--wk)"/><text x="63" y="277.9" class="m14">web-007</text><text x="272" y="277.5" class="s13 mu" text-anchor="end">lead</text><g class="an hide" style="animation-name:k14"><g transform="translate(234.6,273)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="272" y="277.5" class="s13 wk" text-anchor="end">lead</text></g><g class="an hide" style="animation-name:k1d"><g transform="translate(234.6,273)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="272" y="277.5" class="s13 wk" text-anchor="end">lead</text></g><g class="an hide" style="animation-name:k1e"><g transform="translate(234.6,273)" class="hd"><rect x="-3.5" y="-4.5" width="2.5" height="9" rx="1"/><rect x="1" y="-4.5" width="2.5" height="9" rx="1"/></g><text x="272" y="277.5" class="s13 hd" text-anchor="end">lead</text></g><circle class="an hide" style="animation-name:k1t" cx="50" cy="273" r="4.5" fill="var(--am)"/><g class="an hide" style="animation-name:k1x"><g transform="translate(234.6,273)" class="ok"><path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3.5" class="ck"/></g><text x="272" y="277.5" class="s13 ok" text-anchor="end">lead</text></g></g>
+<g class="an" style="animation-name:k2k"><path class="tr" d="M50 286 V305 H56"/><rect x="56" y="292" width="228" height="26" rx="6" class="nd"/><circle cx="70" cy="305" r="4.5" fill="var(--wk)"/><text x="83" y="309.55" class="m13">web-007.alpha</text><text x="272" y="309.5" class="s13 mu" text-anchor="end">executor</text><g class="an hide" style="animation-name:k15"><g transform="translate(208.2,305)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="272" y="309.5" class="s13 wk" text-anchor="end">executor</text></g></g>
+<g class="an" style="animation-name:k2i"><rect x="36" y="324" width="248" height="26" rx="6" class="nd"/><circle cx="50" cy="337" r="4.5" fill="var(--mu)"/><text x="63" y="341.55" class="m13">routine.verify</text><text x="272" y="341.5" class="s13 mu" text-anchor="end">routine</text></g>
+<g class="an" style="animation-name:k2l"><rect x="36" y="356" width="248" height="26" rx="6" class="nd"/><path class="br" d="M47 363 V375 M47 370 Q47 366 53 364"/><text x="63" y="373.55" class="m13">web<tspan class="mu"> main</tspan></text><g class="an" style="animation-name:k27"><text x="272" y="373.55" class="m13 mu" text-anchor="end">3f2a9c1e</text></g><g class="an hide" style="animation-name:k28"><text x="272" y="373.55" class="m13 ok" text-anchor="end"><tspan class="s13">+3</tspan>  81d0b7a4</text></g><g class="an hide" style="animation-name:k29"><text x="272" y="373.55" class="m13 ok" text-anchor="end"><tspan class="s13 mu ws">up to date</tspan>  81d0b7a4</text></g></g>
+<g class="an" style="animation-name:k2"><rect x="364" y="228" width="240" height="26" rx="6" class="nd"/><circle cx="378" cy="241" r="4.5" fill="var(--mu)"/><text x="391" y="245.55" class="m13">bmesh serve</text><text x="592" y="245.5" class="s13 mu" text-anchor="end">daemon</text></g>
+<g class="an" style="animation-name:k2m"><rect x="364" y="260" width="240" height="26" rx="6" class="nd"/><circle cx="378" cy="273" r="4.5" fill="var(--tl)"/><text x="391" y="277.55" class="m13">operator</text><text x="592" y="277.5" class="s13 mu" text-anchor="end">coordinator</text><g class="an hide" style="animation-name:k1a"><g transform="translate(508.4,273)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="592" y="277.5" class="s13 wk" text-anchor="end">coordinator</text></g><g class="an hide" style="animation-name:k24"><g transform="translate(508.4,273)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="592" y="277.5" class="s13 wk" text-anchor="end">coordinator</text></g></g>
+<g class="an" style="animation-name:k2n"><rect x="364" y="292" width="240" height="26" rx="6" class="nd"/><circle cx="378" cy="305" r="4.5" fill="var(--wk)"/><text x="391" y="309.9" class="m14">app-012</text><text x="592" y="309.5" class="s13 mu" text-anchor="end">lead</text><g class="an hide" style="animation-name:k12"><g transform="translate(554.6,305)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="592" y="309.5" class="s13 wk" text-anchor="end">lead</text></g><g class="an hide" style="animation-name:k1b"><g transform="translate(554.6,305)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="592" y="309.5" class="s13 wk" text-anchor="end">lead</text></g><g class="an hide" style="animation-name:k1c"><g transform="translate(554.6,305)" class="ok"><path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3.5" class="ck"/></g><text x="592" y="309.5" class="s13 ok" text-anchor="end">lead</text></g><circle class="an hide" style="animation-name:k1r" cx="378" cy="305" r="4.5" fill="var(--ok)"/></g>
+<g class="an" style="animation-name:k2k"><path class="tr" d="M378 318 V337 H384"/><rect x="384" y="324" width="220" height="26" rx="6" class="nd"/><circle cx="398" cy="337" r="4.5" fill="var(--wk)"/><text x="411" y="341.55" class="m13">app-012.alpha</text><text x="592" y="341.5" class="s13 mu" text-anchor="end">executor</text><g class="an hide" style="animation-name:k13"><g transform="translate(528.2,337)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="592" y="341.5" class="s13 wk" text-anchor="end">executor</text></g></g>
+<g class="an" style="animation-name:k2l"><rect x="364" y="356" width="240" height="26" rx="6" class="nd"/><path class="br" d="M375 363 V375 M375 370 Q375 366 381 364"/><text x="391" y="373.55" class="m13">web<tspan class="mu"> main</tspan></text><g class="an" style="animation-name:k25"><text x="592" y="373.55" class="m13 mu" text-anchor="end">3f2a9c1e</text></g><g class="an hide" style="animation-name:k26"><text x="592" y="373.55" class="m13 ok" text-anchor="end"><tspan class="s13">+3</tspan>  81d0b7a4</text></g></g>
+<g class="an" style="animation-name:k0"><rect x="364" y="146" width="240" height="72" rx="8" class="cmp"/><text x="378" y="168" class="s16 b">NATS hub</text><text x="378" y="187" class="s13 mu"><tspan class="m13">bmesh hub</tspan> · JetStream</text><path class="ln" d="M364 206 H604"/></g>
+<g class="an" style="animation-name:k2z">
+<rect x="660" y="104" width="280" height="290" rx="10" class="pn"/>
+<circle cx="678" cy="128" r="5" fill="var(--ok)"/><text x="691" y="133.5" class="s16 b">laptop</text>
+<g class="an" style="animation-name:k3"><g class="pl"><rect x="756.2" y="117" width="101" height="22" rx="11" class="pb"/><text x="806.7" y="132.5" class="s13 pt" text-anchor="middle">leaf · secure</text></g></g>
+<g class="an" style="animation-name:k3"><text x="924" y="133.5" class="s13 mu" text-anchor="end">macOS</text></g>
+<g class="an" style="animation-name:k0"><path class="ln" d="M924 206 H932 V337 M932 273 H924 M932 305 H924 M932 337 H924"/></g>
+<g class="an" style="animation-name:k0"><rect x="676" y="146" width="248" height="72" rx="8" class="cmp"/><text x="690" y="168" class="s16 b">NATS leaf</text><text x="690" y="187" class="s13 mu"><tspan class="m13">bmesh hub</tspan> · relays to the hub</text><path class="ln" d="M676 206 H924"/></g>
+<g class="an" style="animation-name:k2i"><rect x="676" y="228" width="248" height="26" rx="6" class="nd"/><circle cx="690" cy="241" r="4.5" fill="var(--mu)"/><text x="703" y="245.55" class="m13">bmesh serve</text><text x="912" y="245.5" class="s13 mu" text-anchor="end">daemon</text></g>
+<g class="an" style="animation-name:k2n"><rect x="676" y="260" width="248" height="26" rx="6" class="nd"/><circle cx="690" cy="273" r="4.5" fill="var(--wk)"/><text x="703" y="277.9" class="m14">docs-003</text><text x="912" y="277.5" class="s13 mu" text-anchor="end">lead</text><g class="an hide" style="animation-name:k16"><g transform="translate(874.6,273)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="912" y="277.5" class="s13 wk" text-anchor="end">lead</text></g><g class="an hide" style="animation-name:k1f"><g transform="translate(874.6,273)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="912" y="277.5" class="s13 wk" text-anchor="end">lead</text></g><circle class="an hide" style="animation-name:k1v" cx="690" cy="273" r="4.5" fill="var(--rd)"/></g>
+<g class="an" style="animation-name:k2y"><rect x="676" y="292" width="248" height="26" rx="6" class="nd"/><circle cx="690" cy="305" r="4.5" fill="var(--mu)"/><text x="703" y="309.55" class="m13">routine.mac-build</text><text x="912" y="309.5" class="s13 mu" text-anchor="end">routine</text><g class="an hide" style="animation-name:k1n"><g transform="translate(854.8,305)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="912" y="309.5" class="s13 wk" text-anchor="end">routine</text></g></g>
+<g class="an" style="animation-name:k2l"><rect x="676" y="324" width="248" height="26" rx="6" class="nd"/><path class="br" d="M687 331 V343 M687 338 Q687 334 693 332"/><text x="703" y="341.55" class="m13">web<tspan class="mu"> main</tspan></text><g class="an" style="animation-name:k2a"><text x="912" y="341.55" class="m13 mu" text-anchor="end">3f2a9c1e</text></g><g class="an hide" style="animation-name:k2b"><text x="912" y="341.55" class="m13 ok" text-anchor="end"><tspan class="s13">+3</tspan>  81d0b7a4</text></g></g>
+<g class="an" style="animation-name:k2l"><rect x="676" y="356" width="248" height="26" rx="6" class="nd"/><path class="br" d="M687 363 V375 M687 370 Q687 366 693 364"/><text x="703" y="373.55" class="m13">plugins<tspan class="mu"> main</tspan></text><g class="an" style="animation-name:k2f"><text x="912" y="373.55" class="m13 mu" text-anchor="end">5c1e0a92</text></g><g class="an hide" style="animation-name:k2g"><g transform="translate(855.8,369)" class="hd"><rect x="-3.5" y="-4.5" width="2.5" height="9" rx="1"/><rect x="1" y="-4.5" width="2.5" height="9" rx="1"/></g><text x="912" y="373.5" class="s13 hd" text-anchor="end">held +2</text></g></g>
 </g>
-<g class="an" style="animation-name:k12"><g class="pl sl"><rect x="848" y="313" width="78" height="22" rx="11" class="pb"/><text x="887" y="328.5" class="s13 pt" text-anchor="middle">asleep 2h</text></g></g>
-<rect x="380" y="104" width="200" height="146" rx="10" class="pn"/>
-<text x="396" y="128" class="s16 b">NATS hub</text>
-<text x="396" y="148" class="s13 mu">JetStream · <tspan class="m13">bmesh hub</tspan></text>
-<text x="396" y="167" class="s13 mu">runs on hub-box</text>
-<text x="396" y="187" class="s13 mu">queue</text>
-<path class="qh" d="M400 200 H560"/>
-<g class="an" style="animation-name:k13"><text x="468" y="236" class="s13 am" text-anchor="middle">queued until Sat 09:40</text></g>
-<rect x="380" y="104" width="200" height="146" rx="10" class="rg tl-s an hide" style="animation-name:k14"/>
-<rect x="380" y="104" width="200" height="146" rx="10" class="rg am-s an hide" style="animation-name:k15"/>
-<rect x="380" y="104" width="200" height="146" rx="10" class="rg pu-s an hide" style="animation-name:k16"/>
-<g class="an hide" style="animation-name:k17"><circle cx="560" cy="200" r="9" class="am-f2"/><circle cx="560" cy="200" r="5" fill="var(--am)"/></g>
-<g class="an" style="animation-name:k18"><circle cx="560" cy="200" r="9" class="am-f2"/><circle cx="560" cy="200" r="5" fill="var(--am)"/></g>
-<g class="an" style="animation-name:k19"><circle cx="542" cy="200" r="9" class="am-f2"/><circle cx="542" cy="200" r="5" fill="var(--am)"/></g>
-<rect x="436" y="280" width="88" height="186" rx="16" class="pn"/>
-<rect x="468" y="288" width="24" height="4" rx="2" class="notch"/>
-<rect x="441" y="298" width="78" height="156" rx="8" class="scr"/>
-<text x="480" y="324" class="s16 mu" text-anchor="middle">09:41</text>
-<g class="an hide" style="animation-name:k1a"><rect x="444" y="338" width="72" height="62" rx="6" class="card"/><circle cx="453" cy="352" r="3.5" fill="var(--tl)"/><text x="461" y="356.5" class="s13 mu">ntfy</text><text x="450" y="375" class="m13 b">app-012</text><text x="450" y="392" class="s13">asks</text></g>
-<circle cx="36" cy="420" r="5" fill="var(--tl)"/><text x="47" y="424.5" class="s13 mu">event</text>
-<circle cx="102" cy="420" r="5" fill="var(--am)"/><text x="113" y="424.5" class="s13 mu">job</text>
-<circle cx="156" cy="420" r="5" fill="var(--pu)"/><text x="167" y="424.5" class="s13 mu">reply</text>
-<line class="ln dash" x1="218" y1="420" x2="242" y2="420"/>
-<text x="248" y="424.5" class="s13 mu">waits</text>
-<rect x="20" y="494" width="176" height="3" rx="1.5" class="trk"/>
-<rect x="20" y="494" width="176" height="3" rx="1.5" class="an bf" style="animation-name:k1b;animation-timing-function:linear"/>
-<text x="20" y="514" class="s13 mu">1 build</text>
-<g class="an hide" style="animation-name:k1c"><text x="20" y="514" class="s13">1 build</text></g>
-<rect x="206" y="494" width="176" height="3" rx="1.5" class="trk"/>
-<rect x="206" y="494" width="176" height="3" rx="1.5" class="an bf" style="animation-name:k1d;animation-timing-function:linear"/>
-<text x="206" y="514" class="s13 mu">2 review</text>
-<g class="an hide" style="animation-name:k1e"><text x="206" y="514" class="s13">2 review</text></g>
-<rect x="392" y="494" width="176" height="3" rx="1.5" class="trk"/>
-<rect x="392" y="494" width="176" height="3" rx="1.5" class="an bf" style="animation-name:k1f;animation-timing-function:linear"/>
-<text x="392" y="514" class="s13 mu">3 ask</text>
-<g class="an hide" style="animation-name:k1g"><text x="392" y="514" class="s13">3 ask</text></g>
-<rect x="578" y="494" width="176" height="3" rx="1.5" class="trk"/>
-<rect x="578" y="494" width="176" height="3" rx="1.5" class="an bf" style="animation-name:k1h;animation-timing-function:linear"/>
-<text x="578" y="514" class="s13 mu">4 sleep</text>
-<g class="an" style="animation-name:k1i"><text x="578" y="514" class="s13">4 sleep</text></g>
-<rect x="764" y="494" width="176" height="3" rx="1.5" class="trk"/>
-<rect x="764" y="494" width="176" height="3" rx="1.5" class="an bf b0" style="animation-name:k1j;animation-timing-function:linear"/>
-<text x="764" y="514" class="s13 mu">5 wake</text>
-<g class="an hide" style="animation-name:k1k"><text x="764" y="514" class="s13">5 wake</text></g>
-<g class="dot" style="animation-name:k1l"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k1l;animation-delay:0.4s"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k1l;animation-delay:0.8s"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k1m"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k1m;animation-delay:0.4s"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k1m;animation-delay:0.8s"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k1n;animation-timing-function:linear"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k1n;animation-delay:0.4s;animation-timing-function:linear"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k1n;animation-delay:0.8s;animation-timing-function:linear"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k1o"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k1o;animation-delay:0.4s"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k1o;animation-delay:0.8s"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k1p"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k1p;animation-delay:0.4s"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k1p;animation-delay:0.8s"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k1q"><circle r="9" fill="var(--pu)" opacity=".3"/><circle r="5" fill="var(--pu)"/></g>
-<g class="dot" style="animation-name:k1q;animation-delay:0.4s"><circle r="9" fill="var(--pu)" opacity=".3"/><circle r="5" fill="var(--pu)"/></g>
-<g class="dot" style="animation-name:k1q;animation-delay:0.8s"><circle r="9" fill="var(--pu)" opacity=".3"/><circle r="5" fill="var(--pu)"/></g>
-<g class="dot" style="animation-name:k1r"><circle r="9" fill="var(--pu)" opacity=".3"/><circle r="5" fill="var(--pu)"/></g>
-<g class="dot" style="animation-name:k1r;animation-delay:0.4s"><circle r="9" fill="var(--pu)" opacity=".3"/><circle r="5" fill="var(--pu)"/></g>
-<g class="dot" style="animation-name:k1r;animation-delay:0.8s"><circle r="9" fill="var(--pu)" opacity=".3"/><circle r="5" fill="var(--pu)"/></g>
-<g class="dot" style="animation-name:k1s"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k1s;animation-delay:0.4s"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k1s;animation-delay:0.8s"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k1t"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k1t;animation-delay:0.4s"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k1t;animation-delay:0.8s"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k1u;animation-timing-function:linear"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k1u;animation-delay:0.4s;animation-timing-function:linear"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k1u;animation-delay:0.8s;animation-timing-function:linear"><circle r="9" fill="var(--tl)" opacity=".3"/><circle r="5" fill="var(--tl)"/></g>
-<g class="dot" style="animation-name:k1v"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k1v;animation-delay:0.4s"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k1v;animation-delay:0.8s"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k1w"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k1w;animation-delay:0.4s"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k1w;animation-delay:0.8s"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k1x;animation-timing-function:linear"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k1x;animation-delay:0.4s;animation-timing-function:linear"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k1x;animation-delay:0.8s;animation-timing-function:linear"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k1y;animation-timing-function:linear"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k1y;animation-delay:0.4s;animation-timing-function:linear"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
-<g class="dot" style="animation-name:k1y;animation-delay:0.8s;animation-timing-function:linear"><circle r="9" fill="var(--am)" opacity=".3"/><circle r="5" fill="var(--am)"/></g>
+<circle class="an hide" style="animation-name:k30" cx="678" cy="128" r="5" fill="var(--mu)"/>
+<g class="an hide" style="animation-name:k30"><g class="pl sl"><rect x="756.2" y="117" width="159" height="22" rx="11" class="pb"/><text x="835.7" y="132.5" class="s13 pt" text-anchor="middle">asleep · leaf · secure</text></g></g>
+<g class="an hide lit" style="animation-name:k6"><path class="lg tl-s" pathLength="100" d="M364 305 L349 305 L349 206 L364 206"/><path class="lc tl-s" pathLength="100" d="M364 305 L349 305 L349 206 L364 206"/></g>
+<g class="an hide lit" style="animation-name:k7"><path class="lg tl-s" pathLength="100" d="M284 273 L292 273 L292 206 L364 206"/><path class="lc tl-s" pathLength="100" d="M284 273 L292 273 L292 206 L364 206"/></g>
+<g class="an hide lit" style="animation-name:k8"><path class="lg tl-s" pathLength="100" d="M924 273 L932 273 L932 206 L364 206"/><path class="lc tl-s" pathLength="100" d="M924 273 L932 273 L932 206 L364 206"/></g>
+<g class="an hide lit" style="animation-name:k9"><path class="lg tl-s" pathLength="100" d="M364 206 L349 206 L349 273 L364 273"/><path class="lc tl-s" pathLength="100" d="M364 206 L349 206 L349 273 L364 273"/></g>
+<g class="an hide lit" style="animation-name:ka"><path class="lg hd-s" pathLength="100" d="M364 273 L349 273 L349 206 L364 206"/><path class="lc hd-s" pathLength="100" d="M364 273 L349 273 L349 206 L364 206"/></g>
+<g class="an hide lit" style="animation-name:kb"><path class="lg hd-s" pathLength="100" d="M364 206 L292 206 L292 273 L284 273"/><path class="lc hd-s" pathLength="100" d="M364 206 L292 206 L292 273 L284 273"/></g>
+<g class="an hide lit" style="animation-name:kc"><path class="lg tl-s" pathLength="100" d="M284 273 L292 273 L292 206 L364 206"/><path class="lc tl-s" pathLength="100" d="M284 273 L292 273 L292 206 L364 206"/></g>
+<g class="an hide lit" style="animation-name:kd"><path class="lg tl-s" pathLength="100" d="M364 206 L349 206 L349 273 L364 273"/><path class="lc tl-s" pathLength="100" d="M364 206 L349 206 L349 273 L364 273"/></g>
+<g class="an hide lit" style="animation-name:ke"><path class="lg tl-s" pathLength="100" d="M364 305 L349 305 L349 206 L364 206"/><path class="lc tl-s" pathLength="100" d="M364 305 L349 305 L349 206 L364 206"/></g>
+<g class="an hide lit" style="animation-name:kf"><path class="lg tl-s" pathLength="100" d="M364 206 L349 206 L349 273 L364 273"/><path class="lc tl-s" pathLength="100" d="M364 206 L349 206 L349 273 L364 273"/></g>
+<g class="an hide lit" style="animation-name:kg"><path class="lg hd-s" pathLength="100" d="M364 273 L349 273 L349 206 L364 206"/><path class="lc hd-s" pathLength="100" d="M364 273 L349 273 L349 206 L364 206"/></g>
+<g class="an hide lit" style="animation-name:kh"><path class="lg hd-s" pathLength="100" d="M364 206 L292 206 L292 273 L284 273"/><path class="lc hd-s" pathLength="100" d="M364 206 L292 206 L292 273 L284 273"/></g>
+<g class="an hide lit" style="animation-name:ki"><path class="lg am-s" pathLength="100" d="M284 273 L292 273 L292 206 L364 206 L584 206"/><path class="lc am-s" pathLength="100" d="M284 273 L292 273 L292 206 L364 206 L584 206"/></g>
+<g class="an hide lit" style="animation-name:kj"><path class="lg am-s" pathLength="100" d="M584 206 L604 206 L932 206 L932 305 L924 305"/><path class="lc am-s" pathLength="100" d="M584 206 L604 206 L932 206 L932 305 L924 305"/></g>
+<g class="an hide lit" style="animation-name:kk"><path class="lg pu-s" pathLength="100" d="M924 305 L932 305 L932 206 L364 206 L292 206 L292 273 L284 273"/><path class="lc pu-s" pathLength="100" d="M924 305 L932 305 L932 206 L364 206 L292 206 L292 273 L284 273"/></g>
+<g class="an hide lit" style="animation-name:kl"><path class="lg tl-s" pathLength="100" d="M364 305 L349 305 L349 206 L364 206"/><path class="lc tl-s" pathLength="100" d="M364 305 L349 305 L349 206 L364 206"/></g>
+<g class="an hide lit" style="animation-name:km"><path class="lg tl-s" pathLength="100" d="M364 206 L349 206 L349 241 L364 241"/><path class="lc tl-s" pathLength="100" d="M364 206 L349 206 L349 241 L364 241"/></g>
+<g class="an hide lit" style="animation-name:kn"><path class="lg tl-s" pathLength="100" d="M604 241 L612 241 L612 470 L540 470"/><path class="lc tl-s" pathLength="100" d="M604 241 L612 241 L612 470 L540 470"/></g>
+<g class="an hide lit" style="animation-name:ko"><path class="lg tl-s" pathLength="100" d="M284 273 L292 273 L292 206 L364 206"/><path class="lc tl-s" pathLength="100" d="M284 273 L292 273 L292 206 L364 206"/></g>
+<g class="an hide lit" style="animation-name:kp"><path class="lg tl-s" pathLength="100" d="M364 206 L349 206 L349 241 L364 241"/><path class="lc tl-s" pathLength="100" d="M364 206 L349 206 L349 241 L364 241"/></g>
+<g class="an hide lit" style="animation-name:kq"><path class="lg tl-s" pathLength="100" d="M604 241 L612 241 L612 470 L540 470"/><path class="lc tl-s" pathLength="100" d="M604 241 L612 241 L612 470 L540 470"/></g>
+<g class="an hide lit" style="animation-name:kr"><path class="lg tl-s" pathLength="100" d="M924 273 L932 273 L932 206 L364 206"/><path class="lc tl-s" pathLength="100" d="M924 273 L932 273 L932 206 L364 206"/></g>
+<g class="an hide lit" style="animation-name:ks"><path class="lg tl-s" pathLength="100" d="M364 206 L349 206 L349 241 L364 241"/><path class="lc tl-s" pathLength="100" d="M364 206 L349 206 L349 241 L364 241"/></g>
+<g class="an hide lit" style="animation-name:kt"><path class="lg tl-s" pathLength="100" d="M604 241 L612 241 L612 470 L540 470"/><path class="lc tl-s" pathLength="100" d="M604 241 L612 241 L612 470 L540 470"/></g>
+<g class="an hide lit" style="animation-name:ku"><path class="lg tl-s" pathLength="100" d="M284 273 L292 273 L292 206 L364 206"/><path class="lc tl-s" pathLength="100" d="M284 273 L292 273 L292 206 L364 206"/></g>
+<g class="an hide lit" style="animation-name:kv"><path class="lg tl-s" pathLength="100" d="M364 206 L349 206 L349 273 L364 273"/><path class="lc tl-s" pathLength="100" d="M364 206 L349 206 L349 273 L364 273"/></g>
+<g class="an hide lit" style="animation-name:kw"><path class="lg am-s" pathLength="100" d="M364 273 L349 273 L349 206 L364 206"/><path class="lc am-s" pathLength="100" d="M364 273 L349 273 L349 206 L364 206"/></g>
+<g class="an hide lit" style="animation-name:kx"><path class="lg am-s" pathLength="100" d="M364 206 L292 206 L292 369 L284 369"/><path class="lc am-s" pathLength="100" d="M364 206 L292 206 L292 369 L284 369"/></g>
+<g class="an hide lit" style="animation-name:ky"><path class="lg am-s" pathLength="100" d="M364 206 L584 206"/><path class="lc am-s" pathLength="100" d="M364 206 L584 206"/></g>
+<g class="an hide lit" style="animation-name:kz"><path class="lg am-s" pathLength="100" d="M584 206 L604 206 L932 206 L932 337 L924 337"/><path class="lc am-s" pathLength="100" d="M584 206 L604 206 L932 206 L932 337 L924 337"/></g>
+<g class="an hide lit" style="animation-name:k10"><path class="lg pu-s" pathLength="100" d="M284 369 L292 369 L292 206 L364 206 L349 206 L349 273 L364 273"/><path class="lc pu-s" pathLength="100" d="M284 369 L292 369 L292 206 L364 206 L349 206 L349 273 L364 273"/></g>
+<g class="an hide lit" style="animation-name:k11"><path class="lg pu-s" pathLength="100" d="M924 337 L932 337 L932 206 L364 206 L349 206 L349 273 L364 273"/><path class="lc pu-s" pathLength="100" d="M924 337 L932 337 L932 206 L364 206 L349 206 L349 273 L364 273"/></g>
+<rect x="364" y="292" width="240" height="26" rx="6" class="rg tl-s an hide" style="animation-name:k1g"/>
+<rect x="36" y="260" width="248" height="26" rx="6" class="rg tl-s an hide" style="animation-name:k1h"/>
+<rect x="676" y="260" width="248" height="26" rx="6" class="rg tl-s an hide" style="animation-name:k1i"/>
+<rect x="364" y="260" width="240" height="26" rx="6" class="rg tl-s an hide" style="animation-name:k1j"/>
+<rect x="364" y="260" width="240" height="26" rx="6" class="rg hd-s an hide" style="animation-name:k1k"/>
+<rect x="36" y="260" width="248" height="26" rx="6" class="rg hd-s an hide" style="animation-name:k1l"/>
+<rect x="36" y="260" width="248" height="26" rx="6" class="rg am-s an hide" style="animation-name:k1m"/>
+<rect x="676" y="292" width="248" height="26" rx="6" class="rg am-s an hide" style="animation-name:k1o"/>
+<rect x="36" y="260" width="248" height="26" rx="6" class="rg pu-s an hide" style="animation-name:k1p"/>
+<rect x="364" y="292" width="240" height="26" rx="6" class="rg tl-s an hide" style="animation-name:k1q"/>
+<rect x="36" y="260" width="248" height="26" rx="6" class="rg tl-s an hide" style="animation-name:k1s"/>
+<rect x="676" y="260" width="248" height="26" rx="6" class="rg tl-s an hide" style="animation-name:k1u"/>
+<rect x="364" y="228" width="240" height="26" rx="6" class="rg tl-s an hide" style="animation-name:k1w"/>
+<rect x="36" y="260" width="248" height="26" rx="6" class="rg tl-s an hide" style="animation-name:k1y"/>
+<rect x="364" y="260" width="240" height="26" rx="6" class="rg tl-s an hide" style="animation-name:k1z"/>
+<rect x="364" y="260" width="240" height="26" rx="6" class="rg pu-s an hide" style="animation-name:k20"/>
+<rect x="36" y="356" width="248" height="26" rx="6" class="rg pu-s an hide" style="animation-name:k21"/>
+<rect x="676" y="324" width="248" height="26" rx="6" class="rg pu-s an hide" style="animation-name:k22"/>
+<rect x="364" y="356" width="240" height="26" rx="6" class="rg wk-s an hide" style="animation-name:k23"/>
+<rect x="36" y="356" width="248" height="26" rx="6" class="rg am-s an hide" style="animation-name:k2c"/>
+<rect x="36" y="356" width="248" height="26" rx="6" class="rg wk-s an hide" style="animation-name:k2d"/>
+<rect x="676" y="324" width="248" height="26" rx="6" class="rg am-s an hide" style="animation-name:k2e"/>
+<rect x="676" y="356" width="248" height="26" rx="6" class="rg hd-s an hide" style="animation-name:k2h"/>
+<rect x="364" y="146" width="240" height="72" rx="8" class="rg am-s an hide" style="animation-name:k2q"/>
+<rect x="364" y="146" width="240" height="72" rx="8" class="rg tl-s an hide" style="animation-name:k2r"/>
+<rect x="364" y="146" width="240" height="72" rx="8" class="rg hd-s an hide" style="animation-name:k2s"/>
+<rect x="364" y="146" width="240" height="72" rx="8" class="rg am-s an hide" style="animation-name:k2t"/>
+<rect x="364" y="146" width="240" height="72" rx="8" class="rg pu-s an hide" style="animation-name:k2u"/>
+<rect x="676" y="146" width="248" height="72" rx="8" class="rg tl-s an hide" style="animation-name:k2v"/>
+<rect x="676" y="146" width="248" height="72" rx="8" class="rg am-s an hide" style="animation-name:k2w"/>
+<rect x="676" y="146" width="248" height="72" rx="8" class="rg pu-s an hide" style="animation-name:k2x"/>
+<g class="an hide" style="animation-name:k2o"><circle cx="584" cy="206" r="9" class="am-f2"/><circle cx="584" cy="206" r="5" fill="var(--am)"/><text x="592" y="168" class="s13 am" text-anchor="end">waits for a Mac</text></g>
+<g class="an hide" style="animation-name:k2p"><circle cx="584" cy="206" r="9" class="am-f2"/><circle cx="584" cy="206" r="5" fill="var(--am)"/><text x="592" y="168" class="s13 am" text-anchor="end">waits for laptop</text></g>
+<g class="an" style="animation-name:k2">
+<rect x="420" y="410" width="120" height="196" rx="16" class="pn"/>
+<rect x="468" y="418" width="24" height="4" rx="2" class="notch"/>
+<rect x="425" y="428" width="110" height="166" rx="8" class="scr"/>
+<text x="480" y="450" class="s14 mu" text-anchor="middle">09:41</text>
+<g class="an hide" style="animation-name:k31"><rect x="433" y="460" width="94" height="34" rx="6" class="card"/><circle cx="442" cy="471" r="3.5" fill="var(--ok)"/><text x="450" y="475" class="m13 b">app-012</text><text x="441" y="489" class="s13">is done</text></g>
+<g class="an hide" style="animation-name:k32"><rect x="433" y="460" width="94" height="34" rx="6" class="card"/><circle cx="442" cy="471" r="3.5" fill="var(--am)"/><text x="450" y="475" class="m13 b">web-007</text><text x="441" y="489" class="s13">asks</text></g>
+<g class="an hide" style="animation-name:k33"><rect x="433" y="460" width="94" height="34" rx="6" class="card"/><circle cx="442" cy="471" r="3.5" fill="var(--rd)"/><text x="450" y="475" class="m13 b">docs-003</text><text x="441" y="489" class="s13">is blocked</text></g>
+</g>
+<circle cx="36" cy="508" r="5" fill="var(--tl)"/><text x="47" y="512.5" class="s13 mu">event</text>
+<g transform="translate(102,508)" class="hd"><rect x="-3.5" y="-4.5" width="2.5" height="9" rx="1"/><rect x="1" y="-4.5" width="2.5" height="9" rx="1"/></g><text x="113" y="512.5" class="s13 mu">hold</text>
+<circle cx="161.4" cy="508" r="5" fill="var(--am)"/><text x="172.4" y="512.5" class="s13 mu">job</text>
+<circle cx="214.2" cy="508" r="5" fill="var(--pu)"/><text x="225.2" y="512.5" class="s13 mu">reply</text>
+<line class="ln dash" x1="275.2" y1="508" x2="299.2" y2="508"/>
+<text x="305.2" y="512.5" class="s13 mu">waits</text>
+<rect x="20" y="624" width="176" height="3" rx="1.5" class="trk"/>
+<rect x="20" y="624" width="176" height="3" rx="1.5" class="an bf b0" style="animation-name:k3a;animation-timing-function:linear"/>
+<text x="20" y="644" class="s13 mu">1 build</text>
+<g class="an hide" style="animation-name:k3b"><text x="20" y="644" class="s13">1 build</text></g>
+<rect x="206" y="624" width="176" height="3" rx="1.5" class="trk"/>
+<rect x="206" y="624" width="176" height="3" rx="1.5" class="an bf b0" style="animation-name:k3c;animation-timing-function:linear"/>
+<text x="206" y="644" class="s13 mu">2 coordinate</text>
+<g class="an hide" style="animation-name:k3d"><text x="206" y="644" class="s13">2 coordinate</text></g>
+<rect x="392" y="624" width="176" height="3" rx="1.5" class="trk"/>
+<rect x="392" y="624" width="176" height="3" rx="1.5" class="an bf b0" style="animation-name:k3e;animation-timing-function:linear"/>
+<text x="392" y="644" class="s13 mu">3 route a check</text>
+<g class="an hide" style="animation-name:k3f"><text x="392" y="644" class="s13">3 route a check</text></g>
+<rect x="578" y="624" width="176" height="3" rx="1.5" class="trk"/>
+<rect x="578" y="624" width="176" height="3" rx="1.5" class="an bf b0" style="animation-name:k3g;animation-timing-function:linear"/>
+<text x="578" y="644" class="s13 mu">4 push notifications</text>
+<g class="an hide" style="animation-name:k3h"><text x="578" y="644" class="s13">4 push notifications</text></g>
+<rect x="764" y="624" width="176" height="3" rx="1.5" class="trk"/>
+<rect x="764" y="624" width="176" height="3" rx="1.5" class="an bf b0" style="animation-name:k3i;animation-timing-function:linear"/>
+<text x="764" y="644" class="s13 mu">5 level</text>
+<g class="an hide" style="animation-name:k3j"><text x="764" y="644" class="s13">5 level</text></g>
+<g class="dot tlf" style="animation-name:k3k"><circle r="9"/><circle r="5"/></g>
+<g class="dot tlf" style="animation-name:k3l"><circle r="9"/><circle r="5"/></g>
+<g class="dot tlf" style="animation-name:k3m"><circle r="9"/><circle r="5"/></g>
+<g class="dot tlf" style="animation-name:k3n"><circle r="9"/><circle r="5"/></g>
+<g class="dot hdf" style="animation-name:k3o"><circle r="9"/><circle r="5"/></g>
+<g class="dot hdf" style="animation-name:k3p"><circle r="9"/><circle r="5"/></g>
+<g class="dot tlf" style="animation-name:k3q"><circle r="9"/><circle r="5"/></g>
+<g class="dot tlf" style="animation-name:k3r"><circle r="9"/><circle r="5"/></g>
+<g class="dot tlf" style="animation-name:k3s"><circle r="9"/><circle r="5"/></g>
+<g class="dot tlf" style="animation-name:k3t"><circle r="9"/><circle r="5"/></g>
+<g class="dot hdf" style="animation-name:k3u"><circle r="9"/><circle r="5"/></g>
+<g class="dot hdf" style="animation-name:k3v"><circle r="9"/><circle r="5"/></g>
+<g class="dot amf" style="animation-name:k3w"><circle r="9"/><circle r="5"/></g>
+<g class="dot amf" style="animation-name:k3x"><circle r="9"/><circle r="5"/></g>
+<g class="dot puf" style="animation-name:k3y"><circle r="9"/><circle r="5"/></g>
+<g class="dot tlf" style="animation-name:k3z"><circle r="9"/><circle r="5"/></g>
+<g class="dot tlf" style="animation-name:k40"><circle r="9"/><circle r="5"/></g>
+<g class="dot tlf" style="animation-name:k41"><circle r="9"/><circle r="5"/></g>
+<g class="dot tlf" style="animation-name:k42"><circle r="9"/><circle r="5"/></g>
+<g class="dot tlf" style="animation-name:k43"><circle r="9"/><circle r="5"/></g>
+<g class="dot tlf" style="animation-name:k44"><circle r="9"/><circle r="5"/></g>
+<g class="dot tlf" style="animation-name:k45"><circle r="9"/><circle r="5"/></g>
+<g class="dot tlf" style="animation-name:k46"><circle r="9"/><circle r="5"/></g>
+<g class="dot tlf" style="animation-name:k47"><circle r="9"/><circle r="5"/></g>
+<g class="dot tlf" style="animation-name:k48"><circle r="9"/><circle r="5"/></g>
+<g class="dot tlf" style="animation-name:k49"><circle r="9"/><circle r="5"/></g>
+<g class="dot amf" style="animation-name:k4a"><circle r="9"/><circle r="5"/></g>
+<g class="dot amf" style="animation-name:k4b"><circle r="9"/><circle r="5"/></g>
+<g class="dot amf" style="animation-name:k4c"><circle r="9"/><circle r="5"/></g>
+<g class="dot amf" style="animation-name:k4d"><circle r="9"/><circle r="5"/></g>
+<g class="dot puf" style="animation-name:k4e"><circle r="9"/><circle r="5"/></g>
+<g class="dot puf" style="animation-name:k4f"><circle r="9"/><circle r="5"/></g>
 </svg>

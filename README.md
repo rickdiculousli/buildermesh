@@ -35,14 +35,15 @@ Agents write half-page specs; you accept or reject them in plain words. A *lead*
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mesh-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/mesh-light.svg">
-    <img alt="Three boxes around one NATS hub: events, jobs and replies move between them; a laptop sleeps and catches up" src="docs/assets/mesh-light.svg" width="100%">
+    <img alt="Three boxes share one NATS hub, which runs on hub-box: every box builds at once; a coordinator holds one lead before it lands until another has; a check that needs macOS goes to the laptop; asks and finishes reach your phone; after a change lands, bmesh sync levels every box, the sleeping laptop when it wakes" src="docs/assets/mesh-light.svg" width="100%">
   </picture>
 </p>
 
 - **One hub.** `bmesh hub` runs NATS, a message server, inside the binary on an always-on box, over a tailnet such as Tailscale. Boxes share one token; nothing else is installed. A single box needs no hub: `bmesh serve` embeds one.
 - **A daemon on every box.** `bmesh serve` wakes quiet leads, runs routines, sends phone notifications and draws the map. A box set to update itself installs each bmesh release; on others, each session opens with a line to run `bmesh update`.
+- **A coordinator.** The session that started the builds follows its leads' events through the hub, and on your word holds a lead before it lands (`bmesh hold`) until another has landed, then releases it (`bmesh unhold`).
 - **Shared checks.** A check that runs apart from the lead, like the review, is queued once for every box that runs it, so a free box takes it. A check that needs macOS runs only on a Mac.
-- **Laptops can sleep.** A laptop that wakes takes the jobs it missed, in order; a job waits on the hub for a day.
+- **Every box levels.** `bmesh sync` levels this box's checkout with origin and sends a `level` job to every other box that has the repo; each fast-forwards its own unless it's dirty or diverged, and a secure box holds a plugin change for your approval. A laptop that wakes takes the jobs it missed, in order; a job waits on the hub for a day.
 - **Signed jobs.** Boxes joined with `bmesh init --hosts` share a signed roster, and every job between them is signed and checked. The signing and approval keys sit where no agent can read them (on macOS, behind the Keychain password dialog). A secure box holds an update of its plugins, or of the repo bmesh updates itself from, until you approve it there.
 
 ## Proof before main
