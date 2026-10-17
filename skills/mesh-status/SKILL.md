@@ -12,6 +12,7 @@ The mesh is the record; read it and summarise, never guess from the runner.
    - **working**: path, since when, and the spec or round it is on;
    - **asking**: the question in the operator's words (`bmesh thread-status <path>`), the thing most worth answering first;
    - **silent** and **blocked**: path, since when, the block's reason;
+   - **held**: path, the gate and why, and how long ago it was held (each row's `hold` in the JSON): a coordinator's hold, not waiting on the operator unless the operator holds it; a hold a day old or more is named, since it may be forgotten (`bmesh unhold <path>` releases it);
    - **done since the last look**: path and what landed (the commit in the `done` text). "The last look" is the last status this session gave; the first look lists what finished today.
    A node with unread messages is noted (the count) so the operator knows a reply is waiting on it.
 3. **Keep it short.** One line per node, the asks first; a quiet mesh is one line.

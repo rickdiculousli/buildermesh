@@ -6,6 +6,7 @@ size: L
 judge: opus
 status: building
 lens: eng
+scope_grew: [046]
 proposed_by: operator
 proposed_on: 2026-10-16
 built_by: f0ae77ee-f879-462f-be44-a79154ce057e
@@ -34,11 +35,12 @@ In:
   - `held` is not in the needs-you band or in `[notify] push`: the coordinator put it there.
   - The map draws a `held` badge in a calm colour, and the strip counts it (`2 held`).
   - `mesh-status` shows the state with its age. `watch` prints the `held` event, so the coordinator sees the lead reach its gate.
-- **`bmesh release <path>|--family F [--text "<words>"]`** deletes the key and sends a message of kind `release` (`released by operator: <words>`), which wakes the lead. A release with no hold prints `<path>: not held` and exits 0.
+- **`bmesh unhold <path>|--family F [--text "<words>"]`** deletes the key and sends a message of kind `release` (`released by operator: <words>`), which wakes the lead. An unhold of a lead with no hold prints `<path>: not held` and exits 0.
+- Scope grew (046): the release-tags spec landed `bmesh release <repo>` for cutting a version tag, so the command that lifts a hold is `bmesh unhold`; its message kind (`release`), its words and everything else stay as written.
 - **`bmesh build --hold land|now`** dispatches with the hold already written, before the lead starts. Use it for "build these, land none until I say".
 - **Skills.**
   - `lead` gains a short section on holds: a hold message at any checkpoint, the `land` refusal, `bmesh held`, wait, and on release carry on. A hold is never answered with `ask`.
-  - `build` uses `hold` and `release` instead of a free-text hold, and relays a lead reaching its gate as one line.
+  - `build` uses `hold` and `unhold` instead of a free-text hold, and relays a lead reaching its gate as one line.
   - The operator skills learn "hold X", "hold land on X", "release X".
 - README: Builds, Landing, Names (`bm-holds`), the state list, Map, and the new commands.
 
@@ -51,16 +53,16 @@ Out:
 Judge: opus, because the hold crosses land, the daemon's silence rule, the map and two skills, and the lead must wait without being called silent.
 
 ## What you'll see
-The coordinator runs `bmesh hold --family buildermesh-build-7 --text "hub move first"`. Leads that reach landing run `bmesh land`, read `held before land by operator 3m ago: hub move first`, run `bmesh held` and stop. Nothing reaches the phone, the needs-you band stays empty, and the map shows two `held` badges. After the move, `bmesh release --family buildermesh-build-7 --text "hub moved"` wakes both, and they land one after the other through the land lease.
+The coordinator runs `bmesh hold --family buildermesh-build-7 --text "hub move first"`. Leads that reach landing run `bmesh land`, read `held before land by operator 3m ago: hub move first`, run `bmesh held` and stop. Nothing reaches the phone, the needs-you band stays empty, and the map shows two `held` badges. After the move, `bmesh unhold --family buildermesh-build-7 --text "hub moved"` wakes both, and they land one after the other through the land lease.
 
 ## Verification
 The repo's verify. New tests, with the runner fakes in `testdata/`:
-- `hold` then `land` refuses and pushes nothing, and after `release` it lands;
+- `hold` then `land` refuses and pushes nothing, and after `unhold` it lands;
 - a `now` hold prints first in `inbox`;
-- `--family` holds and releases every live lead of the family and no one else;
+- `--family` holds and unholds every live lead of the family and no one else;
 - `build --hold land` writes the key before the lead's first event;
 - the daemon's liveness pass never marks a `held` node silent and doesn't push it;
-- `release` of an unheld node exits 0;
+- `unhold` of an unheld node exits 0;
 - the map's seed (`scripts/seed.sh`) gains a `held` lead, and `scripts/check.mjs` sees its badge and no band row.
 
 ## Risks and the alternative considered
