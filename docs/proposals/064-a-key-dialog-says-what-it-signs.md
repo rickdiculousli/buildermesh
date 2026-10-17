@@ -4,7 +4,7 @@ title: Before a protected key is used, bmesh shows a dialog saying exactly what 
 kind: ux
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: ux
 proposed_by: dfdc9673-27b2-4f3f-9f17-95a5b436de66
 proposed_on: 2026-10-17
