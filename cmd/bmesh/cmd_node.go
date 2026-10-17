@@ -37,11 +37,13 @@ func (a *app) cmdNode(args []string) error {
 
 // cmdNodeStop stops a node: the nodes under it first (a round's children,
 // a lead's executors), deepest first, then the node itself, each through
-// daemon.StopNode (its thread interrupted, then blocked "stopped by <who>:
-// <why>"). A thread on another box is stopped there by a stop-thread job,
-// with [hosts] on; with it off the stop is refused before anything is
-// touched. A round is then settled from its children, or, with none left,
-// blocked directly. A done or blocked node prints `already <state>`.
+// daemon.StopNode (blocked "stopped by <who>: <why>", then its thread
+// interrupted). Threads on other boxes are stopped there by stop-thread
+// jobs, sent together after the ones here, with [hosts] on; with it off
+// the stop is refused before anything is touched. A round is then settled
+// from its children, or, with none left, blocked directly. A done or
+// blocked node prints `already <state>`; a stopped one's thread here is
+// interrupted again.
 func (a *app) cmdNodeStop(args []string) error {
 	fs := a.flags("node stop")
 	why := fs.String("text", "", "why, as the node's blocked text says it")
@@ -78,13 +80,24 @@ func (a *app) cmdNodeStop(args []string) error {
 		s := states[p].State
 		return s, s == "done" || s == "blocked"
 	}
-	if s, ok := finished(path); ok {
-		fmt.Fprintf(a.stdout, "already %s\n", s)
-		return nil
-	}
 	who, err := a.identityOrHost(ctx, "node stop")
 	if err != nil {
 		return err
+	}
+	if s, ok := finished(path); ok {
+		// A stopped node's thread here is interrupted again (a stop whose
+		// interrupt failed is run again), quietly: it is already stopped.
+		if mesh.Stopped(states[path]) && n.Runner.Thread != "" && (n.Host == "" || n.Host == a.cfg.HostName()) && n.Runner.Kind == a.cfg.Runner.Kind {
+			r, err := runner.New(a.cfg)
+			if err != nil {
+				return err
+			}
+			if _, err := daemon.StopNode(ctx, a.client, r, n, who, *why); err != nil {
+				return err
+			}
+		}
+		fmt.Fprintf(a.stdout, "already %s\n", s)
+		return nil
 	}
 	nodes, err := mesh.ListNodes(ctx, a.client)
 	if err != nil {
@@ -135,11 +148,10 @@ func (a *app) cmdNodeStop(args []string) error {
 			}
 		}
 	}
+	var remote []mesh.Node
 	for _, c := range stop {
 		if c.Runner.Thread != "" && c.Host != "" && c.Host != me {
-			if err := a.stopRemote(ctx, box, c, who, *why, *wait); err != nil {
-				return err
-			}
+			remote = append(remote, c)
 			continue
 		}
 		var already string
@@ -153,6 +165,11 @@ func (a *app) cmdNodeStop(args []string) error {
 		}
 		if already == "" {
 			fmt.Fprintf(a.stdout, "stopped %s\n", c.Path)
+		}
+	}
+	if len(remote) > 0 {
+		if err := a.stopRemote(ctx, box, remote, who, *why, *wait); err != nil {
+			return err
 		}
 	}
 	if n.Role == "round" {
@@ -169,35 +186,45 @@ func (a *app) cmdNodeStop(args []string) error {
 	return nil
 }
 
-// stopRemote sends stop-thread for n to its host and waits up to wait,
-// printing `<host>: <answer>`. A refusal exits 3. A box that doesn't
-// answer in time has the node marked stopped from here, so its daemon
-// never wakes it, and stops the thread itself when it takes the job.
-func (a *app) stopRemote(ctx context.Context, b *hostsBox, n mesh.Node, who, why string, wait time.Duration) error {
+// stopRemote sends stop-thread for each of nodes to its host, all at once,
+// and waits up to wait for the answers, printing `<host>: <answer>` for
+// each in order. A node whose box doesn't answer in time is marked stopped
+// from here, so its daemon never wakes it, and that box stops the thread
+// itself when it takes the job. A refusal exits 3, after the rest.
+func (a *app) stopRemote(ctx context.Context, b *hostsBox, nodes []mesh.Node, who, why string, wait time.Duration) error {
 	if err := b.sync(ctx, a); err != nil {
 		fmt.Fprintf(a.stderr, "bmesh: roster: %v (using this box's copy)\n", err)
 	}
 	r := b.local.Roster
-	if _, ok := r.Host(n.Host); !ok {
-		return fail(exitRefused, "refused: %s runs on %s, which isn't in the roster; run it on %s", n.Path, n.Host, n.Host)
+	var jobs []hosts.Job
+	for _, n := range nodes {
+		if _, ok := r.Host(n.Host); !ok {
+			return fail(exitRefused, "refused: %s runs on %s, which isn't in the roster; run it on %s", n.Path, n.Host, n.Host)
+		}
+		jobs = append(jobs, hosts.NewJob(b.key, b.host, n.Host, "stop-thread", "", []string{n.Path, who, why}, r.Version, time.Now(), forgetTTL))
 	}
-	j := hosts.NewJob(b.key, b.host, n.Host, "stop-thread", "", []string{n.Path, who, why}, r.Version, time.Now(), forgetTTL)
-	replies, err := a.askBoxes(ctx, b, []hosts.Job{j}, wait, nil)
+	replies, err := a.askBoxes(ctx, b, jobs, wait, nil)
 	if err != nil {
 		return err
 	}
-	rep, ok := replies[j.ID]
-	switch {
-	case !ok:
-		if _, err := daemon.MarkStopped(ctx, a.client, n.Path, who, why); err != nil {
-			return err
+	var refused []string
+	for i, n := range nodes {
+		rep, ok := replies[jobs[i].ID]
+		switch {
+		case !ok:
+			if _, err := daemon.MarkStopped(ctx, a.client, n.Path, who, why); err != nil {
+				return err
+			}
+			fmt.Fprintf(a.stdout, "queued; %s is marked stopped and %s stops its thread when it answers\n", n.Path, n.Host)
+		case !rep.OK:
+			refused = append(refused, n.Host+": "+rep.Text)
+		default:
+			fmt.Fprintf(a.stdout, "%s: %s\n", n.Host, rep.Text)
 		}
-		fmt.Fprintf(a.stdout, "queued; %s is marked stopped and %s stops its thread when it answers\n", n.Path, n.Host)
-		return nil
-	case !rep.OK:
-		return fail(exitRefused, "%s: %s", n.Host, rep.Text)
 	}
-	fmt.Fprintf(a.stdout, "%s: %s\n", n.Host, rep.Text)
+	if len(refused) > 0 {
+		return fail(exitRefused, "%s", strings.Join(refused, "\n"))
+	}
 	return nil
 }
 

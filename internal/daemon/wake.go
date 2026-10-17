@@ -60,7 +60,7 @@ func wakeOnce(ctx context.Context, d Deps, act *Activity) {
 		resumedBy := ""
 		switch {
 		case mesh.Stopped(st):
-			if resumedBy = resumer(ctx, d, p); resumedBy == "" {
+			if resumedBy = resumer(ctx, d, p, st.At); resumedBy == "" {
 				continue
 			}
 		case finished && !hasMessage(ctx, d, p):
@@ -93,16 +93,23 @@ func hasMessage(ctx context.Context, d Deps, p mesh.Path) bool {
 }
 
 // resumer is the sender of the oldest unread `message` (bmesh send) in p's
-// mail from outside p's own tree, "" when there is none: an executor's ask
-// doesn't resume its stopped lead.
-func resumer(ctx context.Context, d Deps, p mesh.Path) string {
+// mail sent after the stop (stoppedAt, the stopped state's time) from
+// outside p's own tree, "" when there is none: a message waiting since
+// before the stop (a STOP sent while the thread ran) doesn't undo it, and
+// an executor's ask doesn't resume its stopped lead. Both times are to the
+// second, so a message sent in the stop's own second doesn't count.
+func resumer(ctx context.Context, d Deps, p mesh.Path, stoppedAt string) string {
 	pending, err := mesh.Pending(ctx, d.Client, p)
 	if err != nil {
 		d.Log.Warn("wake: pending", "path", p.String(), "err", err)
 		return ""
 	}
+	stopped, _ := time.Parse(time.RFC3339, stoppedAt)
 	for _, m := range pending {
-		if m.Kind == "message" && m.From != "" && m.From != p.String() && !strings.HasPrefix(m.From, p.String()+".") {
+		if m.Kind != "message" || m.From == "" || m.From == p.String() || strings.HasPrefix(m.From, p.String()+".") {
+			continue
+		}
+		if at, err := time.Parse(time.RFC3339, m.At); err == nil && at.After(stopped) {
 			return m.From
 		}
 	}

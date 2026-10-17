@@ -11,12 +11,15 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/runner"
 )
 
-// StopNode stops n (bmesh node stop): its thread first, through r, when it
-// has one (a thread the runner no longer knows is stopped already), then
-// the node blocked with mesh.StoppedBy(who, why) and that blocked
-// published. A done or blocked node is left as it is (already names its
-// state), but a stopped one's thread is interrupted again: a stop-thread
-// job that reaches a box after its sender marked the node.
+// StopNode stops n (bmesh node stop): the node blocked with
+// mesh.StoppedBy(who, why) and that blocked published, then its thread
+// interrupted through r when it has one (a thread the runner no longer
+// knows is stopped already). Marked first, the daemon's poll finds it
+// blocked and never writes its own stop over the reason; a thread that
+// reported between the two is marked again. A done or blocked node is
+// left as it is (already names its state), but a stopped one's thread is
+// interrupted again: a stop-thread job that reaches a box after its sender
+// marked the node, or a stop whose interrupt failed.
 func StopNode(ctx context.Context, c *mesh.Client, r runner.Runner, n mesh.Node, who, why string) (already string, err error) {
 	st, _, err := mesh.ReadState(ctx, c, n.Path)
 	if err != nil {
@@ -25,15 +28,29 @@ func StopNode(ctx context.Context, c *mesh.Client, r runner.Runner, n mesh.Node,
 	if st.State == "done" || st.State == "blocked" && !mesh.Stopped(st) {
 		return st.State, nil
 	}
-	if n.Runner.Thread != "" {
-		if err := r.Interrupt(ctx, n.Runner.Thread); err != nil && !errors.Is(err, runner.ErrNoThread) {
-			return "", fmt.Errorf("stop %s: %w", n.Path, err)
+	if st.State != "blocked" {
+		if already, err = markBlocked(ctx, c, n.Path, mesh.StoppedBy(who, why)); err != nil {
+			return "", err
+		}
+	} else {
+		already = st.State
+	}
+	if n.Runner.Thread == "" {
+		return already, nil
+	}
+	if err := r.Interrupt(ctx, n.Runner.Thread); err != nil && !errors.Is(err, runner.ErrNoThread) {
+		return "", fmt.Errorf("stop %s: %w (it is marked stopped; run node stop again to stop its thread)", n.Path, err)
+	}
+	if already == "" {
+		// The thread reported (blocked -> working) before the interrupt
+		// reached it: mark it again.
+		if cur, _, err := mesh.ReadState(ctx, c, n.Path); err == nil && cur.State != "done" && cur.State != "blocked" {
+			if _, err := markBlocked(ctx, c, n.Path, mesh.StoppedBy(who, why)); err != nil {
+				return "", err
+			}
 		}
 	}
-	if st.State == "blocked" {
-		return st.State, nil
-	}
-	return markBlocked(ctx, c, n.Path, mesh.StoppedBy(who, why))
+	return already, nil
 }
 
 // MarkStopped marks path blocked with mesh.StoppedBy(who, why), touching

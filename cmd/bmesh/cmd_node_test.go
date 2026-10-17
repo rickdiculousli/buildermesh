@@ -436,9 +436,13 @@ func TestNodeStopLeadAndExecutors(t *testing.T) {
 		}
 	})
 
-	// Again: already blocked, nothing interrupted.
+	// Again: already blocked; its thread is interrupted again (a stop whose
+	// interrupt failed is run again), which an idle thread takes as nothing.
 	if out, errs, code := runCLI(t, nil, "node", "stop", "app-001"); code != 0 || out != "already blocked\n" {
 		t.Fatalf("again: %d %q %q", code, out, errs)
+	}
+	if got := interrupts(fake); len(got) != 2 {
+		t.Fatalf("again: interrupts %q", got)
 	}
 	if out, errs, code := runCLI(t, nil, "node", "forget", "app-001"); code != 0 || out != "forgot app-001\n" {
 		t.Fatalf("forget: %d %q %q", code, out, errs)
@@ -449,7 +453,7 @@ func TestNodeStopLeadAndExecutors(t *testing.T) {
 	if out, errs, code := runCLI(t, nil, "node", "stop", "app-002"); code != 0 || out != "already done\n" {
 		t.Fatalf("done: %d %q %q", code, out, errs)
 	}
-	if got := interrupts(fake); len(got) != 1 {
+	if got := interrupts(fake); len(got) != 2 {
 		t.Fatalf("a done node was interrupted: %q", got)
 	}
 
@@ -546,11 +550,20 @@ func TestNodeStopOnAnotherBox(t *testing.T) {
 		b, _ := os.ReadFile(log)
 		return strings.Count(string(b), "Escape")
 	}
-	for _, p := range []string{"app-001", "app-002"} {
-		if err := mesh.PutNode(tb.ctx, tb.c, mesh.Node{Path: p, Role: "lead", Host: "mac", Runner: mesh.NodeRunner{Kind: "tmux", Thread: p}}); err != nil {
+	for _, n := range []mesh.Node{
+		{Path: "app-001", Role: "lead"},
+		{Path: "app-round-1", Role: "round"},
+		{Path: "app-round-1.eng", Role: "engineer", Parent: "app-round-1"},
+		{Path: "app-round-1.ux", Role: "engineer", Parent: "app-round-1"},
+	} {
+		n.Host = "mac"
+		if n.Role != "round" {
+			n.Runner = mesh.NodeRunner{Kind: "tmux", Thread: n.Path}
+		}
+		if err := mesh.PutNode(tb.ctx, tb.c, n); err != nil {
 			t.Fatal(err)
 		}
-		meshtest.ForceState(t, tb.c, p, mesh.State{State: "working", By: "node"})
+		meshtest.ForceState(t, tb.c, n.Path, mesh.State{State: "working", By: "node"})
 	}
 	_, stopMac := serveBox(t, tb.mac)
 
@@ -565,16 +578,20 @@ func TestNodeStopOnAnotherBox(t *testing.T) {
 		t.Fatalf("%d interrupts on mac", n)
 	}
 
-	// mac asleep: marked stopped from here; mac interrupts the thread when
-	// it takes the job.
+	// mac asleep: both of a round's threads are asked at once, within one
+	// wait, and marked stopped from here, so the round settles; mac
+	// interrupts the threads when it takes the jobs.
 	stopMac()
-	out, errs, code = tb.k16.run(t, "", "node", "stop", "app-002", "--wait", "1s")
-	if code != 0 || out != "queued; app-002 is marked stopped and mac stops its thread when it answers\n" {
+	out, errs, code = tb.k16.run(t, "", "node", "stop", "app-round-1", "--wait", "1s")
+	want := "queued; app-round-1.eng is marked stopped and mac stops its thread when it answers\n" +
+		"queued; app-round-1.ux is marked stopped and mac stops its thread when it answers\n" +
+		"app-round-1 blocked\n"
+	if code != 0 || out != want {
 		t.Fatalf("asleep: %d %q %s", code, out, errs)
 	}
-	if s, _, _ := mesh.ReadState(tb.ctx, tb.c, "app-002"); s.State != "blocked" || s.Text != "stopped by k16" {
+	if s, _, _ := mesh.ReadState(tb.ctx, tb.c, "app-round-1.ux"); s.State != "blocked" || s.Text != "stopped by k16" {
 		t.Fatalf("asleep state %+v", s)
 	}
 	serveBox(t, tb.mac)
-	waitFor(t, "mac interrupts app-002", func() bool { return escapes() == 2 })
+	waitFor(t, "mac interrupts both threads", func() bool { return escapes() == 3 })
 }

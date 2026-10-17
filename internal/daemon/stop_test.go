@@ -125,16 +125,21 @@ func TestSilenceNeverWakesAnInterruptedThread(t *testing.T) {
 }
 
 // A node bmesh node stop stopped is never woken for silence, for a report,
-// a reply or its own executor's ask; a message sent to it (bmesh send)
-// resumes it, and the wake says who resumed it.
+// a reply, its own executor's ask or a message sent before the stop (a
+// STOP sent while its thread ran); a message sent to it after the stop
+// (bmesh send) resumes it, and the wake says who resumed it.
 func TestAStoppedNodeWakesOnlyForASend(t *testing.T) {
 	f := setup(t)
 	a := NewActivity()
 	f.lead(t, "app-001", "th-1", "working")
-	if _, err := mesh.WriteState(f.ctx, f.c, "app-001", mesh.State{State: "blocked", Text: mesh.StoppedBy("operator", "wrong spec"), By: "node"}); err != nil {
+	stoppedAt := time.Now().Add(-time.Minute).UTC()
+	if _, err := mesh.WriteState(f.ctx, f.c, "app-001", mesh.State{State: "blocked", Text: mesh.StoppedBy("operator", "wrong spec"), By: "node",
+		At: stoppedAt.Format(time.RFC3339)}); err != nil {
 		t.Fatal(err)
 	}
 	for _, m := range []mesh.Message{
+		{From: "operator", To: "app-001", Kind: "message", Text: "STOP", At: stoppedAt.Add(-time.Minute).Format(time.RFC3339)},
+		{From: "operator", To: "app-001", Kind: "message", Text: "STOP again", At: stoppedAt.Format(time.RFC3339)}, // the stop's own second
 		{From: "app-001.x", To: "app-001", Kind: "report", Report: &mesh.Report{Event: "done", From: "app-001.x", Branch: "b", Commit: "1a2b3c4d"}},
 		{From: "routine.review", To: "app-001", Kind: "reply", Reply: &mesh.Reply{Job: "j1", Kind: "review", OK: true}},
 		{From: "app-001.x", To: "app-001", Kind: "message", Text: "ask from app-001.x: which file?"},
@@ -158,8 +163,8 @@ func TestAStoppedNodeWakesOnlyForASend(t *testing.T) {
 	f.send(t, "app-001", 1)
 	wakeOnce(f.ctx, f.d, a)
 	sends := f.sends(t)
-	if len(sends) != 1 || !strings.HasPrefix(sends[0], "send th-1 bmesh: resumed by rick; 4 unread: ") ||
-		!strings.HasSuffix(sends[0], "message from rick. Run `bmesh inbox` now, then continue.") {
+	if len(sends) != 1 || !strings.HasPrefix(sends[0], "send th-1 bmesh: resumed by rick; 6 unread: ") ||
+		!strings.HasSuffix(sends[0], "; and 1 more. Run `bmesh inbox` now, then continue.") {
 		t.Fatalf("sends %q", sends)
 	}
 }
