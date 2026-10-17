@@ -114,12 +114,17 @@ func roundsOnce(ctx context.Context, d Deps) {
 			d.Log.Info("rounds: not settled here", "path", n.Path, "err", err)
 			continue
 		}
-		// The event's id is the settlement itself, so two daemons that both
-		// get through the writes store (and push) it once.
-		sum := sha256.Sum256([]byte(text))
 		ev := mesh.Event{From: n.Path, Event: state, Text: text, At: now}
-		if _, err := mesh.PublishEventID(ctx, d.Client, ev, "round-"+n.Path+"-"+state+"-"+hex.EncodeToString(sum[:8])); err != nil {
+		if _, err := mesh.PublishEventID(ctx, d.Client, ev, RoundEventID(n.Path, state, text)); err != nil {
 			d.Log.Warn("rounds: publish", "path", n.Path, "err", err)
 		}
 	}
+}
+
+// RoundEventID is the id of a round's settlement event: the settlement
+// itself, so two daemons (or a daemon and bmesh node stop) that both get
+// through the writes store (and push) it once.
+func RoundEventID(path, state, text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return "round-" + path + "-" + state + "-" + hex.EncodeToString(sum[:8])
 }

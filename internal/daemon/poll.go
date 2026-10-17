@@ -85,7 +85,8 @@ func syncBranch(ctx context.Context, d Deps, n mesh.Node) {
 
 // pollOnce reads the runner of every local lead that is not done and stores
 // the sample in bm-runner; it also keeps the lead's recorded branch level
-// with its worktree's.
+// with its worktree's. A newest run the user stopped marks the node
+// stopped, once per run (markStopped).
 func pollOnce(ctx context.Context, d Deps, _ *Activity) {
 	leads, err := localLeads(ctx, d)
 	if err != nil {
@@ -106,10 +107,62 @@ func pollOnce(ctx context.Context, d Deps, _ *Activity) {
 			continue
 		}
 		noteRunner(d, n.Path, s)
-		sample := mesh.RunnerSample{Running: s.Running, Known: s.Known, LastReply: s.LastReply,
+		sample := mesh.RunnerSample{Running: s.Running, Known: s.Known, LastReply: s.LastReply, Stopped: s.Stopped,
 			At: d.Now().UTC().Format(time.RFC3339)}
+		if s.Stopped {
+			prev, _, err := mesh.GetRunner(ctx, d.Client, n.Path)
+			switch {
+			case err != nil:
+				d.Log.Warn("poll: get runner", "path", n.Path, "err", err)
+			case s.StoppedRun != "" && prev.StoppedRun == s.StoppedRun:
+				sample.StoppedRun = s.StoppedRun
+			case markStopped(ctx, d, n, s.StoppedRun):
+				sample.StoppedRun = s.StoppedRun
+			}
+		}
 		if err := mesh.PutRunner(ctx, d.Client, n.Path, sample); err != nil {
 			d.Log.Warn("poll: put runner", "path", n.Path, "err", err)
 		}
 	}
+}
+
+// markStopped marks n blocked, stopped in its runner by the operator, for
+// the run the user stopped, and publishes that blocked once (its id is the
+// run), which the push loop delivers. A done or blocked node is left as it
+// is (bmesh node stop got there first). It reports whether the stop is
+// recorded, so a failed write is tried again at the next poll.
+func markStopped(ctx context.Context, d Deps, n mesh.Node, run string) bool {
+	st, _, err := mesh.ReadState(ctx, d.Client, n.Path)
+	if err != nil {
+		d.Log.Warn("poll: read state", "path", n.Path, "err", err)
+		return false
+	}
+	if st.State == "done" || st.State == "blocked" {
+		return true
+	}
+	now := d.Now().UTC().Format(time.RFC3339)
+	text := mesh.StoppedIn(n.Runner.Kind)
+	if st.State == "idle" {
+		// idle moves only to working; a thread stopped before its first
+		// event passes through it.
+		if _, err := mesh.WriteState(ctx, d.Client, n.Path, mesh.State{State: "working", By: "daemon", At: now}); err != nil {
+			d.Log.Warn("poll: write state", "path", n.Path, "err", err)
+			return false
+		}
+	}
+	if _, err := mesh.WriteState(ctx, d.Client, n.Path, mesh.State{State: "blocked", Text: text, By: "daemon", At: now}); err != nil {
+		d.Log.Warn("poll: write state", "path", n.Path, "err", err)
+		return false
+	}
+	ev := mesh.Event{From: n.Path, Event: "blocked", Text: text, At: now}
+	if run == "" {
+		err = mesh.PublishEvent(ctx, d.Client, ev)
+	} else {
+		_, err = mesh.PublishEventID(ctx, d.Client, ev, "stopped-"+n.Path+"-"+run)
+	}
+	if err != nil {
+		d.Log.Warn("poll: publish", "path", n.Path, "err", err)
+	}
+	d.Log.Info("poll: " + n.Path + " " + text)
+	return true
 }

@@ -377,3 +377,204 @@ func TestNodeForgetWorktreeOnAnotherBoxWithHostsOff(t *testing.T) {
 		t.Fatalf("%d %q", code, errs)
 	}
 }
+
+// fullState reads path's state.
+func fullState(t *testing.T, c *mesh.Client, path string) mesh.State {
+	t.Helper()
+	s, _, err := mesh.ReadState(t.Context(), c, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// interrupts is the threads t3_thread_interrupt was called for.
+func interrupts(fake *t3fake.Server) []string {
+	var out []string
+	fake.Do(func(s *t3fake.Server) {
+		for _, c := range s.Calls {
+			if c.Tool == "t3_thread_interrupt" {
+				out = append(out, c.Args["threadId"].(string))
+			}
+		}
+	})
+	return out
+}
+
+// node stop on a lead stops its executors first, then interrupts its
+// thread and writes it blocked, stopped by whoever ran it; forget then
+// clears it. A done node is a no-op.
+func TestNodeStopLeadAndExecutors(t *testing.T) {
+	c, fake := leadSetup(t)
+	ctx := t.Context()
+	putNode(t, c, ctx, mesh.Node{Path: "app-001", Role: "lead", Host: testHost, Runner: mesh.NodeRunner{Kind: "t3", Thread: "mcp:th-1"}})
+	fake.AddThread(&t3fake.Thread{ID: "mcp:th-1", ActiveRunID: "r1", Runs: []t3fake.Run{{ID: "r1", Status: "running"}}})
+	stateAt(t, c, "app-001", "working", time.Now())
+	putNode(t, c, ctx, mesh.Node{Path: "app-001.x", Role: "executor", Parent: "app-001", Host: testHost})
+	stateAt(t, c, "app-001.x", "working", time.Now())
+	putNode(t, c, ctx, mesh.Node{Path: "app-001.y", Role: "executor", Parent: "app-001", Host: testHost})
+	stateAt(t, c, "app-001.y", "done", time.Now())
+
+	out, errs, code := runCLI(t, nil, "node", "stop", "app-001", "--text", "wrong spec")
+	if code != 0 || out != "stopped app-001.x\nstopped app-001\n" {
+		t.Fatalf("stop: %d %q %q", code, out, errs)
+	}
+	for _, p := range []string{"app-001", "app-001.x"} {
+		if s := fullState(t, c, p); s.State != "blocked" || s.Text != "stopped by "+testHost+": wrong spec" {
+			t.Fatalf("%s: %+v", p, s)
+		}
+	}
+	if s := fullState(t, c, "app-001.y"); s.State != "done" {
+		t.Fatalf("a done executor was touched: %+v", s)
+	}
+	if got := interrupts(fake); len(got) != 1 || got[0] != "mcp:th-1" {
+		t.Fatalf("interrupts %q", got)
+	}
+	fake.Do(func(s *t3fake.Server) {
+		if th := s.Threads["mcp:th-1"]; th.ActiveRunID != "" || th.Runs[0].Status != "interrupted" {
+			t.Errorf("thread %+v", th)
+		}
+	})
+
+	// Again: already blocked, nothing interrupted.
+	if out, errs, code := runCLI(t, nil, "node", "stop", "app-001"); code != 0 || out != "already blocked\n" {
+		t.Fatalf("again: %d %q %q", code, out, errs)
+	}
+	if out, errs, code := runCLI(t, nil, "node", "forget", "app-001"); code != 0 || out != "forgot app-001\n" {
+		t.Fatalf("forget: %d %q %q", code, out, errs)
+	}
+
+	putNode(t, c, ctx, mesh.Node{Path: "app-002", Role: "lead", Host: testHost, Runner: mesh.NodeRunner{Kind: "t3", Thread: "mcp:th-2"}})
+	stateAt(t, c, "app-002", "done", time.Now())
+	if out, errs, code := runCLI(t, nil, "node", "stop", "app-002"); code != 0 || out != "already done\n" {
+		t.Fatalf("done: %d %q %q", code, out, errs)
+	}
+	if got := interrupts(fake); len(got) != 1 {
+		t.Fatalf("a done node was interrupted: %q", got)
+	}
+
+	// A node registered but never started (idle) is stopped too.
+	putNode(t, c, ctx, mesh.Node{Path: "app-003", Role: "lead", Host: testHost, Runner: mesh.NodeRunner{Kind: "t3", Thread: "mcp:th-3"}})
+	fake.AddThread(&t3fake.Thread{ID: "mcp:th-3"})
+	if out, errs, code := runCLI(t, nil, "node", "stop", "app-003"); code != 0 || out != "stopped app-003\n" {
+		t.Fatalf("idle: %d %q %q", code, out, errs)
+	}
+	if s := fullState(t, c, "app-003"); s.State != "blocked" || s.Text != "stopped by "+testHost {
+		t.Fatalf("idle: %+v", s)
+	}
+}
+
+// node stop on a round stops both children, then settles the round
+// blocked; a round whose children are all gone is blocked directly, and
+// forget clears it whatever its state.
+func TestNodeStopRound(t *testing.T) {
+	c, fake := leadSetup(t)
+	ctx := t.Context()
+	putNode(t, c, ctx, mesh.Node{Path: "app-round-3", Role: "round", Repo: "app", Host: testHost})
+	stateAt(t, c, "app-round-3", "silent", time.Now())
+	for _, ch := range []string{"eng", "ux"} {
+		p, th := "app-round-3."+ch, "mcp:th-"+ch
+		putNode(t, c, ctx, mesh.Node{Path: p, Role: "engineer", Parent: "app-round-3", Host: testHost, Runner: mesh.NodeRunner{Kind: "t3", Thread: th}})
+		fake.AddThread(&t3fake.Thread{ID: th, ActiveRunID: "r1", Runs: []t3fake.Run{{ID: "r1", Status: "running"}}})
+		stateAt(t, c, p, "working", time.Now())
+	}
+	out, errs, code := runCLI(t, nil, "node", "stop", "app-round-3")
+	if code != 0 || out != "stopped app-round-3.eng\nstopped app-round-3.ux\napp-round-3 blocked\n" {
+		t.Fatalf("stop: %d %q %q", code, out, errs)
+	}
+	if s := fullState(t, c, "app-round-3"); s.State != "blocked" || s.Text != "eng blocked: stopped by "+testHost {
+		t.Fatalf("round: %+v", s)
+	}
+	if got := interrupts(fake); len(got) != 2 {
+		t.Fatalf("interrupts %q", got)
+	}
+	if out, errs, code := runCLI(t, nil, "node", "forget", "app-round-3"); code != 0 || out != "forgot app-round-3\n" {
+		t.Fatalf("forget: %d %q %q", code, out, errs)
+	}
+
+	// Round 4's children were forgotten before it settled: it stays silent
+	// with nothing to settle from.
+	putNode(t, c, ctx, mesh.Node{Path: "app-round-4", Role: "round", Repo: "app", Host: testHost})
+	stateAt(t, c, "app-round-4", "silent", time.Now())
+	if out, errs, code := runCLI(t, nil, "node", "forget", "app-round-4"); code != 0 || out != "forgot app-round-4\n" {
+		t.Fatalf("forget childless: %d %q %q", code, out, errs)
+	}
+	putNode(t, c, ctx, mesh.Node{Path: "app-round-5", Role: "round", Repo: "app", Host: testHost})
+	stateAt(t, c, "app-round-5", "silent", time.Now())
+	if out, errs, code := runCLI(t, nil, "node", "stop", "app-round-5", "--text", "children gone"); code != 0 || out != "app-round-5 blocked\n" {
+		t.Fatalf("stop childless: %d %q %q", code, out, errs)
+	}
+	if s := fullState(t, c, "app-round-5"); s.State != "blocked" || s.Text != "stopped by "+testHost+": children gone" {
+		t.Fatalf("childless: %+v", s)
+	}
+}
+
+// A thread on another box with [hosts] off is refused before anything is
+// stopped.
+func TestNodeStopOnAnotherBoxWithHostsOff(t *testing.T) {
+	c, ctx := setup(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-001", Role: "lead", Host: testHost})
+	stateAt(t, c, "app-001", "working", time.Now())
+	putNode(t, c, ctx, mesh.Node{Path: "app-001.x", Role: "executor", Parent: "app-001", Host: "otherhost",
+		Runner: mesh.NodeRunner{Kind: "t3", Thread: "mcp:x"}})
+	stateAt(t, c, "app-001.x", "working", time.Now())
+	_, errs, code := runCLI(t, nil, "node", "stop", "app-001")
+	if code != exitRefused || errs != "bmesh: refused: app-001.x runs on otherhost; run it on otherhost\n" {
+		t.Fatalf("%d %q", code, errs)
+	}
+	for _, p := range []string{"app-001", "app-001.x"} {
+		if s := fullState(t, c, p); s.State != "working" {
+			t.Fatalf("%s touched: %+v", p, s)
+		}
+	}
+}
+
+// node stop of another box's thread sends it stop-thread: that box
+// interrupts it through its own runner and writes it stopped. With that
+// box asleep the node is marked stopped from here, and the box stops the
+// thread when it wakes.
+func TestNodeStopOnAnotherBox(t *testing.T) {
+	tb := twoBoxSetup(t)
+	fake, err := filepath.Abs(filepath.Join("..", "..", "testdata", "fake-tmux.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(t.TempDir(), "tmux.log")
+	t.Setenv("BMESH_TMUX_COMMAND", fake)
+	t.Setenv("FAKE_TMUX_LOG", log)
+	escapes := func() int {
+		b, _ := os.ReadFile(log)
+		return strings.Count(string(b), "Escape")
+	}
+	for _, p := range []string{"app-001", "app-002"} {
+		if err := mesh.PutNode(tb.ctx, tb.c, mesh.Node{Path: p, Role: "lead", Host: "mac", Runner: mesh.NodeRunner{Kind: "tmux", Thread: p}}); err != nil {
+			t.Fatal(err)
+		}
+		meshtest.ForceState(t, tb.c, p, mesh.State{State: "working", By: "node"})
+	}
+	_, stopMac := serveBox(t, tb.mac)
+
+	out, errs, code := tb.k16.run(t, "", "node", "stop", "app-001", "--text", "enough", "--wait", "20s")
+	if code != 0 || out != "mac: stopped app-001\n" {
+		t.Fatalf("stop: %d %q %s", code, out, errs)
+	}
+	if s, _, _ := mesh.ReadState(tb.ctx, tb.c, "app-001"); s.State != "blocked" || s.Text != "stopped by k16: enough" {
+		t.Fatalf("state %+v", s)
+	}
+	if n := escapes(); n != 1 {
+		t.Fatalf("%d interrupts on mac", n)
+	}
+
+	// mac asleep: marked stopped from here; mac interrupts the thread when
+	// it takes the job.
+	stopMac()
+	out, errs, code = tb.k16.run(t, "", "node", "stop", "app-002", "--wait", "1s")
+	if code != 0 || out != "queued; app-002 is marked stopped and mac stops its thread when it answers\n" {
+		t.Fatalf("asleep: %d %q %s", code, out, errs)
+	}
+	if s, _, _ := mesh.ReadState(tb.ctx, tb.c, "app-002"); s.State != "blocked" || s.Text != "stopped by k16" {
+		t.Fatalf("asleep state %+v", s)
+	}
+	serveBox(t, tb.mac)
+	waitFor(t, "mac interrupts app-002", func() bool { return escapes() == 2 })
+}

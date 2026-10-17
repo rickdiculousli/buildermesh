@@ -36,13 +36,17 @@ type Started struct {
 // Status is one reading of a session. Known is false when the runner cannot
 // tell whether the session is mid-turn (tmux). Waiting is a turn held on a
 // question or approval; UsageLimit a newest turn that failed on a usage
-// limit, LimitResetAt when it resets ("" = unknown). Only T3 sets them.
+// limit, LimitResetAt when it resets ("" = unknown). Stopped is a newest
+// turn the user ended (an interrupt), StoppedRun naming it. Only T3 sets
+// them.
 type Status struct {
 	Running, Known bool
 	LastReply      string
 	Waiting        bool
 	UsageLimit     bool
 	LimitResetAt   string
+	Stopped        bool
+	StoppedRun     string
 }
 
 // Runner starts and talks to agent sessions.

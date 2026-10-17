@@ -5,29 +5,205 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/daemon"
 	"github.com/rickdiculousli/buildermesh/internal/hosts"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/prune"
 	"github.com/rickdiculousli/buildermesh/internal/runner"
 )
 
-const nodeUsage = "usage: bmesh node forget <path> [--worktree [--wait D]]"
+const nodeUsage = "usage: bmesh node forget <path> [--worktree [--wait D]] | bmesh node stop <path> [--text \"<why>\"] [--wait D]"
 
-// forgetTTL is how long a forget-worktree waits for a box that is asleep.
+// forgetTTL is how long a forget-worktree (or a stop-thread) waits for a
+// box that is asleep.
 const forgetTTL = 24 * time.Hour
 
 func (a *app) cmdNode(args []string) error {
-	if len(args) == 0 || args[0] != "forget" {
+	if len(args) == 0 {
 		return fail(exitUsage, nodeUsage)
 	}
-	return a.cmdNodeForget(args[1:])
+	switch args[0] {
+	case "forget":
+		return a.cmdNodeForget(args[1:])
+	case "stop":
+		return a.cmdNodeStop(args[1:])
+	}
+	return fail(exitUsage, nodeUsage)
 }
 
-// cmdNodeForget deletes a done or blocked node, or an idle one that never
-// reported and whose thread isn't running: its registration, state, runner
+// cmdNodeStop stops a node: the nodes under it first (a round's children,
+// a lead's executors), deepest first, then the node itself, each through
+// daemon.StopNode (its thread interrupted, then blocked "stopped by <who>:
+// <why>"). A thread on another box is stopped there by a stop-thread job,
+// with [hosts] on; with it off the stop is refused before anything is
+// touched. A round is then settled from its children, or, with none left,
+// blocked directly. A done or blocked node prints `already <state>`.
+func (a *app) cmdNodeStop(args []string) error {
+	fs := a.flags("node stop")
+	why := fs.String("text", "", "why, as the node's blocked text says it")
+	wait := fs.Duration("wait", 30*time.Second, "for a thread on another box: how long to wait for its answer")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) != 1 {
+		return fail(exitUsage, nodeUsage)
+	}
+	p, err := mesh.ParsePath(pos[0])
+	if err != nil {
+		return fail(exitUsage, "%v", err)
+	}
+	path := p.String()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute+*wait)
+	defer cancel()
+	if err := a.connect(ctx, "node stop"); err != nil {
+		return err
+	}
+	n, ok, err := mesh.GetNode(ctx, a.client, path)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fail(exitRefused, "refused: no node %s", path)
+	}
+	states, err := mesh.ReadAllStates(ctx, a.client)
+	if err != nil {
+		return err
+	}
+	finished := func(p string) (string, bool) {
+		s := states[p].State
+		return s, s == "done" || s == "blocked"
+	}
+	if s, ok := finished(path); ok {
+		fmt.Fprintf(a.stdout, "already %s\n", s)
+		return nil
+	}
+	who, err := a.identityOrHost(ctx, "node stop")
+	if err != nil {
+		return err
+	}
+	nodes, err := mesh.ListNodes(ctx, a.client)
+	if err != nil {
+		return err
+	}
+	var under, stop []mesh.Node
+	for _, c := range nodes {
+		if strings.HasPrefix(c.Path, path+".") {
+			under = append(under, c)
+		}
+	}
+	sort.Slice(under, func(i, j int) bool {
+		di, dj := strings.Count(under[i].Path, "."), strings.Count(under[j].Path, ".")
+		if di != dj {
+			return di > dj
+		}
+		return under[i].Path < under[j].Path
+	})
+	for _, c := range under {
+		if _, ok := finished(c.Path); !ok {
+			stop = append(stop, c)
+		}
+	}
+	if n.Role != "round" {
+		stop = append(stop, n)
+	}
+
+	// Refuse what can't be stopped before stopping anything.
+	me := a.cfg.HostName()
+	var r runner.Runner
+	var box *hostsBox
+	for _, c := range stop {
+		switch {
+		case c.Runner.Thread == "":
+		case c.Host != "" && c.Host != me && !a.cfg.Hosts.Enabled:
+			return fail(exitRefused, "refused: %s runs on %s; run it on %s", c.Path, c.Host, c.Host)
+		case c.Host != "" && c.Host != me:
+			if box == nil {
+				if box, err = a.hostsBox(); err != nil {
+					return err
+				}
+			}
+		case c.Runner.Kind != a.cfg.Runner.Kind:
+			return fail(exitRefused, "refused: %s's runner is %q, not this box's %s; run it on %s", c.Path, c.Runner.Kind, a.cfg.Runner.Kind, c.Host)
+		case r == nil:
+			if r, err = runner.New(a.cfg); err != nil {
+				return err
+			}
+		}
+	}
+	for _, c := range stop {
+		if c.Runner.Thread != "" && c.Host != "" && c.Host != me {
+			if err := a.stopRemote(ctx, box, c, who, *why, *wait); err != nil {
+				return err
+			}
+			continue
+		}
+		var already string
+		if c.Runner.Thread == "" {
+			already, err = daemon.MarkStopped(ctx, a.client, c.Path, who, *why)
+		} else {
+			already, err = daemon.StopNode(ctx, a.client, r, c, who, *why)
+		}
+		if err != nil {
+			return err
+		}
+		if already == "" {
+			fmt.Fprintf(a.stdout, "stopped %s\n", c.Path)
+		}
+	}
+	if n.Role == "round" {
+		state, ok, err := daemon.StopRound(ctx, a.client, n, len(under) > 0, who, *why)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			fmt.Fprintf(a.stdout, "%s stays %s until its children are stopped\n", path, state)
+			return nil
+		}
+		fmt.Fprintf(a.stdout, "%s %s\n", path, state)
+	}
+	return nil
+}
+
+// stopRemote sends stop-thread for n to its host and waits up to wait,
+// printing `<host>: <answer>`. A refusal exits 3. A box that doesn't
+// answer in time has the node marked stopped from here, so its daemon
+// never wakes it, and stops the thread itself when it takes the job.
+func (a *app) stopRemote(ctx context.Context, b *hostsBox, n mesh.Node, who, why string, wait time.Duration) error {
+	if err := b.sync(ctx, a); err != nil {
+		fmt.Fprintf(a.stderr, "bmesh: roster: %v (using this box's copy)\n", err)
+	}
+	r := b.local.Roster
+	if _, ok := r.Host(n.Host); !ok {
+		return fail(exitRefused, "refused: %s runs on %s, which isn't in the roster; run it on %s", n.Path, n.Host, n.Host)
+	}
+	j := hosts.NewJob(b.key, b.host, n.Host, "stop-thread", "", []string{n.Path, who, why}, r.Version, time.Now(), forgetTTL)
+	replies, err := a.askBoxes(ctx, b, []hosts.Job{j}, wait, nil)
+	if err != nil {
+		return err
+	}
+	rep, ok := replies[j.ID]
+	switch {
+	case !ok:
+		if _, err := daemon.MarkStopped(ctx, a.client, n.Path, who, why); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.stdout, "queued; %s is marked stopped and %s stops its thread when it answers\n", n.Path, n.Host)
+		return nil
+	case !rep.OK:
+		return fail(exitRefused, "%s: %s", n.Host, rep.Text)
+	}
+	fmt.Fprintf(a.stdout, "%s: %s\n", n.Host, rep.Text)
+	return nil
+}
+
+// cmdNodeForget deletes a done or blocked node, a round whose children are
+// all gone, or an idle one that never reported and whose thread isn't
+// running: its registration, state, runner
 // sample and inbox consumer. With --worktree it first removes the
 // node's clean worktree and merged branch: here, or, for another box's
 // node with hosts on, by a forget-worktree job to that box, forgetting
@@ -70,18 +246,27 @@ func (a *app) cmdNodeForget(args []string) error {
 		}
 		return "idle"
 	}
-	switch s := stateOf(path); s {
-	case "done", "blocked":
-	case "idle":
+	nodes, err := mesh.ListNodes(ctx, a.client)
+	if err != nil {
+		return err
+	}
+	childless := n.Role == "round"
+	for _, c := range nodes {
+		if strings.HasPrefix(c.Path, path+".") {
+			childless = false
+		}
+	}
+	switch s := stateOf(path); {
+	case s == "done" || s == "blocked":
+	case childless:
+		// A round whose children are all gone has nothing left to settle
+		// from: it is forgotten whatever its state.
+	case s == "idle":
 		if err := a.idleForgettable(ctx, n); err != nil {
 			return err
 		}
 	default:
 		return fail(exitRefused, "refused: %s is %s; only a done or blocked node is forgotten", path, s)
-	}
-	nodes, err := mesh.ListNodes(ctx, a.client)
-	if err != nil {
-		return err
 	}
 	for _, c := range nodes {
 		if s := stateOf(c.Path); strings.HasPrefix(c.Path, path+".") && s != "done" && s != "blocked" {

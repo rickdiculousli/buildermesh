@@ -58,6 +58,11 @@ The repo's verify, plus:
 
 ## Risks and the alternative considered
 - **T3's run status could name a user interruption and a crash the same way.** The runner reads the status T3 reports for an interrupt, and the t3 fake records which one it is, so a crash keeps today's waking.
+  - As built: T3 0.1.0 ends a run the user (or `t3_thread_interrupt`) stops as `interrupted`, a crash as `failed`, and its restart recovery ends every run still going as `cancelled`. So only `interrupted` is a stop. Counting `cancelled` too, as the Proposal's "(interrupted or cancelled)" says, would read every working lead as stopped after a T3 restart and never wake it.
 - **Alternative: never wake a silent node, only one with mail.** That breaks the case silence-waking exists for: a lead whose session died mid-turn, which nothing else restarts.
+
+## Upgrading
+- With `[hosts]` on, `bmesh node stop` of a thread on another box sends that box a new op, `stop-thread`, which it runs only when its roster row accepts it. On the admin box, add it to each box whose threads should be stoppable from elsewhere: `bmesh hosts set <box> --accept <the ops it accepts now>,stop-thread`. Until then that box refuses the job (`refused: accept`), and `node stop` is run on the box itself.
+- Nothing else: the new rules need only the new binary on each box running threads, and the skills come with the plugin update.
 
 ## Needs from the operator

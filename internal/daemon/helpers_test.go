@@ -26,20 +26,36 @@ type fixture struct {
 	rn  *fakeRunner
 }
 
-// fakeRunner is a runner whose threads are all idle; it records each send
-// it accepts as "send <thread> <text>" and refuses every send with sendErr
-// while that is set.
+// fakeRunner is a runner whose threads are idle unless status names them;
+// it records each send it accepts as "send <thread> <text>" and refuses
+// every send with sendErr while that is set.
 type fakeRunner struct {
 	mu      sync.Mutex
 	sendErr error
 	sent    []string
+	status  map[string]runner.Status
+}
+
+// setStatus makes thread read as s.
+func (r *fakeRunner) setStatus(thread string, s runner.Status) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.status == nil {
+		r.status = map[string]runner.Status{}
+	}
+	r.status[thread] = s
 }
 
 func (r *fakeRunner) Start(context.Context, runner.StartSpec) (runner.Started, error) {
 	return runner.Started{}, errors.New("fakeRunner: no start")
 }
 
-func (r *fakeRunner) Status(context.Context, string) (runner.Status, error) {
+func (r *fakeRunner) Status(_ context.Context, thread string) (runner.Status, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if s, ok := r.status[thread]; ok {
+		return s, nil
+	}
 	return runner.Status{Known: true}, nil
 }
 

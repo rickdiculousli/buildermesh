@@ -101,6 +101,7 @@ type v2Read struct {
 		UsageLimitResetAt string `json:"usageLimitResetAt"`
 	} `json:"thread"`
 	RecentRuns []struct {
+		RunID  string `json:"runId"`
 		Status string `json:"status"`
 	} `json:"recentRuns"`
 	Items []struct {
@@ -125,14 +126,20 @@ func (r *T3) read(ctx context.Context, thread string, after, limit int) (v2Read,
 }
 
 // statusFrom maps a read onto Status: running while a run is active or the
-// newest run hasn't ended.
+// newest run hasn't ended; stopped when the newest run ended interrupted,
+// which is how T3 ends a run the user (or t3_thread_interrupt) stops. A
+// run T3's restart recovery ends is cancelled, and a crash is failed:
+// neither is a stop.
 func statusFrom(v v2Read) Status {
 	s := Status{Known: true}
-	newest := ""
+	newest, newestID := "", ""
 	if len(v.RecentRuns) > 0 {
-		newest = v.RecentRuns[0].Status
+		newest, newestID = v.RecentRuns[0].Status, v.RecentRuns[0].RunID
 	}
 	s.Running = v.Thread.ActiveRunID != "" || activeRun[newest]
+	if !s.Running && newest == "interrupted" {
+		s.Stopped, s.StoppedRun = true, newestID
+	}
 	s.Waiting = newest == "waiting" && v.Thread.PendingRequests > 0
 	if newest == "failed" && v.Thread.LastErrorClass == "usage_limit" {
 		s.UsageLimit, s.LimitResetAt = true, v.Thread.UsageLimitResetAt

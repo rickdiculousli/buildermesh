@@ -102,7 +102,12 @@ commands:
                                            delete a done or blocked node (or an idle one that never reported and
                                            whose thread isn't running), its state and inbox; --worktree also
                                            removes its clean worktree and merged branch, on another box through
-                                           a forget-worktree job (the node stays until that box answers)
+                                           a forget-worktree job (the node stays until that box answers); a round
+                                           whose children are all gone is forgotten whatever its state
+  node stop <path> [--text "<why>"] [--wait 30s]
+                                           stop a node's thread (a round's children, a lead's executors first) and
+                                           write it blocked, "stopped by <who>: <why>"; the daemon never wakes it
+                                           again but for a bmesh send; another box's through a stop-thread job
   watch --nodes a,b [--since T] [--timeout D]
                                            follow nodes until all are done, blocked or silent
   lead start --repo R --spec NNN --brief FILE [--model M] [--effort E] [--title T] [--path P]

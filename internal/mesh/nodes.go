@@ -40,12 +40,16 @@ type Node struct {
 	StartedAt string     `json:"started_at"`
 }
 
-// RunnerSample is the daemon's last reading of a node's runner.
+// RunnerSample is the daemon's last reading of a node's runner. Stopped is
+// a newest run the user ended (an interrupt); StoppedRun is that run once
+// the daemon has marked the node for it, so one stop marks it blocked once.
 type RunnerSample struct {
-	Running   bool   `json:"running"`
-	Known     bool   `json:"known"`
-	At        string `json:"at"`
-	LastReply string `json:"last_reply"`
+	Running    bool   `json:"running"`
+	Known      bool   `json:"known"`
+	At         string `json:"at"`
+	LastReply  string `json:"last_reply"`
+	Stopped    bool   `json:"stopped,omitempty"`
+	StoppedRun string `json:"stopped_run,omitempty"`
 }
 
 // RunnerUpdate is one change seen by WatchRunner.
