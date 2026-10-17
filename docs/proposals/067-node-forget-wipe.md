@@ -4,7 +4,7 @@ title: bmesh node forget --wipe removes a stopped node and everything under it f
 kind: maintenance
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: dfdc9673-27b2-4f3f-9f17-95a5b436de66
 proposed_on: 2026-10-17
