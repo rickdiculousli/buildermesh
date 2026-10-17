@@ -96,6 +96,12 @@ func TestPendingSinceTheRecord(t *testing.T) {
 	if r, ok := ReadInstalled(sd); !ok || r.Version != "v0.2.0" || r.Revision != "abc" || r.At != "2026-10-17T00:00:00Z" {
 		t.Fatalf("record %+v", r)
 	}
+	if err := WriteInstalled(sd, Record{Version: "v0.2.0+3 (5d76ed88)", Revision: "5d76ed88aa", At: "t"}); err != nil {
+		t.Fatal(err)
+	}
+	if r, ok := ReadInstalled(sd); !ok || r.Version != "v0.2.0+3" || r.Revision != "5d76ed88aa" || r.At != "t" {
+		t.Fatalf("a label's record %+v", r)
+	}
 	// A start-over removes the state dir mid-walk: the next save makes it.
 	if err := os.RemoveAll(sd); err != nil {
 		t.Fatal(err)

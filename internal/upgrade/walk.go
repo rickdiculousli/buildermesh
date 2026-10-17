@@ -219,8 +219,15 @@ func InstalledPath(stateDir string) string { return filepath.Join(stateDir, "ins
 // binary it replaced, for the walk the new binary asks for.
 func PreviousPath(stateDir string) string { return filepath.Join(stateDir, "previous") }
 
-// WriteInstalled writes the record: `<version> <revision> <time>`.
+// WriteInstalled writes the record: `<version> <revision> <time>`, the
+// version its first word (a label's `v0.2.0+3`, without the `(<rev8>)`
+// the revision says).
 func WriteInstalled(stateDir string, r Record) error {
+	if f := strings.Fields(r.Version); len(f) > 0 {
+		r.Version = f[0]
+	} else {
+		r.Version = selfupdate.Short(r.Revision)
+	}
 	rev := r.Revision
 	if rev == "" {
 		rev = selfupdate.Unknown
