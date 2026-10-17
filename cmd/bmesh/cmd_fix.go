@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -123,30 +122,11 @@ func (a *app) nextFixer(ctx context.Context, repo string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	base := mesh.RepoToken(repo)
-	names := make([]string, 0, len(nodes)+len(pending))
-	for _, node := range nodes {
-		if node.Role == "fixer" && node.Repo == repo {
-			if s := states[node.Path].State; s != "done" && s != "blocked" {
-				return 0, fail(exitRefused, "refused: fixer %s is %s; one fixer writes the queue", node.Path, cmp.Or(s, "idle"))
-			}
-		}
-		names = append(names, node.Path, node.Family)
+	f := mesh.ReadFixers(nodes, states, pending, repo)
+	if f.Live.Path != "" {
+		return 0, fail(exitRefused, "refused: fixer %s is %s; one fixer writes the queue", f.Live.Path, cmp.Or(f.LiveState.State, "idle"))
 	}
-	for _, p := range pending {
-		names = append(names, p.Family)
-	}
-	n := 0
-	for _, name := range names {
-		m := fixFamilyRE.FindStringSubmatch(name)
-		if m == nil || m[1] != base {
-			continue
-		}
-		if k, err := strconv.Atoi(m[2]); err == nil && k > n {
-			n = k
-		}
-	}
-	return n + 1, nil
+	return f.Next, nil
 }
 
 // fixRemote runs fix on host, the row's, and prints what it printed.

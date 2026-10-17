@@ -7,7 +7,6 @@ import (
 	"io"
 	"maps"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -105,11 +104,8 @@ func (a *app) heldBy(ctx context.Context, repo, family string) (*buildHold, erro
 	return nil, nil
 }
 
-// fixFamilyRE reads a fixer's family: <repo>-fix-<N>.
-var fixFamilyRE = regexp.MustCompile(`^(.*)-fix-(\d+)$`)
-
 // isFixFamily reports whether f is a fixer's family, the fix pipeline.
-func isFixFamily(f string) bool { return fixFamilyRE.MatchString(f) }
+func isFixFamily(f string) bool { _, _, ok := mesh.FixFamily(f); return ok }
 
 // familyBase is the repo token a minted family names (<repo>-build-<N> or
 // <repo>-fix-<N>), "" for any other.
@@ -117,8 +113,8 @@ func familyBase(f string) string {
 	if m := familyNRE.FindStringSubmatch(f); m != nil {
 		return m[1]
 	}
-	if m := fixFamilyRE.FindStringSubmatch(f); m != nil {
-		return m[1]
+	if base, _, ok := mesh.FixFamily(f); ok {
+		return base
 	}
 	return ""
 }

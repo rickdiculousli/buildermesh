@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,9 +11,11 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/daemon"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/runner/t3mcp"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
+	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
 func (a *app) cmdWhoami(args []string) error {
@@ -84,8 +87,7 @@ type statusRow struct {
 // cmdMeshStatus prints the registered nodes with their state, runner and
 // unread count: every one with --all or --json, else all but those done for
 // longer than [status] keep_done, which a closing line counts; then a line
-// per hold, with its age, and per build family with feedback not yet
-// drained.
+// per hold, with its age, and the feedback not yet drained (feedbackLines).
 func (a *app) cmdMeshStatus(args []string) error {
 	fs := a.flags("mesh-status")
 	all := fs.Bool("all", false, "show every node, finished ones too")
@@ -171,12 +173,8 @@ func (a *app) cmdMeshStatus(args []string) error {
 	for _, h := range holds {
 		fmt.Fprintf(a.stdout, "%s %s\n", h.Path, h.Line(now))
 	}
-	pending, err := mesh.PendingFeedback(ctx, a.client)
-	if err != nil {
+	if err := a.feedbackLines(ctx, nodes, states); err != nil {
 		return err
-	}
-	for _, p := range pending {
-		fmt.Fprintf(a.stdout, "feedback: %d pending in %s\n", p.Pending, p.Family)
 	}
 	if a.cfg.Runner.Kind == "t3" {
 		if tok, err := t3mcp.ReadToken(a.cfg.T3TokenPath()); err == nil && tok.Left(time.Now()) < 7*24*time.Hour {
@@ -457,4 +455,60 @@ func contains(xs []string, x string) bool {
 		}
 	}
 	return false
+}
+
+// feedbackLines prints the feedback not yet drained: the open issues naming
+// bmesh's own repo (spec.OpenIssues) as one line, `fixes: N pending for
+// <repo> (<fixer> <state>)` with the fixer that has them, `(starts within
+// a minute)` when the daemon starts one on its next pass, `(<fixer>
+// blocked)` while the newest fixer's block waits on the operator, or
+// `(<fixer> done; they wait on you)` when it had them and left them; then
+// every other issue as `feedback: N pending in <family>` per family.
+func (a *app) feedbackLines(ctx context.Context, nodes []mesh.Node, states map[string]mesh.State) error {
+	all, err := mesh.ListAllFeedback(ctx, a.client)
+	if err != nil {
+		return err
+	}
+	own := a.ownRepo()
+	var families []string
+	counts := map[string]int{}
+	var mine []mesh.Feedback
+	for _, f := range all {
+		if own != "" && f.Repo == own {
+			mine = append(mine, f)
+			continue
+		}
+		if counts[f.Family] == 0 {
+			families = append(families, f.Family)
+		}
+		counts[f.Family]++
+	}
+	if len(mine) > 0 {
+		_, repoPath, err := a.cfg.RepoPath(own)
+		if err != nil {
+			return err
+		}
+		specs, err := spec.ScanRef(repoPath, a.cfg.Spec.Glob, "main")
+		if err != nil {
+			return ledgerFail(err)
+		}
+		if open := spec.OpenIssues(mine, own, specs); len(open) > 0 {
+			fx := mesh.ReadFixers(nodes, states, nil, own)
+			who := "starts within a minute"
+			switch {
+			case fx.Live.Path != "":
+				who = fx.Live.Path + " " + cmp.Or(fx.LiveState.State, "idle")
+			case fx.LastState.State == "blocked":
+				who = fx.Last.Path + " blocked"
+			case !daemon.FixerDue(fx, open):
+				who = fx.Last.Path + " done; they wait on you"
+			}
+			fmt.Fprintf(a.stdout, "fixes: %d pending for %s (%s)\n", len(open), own, who)
+		}
+	}
+	sort.Strings(families)
+	for _, f := range families {
+		fmt.Fprintf(a.stdout, "feedback: %d pending in %s\n", counts[f], f)
+	}
+	return nil
 }

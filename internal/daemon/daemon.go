@@ -57,13 +57,17 @@ type Deps struct {
 	Tag      string // with no Revision, the release tag a tagged module install was built at, resolved on main by an update; "" = none
 	RevTime  string // that commit's time (RFC 3339); "" = unknown
 	Module   string // the module this binary was built from; "" = unknown, no upstream to read
-	Exe      string // the binary's path, which [update] replaces
+	Exe      string // the binary's path, which [update] replaces and the fixer start runs
 	Restart  func() // ends serve so the binary re-execs; called after an update drained
 	// Supervised says serve runs under `bmesh serve --restart`
 	// (BMESH_SUPERVISED=1), which starts the new binary after an update on
 	// Windows, where there is no exec; a Windows daemon without it refuses
 	// to update.
 	Supervised bool
+
+	// StartFixer starts bmesh's own fixer and returns what it printed;
+	// nil runs `<Exe> fix`.
+	StartFixer func(ctx context.Context) (string, error)
 }
 
 func (d *Deps) defaults() {
@@ -143,9 +147,9 @@ func decodeEvent(data []byte) (mesh.Event, error) {
 // starts the activity follower, the poll+wake+rounds and silence loops, the
 // digest and push loops when [notify] has somewhere to send, the quota
 // reset reminders when [quota] remind_topic is set, and, when
-// [repos] names any repo, the routine loop, and with [hosts] enabled the
-// hosts loop; it returns once ctx ends
-// and every loop has stopped.
+// [repos] names any repo, the routine loop and (with this binary's module
+// known) the fixer loop, and with [hosts] enabled the hosts loop; it
+// returns once ctx ends and every loop has stopped.
 func Run(ctx context.Context, d Deps) error {
 	if d.Client == nil || d.Cfg == nil || d.Runner == nil || d.Host == "" {
 		return errors.New("daemon: Client, Cfg, Runner and Host are required")
@@ -200,6 +204,9 @@ func Run(ctx context.Context, d Deps) error {
 	}
 	if len(d.Cfg.Repos) > 0 {
 		start(func() { routines(ctx, d) })
+	}
+	if len(d.Cfg.Repos) > 0 && d.Module != "" {
+		start(func() { fixerLoop(ctx, d, pollEvery) })
 	}
 	if d.Cfg.Hosts.Enabled {
 		start(func() { hostsRun(ctx, d) })
