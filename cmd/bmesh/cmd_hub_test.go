@@ -1,13 +1,17 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 )
 
 // The multi-box answer hub writes [hub] and [mesh] nats to match and makes
@@ -120,7 +124,7 @@ func TestInitServiceWritesHubUnit(t *testing.T) {
 	}
 	exe, _ := os.Executable()
 	if !strings.Contains(string(b), "ExecStart="+exe+" hub\n") || !strings.Contains(string(b), "Restart=always\n") ||
-		strings.Contains(string(b), "KillMode") || !strings.Contains(string(b), "BMESH_CONFIG="+cfg) {
+		!strings.Contains(string(b), "RestartPreventExitStatus=78\n") || strings.Contains(string(b), "KillMode") || !strings.Contains(string(b), "BMESH_CONFIG="+cfg) {
 		t.Fatalf("unit:\n%s", b)
 	}
 	if !strings.Contains(out, "systemctl --user enable --now bmesh-hub") || !strings.Contains(out, "wrote "+unit) ||
@@ -208,5 +212,89 @@ func TestHubOptionsFromConfig(t *testing.T) {
 	os.WriteFile(cfg, []byte("[hub]\nmax_file_store = \"8 parsecs\"\n"), 0o600)
 	if _, err := config.Load(cfg); err == nil || !strings.Contains(err.Error(), "[hub] max_file_store") {
 		t.Fatal(err)
+	}
+}
+
+// serve and hub refuse a config this binary doesn't take with exit 78,
+// naming the key, which their units don't restart on.
+func TestServeAndHubExitConfigOnABadConfig(t *testing.T) {
+	root := t.TempDir()
+	cfg := filepath.Join(root, "config.toml")
+	os.WriteFile(cfg, []byte("[runner]\nt3_server = \"\"\n"), 0o600)
+	for _, cmd := range [][]string{{"serve"}, {"serve", "--restart"}, {"hub"}} {
+		_, errs, code := runInit(t, cfg, root, "", cmd...)
+		if code != exitConfig || !strings.Contains(errs, "bmesh: config check failed: ") || !strings.Contains(errs, "[runner] t3_server is empty") {
+			t.Errorf("%v: %d %q", cmd, code, errs)
+		}
+	}
+}
+
+// fakeHubRecords writes, in state, hub.json for a live process on an older
+// binary and serve.json for this one on a newer.
+func fakeHubRecords(t *testing.T, state string) (hubPid int) {
+	t.Helper()
+	if _, err := exec.LookPath("sleep"); err != nil {
+		t.Skip("no sleep command")
+	}
+	cmd := exec.Command("sleep", "30")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cmd.Process.Kill(); cmd.Wait() })
+	writeProcRecord(t, state, "hub", selfupdate.ProcRecord{Pid: cmd.Process.Pid, Revision: "aaaaaaaaaaaa", Release: "v0.1.0", Time: "2026-10-01T00:00:00Z"})
+	writeProcRecord(t, state, "serve", selfupdate.ProcRecord{Pid: os.Getpid(), Revision: "bbbbbbbbbbbb", Release: "v0.2.0", Time: "2026-10-10T00:00:00Z"})
+	return cmd.Process.Pid
+}
+
+func writeProcRecord(t *testing.T, state, name string, r selfupdate.ProcRecord) {
+	t.Helper()
+	b, _ := json.Marshal(r)
+	os.MkdirAll(state, 0o755)
+	if err := os.WriteFile(selfupdate.ProcPath(state, name), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+const hubLine = "hub runs v0.1.0, serve v0.2.0: restart bmesh-hub\n"
+
+// hosts --here names a hub left on an older binary than serve, [hosts] on
+// or off, from the two records alone; a hub that isn't running gives none.
+func TestHostsHereNamesAnOlderHub(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", dir)
+	state := filepath.Join(dir, "bmesh")
+	cfg := filepath.Join(dir, "config.toml")
+	here := func(body string) (string, string, int) {
+		os.WriteFile(cfg, []byte("[mesh]\nnats = \"nats://127.0.0.1:1\"\n"+body), 0o600)
+		var out, errb bytes.Buffer
+		code := run([]string{"--config", cfg, "hosts", "--here"}, strings.NewReader(""), &out, &errb)
+		return out.String(), errb.String(), code
+	}
+	fakeHubRecords(t, state)
+	if out, errs, code := here(""); code != 0 || out != hubLine || errs != "" {
+		t.Fatalf("[hosts] off: %d %q %q", code, out, errs)
+	}
+	os.WriteFile(filepath.Join(state, "this-box.txt"), []byte("this box is k16\n"), 0o644)
+	if out, _, code := here("[hosts]\nenabled = true\n"); code != 0 || out != "this box is k16\n"+hubLine {
+		t.Fatalf("[hosts] on: %d %q", code, out)
+	}
+	// The hub stopped: its record's pid is gone.
+	dead := exec.Command("sleep", "0")
+	if err := dead.Run(); err != nil {
+		t.Fatal(err)
+	}
+	writeProcRecord(t, state, "hub", selfupdate.ProcRecord{Pid: dead.Process.Pid, Revision: "aaaaaaaaaaaa", Release: "v0.1.0", Time: "2026-10-01T00:00:00Z"})
+	if out, _, code := here(""); code != 0 || out != "" {
+		t.Fatalf("dead hub: %d %q", code, out)
+	}
+}
+
+func TestMeshStatusNamesAnOlderHub(t *testing.T) {
+	setup(t)
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	fakeHubRecords(t, config.StateDir())
+	out, _, code := runCLI(t, nil, "mesh-status")
+	if code != 0 || !strings.HasSuffix(out, "\n"+hubLine) {
+		t.Fatalf("code %d out %q", code, out)
 	}
 }

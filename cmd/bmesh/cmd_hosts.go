@@ -18,6 +18,7 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/hosts"
+	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 )
 
 const hostsUsage = "usage: bmesh hosts [--json] | hosts --here | hosts --notes | hosts invite <name> [--secure] [--accept a,b] [--replace] | " +
@@ -134,11 +135,26 @@ func (a *app) cmdHosts(args []string) error {
 // hostsHere prints the session line the daemon last wrote, reading only
 // that file (marked with its age when the daemon hasn't rewritten it
 // lately): nothing when [hosts] is off or the file is missing, and never
-// the hub, so a session hook doesn't wait on it.
+// the hub, so a session hook doesn't wait on it. After it, the hub line
+// when this box's bmesh hub runs an older binary than its serve (read
+// from hub.json and serve.json), [hosts] on or off.
 func (a *app) hostsHere() error {
 	if err := a.loadConfig(); err != nil {
 		return err
 	}
+	if err := a.hereLine(); err != nil {
+		return err
+	}
+	if serve, ok := selfupdate.ReadProc(config.StateDir(), "serve"); ok {
+		if line := selfupdate.HubLine(config.StateDir(), serve); line != "" {
+			fmt.Fprintln(a.stdout, line)
+		}
+	}
+	return nil
+}
+
+// hereLine prints this-box.txt for hostsHere.
+func (a *app) hereLine() error {
 	if !a.cfg.Hosts.Enabled {
 		return nil
 	}

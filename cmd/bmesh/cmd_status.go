@@ -193,6 +193,11 @@ func (a *app) cmdMeshStatus(args []string) error {
 	if line := selfupdate.ReadNotice(config.StateDir()); line != "" {
 		fmt.Fprintln(a.stdout, line)
 	}
+	if serve, ok := selfupdate.ReadProc(config.StateDir(), "serve"); ok {
+		if line := selfupdate.HubLine(config.StateDir(), serve); line != "" {
+			fmt.Fprintln(a.stdout, line)
+		}
+	}
 	return nil
 }
 
