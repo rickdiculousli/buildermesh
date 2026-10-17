@@ -45,6 +45,17 @@ type TreeView struct {
 	Leads    []TreeNode     `json:"leads"`
 	Routines []RoutineGroup `json:"routines"`
 	Orphans  []TreeNode     `json:"orphans"`
+	Operator []OperatorSpec `json:"operator,omitempty"` // landed specs with steps for the operator still open
+}
+
+// OperatorSpec is a landed spec whose operator_steps are not all ticked,
+// for the needs-you band.
+type OperatorSpec struct {
+	Repo  string `json:"repo"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Open  int    `json:"open"`
+	Total int    `json:"total"`
 }
 
 // Usage is an instance's finished jobs since its last start or recycle and

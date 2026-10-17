@@ -201,7 +201,28 @@ func (s *server) tree(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	writeJSON(w, Tree(nodes, states, x))
+	v := Tree(nodes, states, x)
+	v.Operator = s.operator(ctx)
+	writeJSON(w, v)
+}
+
+// operator is every configured repo's landed specs with open steps, read
+// from the ledgers as ledger reads them (cached, fetched in the background),
+// by repo and id.
+func (s *server) operator(ctx context.Context) []OperatorSpec {
+	repos := s.cfg.RepoNames()
+	sort.Strings(repos)
+	var out []OperatorSpec
+	for _, repo := range repos {
+		for _, sp := range s.ledger(ctx, repo) {
+			steps, err := sp.Steps()
+			if err != nil || spec.Open(steps) == 0 {
+				continue
+			}
+			out = append(out, OperatorSpec{Repo: repo, ID: sp.IDString(), Title: sp.Title(), Open: spec.Open(steps), Total: len(steps)})
+		}
+	}
+	return out
 }
 
 // leadPage is /api/lead/{path}. Specs is null except for a round.

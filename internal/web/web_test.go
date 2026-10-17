@@ -312,8 +312,12 @@ func TestTreeEndpoint(t *testing.T) {
 	meshtest.CommitFiles(t, repo, map[string]string{
 		".bmesh/routines/review.toml": "model = \"m\"\nprompt = \"P\"\n",
 		".bmesh/routines/verify.toml": "mode = \"inline\"\ndeterministic = true\ncommand = \"echo ok\"\n",
+		"docs/proposals/007-open.md": "---\nid: 7\ntitle: Open steps\nstatus: done\noperator_steps: " +
+			`[{"n":1,"box":"","text":"a","done":"2026-10-17T10:00:00Z k"},{"n":2,"box":"","text":"b","done":""}]` + "\n---\nbody\n",
+		"docs/proposals/008-ticked.md": "---\nid: 8\ntitle: Ticked\nstatus: done\noperator_steps: " +
+			`[{"n":1,"box":"","text":"a","done":"2026-10-17T10:00:00Z k"}]` + "\n---\nbody\n",
 	})
-	cfg := &config.Config{Repos: map[string]config.Repo{"app": {Path: repo}}}
+	cfg := &config.Config{Repos: map[string]config.Repo{"app": {Path: repo}}, Spec: config.SpecConfig{Glob: "docs/proposals/{id}-*.md"}}
 	for _, n := range []mesh.Node{
 		{Path: "a", Role: "lead"},
 		{Path: "a.x", Role: "executor", Parent: "a"},
@@ -349,6 +353,10 @@ func TestTreeEndpoint(t *testing.T) {
 	}
 	if len(v.Orphans) != 1 || v.Orphans[0].Node.Path != "b.x" {
 		t.Fatalf("orphans %+v", v.Orphans)
+	}
+	// The needs-you band's specs: open steps only.
+	if !strings.Contains(body, `"operator":[{"repo":"app","id":"007","title":"Open steps","open":1,"total":2}]`) {
+		t.Fatalf("operator: %s", body)
 	}
 	// One group per defined kind, each with its depth once and its
 	// instances across repos; verify, inline, has none.

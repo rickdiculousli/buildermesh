@@ -478,8 +478,17 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 		return false, err
 	}
 	restore := func() { _, _ = cleanup("checkout", "HEAD", "--", rel) }
-	if _, err := spec.SetStatus(s, "done", []string{"building"},
-		spec.Field{Key: "merged", Value: merged}, spec.Field{Key: "branch", Value: l.branch}); err != nil {
+	done := []spec.Field{{Key: "merged", Value: merged}, {Key: "branch", Value: l.branch}}
+	steps := s.NeedsSteps()
+	if len(steps) > 0 {
+		old, _ := s.Steps() // a spec landed again keeps its ticks
+		v, err := spec.EncodeSteps(spec.CarryTicks(old, steps))
+		if err != nil {
+			return false, err
+		}
+		done = append(done, spec.Field{Key: spec.StepsKey, Value: v})
+	}
+	if _, err := spec.SetStatus(s, "done", []string{"building"}, done...); err != nil {
 		restore()
 		return false, ledgerFail(err)
 	}
@@ -489,6 +498,9 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 	}
 	fmt.Fprintf(out, "verified: %s\n", spec.FormatVerified(entries))
 	fmt.Fprintf(out, "spec %03d done: merged %s, branch %s\n", l.id, merged[:8], l.branch)
+	if len(steps) > 0 {
+		fmt.Fprintf(out, "operator steps: %d (bmesh spec steps %03d)\n", len(steps), l.id)
+	}
 	msg := fmt.Sprintf("%03d: done at %s", l.id, merged[:8])
 	if _, err := git("add", "--", rel); err != nil {
 		restore()

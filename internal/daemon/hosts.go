@@ -348,6 +348,8 @@ func (h *hostsNode) run(ctx context.Context, m jetstream.Msg, j *hosts.Job) (boo
 		return h.nixJob(ctx, j)
 	case "propose":
 		return h.proposeJob(ctx, j)
+	case "check-step":
+		return h.checkStepJob(ctx, j)
 	}
 	return false, fmt.Sprintf("unknown op %s (this bmesh is %s)", cut(j.Op, 32), h.revision())
 }

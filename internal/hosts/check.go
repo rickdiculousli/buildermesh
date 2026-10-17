@@ -64,7 +64,7 @@ const (
 
 // Idempotent ops resume after a crash or sleep; any other is answered
 // interrupted.
-var Idempotent = map[string]bool{"ping": true, "level": true, "prune": true, "stop-thread": true}
+var Idempotent = map[string]bool{"ping": true, "level": true, "prune": true, "stop-thread": true, "check-step": true}
 
 // AdminOps need the admin's signature: their job is signed by the admin key.
 var AdminOps = map[string]bool{"nix": true}

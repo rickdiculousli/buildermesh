@@ -134,6 +134,7 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
 }
 .need.st-blocked { border-left-color: var(--blocked); }
 .need.st-silent { border-left-color: var(--blocked); border-left-style: dashed; }
+.need.st-operator { border-left-color: var(--held); cursor: default; }
 .need .who { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; color: var(--fg); }
 .need .who .p { font-weight: 600; overflow-wrap: anywhere; }
 /* The row's bottom padding sits on the row, not the words: a clamped box
@@ -168,6 +169,7 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
 .badge.st-working { border-color: var(--working); color: var(--working); }
 .badge.st-asking { border-color: var(--asking); color: var(--asking); }
 .badge.st-held { border-color: var(--held); color: var(--held); }
+.badge.st-operator { border-color: var(--held); color: var(--held); }
 .badge.st-blocked { border-color: var(--blocked); color: var(--blocked); }
 .badge.st-silent { border-style: dashed; border-color: var(--blocked); }
 .badge.st-done { background: var(--done-bg); border-color: var(--done-bg); color: var(--done-fg); }

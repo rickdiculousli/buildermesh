@@ -461,7 +461,7 @@ async function loadTree() {
     const r = await fetch("/api/tree", { cache: "no-store", signal: stop.signal });
     if (!r.ok) throw new Error("/api/tree: " + r.status);
     const v = await r.json();
-    mesh.tree = { leads: v.leads || [], routines: v.routines || [], orphans: v.orphans || [] };
+    mesh.tree = { leads: v.leads || [], routines: v.routines || [], orphans: v.orphans || [], operator: v.operator || [] };
     render();
     // A live event newer than this read wins over the state it returned.
     for (const [path, s] of mesh.live) {
@@ -910,7 +910,7 @@ function needRows() {
 // renderBand draws the band between the strip and the map: one row per
 // needRows entry, its badge and path a link to the lead page, its words (for
 // silent, the daemon's verdict and its age) clamped to three lines until
-// tapped. Hidden when nothing needs the operator.
+// tapped, then the operatorRows. Hidden when nothing needs the operator.
 function renderBand() {
   const band = $("needs");
   const rows = needRows();
@@ -921,9 +921,20 @@ function renderBand() {
     if (r.state === "silent" && r.at) say.append(r.text ? " · " : "", clock("since", r.at, false));
     clampRow(say, r.path);
     return el("div", "need tap st-" + r.state, null, who, say);
-  }));
-  band.hidden = rows.length === 0;
+  }), ...operatorRows());
+  band.hidden = band.childElementCount === 0;
   if (check) checkSoon();
+}
+
+// operatorRows are the band's rows for landed specs with steps for the
+// operator still open, after the nodes: the spec, how many are open, and
+// the command that lists and ticks them.
+function operatorRows() {
+  return (mesh.tree ? mesh.tree.operator : []).map((o) => {
+    const who = el("span", "who", null, badge("operator"), el("span", "p", o.repo + " " + o.id));
+    const say = el("div", "say", o.title + ": " + o.open + " of " + o.total + " open · bmesh spec steps " + o.id + " --repo " + o.repo);
+    return el("div", "need st-operator", null, who, say);
+  });
 }
 
 // --- the lead page

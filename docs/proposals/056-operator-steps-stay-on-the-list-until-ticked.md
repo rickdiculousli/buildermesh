@@ -25,6 +25,8 @@ In:
 - **A step that's checkable says how.** A step may end with `check: <command>`. `bmesh spec steps --check` runs it on the step's box (locally, else as a job to that box), and a zero exit ticks it.
 - **The coordinator's report points at it.** The `build` skill's closing line names the specs with open steps and the command, so the list lives on the mesh rather than in the chat.
 
+As built: the operator line names the repo, `operator: <repo> 041 <title>: 5 of 7 open (bmesh spec steps 041 --repo <repo>)`, since a mesh spans repos, and `bmesh spec steps` with no id prints those lines alone (the `build` and `mesh-status` skills read it). A prose paragraph is a step of its own, and one ending in `:` that leads into a list (`On the Mac:`) goes in front of each of its steps. A step's check on another box is the host op `check-step`, which names the spec and step, never a command: the box reads the command from its own checkout's `main`, and runs it only when its roster row accepts `check-step`.
+
 Out: blocking anything on open steps (`done` and `release` don't wait on them); reminders pushed on a schedule.
 
 Judge: opus, because it reads free text into a list, and a misparsed step is worse than none.
@@ -37,5 +39,9 @@ The repo's verify, plus `internal/spec` cases parsing a Needs section (bullets, 
 
 ## Risks and the alternative considered
 A Needs section written as prose, not as a list, becomes one long step. The template's guide line says to write it as a list. Alternative: a separate per-repo ledger file of operator steps. That is a second record next to the spec, which is the one record by design.
+
+## Upgrading
+- `bmesh spec steps --check` runs a step that names another box as a new host op, `check-step`, which a box runs only when its roster row accepts it. Should each box run the `check:` commands of the specs on its repos' `main`? Choices: add `check-step` to a box's accept list on the admin box (`bmesh hosts set <box> --accept <its current list>,check-step`), or leave it out (default: left out, and that box's checks are run at the box itself with `bmesh spec steps <NNN> --check`).
+- Update every box's bmesh: a box on the previous release can't answer a `check-step` job, and its `mesh-status` and map don't show the steps.
 
 ## Needs from the operator
