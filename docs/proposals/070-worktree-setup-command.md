@@ -4,7 +4,7 @@ title: A repo names its setup command, and every worktree bmesh works in runs it
 kind: refinement
 size: L
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-17
