@@ -64,6 +64,8 @@ The repo's verify, plus tests on `meshtest.Start`:
 
 One rehearsal outside verify: replay the issues behind 043, 044, 054, 056 and 057 through a fixer on a scratch mesh. Four should come out as fixes and 056 as proposed. Record the result in the closing commit.
 
+Rehearsal as built (triage only: an Opus session with the fix brief and skill ruled on the five issues as of before 043, building nothing): 1164 (043) fixed (root, failing-first, smallest), 1294 (044) fixed (root, structure, failing-first, smallest), 1621 (054) fixed (root, structure, failing-first), 1779 (056) proposed (no-new-surface, reversible). 1786 (057) first came out proposed under no-new-surface, read as a new writing convention; the skill now says a refusal, warning or test in the binary is not new surface, and the replay ruled it fixed (root, failing-first, smallest). Its open points (fix_of names the reporting lead's spec, not always the faulty one; no split of a ruling with an off-box step) are the rulings as the spec words them.
+
 ## Risks and the alternative considered
 Fixes now land without anyone reading them first. The `ruled` line on each spec and the fixer's done text are the audit trail. The checkable rulings stop the expensive kinds (an L change, a third fix in one chain), and `no-new-surface` keeps product growth with the operator.
 
