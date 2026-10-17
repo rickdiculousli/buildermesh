@@ -31,6 +31,8 @@ Agents write half-page specs; you accept or reject them in plain words. A *lead*
 
 ## One mesh, many boxes
 
+<h4 align="center">Three boxes, one workflow</h4>
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mesh-dark.svg">
@@ -38,6 +40,8 @@ Agents write half-page specs; you accept or reject them in plain words. A *lead*
     <img alt="Three boxes share one NATS hub on hub-box, and only bmesh talks to it. One workflow, end to end: the coordinator starts a lead on every box; task-1's check that needs macOS runs on the laptop and its result comes back; task-2's question reaches the phone; the coordinator holds task-1 until task-3 has landed, then releases it; task-1 lands, then task-2, each reported to the coordinator and the phone, each land moving its own box's checkout, and bmesh sync carries the last to build-box and the laptop" src="docs/assets/mesh-light.svg" width="100%">
   </picture>
 </p>
+
+<h4 align="center">One box, same workflow</h4>
 
 <p align="center">
   <picture>
