@@ -309,8 +309,10 @@ func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s 
 		}
 	}
 	if hold != "" {
+		// The lead runs and its hold is written, which is what land reads;
+		// a lost message is said, not a failed start.
 		if _, err := mesh.Send(ctx, a.client, holdMessage(h)); err != nil {
-			return buildStarted{}, fmt.Errorf("lead %s started (thread %s) held, but the hold message failed: %w", p, started.Thread, err)
+			fmt.Fprintf(a.stderr, "build: %s is held %s, but the hold message failed: %v\n", p, mesh.GatePhrase(hold), err)
 		}
 	}
 	return buildStarted{leadStarted: started, Model: model, Spec: s.IDString(), Building: sha, Family: family, Hold: hold}, nil
