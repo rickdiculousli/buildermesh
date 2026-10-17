@@ -87,7 +87,8 @@ type statusRow struct {
 // cmdMeshStatus prints the registered nodes with their state, runner and
 // unread count: every one with --all or --json, else all but those done for
 // longer than [status] keep_done, which a closing line counts; then a line
-// per hold, with its age, and the feedback not yet drained (feedbackLines).
+// per hold, with its age, the feedback not yet drained (feedbackLines),
+// and last a line per landed spec with steps for the operator still open.
 func (a *app) cmdMeshStatus(args []string) error {
 	fs := a.flags("mesh-status")
 	all := fs.Bool("all", false, "show every node, finished ones too")
@@ -195,6 +196,11 @@ func (a *app) cmdMeshStatus(args []string) error {
 		if line := selfupdate.HubLine(config.StateDir(), serve); line != "" {
 			fmt.Fprintln(a.stdout, line)
 		}
+	}
+	repos := a.cfg.RepoNames()
+	sort.Strings(repos)
+	for _, o := range a.openSteps(ctx, repos) {
+		fmt.Fprintln(a.stdout, o.Line())
 	}
 	return nil
 }

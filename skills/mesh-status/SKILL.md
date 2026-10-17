@@ -15,9 +15,10 @@ The mesh is the record; read it and summarise, never guess from the runner.
    - **held**: path, the gate and why, and how long ago it was held (each row's `hold` in the JSON): a coordinator's hold, not waiting on the operator unless the operator holds it; a hold a day old or more is named, since it may be forgotten (`bmesh unhold <path>` releases it);
    - **done since the last look**: path and what landed (the commit in the `done` text). "The last look" is the last status this session gave; the first look lists what finished today.
    A node with unread messages is noted (the count) so the operator knows a reply is waiting on it.
+   - **steps for the operator**: `bmesh spec steps` prints a line per landed spec whose steps for the operator aren't all ticked (`operator: <repo> NNN <title>: X of Y open (bmesh spec steps NNN --repo <repo>)`, the lines plain `mesh-status` ends with); name each spec and its count, and the command that lists and ticks them.
 3. **Keep it short.** One line per node, the asks first; a quiet mesh is one line.
 4. **This box's bmesh.** When `bmesh update --notice` prints a line (this box's binary is behind the bmesh release, or the code on main, that it follows; its daemon's update waits on `bmesh update`; or upgrade notes are pending), pass each on as the last lines of the summary, word for word.
 
 When the operator says "stop X" (a lead, a round or a thread), that is `bmesh --node operator node stop <path> --text "<why>"`, never a free-text STOP message: a message is mail, and mail wakes a thread.
 
-End with one line: what is running, and what waits on the operator (the asks and blocks, by path). Say what each thing in it is in plain words (a spec or issue by what it does, its number after it in brackets if at all): the line is final and reads on its own, with nothing the operator has to look up.
+End with one line: what is running, and what waits on the operator (the asks and blocks, by path, and the specs with open steps). Say what each thing in it is in plain words (a spec or issue by what it does, its number after it in brackets if at all): the line is final and reads on its own, with nothing the operator has to look up.

@@ -23,6 +23,7 @@ proposed_on: {{date}}
 # verified: <entries>         set by the build thread (bmesh land)
 # reason: <one line>          rejected or blocked only
 # scope_grew: [<ids>]         set by the build thread when landed specs widened it
+# operator_steps: [<steps>]   set by bmesh land from "Needs from the operator"; ticked with bmesh spec steps
 ---
 
 ## Opportunity
@@ -42,4 +43,4 @@ Which verify commands prove it; anything new that's needed. A change to the veri
 ## Risks and the alternative considered
 
 ## Needs from the operator
-Empty unless a taste call really is theirs, or a config key some box must set to turn the change on: name the key and the file it lives in.
+Empty unless a taste call really is theirs, or a config key some box must set to turn the change on: name the key and the file it lives in. Write it as a list, one step per `-` line: a box in brackets first when the step is one box's (`- [<box>] set ...`), and `check: <command>` last when a command's exit 0 can tell it is done. Each step stays on mesh-status until it is ticked off.

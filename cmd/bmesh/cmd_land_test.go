@@ -135,6 +135,9 @@ func TestLandCleanThenDone(t *testing.T) {
 			t.Fatalf("spec on origin lacks %q:\n%s", w, front)
 		}
 	}
+	if strings.Contains(front, "operator_steps") { // no Needs section, no steps
+		t.Fatalf("spec on origin has steps:\n%s", front)
+	}
 	assertNoLeases(t, c, ctx)
 	// The landed spec satisfies done.
 	if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", rec); code != 0 || out != "done app-012 "+rec[:8]+"\n" {

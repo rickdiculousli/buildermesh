@@ -17,7 +17,7 @@ import (
 
 const specUsage = "usage: bmesh spec list [--repo R] [--status S] [--json] | next-id [--repo R] | " +
 	"set --id NNN --status S [--repo R] [--from A,B] [--field K=V]... | template [--repo R] | " +
-	"verified [--spec NNN] [--commit C] [--write]"
+	"verified [--spec NNN] [--commit C] [--write] | steps [<NNN>] [--repo R] [--tick N,N [--note W] | --check [--wait D]]"
 
 func (a *app) cmdSpec(args []string) error {
 	if len(args) > 0 {
@@ -32,6 +32,8 @@ func (a *app) cmdSpec(args []string) error {
 			return a.cmdSpecSet(args[1:])
 		case "template":
 			return a.cmdSpecTemplate(args[1:])
+		case "steps":
+			return a.cmdSpecSteps(args[1:])
 		}
 	}
 	return fail(exitUsage, specUsage)
@@ -250,20 +252,51 @@ func (a *app) cmdChooseIdeas(args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	if err := levelMain(ctx, repoPath); err != nil {
-		return fail(exitRefused, "refused: %v", err)
-	}
-	tag, err := shortHex()
+	var msg string
+	sha, err := a.editOnMain(ctx, name, repoPath, "review", func(wt string) (string, error) {
+		lines, changed, err := a.applyReview(ctx, wt, name, pos[1])
+		if err != nil {
+			return "", err
+		}
+		for _, l := range lines {
+			fmt.Fprintln(a.stdout, l)
+		}
+		if len(changed) == 0 {
+			return "", nil
+		}
+		msg = "Review: " + strings.Join(changed, ", ")
+		return msg, nil
+	})
 	if err != nil {
 		return err
 	}
-	branch := mesh.RepoToken(name) + "-review-" + tag
+	if sha == "" {
+		fmt.Fprintln(a.stdout, "nothing to land")
+		return nil
+	}
+	fmt.Fprintf(a.stdout, "landed %s on main: %s\n", sha[:8], msg)
+	return nil
+}
+
+// editOnMain levels the repo's main, makes a bmesh worktree from it on a
+// one-off branch, `<repo token>-<what>-<hex>`, and runs edit there. When
+// edit returns a commit message, it commits the ledger's changes,
+// fast-forwards main and pushes, returning the commit; "" when edit had
+// nothing to land. The worktree always goes; the branch goes with it
+// unless it holds a commit that did not land, which is kept and named.
+func (a *app) editOnMain(ctx context.Context, name, repoPath, what string, edit func(wt string) (string, error)) (string, error) {
+	if err := levelMain(ctx, repoPath); err != nil {
+		return "", fail(exitRefused, "refused: %v", err)
+	}
+	tag, err := shortHex()
+	if err != nil {
+		return "", err
+	}
+	branch := mesh.RepoToken(name) + "-" + what + "-" + tag
 	wt := filepath.Join(a.cfg.Expand(a.cfg.Runner.Worktrees), name, branch)
 	if err := addWorktree(ctx, repoPath, wt, branch, "main"); err != nil {
-		return err
+		return "", err
 	}
-	// The worktree always goes; the branch goes with it unless it holds a
-	// review commit that did not land, which is kept and named.
 	committed, landed := false, false
 	defer func() {
 		keep := committed && !landed
@@ -271,38 +304,29 @@ func (a *app) cmdChooseIdeas(args []string) error {
 			fmt.Fprintf(a.stderr, "bmesh: %v\n", err)
 		}
 	}()
-	lines, changed, err := a.applyReview(ctx, wt, name, pos[1])
-	if err != nil {
-		return err
+	msg, err := edit(wt)
+	if err != nil || msg == "" {
+		return "", err
 	}
-	for _, l := range lines {
-		fmt.Fprintln(a.stdout, l)
-	}
-	if len(changed) == 0 {
-		fmt.Fprintln(a.stdout, "nothing to land")
-		return nil
-	}
-	msg := "Review: " + strings.Join(changed, ", ")
 	if _, err := gitIn(ctx, wt, "add", "-A", "--", spec.Dir(a.cfg.Spec.Glob)); err != nil {
-		return err
+		return "", err
 	}
 	if _, err := gitIn(ctx, wt, "-c", "user.name=bmesh", "-c", "user.email=bmesh@localhost", "commit", "-q", "-m", msg); err != nil {
-		return err
+		return "", err
 	}
 	committed = true
 	sha, err := gitIn(ctx, wt, "rev-parse", "HEAD")
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := a.landOnMain(ctx, repoPath, branch); err != nil {
-		return fail(exitRefused, "refused: %v; the review is committed on branch %s", err, branch)
+		return "", fail(exitRefused, "refused: %v; the %s is committed on branch %s", err, what, branch)
 	}
 	landed = true
 	if err := pushMain(ctx, repoPath); err != nil {
-		return err
+		return "", err
 	}
-	fmt.Fprintf(a.stdout, "landed %s on main: %s\n", sha[:8], msg)
-	return nil
+	return sha, nil
 }
 
 // applyReview parses reply against the ledger in wt and applies it; it

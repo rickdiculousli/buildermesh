@@ -92,6 +92,24 @@ Each test starts its own hub.
 ## Proposal
 One hub per package.
 MD
+# A landed spec with steps for the operator still open: a band row.
+cat >"$dir/app/docs/proposals/044-retire-old-hub.md" <<'MD'
+---
+id: 044
+title: Retire the old hub
+kind: maintenance
+size: M
+judge: opus
+status: done
+lens: eng
+operator_steps: [{"n":1,"box":"laptop","text":"unload the old hub's service","check":"test ! -e ~/old-hub.plist","done":"2026-10-15T09:00:00Z laptop"},{"n":2,"box":"laptop","text":"move the token to the new config dir","done":""},{"n":3,"box":"","text":"archive the old repo","done":""}]
+---
+
+## Needs from the operator
+- [laptop] unload the old hub's service check: `test ! -e ~/old-hub.plist`
+- [laptop] move the token to the new config dir
+- archive the old repo
+MD
 cat >"$dir/app/.bmesh/routines/review.toml" <<'TOML'
 mode = "pooled"
 model = "claude-opus-5-5"
