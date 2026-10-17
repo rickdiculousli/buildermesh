@@ -1,0 +1,70 @@
+# Upgrade notes for v0.3.0, distilled from the Upgrading sections of the
+# specs it carries. 060 and 056 add host ops a box runs only when its roster
+# row accepts them: stop-thread (bmesh node stop of a thread on another box)
+# is added on the admin box, asking first; check-step (bmesh spec steps
+# --check run on another box) defaults to left out, so it is no step, only
+# named in the summary. 061's registry key `code` is set on a row only once
+# every box runs this release, which is an order for the admin, not a step a
+# box takes. 054, 057, 058 and 059 need nothing. The hub runs the binary it
+# started with, so it is restarted last.
+
+summary = "On the admin box, let every box accept stop-thread; restart the hub. Optional: --accept ...,check-step lets bmesh spec steps --check run on a box from elsewhere. Set a registry row's new code key only once every box runs v0.3.0: an older bmesh refuses that registry."
+
+[[step]]
+kind = "run"
+why = "bmesh node stop reaches a thread on another box through a new host op, stop-thread, which a box runs only when its roster row accepts it: on the admin box, add it to every box's accept list (each change signs the roster, so the admin key's dialog follows); on any other box this prints that the admin box does it"
+os = ["linux", "darwin"]
+when = '[hosts] enabled == true'
+confirm = true
+command = '''
+command -v python3 >/dev/null || { echo "no python3: on the admin box, run bmesh hosts set <box> --accept <its list>,stop-thread for each box"; exit 0; }
+bmesh hosts --json | python3 -c '
+import json, socket, subprocess, sys
+r = json.load(sys.stdin)
+me = socket.gethostname().split(".")[0].lower()
+if r.get("admin") != me:
+    print("the admin box (%s) adds stop-thread to each box" % r.get("admin")); sys.exit(0)
+for h in r["hosts"]:
+    name, acc = h["host"]["name"], h["host"].get("accept") or []
+    if "stop-thread" in acc:
+        print(name + " accepts stop-thread"); continue
+    new = ",".join(sorted(set(acc) | {"stop-thread"}))
+    print("bmesh hosts set %s --accept %s" % (name, new))
+    if subprocess.call(["bmesh", "hosts", "set", name, "--accept", new]) != 0:
+        sys.exit(1)
+'
+'''
+
+[[step]]
+kind = "run"
+why = "bmesh hub runs the binary it started with: restart it so it runs this release (a hub run by hand, restart it yourself)"
+os = ["linux"]
+when = '[hub] role != ""'
+command = '''
+if [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/bmesh-hub.service" ]; then
+  systemctl --user restart bmesh-hub && echo "restarted bmesh-hub"
+else
+  echo "no bmesh-hub unit: restart bmesh hub yourself"
+fi
+'''
+
+[[step]]
+kind = "run"
+why = "bmesh hub runs the binary it started with: restart it so it runs this release (a hub run by hand, restart it yourself)"
+os = ["darwin"]
+when = '[hub] role != ""'
+command = '''
+if [ -f "$HOME/Library/LaunchAgents/com.buildermesh.bmesh-hub.plist" ]; then
+  launchctl kickstart -k "gui/$(id -u)/com.buildermesh.bmesh-hub" && echo "restarted bmesh-hub"
+else
+  echo "no bmesh-hub agent: restart bmesh hub yourself"
+fi
+'''
+
+[[step]]
+kind = "run"
+why = "bmesh hub runs the binary it started with, and init sets up no hub service on Windows: end the bmesh hub you run and start it again, so it runs this release"
+os = ["windows"]
+when = '[hub] role != ""'
+confirm = true
+command = '''echo end bmesh hub and start it again (bmesh hub)'''
