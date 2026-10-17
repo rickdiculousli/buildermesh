@@ -4,7 +4,7 @@ title: A coordinator holds a lead at a gate, and the lead waits until it's relea
 kind: feature
 size: L
 judge: opus
-status: building
+status: done
 lens: eng
 scope_grew: [046]
 proposed_by: operator
@@ -13,6 +13,8 @@ built_by: f0ae77ee-f879-462f-be44-a79154ce057e
 host: k16
 family: buildermesh-build-7
 branch: bmesh/f0ae77ee-f879-462f-be44-a79154ce057e
+merged: 3113bb4785e7e6af204519818c8eab026353b17d
+verified: verify ok t:e09ba3dc
 ---
 
 ## Opportunity
