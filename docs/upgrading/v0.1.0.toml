@@ -16,7 +16,8 @@ kind = "check"
 why = "no lead or executor is live: finish them, or forget them (bmesh node forget <path>), then run bmesh update again"
 os = ["linux", "darwin"]
 command = '''
-live=$(bmesh mesh-status --all --json | grep -oE '"state":\{"state":"[a-z]+"' | grep -cvE '"(done|blocked)"')
+nodes=$(bmesh mesh-status --all --json) || { echo "bmesh mesh-status failed, so the nodes are unknown: fix that first (bmesh config check names a key this binary refuses)"; exit 1; }
+live=$(printf '%s\n' "$nodes" | grep -oE '"state":\{"state":"[a-z]+"' | grep -cvE '"(done|blocked)"')
 echo "live nodes: $live"
 [ "$live" = 0 ]
 '''

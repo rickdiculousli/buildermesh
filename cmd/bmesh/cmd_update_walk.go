@@ -199,8 +199,8 @@ type planOut struct {
 	Releases  []string      `json:"releases"`   // every release in between, with notes or not
 	StartOver bool          `json:"start_over"` // the walk starts the box over (upgrade.First's notes)
 	Config    string        `json:"config"`     // ok, the failure, or start-over (the walk moves it aside)
-	Asks      int           `json:"asks"`       // asks not yet answered
-	Steps     int           `json:"steps"`      // run and check steps not yet done
+	Asks      int           `json:"asks"`       // asks not yet answered whose when holds
+	Steps     int           `json:"steps"`      // run and check steps not yet done whose when holds
 	Confirm   int           `json:"confirm"`    // of those, the ones that ask first
 	Plan      []plannedStep `json:"plan"`
 }
@@ -247,8 +247,8 @@ func (a *app) walkPlan(r walkRange) (planOut, *upgrade.State, []*upgrade.Notes, 
 		cond, _ := upgrade.ParseWhen(p.When)
 		ps := plannedStep{Planned: p, Applies: cond.Holds(get)}
 		out.Plan = append(out.Plan, ps)
-		if p.Done {
-			continue
+		if p.Done || !ps.Applies {
+			continue // the counts are what this box still has to do
 		}
 		if p.Kind == upgrade.Ask {
 			out.Asks++

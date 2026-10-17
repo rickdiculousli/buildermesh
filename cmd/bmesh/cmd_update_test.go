@@ -45,6 +45,13 @@ kind = "check"
 command = "cat \"$BMESH_STATE_DIR/ok\""
 expect = "ok"
 why = "the box is ready"
+
+[[step]]
+kind = "ask"
+key = "[hub] max_file_store"
+question = "How much store for the hub?"
+default = "8GB"
+when = '[hub] role == "hub"'
 `
 )
 
@@ -106,7 +113,7 @@ func binaryIs(t *testing.T, exe, want string) {
 }
 
 func TestUpdatePlanListsTheStepsBetween(t *testing.T) {
-	exe, _, shas, _ := notesBox(t)
+	exe, _, shas, tags := notesBox(t)
 	withRevision(t, shas[1])
 	out, errOut, code := runCLI(t, nil, "update", "--plan", "--json")
 	if code != 0 {
@@ -117,8 +124,8 @@ func TestUpdatePlanListsTheStepsBetween(t *testing.T) {
 		t.Fatalf("%v: %s", err, out)
 	}
 	if p.From != "v0.1.0" || p.To != "v0.3.0" || strings.Join(p.Releases, ",") != "v0.2.0,v0.3.0" || p.Asks != 1 || p.Steps != 2 ||
-		p.StartOver || p.Config != "ok" || len(p.Plan) != 3 || p.Plan[0].ID != "v0.2.0#1" || p.Plan[0].Default != "release" ||
-		p.Plan[2].Kind != upgrade.Check {
+		p.StartOver || p.Config != "ok" || len(p.Plan) != 4 || p.Plan[0].ID != "v0.2.0#1" || p.Plan[0].Default != "release" ||
+		p.Plan[2].Kind != upgrade.Check || p.Plan[3].Applies {
 		t.Fatalf("plan %+v", p)
 	}
 	out, _, code = runCLI(t, nil, "update", "--plan")
@@ -128,6 +135,19 @@ func TestUpdatePlanListsTheStepsBetween(t *testing.T) {
 	binaryIs(t, exe, "old")
 	if stateFile(t, "upgrade.json") != "" {
 		t.Fatal("--plan wrote the walk's state")
+	}
+	// A current binary with nothing pending plans nothing, from any
+	// directory.
+	sd := filepath.Join(os.Getenv("XDG_STATE_HOME"), "bmesh")
+	if err := upgrade.WriteInstalled(sd, upgrade.Record{Version: "v0.3.0", Revision: tags["v0.3.0"]}); err != nil {
+		t.Fatal(err)
+	}
+	withRevision(t, tags["v0.3.0"])
+	t.Chdir(t.TempDir())
+	out, errOut, code = runCLI(t, nil, "update", "--plan", "--json")
+	p = planOut{}
+	if code != 0 || json.Unmarshal([]byte(out), &p) != nil || p.Asks+p.Steps != 0 || len(p.Releases) != 0 || p.To != "v0.3.0" {
+		t.Fatalf("current: code %d out %q err %q", code, out, errOut)
 	}
 }
 

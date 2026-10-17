@@ -192,7 +192,7 @@ func (a *app) updateTo(exe, dir, from string, t selfupdate.Target, plugin bool, 
 		r, ok := a.pendingWalk(dir, own)
 		if w.plan {
 			if !ok {
-				r = walkRange{from: own, to: own}
+				r = walkRange{dir: dir, from: own, to: own}
 			}
 			return a.printPlan(r)
 		}
