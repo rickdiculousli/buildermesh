@@ -31,6 +31,7 @@ In:
   - A node on another box is stopped there, the way `node forget --worktree` reaches another box. With `[hosts]` off, it is refused with `run it on <host>`.
   - An already `done` or `blocked` node prints `already <state>` and exits 0.
   - After a stop, `node forget` works as it does for any `blocked` node.
+  - A round whose children are all gone (forgotten before the daemon settled it, as round 3's were at 01:23Z, which left `buildermesh-round-3` `silent` with nothing to settle from) is stopped by marking it `blocked` directly, and `node forget` of such a round is allowed whatever its state.
 - **A stopped node stays stopped.**
   - The daemon never wakes a node whose `blocked` text starts `stopped by`, for a silence or for a report or reply.
   - Only a message sent with `bmesh send` wakes it. That is the documented way to resume one, and the wake text says `resumed by <who>`.
