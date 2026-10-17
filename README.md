@@ -195,7 +195,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 
 4. Optional, so boxes can act on each other: join them to a roster. On the box you type at, run `bmesh init --hosts --admin`. For each other box, run `bmesh hosts invite <its host name>` on the admin box, then `bmesh init --hosts` on that box and paste the code. Restart `bmesh serve` on each box after its `init --hosts`.
 
-## The map
+## Monitor the mesh
 
 <p align="center">
   <picture>
