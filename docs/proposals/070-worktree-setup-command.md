@@ -4,7 +4,7 @@ title: A repo names its setup command, and every worktree bmesh works in runs it
 kind: refinement
 size: L
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-17
@@ -12,6 +12,9 @@ built_by: e64e8811-bc3b-49a5-9119-5abe0523d21a
 host: k16
 family: buildermesh-build-10
 branch: bmesh/e64e8811-bc3b-49a5-9119-5abe0523d21a
+merged: 4fca7d2678697d2e0c451460d890441ea8caca6b
+operator_steps: [{"n":1,"box":"","text":"Give each repo whose verify needs installed dependencies (the one whose build was refused with `vitest: not found` first) a `setup` and its `setup_inputs` in its registry row, publish the registry once every box running its routines or leads runs this bmesh, then `bmesh scaffold <repo>` and commit and push what it writes.","check":"bmesh repos show <repo>","done":""}]
+verified: verify ok t:44c64d29
 ---
 
 ## Opportunity
