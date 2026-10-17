@@ -20,6 +20,7 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/upgrade"
 )
 
 // Exit codes.
@@ -235,6 +236,7 @@ type app struct {
 	cfg            *config.Config
 	client         *mesh.Client
 	hint           string // the revision hint, printed once after the command's output
+	pending        bool   // a command run at a terminal names upgrade notes still to walk, last
 }
 
 func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
@@ -249,6 +251,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	code := a.report(a.dispatch(args))
 	if a.hint != "" {
 		fmt.Fprintln(stderr, a.hint)
+	}
+	if a.pending && interactive(stdin) {
+		if line := upgrade.Pending(config.StateDir(), buildVersion().Release); line != "" {
+			fmt.Fprintln(stderr, "bmesh: "+line)
+		}
 	}
 	return code
 }
@@ -284,6 +291,8 @@ func (a *app) dispatch(args []string) error {
 		return fail(exitUsage, "")
 	}
 	cmd, rest := rest[0], rest[1:]
+	// update walks them, and init, help and version stay quiet.
+	a.pending = !slices.Contains([]string{"init", "help", "version", "update", "serve"}, cmd)
 	// hosts --here runs from a session hook: it reads one file and never
 	// sets the box up or refuses, so a session on a box without bmesh set
 	// up opens as quietly as one with [hosts] off.

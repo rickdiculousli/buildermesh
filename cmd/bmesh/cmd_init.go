@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
+	"github.com/rickdiculousli/buildermesh/internal/upgrade"
 )
 
 const initUsage = "usage: bmesh init [--service] [--force] [--role hub|leaf|client] [--hub URL] [--token-file F] [--runner claude|t3|tmux] [--no-repo] | bmesh init --hosts [--admin]"
@@ -174,6 +176,17 @@ func (a *app) cmdInit(args []string) error {
 		}
 	}
 
+	// A box set up now starts at this binary: no notes to walk.
+	if v := buildVersion(); v.Revision != "" || v.Release != "" {
+		label := v.Release
+		if label == "" {
+			label = selfupdate.Short(v.Revision)
+		}
+		if err := upgrade.WriteInstalled(config.StateDir(), upgrade.Record{Version: label, Revision: v.Revision,
+			At: time.Now().UTC().Format(time.RFC3339)}); err != nil {
+			return err
+		}
+	}
 	flag := config.SetupFlag(cfgPath)
 	if err := os.WriteFile(flag, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644); err != nil {
 		return err
