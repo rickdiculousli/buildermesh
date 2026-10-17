@@ -1,0 +1,171 @@
+# Upgrade notes for v0.1.0, written after it was tagged (spec 055): the one
+# release whose notes start a box over instead of stepping it forward. A box
+# from before v0.1.0 is uninstalled and set up again, NATS included. Every
+# later release's notes are incremental.
+#
+# The run steps read the walk's environment: BMESH_CONFIG (config.toml),
+# BMESH_CONFIG_DIR, BMESH_STATE_DIR, BMESH_STORE (the embedded hub's store),
+# BMESH_FROM and BMESH_TO. Each one touches only what this box's bmesh owns.
+
+summary = "A box from before v0.1.0 starts over: uninstall bmesh's services, nats-server and state, then set the box up again with bmesh init, the hub box first."
+start_over = true
+loses = "the results and events in the old JetStream store, and the roster and its keys (every spec's verified line keeps its record in git, and repos.toml is kept to publish again)"
+
+[[step]]
+kind = "check"
+why = "no lead or executor is live: finish them, or forget them (bmesh node forget <path>), then run bmesh update again"
+os = ["linux", "darwin"]
+command = '''
+live=$(bmesh mesh-status --all --json | grep -oE '"state":\{"state":"[a-z]+"' | grep -cvE '"(done|blocked)"')
+echo "live nodes: $live"
+[ "$live" = 0 ]
+'''
+expect = "live nodes: 0"
+
+[[step]]
+kind = "run"
+why = "no lead or executor may be live: read the list, and finish or forget (bmesh node forget <path>) every node not done or blocked before you go on"
+os = ["windows"]
+confirm = true
+command = "bmesh mesh-status --all"
+
+[[step]]
+kind = "run"
+why = "stop and remove the bmesh and bmesh-hub services and any nats-server service (systemd user units); stop a bmesh serve or nats-server you run by hand yourself"
+os = ["linux"]
+confirm = true
+command = '''
+d="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+units=""
+for f in "$d/bmesh.service" "$d/bmesh-hub.service" $(grep -l 'nats-server' "$d"/*.service 2>/dev/null); do
+  [ -f "$f" ] && units="$units $(basename "$f")"
+done
+for u in $units; do
+  echo "removing $u"
+  systemctl --user disable --now "$u" || true
+  rm -f "$d/$u"
+done
+[ -z "$units" ] || systemctl --user daemon-reload
+echo "services removed:${units:- none}"
+'''
+
+[[step]]
+kind = "run"
+why = "stop and remove the bmesh and bmesh-hub agents and any nats-server agent (launchd); stop a bmesh serve or nats-server you run by hand yourself"
+os = ["darwin"]
+confirm = true
+command = '''
+d="$HOME/Library/LaunchAgents"
+agents=""
+for f in "$d/com.buildermesh.bmesh.plist" "$d/com.buildermesh.bmesh-hub.plist" $(grep -l 'nats-server' "$d"/*.plist 2>/dev/null); do
+  [ -f "$f" ] && agents="$agents $f"
+done
+for f in $agents; do
+  echo "removing $f"
+  launchctl bootout "gui/$(id -u)" "$f" 2>/dev/null || true
+  rm -f "$f"
+done
+echo "agents removed:${agents:- none}"
+'''
+
+[[step]]
+kind = "run"
+why = "stop and remove the buildermesh logon task and the bmesh serve it runs"
+os = ["windows"]
+confirm = true
+command = '''schtasks /End /TN buildermesh & schtasks /Delete /TN buildermesh /F & powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='bmesh.exe'\" | Where-Object { $_.CommandLine -match ' serve' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"'''
+
+[[step]]
+kind = "run"
+why = "remove the nats-server bmesh used: stop the one running <config dir>/nats.conf, delete its JetStream store_dir and nats.conf, and the nats-server binary when go install put it in GOPATH/bin (one from a package manager, remove with it if it was only for bmesh)"
+os = ["linux", "darwin"]
+confirm = true
+command = '''
+conf="$BMESH_CONFIG_DIR/nats.conf"
+if [ -f "$conf" ]; then
+  store=$(sed -n 's/^[[:space:]]*jetstream.*store_dir[[:space:]]*[:=][[:space:]]*"\{0,1\}\([^",}]*\)"\{0,1\}.*/\1/p; s/^[[:space:]]*store_dir[[:space:]]*[:=][[:space:]]*"\{0,1\}\([^",}]*\)"\{0,1\}.*/\1/p' "$conf" | head -1)
+  pkill -f "nats-server.*$conf" && sleep 2
+  if [ -n "$store" ]; then echo "removing the store $store"; rm -rf "$store"; fi
+  rm -f "$conf"
+  echo "removed $conf"
+else
+  echo "no $conf: no nats-server of bmesh's here"
+fi
+bin=$(command -v nats-server || true)
+gobin="$(go env GOPATH 2>/dev/null)/bin"
+case "$bin" in
+  "$gobin"/*) echo "removing $bin"; rm -f "$bin" ;;
+  "") ;;
+  *) echo "nats-server at $bin is not from go install: remove it with what installed it, if only bmesh used it" ;;
+esac
+'''
+
+[[step]]
+kind = "run"
+why = "move the config dir aside as <config dir>.pre-0.1.0 (its repos.toml is published again below) and remove the state dir and the embedded hub's store"
+os = ["linux", "darwin"]
+confirm = true
+command = '''
+aside="$BMESH_CONFIG_DIR.pre-0.1.0"
+if [ -e "$aside" ]; then echo "$aside exists: move it away first"; exit 1; fi
+if [ -d "$BMESH_CONFIG_DIR" ]; then mv "$BMESH_CONFIG_DIR" "$aside" && echo "moved $BMESH_CONFIG_DIR to $aside"; fi
+rm -rf "$BMESH_STATE_DIR" "$BMESH_STORE"
+echo "removed $BMESH_STATE_DIR and $BMESH_STORE"
+'''
+
+[[step]]
+kind = "run"
+why = "move the config dir aside as <config dir>.pre-0.1.0 (its repos.toml is published again below) and remove the state dir and the embedded hub's store"
+os = ["windows"]
+confirm = true
+command = '''if exist "%BMESH_CONFIG_DIR%.pre-0.1.0" (echo "%BMESH_CONFIG_DIR%.pre-0.1.0 exists: move it away first" & exit /b 1) else (move "%BMESH_CONFIG_DIR%" "%BMESH_CONFIG_DIR%.pre-0.1.0" & rmdir /S /Q "%BMESH_STATE_DIR%" & rmdir /S /Q "%BMESH_STORE%" & exit /b 0)'''
+
+[[step]]
+kind = "check"
+why = "bmesh on PATH is the new binary: bmesh update already put it there; following these notes by hand, install it first with go install github.com/rickdiculousli/buildermesh/cmd/bmesh@v0.1.0 (or the release you go to)"
+command = "bmesh version"
+expect = "bmesh "
+
+[[step]]
+kind = "run"
+why = "set this box up again, the hub box first: answer init's questions (the hub box: several boxes, role hub; every other box: leaf or client, the hub's URL and its token, copied from the hub box), then enable the units it prints"
+confirm = true
+command = "bmesh init --service"
+
+[[step]]
+kind = "run"
+why = "make the hub box the roster's admin"
+when = '[hub] role == "hub"'
+confirm = true
+command = "bmesh init --hosts --admin"
+
+[[step]]
+kind = "run"
+why = "join the roster: on the admin (hub) box run bmesh hosts invite <this box>, and paste the code it prints here"
+when = '[hub] role != "hub" && [mesh] nats != ""'
+confirm = true
+command = "bmesh init --hosts"
+
+[[step]]
+kind = "run"
+why = "put back the registry kept in <config dir>.pre-0.1.0"
+os = ["linux", "darwin"]
+confirm = true
+command = '''
+old="$BMESH_CONFIG_DIR.pre-0.1.0/repos.toml"
+if [ -f "$old" ]; then cp "$old" "$BMESH_CONFIG_DIR/repos.toml" && echo "restored $BMESH_CONFIG_DIR/repos.toml"; else echo "no $old"; fi
+'''
+
+[[step]]
+kind = "run"
+why = "put back the registry kept in <config dir>.pre-0.1.0"
+os = ["windows"]
+confirm = true
+command = '''if exist "%BMESH_CONFIG_DIR%.pre-0.1.0\repos.toml" copy /Y "%BMESH_CONFIG_DIR%.pre-0.1.0\repos.toml" "%BMESH_CONFIG_DIR%\repos.toml"'''
+
+[[step]]
+kind = "run"
+why = "publish the kept registry from the admin box, for every box to read"
+when = '[hub] role == "hub"'
+confirm = true
+command = "bmesh repos publish"
