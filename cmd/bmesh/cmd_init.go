@@ -31,7 +31,7 @@ var runnerKinds = []string{"claude", "t3", "tmux"}
 func (a *app) cmdInit(args []string) error {
 	fs := a.flags("init")
 	service := fs.Bool("service", false, "write the systemd user unit (Linux) or launchd plist (macOS) for bmesh serve, and for bmesh hub when [hub] role is set, or print the schtasks commands (Windows)")
-	force := fs.Bool("force", false, "rewrite an existing config.toml and this repo's registry row")
+	force := fs.Bool("force", false, "rewrite an existing config.toml and this repo's registry row, and with --service replace a unit that differs from what init writes")
 	role := fs.String("role", "", "multi-box: this box's part, hub (runs the mesh's hub), leaf (runs a leaf of it) or client (dials it)")
 	hub := fs.String("hub", "", "multi-box client: the NATS hub URL (nats://host:4222)")
 	tokenFile := fs.String("token-file", "", "multi-box: the hub's token file")
@@ -155,12 +155,19 @@ func (a *app) cmdInit(args []string) error {
 			units = append(units, hubUnit)
 		}
 		for _, u := range units {
-			path, how, err := writeService(dir, u)
+			path, state, how, err := writeService(dir, u, *force)
 			if err != nil {
 				return err
 			}
-			if path != "" {
+			switch state {
+			case unitWrote:
 				wrote = append(wrote, path)
+			case unitUnchanged:
+				fmt.Fprintf(a.stdout, "unchanged %s\n", path)
+			case unitKept:
+				// Nobody enables a unit they haven't looked at.
+				fmt.Fprintf(a.stdout, "kept %s (it differs from what init writes); the new one is %s.new: diff them, and move it over to take it\n", path, path)
+				continue
 			}
 			enable = append(enable, how...)
 		}
@@ -179,7 +186,7 @@ func (a *app) cmdInit(args []string) error {
 		for _, l := range enable {
 			fmt.Fprintf(a.stdout, "  %s\n", l)
 		}
-	} else {
+	} else if !*service {
 		if cfg.Hub.Role != "" {
 			fmt.Fprintf(a.stdout, "  bmesh hub          # this box's %s; keep it running, apart from serve\n", cfg.Hub.Role)
 		}
@@ -426,16 +433,25 @@ var (
 	hubUnit   = unit{name: "bmesh-hub", label: "com.buildermesh.bmesh-hub", cmd: "hub", desc: "buildermesh NATS hub or leaf (bmesh hub)"}
 )
 
+// What placeUnit did with a unit's file.
+const (
+	unitNone      = ""          // no file on this OS
+	unitWrote     = "wrote"     // missing, or replaced under --force
+	unitUnchanged = "unchanged" // already the same bytes
+	unitKept      = "kept"      // differs: left as it is, the new body beside it as <file>.new
+)
+
 // writeService writes the unit that keeps u's command running: a systemd
 // user unit on Linux, a launchd agent on macOS, each restarting always
-// (the tailnet address a hub binds may not exist yet at boot). It returns
-// the file and the commands that enable it; on Windows, with no file, the
-// schtasks commands that set up a logon task for serve; on another OS (and
-// for the hub on Windows), only the advice.
-func writeService(configDir string, u unit) (string, []string, error) {
+// (the tailnet address a hub binds may not exist yet at boot), placed as
+// placeUnit says. It returns the file, what was done with it and the
+// commands that enable it; on Windows, with no file, the schtasks commands
+// that set up a logon task for serve; on another OS (and for the hub on
+// Windows), only the advice.
+func writeService(configDir string, u unit, force bool) (string, string, []string, error) {
 	exe, err := os.Executable()
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	path := os.Getenv("PATH")
 	if dir := filepath.Dir(exe); !strings.Contains(path, dir) {
@@ -451,7 +467,7 @@ func writeService(configDir string, u unit) (string, []string, error) {
 	}
 	file, err := serviceFile(u)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	switch runtime.GOOS {
 	case "linux":
@@ -463,21 +479,19 @@ func writeService(configDir string, u unit) (string, []string, error) {
 			"ExecStart=" + exe + " " + u.cmd + "\nRestart=always\nRestartSec=5\n" + kill +
 			"Environment=" + strings.ReplaceAll(env, "\n", "\nEnvironment=") + "\n\n" +
 			"[Install]\nWantedBy=default.target\n"
-		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
-			return "", nil, err
-		}
-		if err := os.WriteFile(file, []byte(body), 0o644); err != nil {
-			return "", nil, err
+		state, err := placeUnit(file, body, force)
+		if err != nil {
+			return "", "", nil, err
 		}
 		how := []string{"systemctl --user daemon-reload && systemctl --user enable --now " + u.name + "   # " + u.cmd + "; journalctl --user -u " + u.name + " -f for its log"}
 		if u == serveUnit {
 			how = append(how, "loginctl enable-linger $USER   # so it survives logout")
 		}
-		return file, how, nil
+		return file, state, how, nil
 	case "darwin":
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return "", nil, err
+			return "", "", nil, err
 		}
 		log := filepath.Join(home, "Library", "Logs", u.name+".log")
 		body := `<?xml version="1.0" encoding="UTF-8"?>
@@ -495,25 +509,43 @@ func writeService(configDir string, u unit) (string, []string, error) {
 </dict>
 </plist>
 `
-		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
-			return "", nil, err
+		state, err := placeUnit(file, body, force)
+		if err != nil {
+			return "", "", nil, err
 		}
-		if err := os.WriteFile(file, []byte(body), 0o644); err != nil {
-			return "", nil, err
-		}
-		return file, []string{"launchctl bootstrap gui/$(id -u) " + file + "   # " + u.cmd + "; log in ~/Library/Logs/" + u.name + ".log"}, nil
+		return file, state, []string{"launchctl bootstrap gui/$(id -u) " + file + "   # " + u.cmd + "; log in ~/Library/Logs/" + u.name + ".log"}, nil
 	case "windows":
 		if u != serveUnit {
 			break
 		}
 		cfgPath, err := filepath.Abs(filepath.Join(configDir, "config.toml"))
 		if err != nil {
-			return "", nil, err
+			return "", "", nil, err
 		}
 		lines, err := schtasksLines(exe, cfgPath, filepath.Join(config.StateDir(), "serve.log"))
-		return "", lines, err
+		return "", unitNone, lines, err
 	}
-	return "", []string{"bmesh " + u.cmd + spaces(u.cmd) + "# no service file for " + runtime.GOOS + "; keep this running"}, nil
+	return "", unitNone, []string{"bmesh " + u.cmd + spaces(u.cmd) + "# no service file for " + runtime.GOOS + "; keep this running"}, nil
+}
+
+// placeUnit writes body to file when none is there, or under force. A file
+// with the same bytes is left unchanged; one that differs (tuned by hand,
+// or written by an older bmesh) is kept, and body is written beside it as
+// file.new for the operator to diff and move over.
+func placeUnit(file, body string, force bool) (string, error) {
+	have, err := os.ReadFile(file)
+	switch {
+	case err == nil && string(have) == body:
+		return unitUnchanged, nil
+	case err == nil && !force:
+		return unitKept, os.WriteFile(file+".new", []byte(body), 0o644)
+	case err != nil && !errors.Is(err, os.ErrNotExist):
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		return "", err
+	}
+	return unitWrote, os.WriteFile(file, []byte(body), 0o644)
 }
 
 // spaces pads "bmesh <cmd>" to the column the Next: lines' comments start at.

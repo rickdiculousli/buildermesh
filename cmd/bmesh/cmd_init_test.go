@@ -152,6 +152,71 @@ func TestInitServiceWritesUnit(t *testing.T) {
 	if !strings.Contains(out, "systemctl --user enable --now bmesh") || !strings.Contains(out, "wrote "+unit) {
 		t.Fatalf("out %q", out)
 	}
+
+	// The same bytes again: nothing written, and still how to enable it.
+	out, _, code = runInit(t, cfg, root, "", "init", "--service", "--no-repo")
+	if code != 0 || !strings.Contains(out, "unchanged "+unit+"\n") || strings.Contains(out, "wrote "+unit) ||
+		!strings.Contains(out, "systemctl --user enable --now bmesh") {
+		t.Fatalf("unchanged: %d %q", code, out)
+	}
+	if _, err := os.Stat(unit + ".new"); !os.IsNotExist(err) {
+		t.Fatalf("unchanged unit got a .new: %v", err)
+	}
+
+	// A unit tuned by hand is kept, the new body beside it, and nothing
+	// says to enable it.
+	tuned := strings.Replace(string(b), "RestartSec=5\n", "RestartSec=5\nMemoryMax=512M\n", 1)
+	if err := os.WriteFile(unit, []byte(tuned), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, _, code = runInit(t, cfg, root, "", "init", "--service", "--no-repo")
+	want := "kept " + unit + " (it differs from what init writes); the new one is " + unit + ".new: diff them, and move it over to take it\n"
+	if code != 0 || !strings.Contains(out, want) || strings.Contains(out, "wrote "+unit) || strings.Contains(out, "systemctl") ||
+		strings.Contains(out, "bmesh serve        #") {
+		t.Fatalf("kept: %d %q", code, out)
+	}
+	if got, _ := os.ReadFile(unit); string(got) != tuned {
+		t.Fatalf("tuned unit rewritten:\n%s", got)
+	}
+	if got, _ := os.ReadFile(unit + ".new"); string(got) != string(b) {
+		t.Fatalf(".new:\n%s", got)
+	}
+
+	// --force replaces it.
+	out, _, code = runInit(t, cfg, root, "", "init", "--service", "--no-repo", "--force", "--runner", "claude")
+	if code != 0 || !strings.Contains(out, "wrote "+unit) || !strings.Contains(out, "systemctl --user enable --now bmesh") {
+		t.Fatalf("force: %d %q", code, out)
+	}
+	if got, _ := os.ReadFile(unit); string(got) != string(b) {
+		t.Fatalf("force kept the tuned unit:\n%s", got)
+	}
+}
+
+// With [hub] role set, each unit is placed on its own: serve's tuned unit
+// is kept while the hub's, the same bytes, is unchanged and enabled.
+func TestInitServiceKeepsEachUnitApart(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("systemd")
+	}
+	root := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "xdg"))
+	cfg := filepath.Join(root, "config.toml")
+	os.WriteFile(cfg, []byte("[mesh]\nnats = \"nats://127.0.0.1:4222\"\n[hub]\nrole = \"leaf\"\nlisten = \"127.0.0.1:4222\"\nremote = \"nats://h:7422\"\n"), 0o600)
+	if out, _, code := runInit(t, cfg, root, "", "init", "--service", "--no-repo"); code != 0 {
+		t.Fatalf("%d %q", code, out)
+	}
+	units := filepath.Join(root, "xdg", "systemd", "user")
+	serve, hub := filepath.Join(units, "bmesh.service"), filepath.Join(units, "bmesh-hub.service")
+	os.WriteFile(serve, []byte("# tuned\n"), 0o644)
+	out, _, code := runInit(t, cfg, root, "", "init", "--service", "--no-repo")
+	if code != 0 || !strings.Contains(out, "kept "+serve+" ") || !strings.Contains(out, "unchanged "+hub+"\n") ||
+		!strings.Contains(out, "enable --now bmesh-hub") || strings.Contains(out, "enable --now bmesh ") ||
+		strings.Contains(out, "enable-linger") {
+		t.Fatalf("%d %q", code, out)
+	}
+	if _, err := os.Stat(hub + ".new"); !os.IsNotExist(err) {
+		t.Fatalf("hub got a .new: %v", err)
+	}
 }
 
 func TestCommandsRefuseUntilSetUp(t *testing.T) {
