@@ -7,7 +7,9 @@ import (
 	"io"
 	"maps"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
@@ -33,11 +35,15 @@ func (h buildHold) line() string { return fmt.Sprintf("held: %s %s %s", h.who, h
 
 // heldBy reads the repo's leads on every host and the mesh's pending
 // feedback and names what holds a build in family: the first other family
-// (by name) with a lead of repo that is not done or blocked (a lead with
-// no family holds as itself), else the first other family of the repo's
-// (one a lead of repo is in, or named <repo>-build-<N>) with feedback
-// pending. Nil when nothing does. A release passes no family: every
-// family is another.
+// (by name) of the build's pipeline with a lead of repo that is not done
+// or blocked (a lead with no family holds as itself), else the first other
+// family of the repo's (one a lead of repo is in, or named
+// <repo>-build-<N> or <repo>-fix-<N>) in that pipeline with feedback
+// pending. The two pipelines are bmesh's fix families (<repo>-fix-<N>, the
+// fixer's) and every other family, and neither holds the other's builds.
+// Feedback naming bmesh's own repo (ownRepo) never holds: the fixer owns
+// it. Nil when nothing does. A release passes no family: every family of
+// either pipeline is another.
 func (a *app) heldBy(ctx context.Context, repo, family string) (*buildHold, error) {
 	nodes, err := mesh.ListNodes(ctx, a.client)
 	if err != nil {
@@ -47,10 +53,12 @@ func (a *app) heldBy(ctx context.Context, repo, family string) (*buildHold, erro
 	if err != nil {
 		return nil, err
 	}
-	pending, err := mesh.PendingFeedback(ctx, a.client)
+	pending, err := mesh.ListAllFeedback(ctx, a.client)
 	if err != nil {
 		return nil, err
 	}
+	// apart is a family of the other pipeline, which never holds this build.
+	apart := func(f string) bool { return family != "" && isFixFamily(f) != isFixFamily(family) }
 	running := map[string][]mesh.Node{}
 	repoFamilies := map[string]bool{}
 	for _, n := range nodes {
@@ -58,7 +66,7 @@ func (a *app) heldBy(ctx context.Context, repo, family string) (*buildHold, erro
 			continue
 		}
 		repoFamilies[n.Family] = true
-		if s := states[n.Path].State; (family != "" && n.Family == family) || s == "done" || s == "blocked" {
+		if s := states[n.Path].State; (family != "" && n.Family == family) || apart(n.Family) || s == "done" || s == "blocked" {
 			continue
 		}
 		who := cmp.Or(n.Family, n.Path)
@@ -78,18 +86,41 @@ func (a *app) heldBy(ctx context.Context, repo, family string) (*buildHold, erro
 		return &buildHold{who: who, verb: "is", why: fmt.Sprintf("still running (%s); watch it with bmesh watch --nodes %s",
 			strings.Join(what, ", "), strings.Join(paths, ","))}, nil
 	}
-	base := mesh.RepoToken(repo)
+	base, own := mesh.RepoToken(repo), a.ownRepo()
+	held := map[string]int{}
 	for _, p := range pending {
-		if family != "" && p.Family == family {
+		if (family != "" && p.Family == family) || apart(p.Family) || (own != "" && p.Repo == own) {
 			continue
 		}
-		if m := familyNRE.FindStringSubmatch(p.Family); !repoFamilies[p.Family] && (m == nil || m[1] != base) {
+		if !repoFamilies[p.Family] && familyBase(p.Family) != base {
 			continue
 		}
-		return &buildHold{who: p.Family, verb: "has", why: fmt.Sprintf("%d feedback pending; drain it with bmesh feedback list/drain %s",
-			p.Pending, p.Family)}, nil
+		held[p.Family]++
+	}
+	if len(held) > 0 {
+		who := slices.Sorted(maps.Keys(held))[0]
+		return &buildHold{who: who, verb: "has", why: fmt.Sprintf("%d feedback pending; drain it with bmesh feedback list/drain %s",
+			held[who], who)}, nil
 	}
 	return nil, nil
+}
+
+// fixFamilyRE reads a fixer's family: <repo>-fix-<N>.
+var fixFamilyRE = regexp.MustCompile(`^(.*)-fix-(\d+)$`)
+
+// isFixFamily reports whether f is a fixer's family, the fix pipeline.
+func isFixFamily(f string) bool { return fixFamilyRE.MatchString(f) }
+
+// familyBase is the repo token a minted family names (<repo>-build-<N> or
+// <repo>-fix-<N>), "" for any other.
+func familyBase(f string) string {
+	if m := familyNRE.FindStringSubmatch(f); m != nil {
+		return m[1]
+	}
+	if m := fixFamilyRE.FindStringSubmatch(f); m != nil {
+		return m[1]
+	}
+	return ""
 }
 
 // codeHead is the newest commit of ref that changes anything outside the
@@ -188,4 +219,39 @@ func (a *app) verifyMain(ctx context.Context, row config.Repo, repoPath, sha str
 func lastLines(s string, n int) string {
 	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
 	return strings.Join(lines[max(len(lines)-n, 0):], "\n")
+}
+
+// fixDepthCap is the fix_of chain a build refuses: the third fix on one
+// premise (ruling premise).
+const fixDepthCap = 3
+
+// fixRefusal holds the rulings a build can check (see the fix brief): a
+// spec carrying `ruled` sized L or larger is refused (reversible), and so
+// is any spec whose fix_of chain through specs is fixDepthCap deep
+// (premise). Both refusals say to set it proposed.
+func fixRefusal(s *spec.Spec, specs []*spec.Spec) error {
+	if size := s.Fields["size"]; s.Fields["ruled"] != "" && (size == "L" || strings.HasSuffix(size, "XL")) {
+		return fail(exitRefused, "refused: spec %s is ruled and sized %s (reversible: anything sized L is proposed, never built); set it proposed",
+			s.IDString(), size)
+	}
+	chain := []string{s.IDString()}
+	seen := map[int]bool{s.ID: true}
+	for cur := s; ; {
+		m := idRE.FindStringSubmatch(cur.Fields["fix_of"])
+		if m == nil {
+			break
+		}
+		n, _ := strconv.Atoi(m[1])
+		chain = append(chain, m[1])
+		next, ok := spec.Find(specs, n)
+		if !ok || seen[n] {
+			break
+		}
+		seen[n], cur = true, next
+	}
+	if depth := len(chain) - 1; depth >= fixDepthCap {
+		return fail(exitRefused, "refused: spec %s is fix %d on one premise (%s) (premise: no third fix on one premise); set it proposed with the belief the fixes assumed",
+			s.IDString(), depth, strings.Join(chain, " fixes "))
+	}
+	return nil
 }

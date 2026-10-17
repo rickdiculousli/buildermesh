@@ -204,6 +204,14 @@ func TestPushRequest(t *testing.T) {
 	if _, ok := Push(mesh.Event{From: "a.x", Event: "ask"}, mesh.Node{Path: "a.x", Role: "executor"}, cfg, ""); ok {
 		t.Error("executor pushed")
 	}
+	fixer := mesh.Node{Path: "bm-fix-1", Role: "fixer"}
+	if req, ok := Push(mesh.Event{From: "bm-fix-1", Event: "done", Text: "1779: proposed 060", Commit: "abc"}, fixer, cfg, ""); !ok ||
+		req.Title != "bm-fix-1 is done" || req.Body != "1779: proposed 060\ncommit abc" {
+		t.Errorf("fixer done: %+v %v", req, ok)
+	}
+	if !threaded(fixer) {
+		t.Error("a fixer is not woken")
+	}
 	if _, ok := Push(mesh.Event{From: "a", Event: "progress"}, lead, cfg, ""); ok {
 		t.Error("progress pushed")
 	}

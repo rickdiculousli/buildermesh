@@ -3,6 +3,7 @@ package mesh
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -82,6 +83,62 @@ func ListFeedback(ctx context.Context, c *Client, family string) ([]Feedback, er
 		out = append(out, f)
 	}
 	return out, nil
+}
+
+// ListAllFeedback returns every family's pending feedback, in stream
+// order, each with its stream sequence.
+func ListAllFeedback(ctx context.Context, c *Client) ([]Feedback, error) {
+	hist, err := History(ctx, c, FeedbackSubject(">"), time.Time{})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Feedback, 0, len(hist))
+	for _, m := range hist {
+		family := strings.TrimPrefix(m.Subject, "bm.feedback.")
+		var f Feedback
+		if err := json.Unmarshal(m.Data, &f); err != nil {
+			f = Feedback{Text: string(m.Data)}
+		}
+		f.Family, f.Seq = family, m.Seq
+		out = append(out, f)
+	}
+	return out, nil
+}
+
+// DeleteFeedback deletes the feedback messages at seqs from the stream and
+// returns the ones it deleted and the ones not there (drained already). A
+// sequence holding anything but feedback is refused before any is deleted.
+func DeleteFeedback(ctx context.Context, c *Client, seqs []uint64) (deleted, missing []uint64, err error) {
+	st, err := c.JS.Stream(ctx, StreamMesh)
+	if err != nil {
+		return nil, nil, err
+	}
+	var found []uint64
+	for _, seq := range seqs {
+		m, err := st.GetMsg(ctx, seq)
+		if errors.Is(err, jetstream.ErrMsgNotFound) {
+			missing = append(missing, seq)
+			continue
+		}
+		if err != nil {
+			return nil, nil, fmt.Errorf("read %d: %w", seq, err)
+		}
+		if !strings.HasPrefix(m.Subject, "bm.feedback.") {
+			return nil, nil, fmt.Errorf("%d is %s, not feedback", seq, m.Subject)
+		}
+		found = append(found, seq)
+	}
+	for _, seq := range found {
+		if err := st.DeleteMsg(ctx, seq); err != nil {
+			if errors.Is(err, jetstream.ErrMsgNotFound) {
+				missing = append(missing, seq)
+				continue
+			}
+			return deleted, missing, fmt.Errorf("delete %d: %w", seq, err)
+		}
+		deleted = append(deleted, seq)
+	}
+	return deleted, missing, nil
 }
 
 // DrainFeedback deletes the family's messages from the stream up to and
