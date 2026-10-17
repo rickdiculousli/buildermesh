@@ -1,8 +1,8 @@
 # Working in buildermesh
 
-`bmesh` is a Go CLI and daemon; the README is the reference for every command, config key, bucket and event, and is kept exact: a change to behaviour changes the README in the same commit. Tests never use `/tmp` (`meshtest.Start` refuses it), so run them with `TMPDIR=$HOME/.cache/bmesh-scratch/tmp`. Runner tests drive the shell fakes in `testdata/`, never a real T3, tmux or `claude`.
+`bmesh` is a Go CLI and daemon; the README is the reference for every command, flag, config key, output and refusal, and `docs/internals.md` for how it works inside (subjects, buckets, record shapes, signing). Both are kept exact: a change to behaviour changes them in the same commit. Tests never use `/tmp` (`meshtest.Start` refuses it), so run them with `TMPDIR=$HOME/.cache/bmesh-scratch/tmp`. Runner tests drive the shell fakes in `testdata/`, never a real T3, tmux or `claude`.
 
-The skills in `skills/` are the plugin every node runs on; `docs/agents-snippet.md` is the paragraph other repos quote. Both must stay true for someone who has only `bmesh` and this README: nothing of any particular fleet, coordinator repo or optional plugin is assumed there.
+The skills in `skills/` are the plugin every node runs on; `docs/agents-snippet.md` is the paragraph other repos quote. Both must stay true for someone who has only `bmesh`, the README and `docs/internals.md`: nothing of any particular fleet, coordinator repo or optional plugin is assumed there.
 
 Design and decisions live in `docs/design/` (`2026-10-14-buildermesh.md` and `2026-10-15-buildermesh-round2.md`); the specs built here are in `docs/proposals/`.
 
