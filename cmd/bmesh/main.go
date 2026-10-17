@@ -350,6 +350,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdVersion(rest)
 	case "update":
 		return a.cmdUpdate(rest)
+	case "config":
+		return a.cmdConfig(rest)
 	case "hosts":
 		return a.cmdHosts(rest)
 	case "sync":
