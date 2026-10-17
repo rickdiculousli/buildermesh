@@ -239,15 +239,12 @@ func TestLeadStartClaudeRunner(t *testing.T) {
 	if err != nil || !ok || n.Runner.Kind != "claude" || n.Runner.Thread != got.Thread || n.Worktree != wt {
 		t.Fatalf("node %+v %v %v", n, ok, err)
 	}
-	var l []byte
-	for i := 0; i < 100 && !strings.Contains(string(l), "--session-id"); i++ {
-		time.Sleep(20 * time.Millisecond)
-		l, _ = os.ReadFile(log)
-	}
-	if want := "-p --output-format json --session-id " + got.Thread + " --model m --effort high --dangerously-skip-permissions\n"; string(l) != want {
-		t.Fatalf("argv %q, want %q", l, want)
-	}
-	if in, _ := os.ReadFile(log + ".stdin"); string(in) != "build it" {
-		t.Fatalf("stdin %q", in)
+	// The fake writes argv, then stdin: wait on the stdin, the later write.
+	waitFor(t, "the brief on claude's stdin", func() bool {
+		in, _ := os.ReadFile(log + ".stdin")
+		return string(in) == "build it"
+	})
+	if l, _ := os.ReadFile(log); string(l) != "-p --output-format json --session-id "+got.Thread+" --model m --effort high --dangerously-skip-permissions\n" {
+		t.Fatalf("argv %q", l)
 	}
 }
