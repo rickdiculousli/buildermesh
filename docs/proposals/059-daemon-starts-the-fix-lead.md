@@ -1,6 +1,6 @@
 ---
 id: 059
-title: The daemon starts a repo's fix lead when feedback arrives, so no session has to
+title: The daemon starts bmesh's own fix lead when feedback on bmesh arrives, so no session has to
 kind: time-cost
 size: M
 judge: opus
@@ -17,13 +17,13 @@ After 058, the trigger is still a session. A coordinator has to reach `watch-don
 Builds on 058; build it after 058 lands.
 
 In:
-- **A registry key**, `fixes = "auto"` (default `""`: a coordinator starts the fixer, as in 058), on a ship row. The row is the place for it because the registry is the one place every box reads for a repo.
-- **The daemon starts it.** The daemon of the row's `host` acts, resolved as `build` resolves it. It notices a feedback message whose `repo` row says `auto`, or, on each minute's settle pass, any pending issue for such a repo. If no fixer of that repo is live (one neither `done` nor `blocked`), it runs `bmesh fix <repo>` as a subprocess. The decision is derived from what exists (pending messages and fixer nodes), never from what an earlier pass meant to do. So a daemon restart, a missed message or a fixer that ended with issues still pending all converge on one fixer, and two boxes never start two: `fix` refuses the second, and the start is claimed with a `Nats-Msg-Id`, as a push is. A `blocked` fixer is never restarted: its issues wait on the operator, and its block pushes as a lead's does.
+- **Only for bmesh's own repo**, the row 058's `fix` runs on. There is no key: a mesh whose registry has no such row never starts a fixer, and every other repo's feedback stays with the coordinator.
+- **The daemon starts it.** The daemon of the row's `host` acts, resolved as `build` resolves it. It notices a feedback message naming that repo, or, on each minute's settle pass, any pending issue for it. If no fixer is live (one neither `done` nor `blocked`), it runs `bmesh fix` as a subprocess. The decision is derived from what exists (pending messages and fixer nodes), never from what an earlier pass meant to do. So a daemon restart, a missed message or a fixer that ended with issues still pending all converge on one fixer, and two boxes never start two: `fix` refuses the second, and the start is claimed with a `Nats-Msg-Id`, as a push is. A `blocked` fixer is never restarted: its issues wait on the operator, and its block pushes as a lead's does.
 - **Only the fixer reaches the operator.** Leads of a `<repo>-fix-<N>` family don't push `done`: the fixer reports them. Their `ask` and `blocked` go to the fixer, which answers or escalates under the rulings. The fixer's own `ask`, `blocked` and `done` push as a lead's do. A done push is titled `<repo> fixes: N fixed, M wait on you`, and its body puts the proposed specs first.
-- **mesh-status** replaces `feedback: N pending in <family>` with `fixes: N pending for <repo> (<fixer> working)`, or `(starts within a minute)` on an `auto` row, or `(bmesh fix <repo>)` on another.
-- **The build skill's step 7**, on an `auto` row, names the fixer the daemon started and does nothing else.
+- **mesh-status** shows bmesh's own pending feedback as `fixes: N pending for <repo> (<fixer> working)`, or `(starts within a minute)`. Other repos keep `feedback: N pending in <family>`.
+- **The build skill's step 7** names the fixer the daemon started for bmesh's issues, and triages other repos' issues as today.
 
-Out: pacing fixes by quota, and starting fixers on non-ship rows.
+Out: fixers for any other repo, and pacing fixes by quota.
 
 Judge: opus, because the start has to converge across restarts and boxes, and the push filtering changes what the operator hears.
 
@@ -32,16 +32,15 @@ A lead in any batch leaves feedback before its `done`. Within a minute `mesh-sta
 
 ## Verification
 The repo's verify, plus daemon tests on `meshtest.Start` with the fake runner:
-- A feedback message for an `auto` row starts exactly one fixer, also with two daemons racing.
+- A feedback message naming bmesh's repo starts exactly one fixer, also with two daemons racing.
 - A pending issue with no live fixer starts one on the next pass.
-- A `blocked` fixer isn't restarted, and a row without the key starts nothing.
+- A `blocked` fixer isn't restarted, and feedback naming another repo, or a registry with no own row, starts nothing.
 - A fix family's lead `done` doesn't push, while the fixer's done pushes with the title above.
 - The new `mesh-status` line.
 
-README: Config's `repos.toml` key, Feedback, Pushes, and the build skill's step 7.
+README: Feedback, Pushes, and the build skill's step 7.
 
 ## Risks and the alternative considered
 A runaway loop, where fix leads keep leaving feedback that starts more fixers. 058's checkable rulings bound each chain at two, and the fixer's pass ends when its queue is empty. Alternative: a daemon timer that starts a fixer every few hours. Rejected: it fixes later and starts threads with nothing to do.
 
 ## Needs from the operator
-- [k16] Set `fixes = "auto"` on the `buildermesh` row of `~/.config/bmesh/repos.toml`, then run `bmesh repos publish`.
