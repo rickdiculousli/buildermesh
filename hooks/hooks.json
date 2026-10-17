@@ -1,5 +1,5 @@
 {
-  "description": "Opens every session with one line saying which box it runs on and who else is on the mesh (bmesh hosts --here: one file the daemon writes, never the hub), then, when this box's bmesh is behind main, the line saying so (bmesh update --notice: one file the daemon writes, never the network). Silent without bmesh, without [hosts] and with a current binary, or before the daemon's first check.",
+  "description": "Opens every session with one line saying which box it runs on and who else is on the mesh (bmesh hosts --here: one file the daemon writes, never the hub), then, when this box's bmesh is behind main, its update waits on bmesh update, or upgrade notes are pending, the line saying so (bmesh update --notice: files on this box, never the network). Silent without bmesh, without [hosts] and with a current binary, or before the daemon's first check.",
   "hooks": {
     "SessionStart": [
       {

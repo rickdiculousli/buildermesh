@@ -16,6 +16,6 @@ The mesh is the record; read it and summarise, never guess from the runner.
    - **done since the last look**: path and what landed (the commit in the `done` text). "The last look" is the last status this session gave; the first look lists what finished today.
    A node with unread messages is noted (the count) so the operator knows a reply is waiting on it.
 3. **Keep it short.** One line per node, the asks first; a quiet mesh is one line.
-4. **This box's bmesh.** When `bmesh update --notice` prints a line (this box's binary is behind the bmesh release, or the code on main, that it follows), pass it on as the last line of the summary, word for word.
+4. **This box's bmesh.** When `bmesh update --notice` prints a line (this box's binary is behind the bmesh release, or the code on main, that it follows; its daemon's update waits on `bmesh update`; or upgrade notes are pending), pass each on as the last lines of the summary, word for word.
 
 End with one line: what is running, and what waits on the operator (the asks and blocks, by path). Say what each thing in it is in plain words (a spec or issue by what it does, its number after it in brackets if at all): the line is final and reads on its own, with nothing the operator has to look up.
