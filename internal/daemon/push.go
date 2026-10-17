@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -46,7 +47,10 @@ var pushKinds = map[string]struct{ title, priority, tags string }{
 // the thread, and an Open map action the map page (leads and engineers,
 // with cfg.MapURL); without a thread the tap opens the map. A round's done
 // is titled `<repo> round N proposed` and carries the merged pitch; its
-// blocked, `<repo> round N blocked`.
+// blocked, `<repo> round N blocked`. A lead of a fixer's family pushes
+// nothing: its ask, blocked and done go to the fixer, which reports them.
+// The fixer's done is titled `<repo> fixes: N fixed, M wait(s) on you`,
+// its proposed specs first in the body (FixerReport).
 func Push(ev mesh.Event, n mesh.Node, cfg config.NotifyConfig, console string) (req PushRequest, ok bool) {
 	k, known := pushKinds[ev.Event]
 	if (n.Role != "lead" && n.Role != "fixer" && n.Role != "round" && n.Role != "engineer") || !known || !slices.Contains(cfg.Push, ev.Event) {
@@ -54,6 +58,9 @@ func Push(ev mesh.Event, n mesh.Node, cfg config.NotifyConfig, console string) (
 	}
 	if n.Role == "engineer" && ev.Event != "ask" {
 		return PushRequest{}, false // its done and blocked reach the operator through the round
+	}
+	if _, _, fix := mesh.FixFamily(n.Family); n.Role == "lead" && fix {
+		return PushRequest{}, false
 	}
 	req.Title = fmt.Sprintf(k.title, ev.From)
 	req.Priority, req.Tags = k.priority, k.tags
@@ -70,6 +77,10 @@ func Push(ev mesh.Event, n mesh.Node, cfg config.NotifyConfig, console string) (
 			req.Tags = "memo"
 		}
 	}
+	text := ev.Text
+	if n.Role == "fixer" && ev.Event == "done" {
+		req.Title, text = FixerReport(n.Repo, ev.Text)
+	}
 	mapURL := ""
 	if n.Role != "round" && cfg.MapURL != "" {
 		mapURL = cfg.MapURL + "#/lead/" + ev.From
@@ -85,7 +96,7 @@ func Push(ev mesh.Event, n mesh.Node, cfg config.NotifyConfig, console string) (
 	default:
 		req.Click = mapURL
 	}
-	req.Body = cutUTF8(ev.Text, pushBodyMax)
+	req.Body = cutUTF8(text, pushBodyMax)
 	if ev.Event == "done" && ev.Commit != "" && n.Role != "round" {
 		sha := ev.Commit
 		if len(sha) > 8 {
@@ -98,6 +109,35 @@ func Push(ev mesh.Event, n mesh.Node, cfg config.NotifyConfig, console string) (
 	}
 	return req, true
 }
+
+// FixerReport is the push of a fixer's done text: the title `<repo> fixes:
+// N fixed, M wait(s) on you`, N its `<seq>: fixed by` lines and M its
+// `<seq>: proposed` ones, and the text with the proposed lines first, the
+// rest after them as written.
+func FixerReport(repo, text string) (title, body string) {
+	var proposed, rest []string
+	fixed := 0
+	for _, line := range strings.Split(strings.TrimSpace(text), "\n") {
+		switch {
+		case fixerLineRE.MatchString(line) && strings.Contains(line, ": proposed "):
+			proposed = append(proposed, line)
+			continue
+		case fixerLineRE.MatchString(line) && strings.Contains(line, ": fixed by "):
+			fixed++
+		}
+		rest = append(rest, line)
+	}
+	verb := "wait"
+	if len(proposed) == 1 {
+		verb = "waits"
+	}
+	title = fmt.Sprintf("%s fixes: %d fixed, %d %s on you", repo, fixed, len(proposed), verb)
+	return title, strings.TrimSpace(strings.Join(append(proposed, rest...), "\n"))
+}
+
+// fixerLineRE is a line of a fixer's report about one issue: `<seq>: ...`,
+// perhaps listed with - or *.
+var fixerLineRE = regexp.MustCompile(`^\s*(?:[-*]\s+)?#?\d+(?:\s*,\s*#?\d+)*: `)
 
 // roundNumber is the N of a round path <repo>-round-<N> ("?" otherwise).
 func roundNumber(path string) string {

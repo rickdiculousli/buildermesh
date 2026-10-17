@@ -2,6 +2,7 @@
 package config
 
 import (
+	"bufio"
 	"fmt"
 	"net"
 	"os"
@@ -612,6 +613,37 @@ func ExpandHome(p string) string {
 		}
 	}
 	return p
+}
+
+// OwnRepo is the row whose go.mod declares module, the one bmesh was built
+// from: bmesh's own repo, which update, land and the fixer act on. It is ""
+// when module is, or when no row's checkout declares it.
+func (c *Config) OwnRepo(module string) string {
+	if module == "" {
+		return ""
+	}
+	for _, n := range c.RepoNames() {
+		if _, p, err := c.RepoPath(n); err == nil && ModulePath(filepath.Join(p, "go.mod")) == module {
+			return n
+		}
+	}
+	return ""
+}
+
+// ModulePath is the module a go.mod declares, "" when unreadable.
+func ModulePath(goMod string) string {
+	f, err := os.Open(goMod)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(sc.Text()), "module "); ok {
+			return strings.Trim(strings.TrimSpace(rest), `"`)
+		}
+	}
+	return ""
 }
 
 // RepoPath resolves a [repos] key, else an existing directory, to (name, abs path).

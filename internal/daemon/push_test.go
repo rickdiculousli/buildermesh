@@ -204,10 +204,20 @@ func TestPushRequest(t *testing.T) {
 	if _, ok := Push(mesh.Event{From: "a.x", Event: "ask"}, mesh.Node{Path: "a.x", Role: "executor"}, cfg, ""); ok {
 		t.Error("executor pushed")
 	}
-	fixer := mesh.Node{Path: "bm-fix-1", Role: "fixer"}
+	fixer := mesh.Node{Path: "bm-fix-1", Role: "fixer", Repo: "bm", Family: "bm-fix-1"}
 	if req, ok := Push(mesh.Event{From: "bm-fix-1", Event: "done", Text: "1779: proposed 060", Commit: "abc"}, fixer, cfg, ""); !ok ||
-		req.Title != "bm-fix-1 is done" || req.Body != "1779: proposed 060\ncommit abc" {
+		req.Title != "bm fixes: 0 fixed, 1 waits on you" || req.Body != "1779: proposed 060\ncommit abc" {
 		t.Errorf("fixer done: %+v %v", req, ok)
+	}
+	if req, ok := Push(mesh.Event{From: "bm-fix-1", Event: "ask", Text: "which?"}, fixer, cfg, ""); !ok || req.Title != "bm-fix-1 asks" {
+		t.Errorf("fixer ask: %+v %v", req, ok)
+	}
+	// A fix lead reports to its fixer, never to the operator.
+	fixLead := mesh.Node{Path: "bm-061", Role: "lead", Repo: "bm", Family: "bm-fix-1"}
+	for _, e := range []string{"ask", "blocked", "done"} {
+		if req, ok := Push(mesh.Event{From: "bm-061", Event: e, Commit: "abc"}, fixLead, cfg, ""); ok {
+			t.Errorf("fix lead %s pushed: %+v", e, req)
+		}
 	}
 	if !threaded(fixer) {
 		t.Error("a fixer is not woken")
@@ -228,6 +238,44 @@ func TestPushRequest(t *testing.T) {
 	text, commit, _ := strings.Cut(req.Body, "\n")
 	if len(text) > 3<<10 || len(text) < 3<<10-1 || !strings.HasPrefix(long, text) || commit != "commit abc" {
 		t.Errorf("cut body: %d bytes, commit line %q", len(text), commit)
+	}
+}
+
+func TestFixerReport(t *testing.T) {
+	text := "Waits on you: 1781 names pstack-claude\n1786: fixed by 061 (structure, failing-first)\n1779: proposed 060 (no-new-surface: adds bmesh spec steps)\n" +
+		"1790, 1791: fixed by 062 (root)\n- 1795: proposed 063 (reversible: L)\n1800: dropped (drop: 044 covers it)\nreleased bm v0.4.1"
+	title, body := FixerReport("bm", text)
+	if title != "bm fixes: 2 fixed, 2 wait on you" {
+		t.Errorf("title %q", title)
+	}
+	want := "1779: proposed 060 (no-new-surface: adds bmesh spec steps)\n- 1795: proposed 063 (reversible: L)\nWaits on you: 1781 names pstack-claude\n" +
+		"1786: fixed by 061 (structure, failing-first)\n1790, 1791: fixed by 062 (root)\n1800: dropped (drop: 044 covers it)\nreleased bm v0.4.1"
+	if body != want {
+		t.Errorf("body\n%s\nwant\n%s", body, want)
+	}
+	if title, body := FixerReport("bm", "nothing to rule on"); title != "bm fixes: 0 fixed, 0 wait on you" || body != "nothing to rule on" {
+		t.Errorf("empty pass: %q %q", title, body)
+	}
+}
+
+// A fix lead's events reach its fixer, not the phone; the fixer's done does.
+func TestPushFixLeadQuietFixerDone(t *testing.T) {
+	f, n := pushSetup(t)
+	for _, node := range []mesh.Node{
+		{Path: "bm-fix-1", Role: "fixer", Repo: "bm", Family: "bm-fix-1", Host: testHost},
+		{Path: "bm-061", Role: "lead", Repo: "bm", Family: "bm-fix-1", Host: testHost},
+	} {
+		if err := mesh.PutNode(f.ctx, f.c, node); err != nil {
+			t.Fatal(err)
+		}
+	}
+	startPush(t, f.d)
+	f.event(t, mesh.Event{From: "bm-061", Event: "ask", Text: "which?"})
+	f.event(t, mesh.Event{From: "bm-061", Event: "done", Text: "fixed", Commit: "abc"})
+	f.event(t, mesh.Event{From: "bm-fix-1", Event: "done", Text: "1786: fixed by 061 (root)\n1779: proposed 060 (no-new-surface)", Commit: "def"})
+	got := n.waitRequests(t, 1)
+	if got[0].Title != "bm fixes: 1 fixed, 1 waits on you" || got[0].Body != "1779: proposed 060 (no-new-surface)\n1786: fixed by 061 (root)\ncommit def" {
+		t.Errorf("request = %+v", got[0])
 	}
 }
 

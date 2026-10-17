@@ -19,7 +19,9 @@ import (
 // lead's done is checked against its spec; an executor's or an engineer's
 // (a round's thread) needs only --commit. An executor's ask, done and blocked
 // are also sent to its parent's inbox, since the operator reads only leads'
-// events and the lead acts on its executors' from there. Each prints one
+// events and the lead acts on its executors' from there; a fix lead's (a
+// lead in a fixer's family) go to the fixer's, whose path is its family,
+// since the fixer, not the operator, hears them. Each prints one
 // line on success: `<event> <path>`, or `done <path> <sha8>`; a done for the
 // commit a node is already done at prints `already done at <sha8>` and
 // publishes nothing.
@@ -92,6 +94,11 @@ func (a *app) cmdEvent(name string, args []string) error {
 			return err
 		}
 	}
+	if _, _, fix := mesh.FixFamily(n.Family); n.Role == "lead" && fix && (name == "ask" || name == "done" || name == "blocked") {
+		if _, err := mesh.Send(ctx, a.client, executorMessage(ctx, name, n, n.Family, *text, *commit)); err != nil {
+			return err
+		}
+	}
 	if err := mesh.PublishEvent(ctx, a.client, mesh.Event{From: path, Event: name, Text: *text, Commit: *commit}); err != nil {
 		return err
 	}
@@ -134,7 +141,7 @@ func sameCommit(a, b string) bool {
 }
 
 // executorMessage is what an executor's ask, done or blocked puts in its
-// parent's inbox. The id is the event itself, so a retry after a failure
+// parent's inbox (and a fix lead's in its fixer's). The id is the event itself, so a retry after a failure
 // further down (publish, state) is one message in the lead's inbox.
 func executorMessage(ctx context.Context, name string, n mesh.Node, parent, text, commit string) mesh.Message {
 	path := n.Path

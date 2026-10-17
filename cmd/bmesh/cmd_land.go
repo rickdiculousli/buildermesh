@@ -16,6 +16,7 @@ import (
 
 	"github.com/rickdiculousli/buildermesh"
 	"github.com/rickdiculousli/buildermesh/internal/checkout"
+	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/daemon"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
@@ -542,7 +543,7 @@ const landDriftLines = 20
 // repo: its go.mod declares the module this binary was built from.
 func ownModuleRepo(repoPath string) bool {
 	bi, ok := readBuildInfo()
-	return ok && bi != nil && bi.Main.Path != "" && modulePath(filepath.Join(repoPath, "go.mod")) == bi.Main.Path
+	return ok && bi != nil && bi.Main.Path != "" && config.ModulePath(filepath.Join(repoPath, "go.mod")) == bi.Main.Path
 }
 
 // scaffolded refuses a rebased tree whose scaffolded text the branch changed

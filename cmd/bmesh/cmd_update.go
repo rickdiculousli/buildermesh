@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -263,28 +262,11 @@ func clearNotice() error { return selfupdate.WriteNotice(config.StateDir(), "") 
 // ownRepo is the registry row whose go.mod declares the module this binary
 // was built from, or "" when none does (or the binary does not say).
 func (a *app) ownRepo() string {
-	for _, n := range a.cfg.RepoNames() {
-		if _, p, err := a.cfg.RepoPath(n); err == nil && ownModuleRepo(p) {
-			return n
-		}
-	}
-	return ""
-}
-
-// modulePath is the module a go.mod declares, "" when unreadable.
-func modulePath(goMod string) string {
-	f, err := os.Open(goMod)
-	if err != nil {
+	bi, ok := readBuildInfo()
+	if !ok || bi == nil {
 		return ""
 	}
-	defer f.Close()
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		if rest, ok := strings.CutPrefix(strings.TrimSpace(sc.Text()), "module "); ok {
-			return strings.Trim(strings.TrimSpace(rest), `"`)
-		}
-	}
-	return ""
+	return a.cfg.OwnRepo(bi.Main.Path)
 }
 
 // childWalk runs bin's own walk of r (the new binary's: the one being

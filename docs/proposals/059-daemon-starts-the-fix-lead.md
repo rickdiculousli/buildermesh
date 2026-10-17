@@ -29,6 +29,8 @@ In:
 
 Out: fixers for any other repo, and pacing fixes by quota.
 
+As built: an issue a fixer already had when it started, and left, doesn't start another fixer (only one published at or after the newest fixer's start does), so a fixer that can't settle an issue isn't restarted every minute; `mesh-status` then reads `(<fixer> done; they wait on you)`, and `(<fixer> blocked)` while a block waits. A fix lead's `done` reaches the fixer's inbox too, beside its `ask` and `blocked`.
+
 Judge: opus, because the start has to converge across restarts and boxes, and the push filtering changes what the operator hears.
 
 ## What you'll see
@@ -46,5 +48,8 @@ README: Feedback, Pushes, and the build skill's step 7.
 
 ## Risks and the alternative considered
 A runaway loop, where fix leads keep leaving feedback that starts more fixers. 058's checkable rulings bound each chain at two, and the fixer's pass ends when its queue is empty. Alternative: a daemon timer that starts a fixer every few hours. Rejected: it fixes later and starts threads with nothing to do.
+
+## Upgrading
+nothing: the daemon starts bmesh's own fixer once it runs this binary. There is no key, and a fleet whose registry has no row holding bmesh's module sees no change.
 
 ## Needs from the operator

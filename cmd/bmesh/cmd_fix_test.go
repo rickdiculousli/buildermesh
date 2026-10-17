@@ -267,3 +267,54 @@ func TestFixAndOperatorPipelinesDontHoldEachOther(t *testing.T) {
 		t.Fatalf("fix build past op feedback: %d %q %q", code, out, errs)
 	}
 }
+
+// A fix lead's ask, blocked and done go to its fixer's inbox: the fixer,
+// not the operator, hears them.
+func TestFixLeadReportsToItsFixer(t *testing.T) {
+	c, _ := ownSetup(t)
+	ctx := t.Context()
+	putNode(t, c, ctx, mesh.Node{Path: "demo-fix-1", Role: "fixer", Repo: "demo", Family: "demo-fix-1"})
+	fixer, _ := mesh.ParsePath("demo-fix-1")
+	if err := mesh.EnsureInbox(ctx, c, fixer); err != nil {
+		t.Fatal(err)
+	}
+	putNode(t, c, ctx, mesh.Node{Path: "demo-030", Repo: "demo", Family: "demo-fix-1"})
+	putNode(t, c, ctx, mesh.Node{Path: "demo-031", Repo: "demo", Family: "demo-build-1"})
+	for _, p := range []string{"demo-030", "demo-031"} {
+		for _, ev := range [][]string{{"started"}, {"ask", "--text", "which db?"}, {"blocked", "--text", "no db"}} {
+			if _, errs, code := runCLI(t, as(p), ev...); code != 0 {
+				t.Fatalf("%s %s: %d %q", p, ev[0], code, errs)
+			}
+		}
+	}
+	msgs, err := mesh.Fetch(ctx, c, fixer, true)
+	if err != nil || len(msgs) != 2 || msgs[0].Text != "ask from demo-030: which db?" || msgs[1].Text != "blocked from demo-030: no db" ||
+		msgs[1].Report == nil || msgs[1].Report.Event != "blocked" {
+		t.Fatalf("fixer inbox %+v %v", msgs, err)
+	}
+}
+
+// mesh-status shows bmesh's own open issues as one fixes line, naming who
+// has them; other repos' feedback keeps its line per family.
+func TestMeshStatusFixesLine(t *testing.T) {
+	c, _ := ownSetup(t)
+	ctx := t.Context()
+	pubFeedback(t, c, mesh.Feedback{From: "demo-002", Family: "demo-build-1", Repo: "demo", Text: "mine", At: "2026-10-17T10:00:00Z"})
+	pubFeedback(t, c, mesh.Feedback{From: "other-007", Family: "other-build-3", Repo: "demo", Text: "mine too", At: "2026-10-17T10:00:00Z"})
+	pubFeedback(t, c, mesh.Feedback{From: "demo-002", Family: "demo-build-1", Repo: "other", Text: "not mine"})
+	tail := func(want string) {
+		t.Helper()
+		out, errs, code := runCLI(t, nil, "mesh-status")
+		if code != 0 || !strings.Contains(out, want) || strings.Contains(out, "other-build-3") {
+			t.Fatalf("%d %q %q\nwant %q", code, out, errs, want)
+		}
+	}
+	tail("fixes: 2 pending for demo (starts within a minute)\nfeedback: 1 pending in demo-build-1\n")
+	putNode(t, c, ctx, mesh.Node{Path: "demo-fix-1", Role: "fixer", Repo: "demo", Family: "demo-fix-1", StartedAt: "2026-10-17T11:00:00Z"})
+	meshtest.ForceState(t, c, "demo-fix-1", mesh.State{State: "working", By: "node"})
+	tail("fixes: 2 pending for demo (demo-fix-1 working)\n")
+	meshtest.ForceState(t, c, "demo-fix-1", mesh.State{State: "blocked", By: "node"})
+	tail("fixes: 2 pending for demo (demo-fix-1 blocked)\n")
+	meshtest.ForceState(t, c, "demo-fix-1", mesh.State{State: "done", By: "node"})
+	tail("fixes: 2 pending for demo (demo-fix-1 done; they wait on you)\n")
+}

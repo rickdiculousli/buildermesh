@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -18,9 +17,6 @@ const (
 	listUsage  = "usage: bmesh feedback list <family>|--repo R [--json]"
 	drainUsage = "usage: bmesh feedback drain <family> [--through SEQ] | bmesh feedback drain --seq SEQ[,SEQ...]"
 )
-
-// seqRE finds the stream sequences a spec's from_feedback names: #<seq>.
-var seqRE = regexp.MustCompile(`#(\d+)\b`)
 
 // cmdFeedback is a lead's lesson for its build family's coordinator:
 // bmesh feedback "<text>", and the coordinator's list and drain.
@@ -145,25 +141,11 @@ func (a *app) repoFeedback(ctx context.Context, repo, repoPath string) ([]mesh.F
 	if err != nil {
 		return nil, ledgerFail(err)
 	}
-	named := map[uint64]bool{}
-	for _, s := range specs {
-		for _, m := range seqRE.FindAllStringSubmatch(s.Fields["from_feedback"], -1) {
-			if n, err := strconv.ParseUint(m[1], 10, 64); err == nil {
-				named[n] = true
-			}
-		}
-	}
 	all, err := mesh.ListAllFeedback(ctx, a.client)
 	if err != nil {
 		return nil, err
 	}
-	var out []mesh.Feedback
-	for _, f := range all {
-		if f.Repo == repo && !named[f.Seq] {
-			out = append(out, f)
-		}
-	}
-	return out, nil
+	return spec.OpenIssues(all, repo, specs), nil
 }
 
 // feedbackLine is "<seq> <from> (<repo> <spec>[, family F][, where W][, fixed F]): <text>",
