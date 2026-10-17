@@ -331,6 +331,24 @@ func defaults() *Config {
 	}
 }
 
+// file is c in the TOML layout, the defaults a file is decoded over.
+func (c *Config) file() file {
+	f := file{
+		Mesh: c.Mesh, Host: c.Host, Hub: c.Hub, Serve: c.Serve, Runner: c.Runner, Spec: c.Spec, Models: c.Models,
+		Quota: c.Quota, Console: c.Console, Hosts: c.Hosts,
+	}
+	f.Update.Repo, f.Update.CheckEvery, f.Update.Upstream, f.Update.Track = c.Update.Repo, duration(c.Update.CheckEvery), c.Update.Upstream, c.Update.Track
+	f.Notify.Ntfy, f.Notify.Command, f.Notify.MapURL = c.Notify.Ntfy, c.Notify.Command, c.Notify.MapURL
+	f.Notify.DigestEvery = duration(c.Notify.DigestEvery)
+	f.Notify.CatchUp = duration(c.Notify.CatchUp)
+	f.Liveness.Grace = duration(c.Liveness.Grace)
+	f.Liveness.PollEvery = duration(c.Liveness.PollEvery)
+	f.Liveness.WakeEvery = duration(c.Liveness.WakeEvery)
+	f.Status.KeepDone = duration(c.Status.KeepDone)
+	f.Routines.KeepResults = duration(c.Routines.KeepResults)
+	return f
+}
+
 // Dir is the config directory: ~/.config/bmesh when it exists (where an
 // earlier bmesh kept it on every OS), else the user's config dir
 // (os.UserConfigDir: ~/.config on Linux, ~/Library/Application Support on
@@ -417,18 +435,7 @@ func Load(path string) (*Config, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return c, nil
 	}
-	f := file{
-		Mesh: c.Mesh, Host: c.Host, Hub: c.Hub, Serve: c.Serve, Runner: c.Runner, Spec: c.Spec, Models: c.Models,
-		Quota: c.Quota, Console: c.Console, Hosts: c.Hosts,
-	}
-	f.Update.Repo, f.Update.CheckEvery, f.Update.Upstream, f.Update.Track = c.Update.Repo, duration(c.Update.CheckEvery), c.Update.Upstream, c.Update.Track
-	f.Notify.DigestEvery = duration(c.Notify.DigestEvery)
-	f.Notify.CatchUp = duration(c.Notify.CatchUp)
-	f.Liveness.Grace = duration(c.Liveness.Grace)
-	f.Liveness.PollEvery = duration(c.Liveness.PollEvery)
-	f.Liveness.WakeEvery = duration(c.Liveness.WakeEvery)
-	f.Status.KeepDone = duration(c.Status.KeepDone)
-	f.Routines.KeepResults = duration(c.Routines.KeepResults)
+	f := c.file()
 	md, err := toml.DecodeFile(path, &f)
 	if err != nil {
 		return nil, fmt.Errorf("config %s: %w", path, err)

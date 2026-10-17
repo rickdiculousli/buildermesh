@@ -158,3 +158,24 @@ func Label(dir, commit string) string {
 	}
 	return rel
 }
+
+// Base is the release a label names or follows: v0.2.0 for v0.2.0 and
+// v0.2.0+3, "" for anything else.
+func Base(label string) string {
+	base, _, _ := strings.Cut(label, "+")
+	if !IsRelease(base) {
+		return ""
+	}
+	return base
+}
+
+// Later reports whether release tag a comes after b; a tag is later than
+// "" or anything that isn't one.
+func Later(a, b string) bool {
+	ra, ok := releaseNumbers(a)
+	if !ok {
+		return false
+	}
+	rb, ok := releaseNumbers(b)
+	return !ok || slices.Compare(ra[:], rb[:]) > 0
+}
