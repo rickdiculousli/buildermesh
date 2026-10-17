@@ -4,7 +4,7 @@ title: bmesh hub restarts itself onto a new release once serve runs it, so no bo
 kind: time-cost
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-17
