@@ -4,7 +4,7 @@ title: A landed spec's steps for the operator stay on mesh-status until they're 
 kind: feature
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: dfdc9673-27b2-4f3f-9f17-95a5b436de66
 proposed_on: 2026-10-17
@@ -13,6 +13,8 @@ built_by: 2128f0e7-4526-4ddc-86c7-7043a794d9b0
 host: k16
 family: buildermesh-build-9
 branch: bmesh/2128f0e7-4526-4ddc-86c7-7043a794d9b0
+merged: ae3bc81f2bc189742e62c61fe2b6b3f0eb1f0710
+verified: verify ok t:d37fd321
 ---
 
 ## Opportunity
