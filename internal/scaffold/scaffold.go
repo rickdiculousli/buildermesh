@@ -296,16 +296,29 @@ func FollowSetup(text string, r config.Repo) (string, error) {
 	}
 	lines := strings.SplitAfter(text, "\n")
 	start, end := -1, len(lines)
+	inString := "" // the delimiter of the multi-line string a line is in
 	for i, l := range lines {
-		t := strings.TrimSpace(l)
-		if !strings.HasPrefix(t, "[") {
+		was := inString
+		for _, d := range []string{`"""`, `'''`} {
+			if strings.Count(l, d)%2 == 0 {
+				continue
+			}
+			switch inString {
+			case "":
+				inString = d
+			case d:
+				inString = ""
+			}
+		}
+		m := tableHeaderRE.FindStringSubmatch(l)
+		if was != "" || m == nil {
 			continue
 		}
 		if start >= 0 {
 			end = i
 			break
 		}
-		if h, _, ok := strings.Cut(strings.TrimPrefix(t, "["), "]"); ok && strings.TrimSpace(h) == "setup" {
+		if strings.TrimSpace(m[1]) == "setup" {
 			start = i
 		}
 	}
@@ -336,6 +349,10 @@ func FollowSetup(text string, r config.Repo) (string, error) {
 	}
 	return out, nil
 }
+
+// tableHeaderRE is a TOML table or array-of-tables header line, its name
+// in the first group.
+var tableHeaderRE = regexp.MustCompile(`^\s*\[\[?([A-Za-z0-9_."' -]+)\]\]?\s*(#.*)?\r?\n?$`)
 
 func sameSetup(a, b kind.Setup) bool {
 	return a.Command == b.Command && a.Timeout == b.Timeout && strings.Join(a.Inputs, "\x00") == strings.Join(b.Inputs, "\x00")

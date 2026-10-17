@@ -368,6 +368,9 @@ func TestFollowSetup(t *testing.T) {
 		{"follows already", "# mine\n[setup]\ncommand = 'npm ci'\ninputs = [':(glob)**/package-lock.json']\ntimeout = \"10m\"\n",
 			"# mine\n[setup]\ncommand = 'npm ci'\ninputs = [':(glob)**/package-lock.json']\ntimeout = \"10m\"\n", ""},
 		{"not a config", "[setup\n", "", "toml"},
+		{"a multi-line command", "[setup]\ncommand = \"\"\"\n[ -d node_modules ] || npm ci\n\"\"\"\n\n[slots]\ngame = 2\n",
+			block + "\n[slots]\ngame = 2\n", ""},
+		{"a header-like line in a literal string", "[setup]\ncommand = '''\n[ -d x ]\n'''\n", block, ""},
 	} {
 		got, err := FollowSetup(c.text, row)
 		if got != c.want || (c.err == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), c.err)) {
