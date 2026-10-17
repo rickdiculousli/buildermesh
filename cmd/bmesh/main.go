@@ -135,8 +135,14 @@ commands:
                                            end the turn; the release wakes it (refused when not held)
   feedback "<text>" [--repo R] [--where <file|command>] [--fixed SHA]
                                            a lead's lesson for its build family's coordinator, before done
-  feedback list <family> [--json]          the family's pending feedback, each with its stream sequence
+  feedback list <family>|--repo R [--json]
+                                           the family's pending feedback, each with its stream sequence; --repo:
+                                           every family's naming R, less what a spec on R's main names (#<seq>)
   feedback drain <family> [--through SEQ]  delete the family's feedback from the stream, up to SEQ
+  feedback drain --seq SEQ[,SEQ...]        delete exactly those feedback messages, whatever their family
+  fix [--model M] [--effort E]             start the fixer on bmesh's own repo (<repo>-fix-<N>, role fixer, on
+                                           the row's host): it rules on the feedback naming that repo and builds
+                                           the fixes; refused with no own row or beside a live fixer
   scaffold <repo> [--check]                give a ship repo its AGENTS.md sections, docs/proposals and the routine
                                            kinds its row names; --check prints the diff and exits 1 when any
   executor new --name N [--base REF] [--model M] [--json]
@@ -342,6 +348,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdBuild(rest)
 	case "release":
 		return a.cmdRelease(rest)
+	case "fix":
+		return a.cmdFix(rest)
 	case "hold":
 		return a.cmdHold(rest)
 	case "unhold":

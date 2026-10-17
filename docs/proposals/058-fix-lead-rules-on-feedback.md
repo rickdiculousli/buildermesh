@@ -72,4 +72,7 @@ Alternatives:
 - A routine kind. Rejected: a routine is one job on one commit, and it can't dispatch and watch leads for an hour.
 - A T3 scheduled thread. Rejected: bmesh would then depend on T3's scheduler.
 
+## Upgrading
+nothing: `bmesh fix` and the `fix` skill arrive with the binary and the plugin, which every update already asks to update together.
+
 ## Needs from the operator

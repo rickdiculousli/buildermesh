@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -63,9 +64,11 @@ func (a *app) cmdLeadStart(args []string) error {
 // checkout), the spec, the brief and, optionally, the model (default
 // [models] lead), the title (default "[build] <repo> <spec>"), the node
 // path (default <repo>-<spec>), the thread id (default a fresh UUID) and
-// the build family (a build's; none for lead start).
+// the build family (a build's; none for lead start). Role is the node's,
+// lead unless it says fixer (bmesh fix), which [runner] max_leads doesn't
+// count.
 type leadStart struct {
-	Name, RepoPath, Spec, BriefPath, Model, Effort, Title, Path, Thread, Family string
+	Name, RepoPath, Spec, BriefPath, Model, Effort, Title, Path, Thread, Family, Role string
 }
 
 // leadStarted is what startLead prints: the node and its session.
@@ -94,9 +97,9 @@ func leadPath(name, spec, flag string) (string, error) {
 }
 
 // leadFree checks that path can take a lead now: a node there must be done
-// or blocked (its previous state is returned), and [runner] max_leads is
-// not reached on this host.
-func (a *app) leadFree(ctx context.Context, path string) (prev string, err error) {
+// or blocked (its previous state is returned), and, when capped, [runner]
+// max_leads is not reached on this host.
+func (a *app) leadFree(ctx context.Context, path string, capped bool) (prev string, err error) {
 	_, exists, err := mesh.GetNode(ctx, a.client, path)
 	if err != nil {
 		return "", err
@@ -108,7 +111,7 @@ func (a *app) leadFree(ctx context.Context, path string) (prev string, err error
 	if exists && st.State != "done" && st.State != "blocked" {
 		return "", fail(exitRefused, "refused: path %s is taken (state %s); use --path %s-2", path, st.State, path)
 	}
-	if max := a.cfg.Runner.MaxLeads; max > 0 {
+	if max := a.cfg.Runner.MaxLeads; max > 0 && capped {
 		n, err := a.liveLeads(ctx)
 		if err != nil {
 			return "", err
@@ -121,7 +124,7 @@ func (a *app) leadFree(ctx context.Context, path string) (prev string, err error
 }
 
 // startLead starts a lead through the configured runner and registers it
-// as a node (role lead) at its path.
+// as a node (role lead, or o.Role) at its path.
 func (a *app) startLead(o leadStart) (leadStarted, error) {
 	p, err := leadPath(o.Name, o.Spec, o.Path)
 	if err != nil {
@@ -136,7 +139,8 @@ func (a *app) startLead(o leadStart) (leadStarted, error) {
 	if err := a.connect(ctx, "lead-start"); err != nil {
 		return leadStarted{}, err
 	}
-	prev, err := a.leadFree(ctx, p)
+	role := cmp.Or(o.Role, "lead")
+	prev, err := a.leadFree(ctx, p, role == "lead")
 	if err != nil {
 		return leadStarted{}, err
 	}
@@ -185,7 +189,7 @@ func (a *app) startLead(o leadStart) (leadStarted, error) {
 	}
 	ctx, cancel = cmdCtx()
 	defer cancel()
-	if err := a.register(ctx, started, thread, mesh.Node{Path: p, Role: "lead", Repo: o.Name, RepoPath: o.RepoPath, Spec: o.Spec,
+	if err := a.register(ctx, started, thread, mesh.Node{Path: p, Role: role, Repo: o.Name, RepoPath: o.RepoPath, Spec: o.Spec,
 		Host: a.cfg.HostName(), Model: o.Model, Effort: o.Effort, Family: o.Family}, prev); err != nil {
 		return leadStarted{}, fmt.Errorf("thread %s started (branch %s, worktree %s) but registering the node failed: %w",
 			started.Thread, started.Branch, started.Worktree, err)

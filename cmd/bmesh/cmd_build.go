@@ -134,6 +134,9 @@ func (a *app) cmdBuild(args []string) error {
 		if s.Status() != "accepted" { // its own refusal comes before a hold or a verify
 			return fail(exitRefused, "refused: spec %s is %s, not accepted", s.IDString(), s.Status())
 		}
+		if err := fixRefusal(s, specs); err != nil {
+			return err
+		}
 	}
 	// A batch with nothing accepted has nothing to hold or verify.
 	gate := !*accepted || slices.ContainsFunc(specs, func(s *spec.Spec) bool { return s.Status() == "accepted" })
@@ -240,7 +243,7 @@ func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s 
 	if err != nil {
 		return buildStarted{}, err
 	}
-	if _, err := a.leadFree(ctx, p); err != nil {
+	if _, err := a.leadFree(ctx, p, true); err != nil {
 		return buildStarted{}, err
 	}
 	r, err := runner.New(a.cfg)
@@ -402,7 +405,9 @@ func (a *app) buildAccepted(ctx context.Context, row config.Repo, repoPath strin
 			continue
 		}
 		l := line{ID: s.IDString(), Title: s.Title(), Family: family}
-		if waits := waitsOn(s, specs); len(waits) > 0 {
+		if err := fixRefusal(s, specs); err != nil {
+			l.State, l.Reason = "not started", err.Error()
+		} else if waits := waitsOn(s, specs); len(waits) > 0 {
 			l.State, l.Reason = "waits", "on "+strings.Join(waits, ", ")
 		} else if working >= buildSlots {
 			l.State, l.Reason = "waits", fmt.Sprintf("%d leads working on %s", working, row.Name)

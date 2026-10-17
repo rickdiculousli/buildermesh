@@ -25,7 +25,7 @@ func proposalValues(nextID string) map[string]string {
 }
 
 func TestNames(t *testing.T) {
-	if got := strings.Join(Names(), ","); got != "build,engineer,half-pager,ux-engineer" {
+	if got := strings.Join(Names(), ","); got != "build,engineer,fix,half-pager,ux-engineer" {
 		t.Fatal(got)
 	}
 }

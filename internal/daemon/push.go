@@ -40,7 +40,7 @@ var pushKinds = map[string]struct{ title, priority, tags string }{
 }
 
 // Push builds the push for node event ev of node n (ev.From is n's path).
-// ok is false unless n is a lead, a round or (for ask) an engineer, and
+// ok is false unless n is a lead, a fixer, a round or (for ask) an engineer, and
 // ev.Event is listed in cfg.Push. console is the thread link (""= none):
 // the lead's or engineer's, or for a round its eng child's. The tap opens
 // the thread, and an Open map action the map page (leads and engineers,
@@ -49,7 +49,7 @@ var pushKinds = map[string]struct{ title, priority, tags string }{
 // blocked, `<repo> round N blocked`.
 func Push(ev mesh.Event, n mesh.Node, cfg config.NotifyConfig, console string) (req PushRequest, ok bool) {
 	k, known := pushKinds[ev.Event]
-	if (n.Role != "lead" && n.Role != "round" && n.Role != "engineer") || !known || !slices.Contains(cfg.Push, ev.Event) {
+	if (n.Role != "lead" && n.Role != "fixer" && n.Role != "round" && n.Role != "engineer") || !known || !slices.Contains(cfg.Push, ev.Event) {
 		return PushRequest{}, false
 	}
 	if n.Role == "engineer" && ev.Event != "ask" {

@@ -34,10 +34,10 @@ func noteRunner(d Deps, path string, s runner.Status) {
 }
 
 // threaded reports whether a node is a session the daemon polls and wakes:
-// a lead, or an engineer (a round's thread).
-func threaded(n mesh.Node) bool { return n.Role == "lead" || n.Role == "engineer" }
+// a lead, a fixer (bmesh fix) or an engineer (a round's thread).
+func threaded(n mesh.Node) bool { return n.Role == "lead" || n.Role == "fixer" || n.Role == "engineer" }
 
-// localLeads returns the leads and engineers this host runs that have a thread.
+// localLeads returns the leads, fixers and engineers this host runs that have a thread.
 func localLeads(ctx context.Context, d Deps) ([]mesh.Node, error) {
 	nodes, err := mesh.ListNodes(ctx, d.Client)
 	if err != nil {
