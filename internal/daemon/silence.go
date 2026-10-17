@@ -64,8 +64,8 @@ func wakeSilentLead(ctx context.Context, d Deps, act *Activity, path string) {
 		d.Log.Warn("silence: runner status", "path", path, "err", err)
 		return
 	}
-	if !s.Known || s.Running {
-		return
+	if !s.Known || s.Running || s.Stopped {
+		return // a thread the user stopped is marked stopped by the poll, never woken
 	}
 	p, err := mesh.ParsePath(path)
 	if err != nil {
@@ -76,7 +76,7 @@ func wakeSilentLead(ctx context.Context, d Deps, act *Activity, path string) {
 		d.Log.Warn("silence: unread", "path", path, "err", err)
 		return
 	}
-	wake(ctx, d, act, n, unread)
+	wake(ctx, d, act, n, unread, "")
 }
 
 // shortDuration prints d to the minute: "25m", "1h5m".

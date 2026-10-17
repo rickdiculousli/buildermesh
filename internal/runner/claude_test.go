@@ -199,10 +199,18 @@ func TestClaudeInterruptKillsTurn(t *testing.T) {
 	if st, _ := r.Status(context.Background(), "th-1"); !st.Running {
 		t.Fatalf("status %+v", st)
 	}
+	// A send queued behind the turn is dropped with it: nothing restarts
+	// a stopped session.
+	if err := r.Send(context.Background(), "th-1", "wake"); err != nil {
+		t.Fatal(err)
+	}
 	if err := r.Interrupt(context.Background(), "th-1"); err != nil {
 		t.Fatal(err)
 	}
 	until(t, "the turn to die", idle(t, r, "th-1"))
+	if strings.Count(readLog(t, log), "--resume") != 0 {
+		t.Fatalf("a queued send ran after the stop: %q", readLog(t, log))
+	}
 	if err := r.Interrupt(context.Background(), "th-1"); err != nil {
 		t.Fatalf("interrupt when idle: %v", err)
 	}

@@ -184,6 +184,11 @@ func TestT3V2StatusMapsRunStates(t *testing.T) {
 		if err != nil || st.Running != c.running || !st.Known {
 			t.Errorf("%s: %+v %v", c.run, st, err)
 		}
+		// Only an interrupt is a stop: a restart's cancel and a crash's
+		// failure are not.
+		if stopped := c.run == "interrupted"; st.Stopped != stopped || stopped && st.StoppedRun != "r2" || !stopped && st.StoppedRun != "" {
+			t.Errorf("%s: stopped %+v", c.run, st)
+		}
 	}
 	fake.AddThread(&t3fake.Thread{ID: "mcp:active", ActiveRunID: "r1", Runs: []t3fake.Run{{ID: "r1", Status: "completed"}}})
 	if st, _ := r.Status(context.Background(), "mcp:active"); !st.Running {
@@ -300,8 +305,8 @@ func TestT3V2InterruptAnIdleThread(t *testing.T) {
 	if err := r.Interrupt(context.Background(), "mcp:busy"); err != nil {
 		t.Fatal(err)
 	}
-	if st, _ := r.Status(context.Background(), "mcp:busy"); st.Running {
-		t.Fatalf("still running: %+v", st)
+	if st, _ := r.Status(context.Background(), "mcp:busy"); st.Running || !st.Stopped || st.StoppedRun != "r1" {
+		t.Fatalf("not stopped: %+v", st)
 	}
 }
 

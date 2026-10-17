@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,7 +19,10 @@ var wakeMu sync.Mutex
 // unread mail and was not woken within WakeEvery. A done or blocked lead is
 // woken only when that mail holds a message sent to it (bmesh send), so the
 // operator can ask a finished lead something; late reports and replies don't
-// wake it.
+// wake it. A stopped lead (mesh.Stopped) is woken only by a message from
+// outside its own tree (resumer), and the wake says who resumed it. A
+// thread the user stopped in its runner is never woken here: the poll marks
+// it stopped.
 func wakeOnce(ctx context.Context, d Deps, act *Activity) {
 	leads, err := localLeads(ctx, d)
 	if err != nil {
@@ -37,7 +41,7 @@ func wakeOnce(ctx context.Context, d Deps, act *Activity) {
 		finished := st.State == "done" || st.State == "blocked"
 		if !finished {
 			s, ok, err := mesh.GetRunner(ctx, d.Client, n.Path)
-			if err != nil || !ok || !s.Known || s.Running {
+			if err != nil || !ok || !s.Known || s.Running || s.Stopped {
 				continue
 			}
 		}
@@ -50,7 +54,16 @@ func wakeOnce(ctx context.Context, d Deps, act *Activity) {
 			d.Log.Warn("wake: unread", "path", n.Path, "err", err)
 			continue
 		}
-		if unread == 0 || finished && !hasMessage(ctx, d, p) {
+		if unread == 0 {
+			continue
+		}
+		resumedBy := ""
+		switch {
+		case mesh.Stopped(st):
+			if resumedBy = resumer(ctx, d, p); resumedBy == "" {
+				continue
+			}
+		case finished && !hasMessage(ctx, d, p):
 			continue
 		}
 		// A finished lead is not polled, so its runner is read here.
@@ -60,7 +73,7 @@ func wakeOnce(ctx context.Context, d Deps, act *Activity) {
 				continue
 			}
 		}
-		wake(ctx, d, act, n, unread)
+		wake(ctx, d, act, n, unread, resumedBy)
 	}
 }
 
@@ -79,12 +92,29 @@ func hasMessage(ctx context.Context, d Deps, p mesh.Path) bool {
 	return false
 }
 
+// resumer is the sender of the oldest unread `message` (bmesh send) in p's
+// mail from outside p's own tree, "" when there is none: an executor's ask
+// doesn't resume its stopped lead.
+func resumer(ctx context.Context, d Deps, p mesh.Path) string {
+	pending, err := mesh.Pending(ctx, d.Client, p)
+	if err != nil {
+		d.Log.Warn("wake: pending", "path", p.String(), "err", err)
+		return ""
+	}
+	for _, m := range pending {
+		if m.Kind == "message" && m.From != "" && m.From != p.String() && !strings.HasPrefix(m.From, p.String()+".") {
+			return m.From
+		}
+	}
+	return ""
+}
+
 // wake sends the wake text (the count and what waits, read from the
-// stream) to n's thread unless it was woken within
-// WakeEvery, and on delivery records the wake as a daemon event. A thread
+// stream; ResumeText when resumedBy names who resumed a stopped node) to
+// n's thread unless it was woken within WakeEvery, and on delivery records the wake as a daemon event. A thread
 // found running (ErrRunning) is not delivered: nothing is recorded, and the
 // next poll tries again. It reports whether the wake was delivered.
-func wake(ctx context.Context, d Deps, act *Activity, n mesh.Node, unread int) bool {
+func wake(ctx context.Context, d Deps, act *Activity, n mesh.Node, unread int, resumedBy string) bool {
 	wakeMu.Lock()
 	defer wakeMu.Unlock()
 	now := d.Now()
@@ -101,6 +131,9 @@ func wake(ctx context.Context, d Deps, act *Activity, n mesh.Node, unread int) b
 		}
 	}
 	text := WakeText(unread, pending)
+	if resumedBy != "" {
+		text = ResumeText(resumedBy, unread, pending)
+	}
 	// Runner.Send reads Status itself and refuses a running thread.
 	err := d.Runner.Send(ctx, n.Runner.Thread, text)
 	if errors.Is(err, runner.ErrRunning) {

@@ -102,6 +102,12 @@ func WakeText(unread int, pending []mesh.Message) string {
 	return head + ". Run `bmesh inbox` now, then continue."
 }
 
+// ResumeText is the wake of a stopped node a message resumed: the wake
+// text, headed "resumed by <who>".
+func ResumeText(by string, unread int, pending []mesh.Message) string {
+	return "bmesh: resumed by " + by + "; " + strings.TrimPrefix(WakeText(unread, pending), "bmesh: ")
+}
+
 // WakeItem names one pending message: a report by its event and, for done,
 // branch and commit; a reply by its job and verdict; anything else by its
 // kind and sender.

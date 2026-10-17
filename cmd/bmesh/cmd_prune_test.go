@@ -13,7 +13,7 @@ import (
 )
 
 // twoBoxes is mac (the admin) and k16 on one hub, both accepting ping,
-// prune and forget-worktree, each with its own checkout of app and bmesh's
+// prune, forget-worktree and stop-thread, each with its own checkout of app and bmesh's
 // worktrees under its own root; c is a client for arranging nodes.
 type twoBoxes struct {
 	mac, k16 box
@@ -49,7 +49,7 @@ func twoBoxSetup(t *testing.T) *twoBoxes {
 			t.Fatal(err)
 		}
 	}
-	accept := "ping,prune,forget-worktree"
+	accept := "ping,prune,forget-worktree,stop-thread"
 	if out, errs, code := tb.mac.run(t, "y\nn\npw\npw\n", "init", "--hosts", "--admin"); code != 0 {
 		t.Fatalf("admin init: %d %s %s", code, out, errs)
 	}

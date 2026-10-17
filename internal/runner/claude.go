@@ -375,14 +375,26 @@ func (r Claude) Send(ctx context.Context, thread, text string) error {
 	})
 }
 
-// Interrupt kills the running turn; nothing running is not an error.
+// Interrupt drops the queued sends, so no later Status starts them, and
+// kills the running turn; nothing running is not an error.
 func (r Claude) Interrupt(ctx context.Context, thread string) error {
 	d, err := r.known(thread)
 	if err != nil {
 		return err
 	}
-	if !running(d, readInt(filepath.Join(d, "turn"))) {
-		return nil
-	}
-	return kill(readInt(filepath.Join(d, "pid")))
+	return locked(d, func() error {
+		names, err := queued(d)
+		if err != nil {
+			return err
+		}
+		for _, name := range names {
+			if err := os.Remove(filepath.Join(d, "queue", name)); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+		if !running(d, readInt(filepath.Join(d, "turn"))) {
+			return nil
+		}
+		return kill(readInt(filepath.Join(d, "pid")))
+	})
 }

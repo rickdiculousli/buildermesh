@@ -342,6 +342,8 @@ func (h *hostsNode) run(ctx context.Context, m jetstream.Msg, j *hosts.Job) (boo
 		return h.pruneJob(ctx, j)
 	case "forget-worktree":
 		return h.forgetWorktreeJob(ctx, j)
+	case "stop-thread":
+		return h.stopThreadJob(ctx, j)
 	case "nix":
 		return h.nixJob(ctx, j)
 	case "propose":
