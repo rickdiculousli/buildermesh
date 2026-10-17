@@ -14,6 +14,7 @@ import (
 func TestTmuxStartMakesWorktreeAndWindow(t *testing.T) {
 	log := useFake(t, "BMESH_TMUX_COMMAND", "fake-tmux.sh", "FAKE_TMUX_LOG")
 	t.Setenv("FAKE_TMUX_NO_SESSION", "1")
+	t.Setenv("BMESH_CONFIG", "") // a daemon's routines inherit it, and the window would carry it
 	root := t.TempDir()
 	repo := filepath.Join(root, "demo")
 	meshtest.Git(t, root, "init", "-b", "main", repo)
