@@ -145,7 +145,7 @@ func TestInitServiceWritesUnit(t *testing.T) {
 	}
 	exe, _ := os.Executable()
 	if !strings.Contains(string(b), "ExecStart="+exe+" serve") || !strings.Contains(string(b), "BMESH_CONFIG="+cfg) ||
-		!strings.Contains(string(b), "KillMode=process\n") ||
+		!strings.Contains(string(b), "KillMode=process\n") || !strings.Contains(string(b), "RestartPreventExitStatus=78\n") ||
 		!strings.Contains(string(b), "Environment=XDG_CACHE_HOME="+filepath.Join(root, "xdg-cache")+"\n") {
 		t.Fatalf("unit:\n%s", b)
 	}

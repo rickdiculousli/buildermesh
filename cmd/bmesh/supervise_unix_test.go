@@ -155,3 +155,29 @@ func TestExitTextPrefersTheExitCode(t *testing.T) {
 		t.Fatalf("exitText %q", got)
 	}
 }
+
+// A child that refused its config (exit 78) is not started again, and the
+// supervisor exits 78 itself.
+func TestSuperviseStopsOnConfigExit(t *testing.T) {
+	s, out, log := fakeServe(t, "78")
+	s.quickN = 100
+	done := make(chan error, 1)
+	go func() { done <- s.run(context.Background()) }()
+	var err error
+	select {
+	case err = <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("supervisor kept restarting a child that exited 78")
+	}
+	var ee *exitErr
+	if !errors.As(err, &ee) || ee.code != exitConfig {
+		t.Fatalf("run: %v, want exit %d", err, exitConfig)
+	}
+	if n := len(runs(t, log)); n != 1 {
+		t.Fatalf("%d runs, want 1", n)
+	}
+	if o := out.String(); !strings.Contains(o, "serve exited 78 (config check failed); not restarting: fix the config and start it again") ||
+		strings.Contains(o, "starting again") {
+		t.Fatalf("output:\n%s", o)
+	}
+}

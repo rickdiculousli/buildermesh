@@ -21,6 +21,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/daemon"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/runner"
+	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 	"github.com/rickdiculousli/buildermesh/internal/web"
 )
 
@@ -51,7 +52,7 @@ func (a *app) cmdServe(args []string) error {
 	if len(pos) != 0 || *detachF && !*restart {
 		return fail(exitUsage, "usage: bmesh serve [--listen ADDR] [--restart [--detach]]")
 	}
-	if err := a.loadConfig(); err != nil {
+	if err := a.loadServiceConfig(); err != nil {
 		return err
 	}
 	// The path is read before an update moves the running file aside.
@@ -69,6 +70,11 @@ func (a *app) cmdServe(args []string) error {
 		fmt.Fprintf(a.stderr, "bmesh serve: no binary path, so no [update]: %v\n", err)
 		exe = ""
 	}
+	if remove, err := selfupdate.WriteProc(config.StateDir(), "serve", buildVersion()); err != nil {
+		fmt.Fprintf(a.stderr, "bmesh serve: no serve.json: %v\n", err)
+	} else {
+		defer remove()
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()
 	err = serve(ctx, a.cfg, *listen, a.stderr, nil, exe)
@@ -78,6 +84,24 @@ func (a *app) cmdServe(args []string) error {
 		return reexec(exe)
 	}
 	return err
+}
+
+// loadServiceConfig is loadConfig for serve and hub, which a service
+// starts: the config as config check takes it, and a refusal exits
+// exitConfig, which the units init --service writes don't restart on.
+func (a *app) loadServiceConfig() error {
+	if a.cfg != nil {
+		return nil
+	}
+	cfg, err := checkConfig(a.configPath)
+	if err != nil {
+		return fail(exitConfig, "config check failed: %v", err)
+	}
+	for _, l := range cfg.Ignored() {
+		fmt.Fprintln(a.stderr, l)
+	}
+	a.cfg = cfg
+	return nil
 }
 
 // superviseServe is serve --restart: the supervisor, with serve's own

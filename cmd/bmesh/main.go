@@ -29,6 +29,7 @@ const (
 	exitUsage   = 2
 	exitRefused = 3
 	exitTimeout = 5
+	exitConfig  = 78 // EX_CONFIG: serve or hub refused this box's config; their units don't restart on it
 )
 
 const usage = `usage: bmesh [--config FILE] [--node PATH] [--json] <command> [args]
@@ -52,7 +53,9 @@ commands:
                                            routines off, [runner] checkouts = "" (keeps config.toml.prev)
   hosts [--json]                           the roster joined with presence: awake, asleep, unverified or absent
   hosts --here                             this box's session line (<state dir>/this-box.txt, the daemon's);
-                                           nothing when [hosts] is off or the file is missing; never dials the hub
+                                           nothing when [hosts] is off or the file is missing; never dials the hub;
+                                           then, [hosts] on or off, hub runs <old>, serve <new>: restart bmesh-hub
+                                           when this box's hub runs an older binary than its serve
   hosts --notes [--json]                   every box's verified notes (<config dir>/notes.md, in its presence)
   hosts invite <name> [--secure] [--accept a,b] [--replace]
                                            (admin) print a one-time code for a box to join with; waits 10m
@@ -144,12 +147,16 @@ commands:
                                            with [update] repo, it rebuilds itself when what [update] track
                                            follows on that repo's main moves (a new release, or code head);
                                            else every [update] check_every it writes the notice when behind;
-                                           --restart runs it as a child, started again 5s after every exit;
-                                           --detach (Windows) starts that with no console window and returns
+                                           --restart runs it as a child, started again 5s after every exit
+                                           but 78; --detach (Windows) starts that with no console window and
+                                           returns; exit 78 when config check refuses the config
   hub                                      run this box's NATS hub or leaf from [hub] (role hub: JetStream, the
                                            leaf port; role leaf: dials [hub] remote forever) until stopped; its
                                            own process apart from serve, so an update never drops the mesh;
-                                           exit 3 naming the key when role, listen or the token file won't do
+                                           exit 3 naming the key when role, listen or the token file won't do;
+                                           exit 78 when config check refuses the config
+  config check                             load this box's config.toml and repos.toml with this binary: config ok:
+                                           <path>, or config check failed: <the key> (exit 3)
   t3 login [--server URL] [--callback-port 52299] [--timeout D]
                                            sign bmesh in to this box's T3 0.1.0 (default [runner] t3_server):
                                            print the authorize URL, take the redirect on localhost or pasted,
