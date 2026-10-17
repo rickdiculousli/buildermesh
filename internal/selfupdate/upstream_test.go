@@ -203,7 +203,7 @@ func TestFetchUpstreamAndInstallModule(t *testing.T) {
 	// go resolves a tagged commit to its tag, which names no revision: the
 	// stamp names it all the same.
 	t.Setenv("FAKE_GO_TAGGED", "1")
-	if err := InstallModule(context.Background(), dir, "example.com/bm", exe, Target{Commit: got}); err != nil {
+	if err := InstallModule(context.Background(), dir, "example.com/bm", exe, Target{Commit: got}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := exec.Command(exe).Output(); err != nil || strings.TrimSpace(string(out)) != "fake bmesh "+got {
@@ -224,7 +224,7 @@ func TestFetchUpstreamAndInstallModule(t *testing.T) {
 
 	// A build naming another commit is refused, the binary kept.
 	t.Setenv("FAKE_GO_REVISION", "eeeeeeee")
-	err = InstallModule(context.Background(), dir, "example.com/bm", exe, Target{Commit: shas[0]})
+	err = InstallModule(context.Background(), dir, "example.com/bm", exe, Target{Commit: shas[0]}, nil)
 	var refused *Refused
 	if !errors.As(err, &refused) || refused.Reported != "eeeeeeee" {
 		t.Fatalf("err %v", err)

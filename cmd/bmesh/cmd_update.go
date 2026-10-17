@@ -4,13 +4,16 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
+	"github.com/rickdiculousli/buildermesh/internal/upgrade"
 )
 
 // userCacheDir and executable are config.CacheDir and os.Executable; tests
@@ -24,28 +27,105 @@ var (
 // skills name commands only a matching binary has.
 const pluginLine = "update the buildermesh plugin too: claude plugin marketplace update buildermesh && claude plugin update buildermesh@buildermesh (then restart Claude Code)"
 
+const updateUsage = "usage: bmesh update [--repo R] [--latest] [--plan] [--answer KEY=VALUE]... [--defaults] [--apply [--yes]] | update --notice"
+
+// answers is --answer, repeatable: KEY=VALUE.
+type answers map[string]string
+
+func (m answers) String() string { return "" }
+
+func (m answers) Set(s string) error {
+	k, v, ok := strings.Cut(s, "=")
+	if !ok || strings.TrimSpace(k) == "" {
+		return fmt.Errorf("--answer %q: want KEY=VALUE", s)
+	}
+	m[strings.TrimSpace(k)] = v
+	return nil
+}
+
+// walkFlags is how a walk answers and runs: what update passes on to the
+// new binary's walk.
+type walkFlags struct {
+	answers        answers
+	defaults       bool
+	apply, yes     bool
+	plan           bool
+	from, to, dir  string // --walk and --plan: the range and the repo main is read from
+	walk, preSwap  bool
+	fromSet, toSet bool
+}
+
+// args are the flags that carry f to another binary's walk.
+func (f walkFlags) args() []string {
+	var out []string
+	for k, v := range f.answers {
+		out = append(out, "--answer", k+"="+v)
+	}
+	if f.defaults {
+		out = append(out, "--defaults")
+	}
+	if f.apply {
+		out = append(out, "--apply")
+	}
+	if f.yes {
+		out = append(out, "--yes")
+	}
+	return out
+}
+
 // cmdUpdate builds what [update] track follows on the update repo's main
 // (the newest release, or the code head) over this binary, as the daemon's
 // [update] does, without a daemon; --latest goes to the code head this
 // once. With no repo to build from it installs from the module's main.
-// --notice prints the daemon's notice and nothing else.
+// Between the build and the swap the new binary walks the upgrade notes of
+// the releases in between (walk); --plan prints them. --notice prints the
+// daemon's notice and nothing else.
 func (a *app) cmdUpdate(args []string) error {
 	fs := a.flags("update")
 	repoFlag := fs.String("repo", "", "registry name of the repo to build from (default [update] repo)")
 	latest := fs.Bool("latest", false, "go to main's code head this once, whatever [update] track says")
 	notice := fs.Bool("notice", false, "print the daemon's notice (<state dir>/update.txt) and never touch the network")
+	w := walkFlags{answers: answers{}}
+	fs.Var(w.answers, "answer", "answer an upgrade ask: KEY=VALUE (the key as the ask names it, with or without its [section]); repeatable")
+	fs.BoolVar(&w.defaults, "defaults", false, "take every upgrade ask's default")
+	fs.BoolVar(&w.apply, "apply", false, "run the upgrade notes' run and check steps without asking")
+	fs.BoolVar(&w.yes, "yes", false, "with --apply and no terminal: run the steps that ask first")
+	fs.BoolVar(&w.plan, "plan", false, "print the upgrade steps between this binary and the target (--json: as JSON) and change nothing")
+	fs.BoolVar(&w.walk, "walk", false, "walk the upgrade notes from --from to this binary (what update runs on the new binary)")
+	fs.BoolVar(&w.preSwap, "before-swap", false, "with --walk: check the config and answer the asks only, before the swap")
+	fs.StringVar(&w.from, "from", "", "with --walk or --plan: the revision (or release) walked from; \"\" is a box with no record")
+	fs.StringVar(&w.to, "to", "", "with --walk or --plan: the revision walked to (default this binary's)")
+	fs.StringVar(&w.dir, "dir", "", "with --walk or --plan: the repo (a checkout, or the bare upstream) main's notes are read from")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
-	if len(pos) != 0 || (*notice && (*repoFlag != "" || *latest)) {
-		return fail(exitUsage, "usage: bmesh update [--repo R] [--latest] | update --notice")
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "from":
+			w.fromSet = true
+		case "to":
+			w.toSet = true
+		}
+	})
+	walkOnly := w.walk || w.preSwap || w.fromSet || w.toSet || w.dir != ""
+	switch {
+	case len(pos) != 0, *notice && (*repoFlag != "" || *latest || w.plan || w.apply || w.defaults || len(w.answers) > 0 || walkOnly),
+		w.preSwap && !w.walk, w.walk && w.plan, w.yes && !w.apply,
+		walkOnly && !w.walk && !w.plan, (w.walk || w.plan && walkOnly) && (*repoFlag != "" || *latest):
+		return fail(exitUsage, updateUsage)
 	}
 	if *notice {
 		if line := selfupdate.ReadNotice(config.StateDir()); line != "" {
 			fmt.Fprintln(a.stdout, line)
 		}
+		if line := upgrade.Pending(config.StateDir(), buildVersion().Release); line != "" {
+			fmt.Fprintln(a.stdout, "bmesh: "+line)
+		}
 		return nil
+	}
+	if w.walk || w.plan && walkOnly {
+		return a.walkGiven(w)
 	}
 	if err := a.loadConfig(); err != nil {
 		return err
@@ -54,13 +134,6 @@ func (a *app) cmdUpdate(args []string) error {
 	if *latest {
 		track = selfupdate.TrackLatest
 	}
-	name := *repoFlag
-	if name == "" {
-		name = a.cfg.Update.Repo
-	}
-	if name == "" {
-		name = a.ownRepo()
-	}
 	exe, err := executable()
 	if err != nil {
 		return err
@@ -68,58 +141,27 @@ func (a *app) cmdUpdate(args []string) error {
 	if exe, err = filepath.EvalSymlinks(exe); err != nil {
 		return err
 	}
-	if name == "" {
-		return a.updateUpstream(exe, track)
-	}
-	if _, ok := a.cfg.Repos[name]; !ok {
-		return fail(exitRefused, "update repo %q is not in the registry (bmesh repos)", name)
-	}
-	_, repoPath, err := a.cfg.RepoPath(name)
-	if err != nil {
-		return err
-	}
-	clones := ""
-	if cache, err := userCacheDir(); err == nil {
-		clones = filepath.Join(cache, "bmesh", "update")
-	} else if a.cfg.Runner.Checkouts == "" {
-		return fmt.Errorf("no checkouts root and no cache dir: %w", err)
-	}
-	dir, unlock, err := selfupdate.MainCheckout(repoPath, a.cfg.Expand(a.cfg.Runner.Checkouts), clones, name)
+	src, unlock, err := a.updateSource(*repoFlag)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	t, err := selfupdate.Follow(dir, "HEAD", track, a.specDir())
+	t, err := selfupdate.Follow(src.dir, src.ref, track, a.specDir())
 	if err != nil {
 		return err
 	}
-	return a.updateTo(dir, name, t, false, func() error { return selfupdate.Install(context.Background(), dir, exe, t.Commit) })
-}
-
-// updateUpstream installs what track follows on the module's main over exe
-// (selfupdate.InstallModule) when no registry row applies: main and its
-// tags are fetched into the bare repo the daemon's notice reads, so a
-// target without this binary's revision is refused as a row's is.
-func (a *app) updateUpstream(exe, track string) error {
-	module := buildModule()
-	if module == "" {
-		return fail(exitRefused, "no repo to update from: pass --repo or set [update] repo")
+	install := func(gate selfupdate.Gate) error {
+		return selfupdate.Install(context.Background(), src.dir, exe, t.Commit, gate)
 	}
-	cache, err := userCacheDir()
-	if err != nil {
-		return fmt.Errorf("no cache dir for %s's main: %w", module, err)
+	if src.module != "" {
+		// No registry row: go install it from the module's main, whose
+		// tags the bare repo has, so a target without this binary's
+		// revision is refused as a row's is.
+		install = func(gate selfupdate.Gate) error {
+			return selfupdate.InstallModule(context.Background(), src.dir, src.module, exe, t, gate)
+		}
 	}
-	dir := selfupdate.UpstreamDir(cache)
-	_, unlock, err := selfupdate.FetchUpstream(dir, module)
-	if err != nil {
-		return fmt.Errorf("read %s's main: %w", module, err)
-	}
-	defer unlock()
-	t, err := selfupdate.Follow(dir, "refs/heads/main", track, a.specDir())
-	if err != nil {
-		return err
-	}
-	return a.updateTo(dir, module, t, true, func() error { return selfupdate.InstallModule(context.Background(), dir, module, exe, t) })
+	return a.updateTo(exe, src.dir, src.name, t, src.module != "", w, install)
 }
 
 // updateTo compares this binary with t in dir and runs install when it is
@@ -127,37 +169,66 @@ func (a *app) updateUpstream(exe, track string) error {
 // `<old> -> <new>` (selfupdate.Label); the binary that is t prints `up to
 // date`, one with t in its history `ahead of <t>, up to date`, and one t
 // doesn't contain is refused. plugin adds the plugin line after a swap.
-func (a *app) updateTo(dir, from string, t selfupdate.Target, plugin bool, install func() error) error {
+// The build is gated by its own walk of the notes' asks (`<new> update
+// --walk --before-swap`), which checks the config with the new binary and
+// keeps this one when it fails; after the swap the new binary walks the
+// rest. A current binary resumes a walk left unfinished, or walks the notes
+// still pending since this box's record. --plan prints the walk instead.
+func (a *app) updateTo(exe, dir, from string, t selfupdate.Target, plugin bool, w walkFlags, install func(selfupdate.Gate) error) error {
 	tagged := buildVersion().Own()
 	own := selfupdate.OwnCommit(dir, tagged)
 	label := selfupdate.Label(dir, own)
 	if own == "" && tagged != "" {
 		label = tagged
 	}
-	switch selfupdate.Stand(dir, own, t.Commit) {
-	case selfupdate.Current:
-		fmt.Fprintln(a.stdout, "up to date")
-		a.restartLine(t.Commit)
-		return clearNotice()
-	case selfupdate.Ahead:
-		fmt.Fprintf(a.stdout, "ahead of %s, up to date\n", selfupdate.Label(dir, t.Commit))
+	stand := selfupdate.Stand(dir, own, t.Commit)
+	if stand == selfupdate.Apart && own != "" {
+		return fail(exitRefused, "%s's main (%s) does not contain this binary's %s; left alone", from,
+			selfupdate.Label(dir, t.Commit), label)
+	}
+	if stand == selfupdate.Current || stand == selfupdate.Ahead {
+		r, ok := a.pendingWalk(dir, own)
+		if w.plan {
+			if !ok {
+				r = walkRange{from: own, to: own}
+			}
+			return a.printPlan(r)
+		}
+		if stand == selfupdate.Current {
+			fmt.Fprintln(a.stdout, "up to date")
+		} else {
+			fmt.Fprintf(a.stdout, "ahead of %s, up to date\n", selfupdate.Label(dir, t.Commit))
+		}
+		if ok {
+			if err := a.walk(r, w, phaseAll); err != nil {
+				return err
+			}
+		} else if _, have := upgrade.ReadInstalled(config.StateDir()); !have {
+			a.recordInstalled(dir, own)
+		}
 		a.restartLine(own)
 		return clearNotice()
-	case selfupdate.Apart:
-		if own != "" {
-			return fail(exitRefused, "%s's main (%s) does not contain this binary's %s; left alone", from,
-				selfupdate.Label(dir, t.Commit), label)
-		}
 	}
+	r := walkRange{dir: dir, from: own, to: t.Commit}
+	if w.plan {
+		return a.printPlan(r)
+	}
+	gate := func(built string) error { return a.childWalk(built, r, w, true) }
 	var refused *selfupdate.Refused
-	if err := install(); errors.As(err, &refused) {
+	if err := install(gate); errors.As(err, &refused) {
 		return fail(exitRefused, "update: %v", err)
 	} else if err != nil {
 		return err
 	}
+	if tagged != "" {
+		_ = upgrade.WritePrevious(config.StateDir(), tagged)
+	}
 	fmt.Fprintf(a.stdout, "%s -> %s\n", label, selfupdate.Label(dir, t.Commit))
 	if plugin {
 		fmt.Fprintln(a.stdout, pluginLine)
+	}
+	if err := a.childWalk(exe, r, w, false); err != nil {
+		return err
 	}
 	a.restartLine(t.Commit)
 	return clearNotice()
@@ -197,4 +268,33 @@ func modulePath(goMod string) string {
 		}
 	}
 	return ""
+}
+
+// childWalk runs bin's own walk of r (the new binary's: the one being
+// replaced may predate the walk, so the binary that walks is always the
+// one being installed): before the swap, `update --walk --before-swap`
+// checks the config and answers the asks, and its failure keeps this
+// binary; after it, `update --walk` runs the rest. Its output and its
+// questions go through this process's.
+func (a *app) childWalk(bin string, r walkRange, w walkFlags, preSwap bool) error {
+	args := []string{}
+	if a.configPath != "" {
+		args = append(args, "--config", a.configPath)
+	}
+	args = append(args, "update", "--walk", "--from", r.from, "--to", r.to, "--dir", r.dir)
+	if preSwap {
+		args = append(args, "--before-swap")
+	}
+	args = append(args, w.args()...)
+	cmd := exec.Command(bin, args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = a.stdin, a.stdout, a.stderr
+	err := cmd.Run()
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		if preSwap {
+			return fail(ee.ExitCode(), "keeping this binary")
+		}
+		return fail(ee.ExitCode(), "")
+	}
+	return err
 }

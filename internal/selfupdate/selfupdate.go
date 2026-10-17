@@ -342,13 +342,18 @@ func reports(ctx context.Context, bin string) string {
 	return f[1]
 }
 
+// Gate runs on a build that names its commit, before it is swapped in: an
+// error keeps the binary there was, and is Install's.
+type Gate func(built string) error
+
 // Install builds ./cmd/bmesh at head in dir (a bmesh-owned checkout, moved
 // to head for the build and back to where it was after) to a temporary
 // file beside exe, stamped with head and its commit time; it refuses the
-// build (Refused) unless its `version` names head, then moves exe to
-// Prev(exe) and the build to exe. A failed or refused build leaves exe as
-// it was; so does a failed swap, as far as the file system allows.
-func Install(ctx context.Context, dir, exe, head string) error {
+// build (Refused) unless its `version` names head, runs gate (when not
+// nil) on it, then moves exe to Prev(exe) and the build to exe. A failed,
+// refused or gated build leaves exe as it was; so does a failed swap, as
+// far as the file system allows.
+func Install(ctx context.Context, dir, exe, head string, gate Gate) error {
 	ctx, cancel := context.WithTimeout(ctx, BuildTimeout)
 	defer cancel()
 	at, err := Head(dir)
@@ -387,18 +392,23 @@ func Install(ctx context.Context, dir, exe, head string) error {
 	if err := os.Chmod(tmp, 0o755); err != nil {
 		return err
 	}
-	return swap(ctx, tmp, exe, head)
+	return swap(ctx, tmp, exe, head, gate)
 }
 
-// swap refuses built (Refused) unless its `version` names head, then moves
-// exe to Prev(exe) and built to exe; a failed swap leaves exe as it was, as
+// swap refuses built (Refused) unless its `version` names head, runs gate
+// on it, then moves exe to Prev(exe) and built to exe; a failed swap leaves exe as it was, as
 // far as the file system allows. A Prev(exe) that cannot be removed is
 // moved to Prev(exe)+".old" instead: on Windows, where a running binary can
 // be renamed but not removed, it is still the image of `serve --restart`,
 // which the update before this one moved there.
-func swap(ctx context.Context, built, exe, head string) error {
+func swap(ctx context.Context, built, exe, head string, gate Gate) error {
 	if got := reports(ctx, built); got != Short(head) {
 		return &Refused{Reported: got, Head: head}
+	}
+	if gate != nil {
+		if err := gate(built); err != nil {
+			return err
+		}
 	}
 	prev := Prev(exe)
 	if err := os.Remove(prev); err != nil && !errors.Is(err, os.ErrNotExist) {

@@ -168,7 +168,7 @@ func TestTaggedInstallResolvesItsCommit(t *testing.T) {
 
 	// The module install names the tag, stamped with its commit.
 	log := fakeGo(t)
-	if err := InstallModule(context.Background(), dir, "example.com/bm", exe, Target{Commit: c1, Tag: "v0.2.0"}); err != nil {
+	if err := InstallModule(context.Background(), dir, "example.com/bm", exe, Target{Commit: c1, Tag: "v0.2.0"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(log); strings.TrimSpace(string(b)) != "install example.com/bm@v0.2.0" {
@@ -202,7 +202,7 @@ func TestInstallBuildsTheTargetAndMovesBack(t *testing.T) {
 	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := Install(context.Background(), dir, exe, tg.Commit); err != nil {
+	if err := Install(context.Background(), dir, exe, tg.Commit, nil); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(log); strings.TrimSpace(string(b)) != "build "+c1 {

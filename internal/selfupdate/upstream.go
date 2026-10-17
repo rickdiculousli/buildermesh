@@ -65,9 +65,9 @@ func FetchUpstream(dir, module string) (head string, unlock func(), err error) {
 // temporary directory beside exe (GOBIN), `@<tag>` for a release and
 // `@<commit>` for a code head, stamped with t's commit and its commit time
 // from dir (the fetched main) as Install's build is, so a build go
-// resolves to a tag still names its commit; then it refuses or swaps the
-// build in as Install does.
-func InstallModule(ctx context.Context, dir, module, exe string, t Target) error {
+// resolves to a tag still names its commit; then it refuses, gates or swaps
+// the build in as Install does.
+func InstallModule(ctx context.Context, dir, module, exe string, t Target, gate Gate) error {
 	ctx, cancel := context.WithTimeout(ctx, BuildTimeout)
 	defer cancel()
 	head := t.Commit
@@ -95,7 +95,7 @@ func InstallModule(ctx context.Context, dir, module, exe string, t Target) error
 	if runtime.GOOS == "windows" {
 		built += ".exe"
 	}
-	return swap(ctx, built, exe, head)
+	return swap(ctx, built, exe, head, gate)
 }
 
 // Installed is the revision the binary at exe reports (`<rev8>`), its

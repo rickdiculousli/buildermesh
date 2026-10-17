@@ -141,7 +141,7 @@ func TestInstallSwapsAndKeepsPrev(t *testing.T) {
 	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := Install(context.Background(), dir, exe, shas[0]); err != nil {
+	if err := Install(context.Background(), dir, exe, shas[0], nil); err != nil {
 		t.Fatal(err)
 	}
 	out, err := exec.Command(exe).Output()
@@ -172,7 +172,7 @@ func TestInstallReadsReleaseVersion(t *testing.T) {
 	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := Install(context.Background(), dir, exe, shas[0]); err != nil {
+	if err := Install(context.Background(), dir, exe, shas[0], nil); err != nil {
 		t.Fatal(err)
 	}
 	if out, _ := exec.Command(exe, "version").Output(); string(out) != "bmesh v0.1.0 ("+shas[0][:8]+" 2026-10-16T00:00:00Z)\n" {
@@ -199,7 +199,7 @@ func TestInstallMovesBusyPrevAside(t *testing.T) {
 	if err := os.WriteFile(busy, []byte("supervisor"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := Install(context.Background(), dir, exe, shas[0]); err != nil {
+	if err := Install(context.Background(), dir, exe, shas[0], nil); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(Prev(exe)); string(b) != "old" {
@@ -218,7 +218,7 @@ func TestInstallFailedBuildLeavesBinary(t *testing.T) {
 	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	err := Install(context.Background(), dir, exe, head(t, dir))
+	err := Install(context.Background(), dir, exe, head(t, dir), nil)
 	if err == nil || !strings.Contains(err.Error(), "fake build failed") {
 		t.Fatalf("err %v", err)
 	}
@@ -250,7 +250,7 @@ func TestInstallRefusesWrongRevision(t *testing.T) {
 	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	err := Install(context.Background(), dir, exe, shas[0])
+	err := Install(context.Background(), dir, exe, shas[0], nil)
 	var refused *Refused
 	if !errors.As(err, &refused) || err.Error() != "built binary reports eeeeeeee, not "+shas[0][:8]+"; keeping this binary" {
 		t.Fatalf("err %v", err)
@@ -311,7 +311,7 @@ func TestInstallRealBuildInWorktree(t *testing.T) {
 	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := Install(context.Background(), wt, exe, want); err != nil {
+	if err := Install(context.Background(), wt, exe, want, nil); err != nil {
 		t.Fatal(err)
 	}
 	at := meshtest.Git(t, src, "show", "-s", "--format=%ct", "HEAD")

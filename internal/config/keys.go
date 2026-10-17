@@ -117,3 +117,74 @@ func valueText(v reflect.Value) string {
 	}
 	return fmt.Sprint(v.Interface())
 }
+
+// Literal is value as the TOML literal `[section] key` takes in
+// config.toml: bare for a bool or a number (refused when value isn't
+// one), a list of strings for a list (value comma-separated), else a
+// quoted string.
+func Literal(section, key, value string) (string, error) {
+	fv, ok := field(reflect.ValueOf(file{}), section, key)
+	if !ok {
+		return "", fmt.Errorf("[%s] %s is not a key of config.toml", section, key)
+	}
+	return literal(fv.Type(), value)
+}
+
+func literal(t reflect.Type, value string) (string, error) {
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	switch {
+	case t == reflect.TypeOf(duration(0)):
+		if _, err := ParseDuration(value); err != nil {
+			return "", err
+		}
+		return tomlString(value), nil
+	case t.Kind() == reflect.Bool:
+		if _, err := strconv.ParseBool(value); err != nil {
+			return "", fmt.Errorf("%q: want true or false", value)
+		}
+		return value, nil
+	case t.Kind() == reflect.Int || t.Kind() == reflect.Int64:
+		if _, err := strconv.Atoi(value); err != nil {
+			return "", fmt.Errorf("%q: want a whole number", value)
+		}
+		return value, nil
+	case t.Kind() == reflect.Slice:
+		var l []string
+		for _, s := range strings.Split(value, ",") {
+			if s = strings.TrimSpace(s); s != "" {
+				l = append(l, s)
+			}
+		}
+		return tomlList(l), nil
+	}
+	return tomlString(value), nil
+}
+
+// SetRepoKey sets key on r to value (a list comma-separated).
+func SetRepoKey(r *Repo, key, value string) error {
+	v := reflect.ValueOf(r).Elem()
+	for i := 0; i < v.NumField(); i++ {
+		if tomlName(v.Type().Field(i)) != key || key == "" {
+			continue
+		}
+		f := v.Field(i)
+		switch f.Kind() {
+		case reflect.String:
+			f.SetString(value)
+		case reflect.Slice:
+			var l []string
+			for _, s := range strings.Split(value, ",") {
+				if s = strings.TrimSpace(s); s != "" {
+					l = append(l, s)
+				}
+			}
+			f.Set(reflect.ValueOf(l))
+		default:
+			return fmt.Errorf("repos.toml %s: can't set a %s", key, f.Kind())
+		}
+		return r.check()
+	}
+	return fmt.Errorf("%s is not a key of a repos.toml row", key)
+}

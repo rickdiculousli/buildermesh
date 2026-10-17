@@ -53,6 +53,7 @@ type Deps struct {
 	Quota *web.Quota // the quota gate the map shares; nil = one of the reminder's own from [quota] command
 
 	Revision string // this binary's commit (vcs.revision); "" = unknown
+	Release  string // the release this binary is or follows (v0.2.0, v0.2.0+3), as stamped; "" = none
 	Tag      string // with no Revision, the release tag a tagged module install was built at, resolved on main by an update; "" = none
 	RevTime  string // that commit's time (RFC 3339); "" = unknown
 	Module   string // the module this binary was built from; "" = unknown, no upstream to read
@@ -145,6 +146,7 @@ func Run(ctx context.Context, d Deps) error {
 	}
 	d.defaults()
 	announce(ctx, d)
+	pending(ctx, d)
 	act := NewActivity()
 	pollEvery := d.Cfg.Liveness.PollEvery
 	if pollEvery <= 0 {
