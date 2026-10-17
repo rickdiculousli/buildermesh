@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 280" width="960" height="280" role="img" aria-label="buildermesh (bmesh): A mesh for coding agents that propose, build, verify and land changes on main, across every box you own.">
+<title>buildermesh (bmesh)</title>
+<defs>
+<linearGradient id="g" gradientUnits="userSpaceOnUse" x1="114" y1="58" x2="278" y2="222"><stop offset="0" stop-color="#1a7f72"/><stop offset="1" stop-color="#0969da"/></linearGradient>
+<linearGradient id="w" gradientUnits="userSpaceOnUse" x1="524" y1="0" x2="684" y2="0"><stop offset="0" stop-color="#1a7f72"/><stop offset="1" stop-color="#0969da"/></linearGradient>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#f3f6f9"/></linearGradient>
+<pattern id="lat" width="40" height="69.28" patternUnits="userSpaceOnUse"><g fill="#dfe5eb"><circle cx="0" cy="0" r="1.6"/><circle cx="40" cy="0" r="1.6"/><circle cx="20" cy="34.64" r="1.6"/><circle cx="0" cy="69.28" r="1.6"/><circle cx="40" cy="69.28" r="1.6"/></g></pattern>
+<radialGradient id="fade" cx="0.2" cy=".5" r=".8"><stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset=".5" stop-color="#fff" stop-opacity=".35"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+<mask id="lm"><rect width="960" height="280" fill="url(#fade)"/></mask>
+</defs>
+<style>
+.ft{fill:url(#g);opacity:.30}.fl{fill:url(#g);opacity:.16}.fr{fill:url(#g);opacity:.22}
+.e path{stroke:url(#g);stroke-width:2.4;fill:none;stroke-linecap:round}
+.nd{fill:#ffffff;stroke:url(#g);stroke-width:2.6}.nd.ok{stroke:#1a7f37;fill:#1a7f37;fill-opacity:.25}
+.hub{fill:url(#g)}.hg{fill:url(#g);opacity:.18}
+.mv{opacity:0;offset-rotate:0deg}.mv .gl{opacity:.3}
+.mv.j{fill:#9a6700}.mv.r{fill:#8250df}.mv.ok{fill:#1a7f37}
+.q0{animation:mv 11s 0s ease-in-out infinite}.k0{animation:nd 11s 1s ease-out infinite}
+.q1{animation:mv 11s 1.3s ease-in-out infinite}.k1{animation:nd 11s 2.3s ease-out infinite}
+.q2{animation:mv 11s 2.5s ease-in-out infinite}.k2{animation:nd 11s 3.5s ease-out infinite}
+.q3{animation:mv 11s 3.8s ease-in-out infinite}.k3{animation:nd 11s 4.8s ease-out infinite}
+.q4{animation:mv 11s 5s ease-in-out infinite}.k4{animation:nd 11s 6s ease-out infinite}
+.q5{animation:mv 11s 6.3s ease-in-out infinite}.k5{animation:nd 11s 7.3s ease-out infinite}
+@keyframes mv{0%{offset-distance:0%;opacity:0}1.5%{opacity:1}8%{offset-distance:100%;opacity:1}10%,100%{offset-distance:100%;opacity:0}}
+@keyframes nd{0%{stroke-width:2.6}2.5%{stroke-width:5.5}9%,100%{stroke-width:2.6}}
+@supports not (offset-path:path('M0 0')){.mv{display:none}}
+.hg{animation:hg 3s ease-in-out infinite;transform-origin:center;transform-box:fill-box}
+@keyframes hg{0%,100%{opacity:.10;transform:scale(.85)}50%{opacity:.26;transform:scale(1.08)}}
+.wm{font:700 64px -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;letter-spacing:-1.5px}.wb{fill:#1f2328}.wmsh{fill:url(#w)}
+.tag{font:400 22px -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;fill:#1f2328}
+.st{font:500 18px -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;fill:#59636e}.ar{fill:#1a7f72}
+.chip{fill:#f6f8fa;stroke:#d0d7de}.chipt{font:600 15px ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;fill:#59636e}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}}
+</style>
+<rect x="1" y="1" width="958" height="278" rx="12" fill="url(#bg)"/>
+<rect x="1" y="1" width="958" height="278" rx="12" fill="url(#lat)" mask="url(#lm)"/>
+<rect x="1" y="1" width="958" height="278" rx="12" fill="none" stroke="#d0d7de" stroke-width="1.5"/>
+<path class="ft" d="M196 58 L267 99 L196 140 L125 99 Z"/><path class="fl" d="M125 99 L196 140 L196 222 L125 181 Z"/><path class="fr" d="M196 140 L267 99 L267 181 L196 222 Z"/><g class="e"><path d="M196 58 L267 99"/><path d="M267 99 L267 181"/><path d="M267 181 L196 222"/><path d="M196 222 L125 181"/><path d="M125 181 L125 99"/><path d="M125 99 L196 58"/><path d="M196 140 L125 99"/><path d="M196 140 L267 99"/><path d="M196 140 L196 222"/></g><circle class="nd k2" cx="196" cy="58" r="8.6"/><circle class="nd k4" cx="267" cy="99" r="8.6"/><circle class="nd ok k5" cx="267" cy="181" r="8.6"/><circle class="nd k1" cx="196" cy="222" r="8.6"/><circle class="nd k3" cx="125" cy="181" r="8.6"/><circle class="nd k0" cx="125" cy="99" r="8.6"/><circle class="hg" cx="196" cy="140" r="27.1"/><circle class="hub" cx="196" cy="140" r="12.3"/><g class="mv j q0" style="offset-path:path('M196 140 L125 99')"><circle class="gl" r="9"/><circle r="5"/></g><g class="mv r q1" style="offset-path:path('M196 140 L196 222')"><circle class="gl" r="9"/><circle r="5"/></g><g class="mv j q2" style="offset-path:path('M125 99 L196 58')"><circle class="gl" r="9"/><circle r="5"/></g><g class="mv r q3" style="offset-path:path('M196 222 L125 181')"><circle class="gl" r="9"/><circle r="5"/></g><g class="mv j q4" style="offset-path:path('M196 140 L267 99')"><circle class="gl" r="9"/><circle r="5"/></g><g class="mv ok q5" style="offset-path:path('M267 99 L267 181')"><circle class="gl" r="9"/><circle r="5"/></g>
+<text class="wm wb" x="330" y="106" textLength="193" lengthAdjust="spacingAndGlyphs">builder</text><text class="wm wmsh" x="524" y="106" textLength="160" lengthAdjust="spacingAndGlyphs">mesh</text>
+<rect class="chip" x="706" y="72" width="76" height="28" rx="14"/><text class="chipt" x="744" y="91" text-anchor="middle">bmesh</text>
+<text class="tag" x="332" y="154">A mesh for coding agents that propose, build, verify</text>
+<text class="tag" x="332" y="183">and land changes on main, across every box you own.</text>
+<text class="st" x="332" y="226">propose<tspan class="ar"> → </tspan>choose<tspan class="ar"> → </tspan>build<tspan class="ar"> → </tspan>verify<tspan class="ar"> → </tspan>land</text>
+</svg>

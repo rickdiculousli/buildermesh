@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="buildermesh">
+<title>buildermesh</title>
+<defs><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="14" y1="14" x2="114" y2="114"><stop offset="0" stop-color="#1f9e94"/><stop offset="1" stop-color="#3b8ff0"/></linearGradient></defs>
+<style>.ft{fill:url(#g);opacity:.34}.fl{fill:url(#g);opacity:.18}.fr{fill:url(#g);opacity:.26}.e path{stroke:url(#g);stroke-width:5;fill:none;stroke-linecap:round}.nd{fill:#fff;stroke:url(#g);stroke-width:4}.nd.ok{fill:#3fb950;stroke:#2a9a3e}.hub{fill:url(#g)}</style>
+<path class="ft" d="M64 14 L107.3 39 L64 64 L20.7 39 Z"/><path class="fl" d="M20.7 39 L64 64 L64 114 L20.7 89 Z"/><path class="fr" d="M64 64 L107.3 39 L107.3 89 L64 114 Z"/><g class="e"><path d="M64 14 L107.3 39"/><path d="M107.3 39 L107.3 89"/><path d="M107.3 89 L64 114"/><path d="M64 114 L20.7 89"/><path d="M20.7 89 L20.7 39"/><path d="M20.7 39 L64 14"/><path d="M64 64 L20.7 39"/><path d="M64 64 L107.3 39"/><path d="M64 64 L64 114"/></g><circle class="nd" cx="64" cy="14" r="7"/><circle class="nd" cx="107.3" cy="39" r="7"/><circle class="nd ok" cx="107.3" cy="89" r="7"/><circle class="nd" cx="64" cy="114" r="7"/><circle class="nd" cx="20.7" cy="89" r="7"/><circle class="nd" cx="20.7" cy="39" r="7"/><circle class="hub" cx="64" cy="64" r="10"/>
+</svg>

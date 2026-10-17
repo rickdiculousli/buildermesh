@@ -1,6 +1,144 @@
-# buildermesh (bmesh)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/banner-light.svg">
+    <img alt="buildermesh: a mesh for coding agents that propose, build, verify and land changes on main, across every box you own" src="docs/assets/banner-light.svg" width="100%">
+  </picture>
+</p>
 
-A NATS-based mesh for coordinating coding agents: lead and executor threads report events, exchange inbox messages and are woken when they go quiet; routines run a repo's checks (shell commands or headless `claude -p` sessions) against commits and record results by tree, and a lead's `done` is checked against them. A repo's work starts as proposal rounds (`bmesh ideate`): two engineer threads write ranked half-page specs into its ledger, the daemon pushes the pitch, the operator's reply (`bmesh choose-ideas`) lands the verdicts on main, and `bmesh build` dispatches an accepted spec to a lead; `bmesh scaffold` gives a repo the sections and routine kinds a build expects.
+<p align="center">
+  <a href="https://github.com/rickdiculousli/buildermesh/tags"><img alt="Latest release" src="https://img.shields.io/github/v/tag/rickdiculousli/buildermesh?sort=semver&label=release&style=flat-square&color=39c5bb&labelColor=161b22"></a>
+  <a href="go.mod"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/rickdiculousli/buildermesh?style=flat-square&logo=go&logoColor=white&color=58a6ff&labelColor=161b22"></a>
+  <a href="#several-boxes"><img alt="NATS JetStream, built in" src="https://img.shields.io/badge/NATS-JetStream%2C_built_in-a371f7?style=flat-square&logo=natsdotio&logoColor=white&labelColor=161b22"></a>
+  <a href="#quickstart"><img alt="Linux, macOS and Windows" src="https://img.shields.io/badge/runs_on-Linux_%C2%B7_macOS_%C2%B7_Windows-8b949e?style=flat-square&labelColor=161b22"></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/rickdiculousli/buildermesh?style=flat-square&color=3fb950&labelColor=161b22"></a>
+</p>
+
+<p align="center">
+  <a href="#how-a-change-reaches-main"><b>How it works</b></a> &nbsp;·&nbsp;
+  <a href="#get-started"><b>Get started</b></a> &nbsp;·&nbsp;
+  <a href="#proof-before-main"><b>Proof before main</b></a> &nbsp;·&nbsp;
+  <a href="#one-mesh-many-boxes"><b>Many boxes</b></a> &nbsp;·&nbsp;
+  <a href="#the-map"><b>The map</b></a> &nbsp;·&nbsp;
+  <a href="#reference"><b>Reference</b></a>
+</p>
+
+<br>
+
+**buildermesh** (`bmesh`) is one Go binary that lets Claude Code sessions on your own machines (boxes, in bmesh's words) turn ideas into changes on `main`, while you decide what gets built.
+
+Agents write proposals as half-page specs, and you accept or reject them in plain words. When you build an accepted spec, bmesh starts a *lead*: a session that builds it in a git worktree of its own and hands pieces to *executors*, helper sessions on branches of their own. *Routines* run the repo's checks (its tests, and an Opus review for larger changes) and record each result against the exact files of a commit. A lead lands on `main` only through `bmesh land`, which refuses unless the checks passed for what it lands (a review carries across a rebase only when the diff is unchanged), and writes their results into the spec as its `verified` line.
+
+## How a change reaches main
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/lifecycle-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/lifecycle-light.svg">
+    <img alt="One spec's way to main: propose, choose, build, verify, land" src="docs/assets/lifecycle-light.svg" width="100%">
+  </picture>
+</p>
+
+1. **Propose.** `bmesh ideate app` starts a proposal round. Two sessions, an engineer and a UI/UX engineer, read the repo, and each lands three to five ranked half-page specs on `main` as `proposed`. With an [ntfy](https://ntfy.sh) topic set, the ranked list reaches your phone.
+2. **Choose.** Reply in plain words: `bmesh choose-ideas app "1 and 3 yes, 2 smaller, 4 no, 5 later"`. The verdicts land on `main`. Words that aren't a verdict, like `smaller`, mark the spec `adjusting`, with your words kept for the rework.
+3. **Build.** `bmesh build app 012` confirms that `main` passes its verify commands, marks the spec `building` and starts a lead. The lead splits the work across executors (`bmesh executor new`), each on a branch under the lead's, and merges what they hand back.
+4. **Verify.** Routines run the repo's checks against a commit: `verify` runs its tests, and `review` asks Opus, in a session that never saw the change, for findings. Each result is recorded under the commit's tree hash (the fingerprint of its files), so a check marked deterministic is answered from its record instead of running again on the same files.
+5. **Land.** `bmesh land` rebases onto `origin/main`, requires a result for the tree it lands, writes the spec's `verified` line, marks it `done` and pushes `main` as a fast-forward.
+
+Leads note problems they met outside their spec as feedback. When a batch started from a chat is done, the build skill of bmesh's Claude Code plugin dispatches the quick fixes as new builds without asking you, and writes everything else up as proposed specs for you to review. The build skill then runs `bmesh release`, which tags the batch as the repo's next version, `vX.Y.Z` (once the repo has a first `v` tag). With the plugin, you can drive all of this from a chat: "proposals for app", "1 and 3 yes", "build what's accepted in app", "what's building".
+
+## Get started
+
+You need Go 1.26 or later, git, Claude Code (`claude` on your `PATH`, signed in) and a repo with a `main` branch. The `claude` runner, which `init` picks when `claude` is on your `PATH`, runs Claude Code with its permission prompts off, in worktrees bmesh makes.
+
+```sh
+go install github.com/rickdiculousli/buildermesh/cmd/bmesh@latest
+claude plugin marketplace add rickdiculousli/buildermesh
+claude plugin install buildermesh@buildermesh
+cd ~/repos/your-repo && bmesh init   # one box or several; registers this repo
+bmesh serve                          # hub, daemon and map; keep it running
+```
+
+Then tell bmesh what must pass before a change is done, in this repo's row of `repos.toml` (beside `config.toml` in bmesh's config directory; `bmesh init` prints the path):
+
+```toml
+[repos.your-repo]
+path = "~/repos/your-repo"
+verify = ["go vet ./...", "go test ./..."]
+```
+
+and run:
+
+```sh
+bmesh scaffold your-repo             # AGENTS.md sections and checks; commit, push
+bmesh ideate your-repo               # your first proposal round
+```
+
+Running `serve` as a service (`bmesh init --service`), Windows, several boxes and everything `init` asks and prints are in the [Quickstart](#quickstart) below.
+
+## Proof before main
+
+<p align="center">
+  <img alt="A lead runs bmesh land: rebase, verify, carry the review, write the verified line, push main" src="docs/assets/land.svg" width="100%">
+</p>
+
+`bmesh land` names the checks it requires and where each came from, and runs `verify` on the rebased tree. A review costs an Opus session, so when the rebase left the diff unchanged, the review carries across to the new tree; a changed diff carries nothing.
+
+The spec keeps the proof as one line: `verified: review ok t:3f2a9c1e m:claude-opus-5-5 c:81d0b7a4; verify ok t:3f2a9c1e`. Here `t:` is the landed tree and `c:` the tree the review was recorded at before the rebase. `bmesh done` has the last word: it refuses until the spec on `origin/main` reads `done` with a merged commit, and every entry of that line matches a recorded result.
+
+## One mesh, many boxes
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mesh-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/mesh-light.svg">
+    <img alt="Three boxes around one NATS hub: events, jobs and replies move between them; a laptop sleeps and catches up" src="docs/assets/mesh-light.svg" width="100%">
+  </picture>
+</p>
+
+- **One hub.** `bmesh hub` runs NATS (a message server, with its JetStream storage) from inside the binary, on a box that is always on, listening on its address on a tailnet (a private network such as Tailscale). Every box shares one token, and there is nothing else to install. A single box needs no separate hub: `bmesh serve` runs one inside it.
+- **Every box serves.** Each box runs `bmesh serve`. Its daemon wakes leads that have gone quiet, runs routines, sends phone notifications and draws the map.
+- **Shared checks.** A check that runs apart from the lead, like the review, has one queue that every box running it takes from, so it runs on whichever box is free. A check that needs macOS says so, and only a Mac takes it.
+- **Laptops can sleep.** A sleeping laptop drops off the mesh and comes back on its own: its local link to the hub reconnects, and its daemon takes the work it missed, in order. Work sent to it waits on the hub for a day.
+- **Signed jobs.** Once boxes join with `bmesh init --hosts`, they share a roster (the list of member boxes) that the box you work at signs, and every job between boxes is signed and checked. The keys that sign the roster and approve work sit where no agent can use them: on macOS, behind the Keychain password dialog. On a box marked secure, a sync that would move its plugins, or the repo bmesh updates itself from, waits until you approve it at that box.
+- **bmesh keeps itself current.** A box set to update itself takes each bmesh release on its own; on any other box, sessions are told to run `bmesh update`.
+
+## The map
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/map-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/map-light.png">
+    <img alt="The bmesh map: leads with their executors, a proposal round, a held lead, the routines column and the needs-you band" src="docs/assets/map-light.png" width="100%">
+  </picture>
+</p>
+
+`bmesh serve` draws the mesh at `http://127.0.0.1:3774/`, live: each lead with its executors, each proposal round with its engineers, and each kind of check with its queue. What needs you comes first, in the band at the top: a session that is blocked, asking or silent.
+
+## What's inside
+
+| Piece | What it is |
+|---|---|
+| `bmesh` | One Go binary: the CLI, the daemon, the map's server and the NATS hub. |
+| `bmesh serve` | Runs on every box: the daemon, the map and, on a single box, the hub. |
+| `bmesh hub` | The hub for a mesh of several boxes, or a local relay to it for a laptop that sleeps. |
+| Runners | How a lead's session runs: `t3` (a T3 Code thread), `claude` (headless `claude -p` turns) or `tmux`. |
+| The plugin | Twelve Claude Code skills: seven are your chat entry points, and five are what leads, executors, a round's engineers and bmesh's own fix lead follow. |
+| Specs | `docs/proposals/NNN-slug.md` in each repo. A spec's frontmatter is its whole record: its status, who built it, the merged commit and the `verified` line. |
+
+<br>
+
+## Reference
+
+Everything below is exact: every command, config key, bucket and event bmesh has. bmesh's own messages point into it by section name.
+
+<table>
+  <tr>
+    <td valign="top" width="33%"><b>Setting up</b><br><a href="#quickstart">Quickstart</a><br><a href="#upgrading">Upgrading</a><br><a href="#several-boxes">Several boxes</a><br><a href="#runners">Runners</a><br><a href="#hosts">Hosts</a><br><a href="#config">Config</a></td>
+    <td valign="top" width="33%"><b>Building</b><br><a href="#proposal-rounds">Proposal rounds</a><br><a href="#builds">Builds</a><br><a href="#feedback">Feedback</a><br><a href="#releases">Releases</a><br><a href="#the-ledger">The ledger</a><br><a href="#executors">Executors</a><br><a href="#finished-nodes">Finished nodes</a></td>
+    <td valign="top" width="33%"><b>Checking and landing</b><br><a href="#routines">Routines</a><br><a href="#landing">Landing</a><br><br><b>Lookup</b><br><a href="#names">Names</a><br><a href="#exit-codes">Exit codes</a><br><br><b>Working on bmesh</b><br><a href="#build-and-test">Build and test</a><br><a href="#license">License</a></td>
+  </tr>
+</table>
 
 ## Quickstart
 
@@ -143,26 +281,6 @@ and `bmesh hub` there runs a server with no JetStream of its own on `127.0.0.1:4
 **Sleeping boxes.** A laptop that sleeps drops off the mesh and comes back on its own: its leaf reconnects, its daemon tells the wake from the gap between its minute ticks, re-reads the roster and takes the jobs it missed, in order (a job lives 24h; an expired one is answered and logged, not pushed). Meanwhile `bmesh hosts` and every other box's session line show it `asleep` with how long ago it was seen, and `bmesh hosts ping` answers for it `asleep: queued until <expires>`. Keep the hub on a box that doesn't sleep.
 
 **Which box a session is on.** With `[hosts]` on, the daemon writes the session line each minute and the plugin's session hook prints it, so every session opens with, for example, `this box is hub-box; secure: no; on the mesh: laptop (asleep 2h, secure, admin)`. A box's own guidance for sessions goes in `<config dir>/notes.md` (up to 16 KB), which travels signed in its presence; `bmesh hosts --notes` prints every box's (see Hosts).
-
-## Build and test
-
-```
-GOBIN=~/.local/bin go install ./cmd/bmesh
-TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test ./...
-GOOS=windows go vet ./...    # type-checks the Windows-only files a Linux go vet skips
-```
-
-Tests never use `/tmp`: `meshtest.Start` fails when `TMPDIR` is `/tmp`.
-
-### Testing
-
-Runner tests drive shell fakes instead of tmux and claude, and a fake T3 (below). `BMESH_TMUX_COMMAND`, when set, is split on spaces and replaces the tmux binary (`sh <repo>/testdata/fake-tmux.sh`). `BMESH_T3_TIMEOUT` (a Go duration) replaces the t3 runner's 120 s per-call timeout. `BMESH_CLAUDE_COMMAND` replaces `[runner] claude` the same way (`sh <repo>/testdata/fake-claude.sh`), for routines and for the claude runner's tests. `BMESH_SSH_COMMAND` replaces the `ssh` that `bmesh ideate` reaches another host with (`sh <repo>/testdata/fake-ssh.sh`). `BMESH_GO_COMMAND` replaces the `go` an update builds with (`sh <repo>/testdata/fake-go.sh`), and `BMESH_UPSTREAM_URL` replaces `https://<module path>` as where an update without a row and the notice read the module's `main` (a local repo in the tests; the `cmd/bmesh` tests set it, and `XDG_STATE_HOME`, for the whole package, so no test reaches the network or touches the box's notice). `BMESH_SECURITY_COMMAND` replaces the macOS `security` the Keychain key store runs (`sh <repo>/testdata/fake-security.sh`, which keeps items under `$FAKE_SECURITY_DIR` and prints the access list `$FAKE_SECURITY_ACL` names). A level's plugin refresh runs `claude` through `BMESH_CLAUDE_COMMAND` (`sh <repo>/testdata/fake-claude-plugin.sh`) and `codex` through `BMESH_CODEX_COMMAND` (`sh <repo>/testdata/fake-codex.sh`; unset, `codex` runs only when it is on `PATH`). `BMESH_KEY_STORE` (`keychain` or `file`) replaces the key store's default when `[hosts] key_store` is unset; the `cmd/bmesh` tests set it to `file`, and `BMESH_SECURITY_COMMAND`, `BMESH_CLAUDE_COMMAND` and `BMESH_CODEX_COMMAND` to the fakes, for the whole package (a test sets its own over them), so no test reaches the real Keychain and its dialog, or the box's own `claude` and `codex`. `BMESH_CACHE_DIR`, an absolute path, replaces the user cache dir (`os.UserCacheDir`: `~/.cache` or `$XDG_CACHE_HOME` on Linux, always `~/Library/Caches` on macOS) where briefs and a claude session's files go; the `cmd/bmesh` tests set it for the whole package, so they stay out of the box's cache. Leave all ten unset outside tests; the real Keychain dialog is checked by hand on a Mac. The t3 runner, `bmesh t3 login`, the expiry pushes and the `lead start`, `build`, `ideate` and `node forget` tests run against `internal/runner/t3mcp/t3fake`, an `httptest` T3 0.1.0 (the environment document, the MCP OAuth endpoints and the MCP tools below) answering with the shapes recorded from a live 0.1.0 server, kept in `testdata/t3v2/`.
-
-`scripts/seed.sh [seeder args]` starts a throwaway `bmesh serve` in the background (embedded NATS and HTTP on free loopback ports, routines and ntfy off) with a seeded mesh holding every state the map draws: each node state (`working`, `asking`, `blocked`, `silent`, `held`, `done`, `idle`), a done lead on the shelf, a round and its engineers, routines with done instances, a queued job, leases, a digest and quota lines, and a landed spec with steps for the operator still open (a band row). It prints the map's URL, the check command for it and a CLI config for poking the mesh, and returns; serve keeps running. State lives under `~/.cache/bmesh-scratch/seed/<checkout directory name>` (`BMESH_SEED_DIR` overrides it, `BMESH_SEED_HTTP` the listen address), wiped on each run, so two checkouts seed side by side; `seed.pid` there holds serve's pid, and a run stops its checkout's previous one first. `scripts/seed.sh stop` stops it by that pidfile; never `pkill -f` its command line, which matches the caller's own shell. The seeded serve reads the page from the checkout's `internal/web/` on every request, so an edit to `index.html`, `map.js` or `map.css` shows on reload; a Go change needs a re-run. `BMESH_WEB_DIR=<dir>` does that for any `bmesh serve` (it logs `bmesh serve: map page from <dir>`); unset, the page is the one embedded at build.
-
-`node scripts/check.mjs <url> <width> <height> [png]` (Node 22 or later) is the map's browser check: it loads `url` (adding `?check=1`) in headless Chromium at that viewport over the DevTools protocol, waits for the self-check title to show a loaded tree on a live connection (`trees=` at least 1, `conn=` ending `live`), prints the title, writes a screenshot of the viewport to `png` when given, and exits 0, or 1 when no such title showed within 20 s (the last title printed all the same), 2 on a usage or browser error. A hash picks the view (`/#/lead/<path>`, `/#/routines`). Chromium is `$CHROME`, else the newest headless shell or Chromium in the Playwright cache (`$PLAYWRIGHT_BROWSERS_PATH`, `~/.cache/ms-playwright`, `~/Library/Caches/ms-playwright`); stderr names the one it runs. `chromium --dump-dom` is no substitute: the page's `/events` stream never ends, so it never returns. A UI change's check is `scripts/seed.sh`, then the printed `node scripts/check.mjs ... 390 844 shot.png` and the same at `1280 800`, then `scripts/seed.sh stop`.
-
-Go tests share fixtures in `internal/meshtest`: `Start` (an embedded server), `Git(t, dir, args...)` (git with a fixed identity and no global config, hooks or signing; its output, trimmed), `CommitFiles(t, repo, files)` (writes and commits them, returns the commit), `SyncBuffer` (a log sink goroutines and the test share), `ForceState(t, c, path, mesh.State{...})` (writes a node's state past the transition table, for a fixture that needs `done` or `silent` in one step) and `QueueJob(t, c, kind, from, job)` (creates the kind's consumer, then sends the job, so it counts toward the kind's depth).
 
 ## Runners
 
@@ -543,7 +661,7 @@ A result older than `[routines] keep_results` (default `30d`, the stream's age; 
 A spec's frontmatter carries one line of proof, `;`-separated, one entry per check:
 
 ```
-verified: verify ok t:3f2a9c1e; review ok t:3f2a9c1e m:claude-opus-5-5
+verified: review ok t:3f2a9c1e m:claude-opus-5-5; verify ok t:3f2a9c1e
 ```
 
 Each entry is `<kind> <ok|fail> t:<tree first 8>[ m:<model>][ c:<tree first 8>]`. `c:` names the tree a model's result was recorded at when it carries to `t:` across a rebase that left the diff unchanged:
@@ -571,7 +689,7 @@ On success `done` prints `done <path> <sha8>` (`<sha8>` the `--commit` given), a
 bmesh land [--spec NNN] [--ttl D] [--wait D]
 ```
 
-`land` lands a lead's branch on `main` from its worktree, in one command, under the lease `land.<repo>` (`bm-leases`, key `land.<repo>.0`, one place; `<repo>` the node's repo, else the registry row or base name of the main checkout), so two leads landing at once queue instead of redoing each other's work. The spec is `--spec`, else the node's; the holder is the node, else the host name. Run from a node held in `bm-holds`, at either gate, it stops first (exit 3, nothing pushed, `bmesh: held before land by <by> <age> ago: <why>; ...`; see Holds), and it reads the hold again once it holds the lease. It refuses (exit 3), before taking the lease, a dirty worktree and one not on a branch (or on `main`). Run from a node, it then reads the node's inbox as the daemon's wake does (from the stream after the consumer's ack floor, holding and acking nothing): while it holds a message sent by `operator` with `bmesh send`, it refuses (exit 3) `bmesh: refused: <n> unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh land again`, since the operator's messages are the ones likely to change what landing needs; reading the inbox is the way past it, and there is no `--force`. Anything else unread (a report, a reply, another node's message) doesn't stop it and is named on one line, each item as the wake names it, `unread: done from <path> (branch <b> at <sha8>); reply to job <id> (<kind> ok|fail); message from <path>`. It reads the inbox again once it holds the lease, so a message from the operator that arrived while it waited refuses it before the fetch. Run outside a node, it has no inbox and skips the check. A message that arrives after that read, during the rebase and checks, is not seen. Then it prints the kinds it will require of the landed tree and where each came from, `required: verify (the repo's verify kind), review (t:<tree8> at HEAD)`, or `review (t:<tree8> before the rebase at <sha8>)` for a result from before a rebase by hand (`required: nothing` when there are none). While another holder has the lease it prints `waiting for land.<repo> (held by <holder>)` once per holder and tries again every 2 s, giving up after `--wait` (default 30m; exit 5 `bmesh: timed out waiting for land.<repo>, held by <holder>`); the lease lasts `--ttl` (default 10m, at least 3 s) unrenewed and is renewed every ttl/3, so a lander that dies blocks the next for at most that long. Then, printing a line per step:
+`land` lands a lead's branch on `main` from its worktree, in one command, under the lease `land.<repo>` (`bm-leases`, key `land.<repo>.0`, one place; `<repo>` the node's repo, else the registry row or base name of the main checkout), so two leads landing at once queue instead of redoing each other's work. The spec is `--spec`, else the node's; the holder is the node, else the host name. Run from a node held in `bm-holds`, at either gate, it stops first (exit 3, nothing pushed, `bmesh: held before land by <by> <age> ago: <why>; ...`; see Holds), and it reads the hold again once it holds the lease. It refuses (exit 3), before taking the lease, a dirty worktree and one not on a branch (or on `main`). Run from a node, it then reads the node's inbox as the daemon's wake does (from the stream after the consumer's ack floor, holding and acking nothing): while it holds a message sent by `operator` with `bmesh send`, it refuses (exit 3) `bmesh: refused: <n> unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh land again`, since the operator's messages are the ones likely to change what landing needs; reading the inbox is the way past it, and there is no `--force`. Anything else unread (a report, a reply, another node's message) doesn't stop it and is named on one line, each item as the wake names it, `unread: done from <path> (branch <b> at <sha8>); reply to job <id> (<kind> ok|fail); message from <path>`. It reads the inbox again once it holds the lease, so a message from the operator that arrived while it waited refuses it before the fetch. Run outside a node, it has no inbox and skips the check. A message that arrives after that read, during the rebase and checks, is not seen. Then it prints the kinds it will require of the landed tree and where each came from, `required: verify (the repo's verify kind), review (t:<tree8> at HEAD)`, or `review (t:<tree8> before the rebase at <sha8>)` for a result from before a rebase by hand (`required: nothing` when there are none). While another holder has the lease it prints `waiting for land.<repo> (held by <holder>)` once per holder and tries again every 2 s, giving up after `--wait` (default 30m; exit 5 `bmesh: timed out waiting for land.<repo>, held by <holder>`); the lease lasts `--ttl` (default 10m, at least 3 s) unrenewed and is renewed every ttl/3, so a lander that dies blocks the next for at most that long. Once it holds the lease it prints `lease land.<repo>`, then a line per step:
 
 1. `fetch origin/main <sha8>`: `git fetch origin main`; refused (exit 3) while the main checkout's `main` has commits `origin/main` doesn't (someone's unpushed work, never pushed by `land`). Without an origin the base is the local `main`.
 2. `rebase onto <sha8>: N commits` (or `rebase: on <sha8> already`). A rebase that fails is aborted and refused, exit 3, `bmesh: refused: rebase onto origin/main conflicts in <files>; it is aborted and nothing is pushed. Rebase yourself, resolve it, re-validate, then run bmesh land again`; resolving it is the lead's. A branch with nothing beyond the base is refused (`nothing to land`), as is a spec that does not read `building` in the worktree.
@@ -877,6 +995,30 @@ The map's lead page (`#/lead/<path>`, served for any node by `/api/lead/<path>`)
 
 `lock-lease run` exits with its command's code.
 
+## Build and test
+
+```
+GOBIN=~/.local/bin go install ./cmd/bmesh
+TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test ./...
+GOOS=windows go vet ./...    # type-checks the Windows-only files a Linux go vet skips
+```
+
+Tests never use `/tmp`: `meshtest.Start` fails when `TMPDIR` is `/tmp`.
+
+### Testing
+
+Runner tests drive shell fakes instead of tmux and claude, and a fake T3 (below). `BMESH_TMUX_COMMAND`, when set, is split on spaces and replaces the tmux binary (`sh <repo>/testdata/fake-tmux.sh`). `BMESH_T3_TIMEOUT` (a Go duration) replaces the t3 runner's 120 s per-call timeout. `BMESH_CLAUDE_COMMAND` replaces `[runner] claude` the same way (`sh <repo>/testdata/fake-claude.sh`), for routines and for the claude runner's tests. `BMESH_SSH_COMMAND` replaces the `ssh` that `bmesh ideate` reaches another host with (`sh <repo>/testdata/fake-ssh.sh`). `BMESH_GO_COMMAND` replaces the `go` an update builds with (`sh <repo>/testdata/fake-go.sh`), and `BMESH_UPSTREAM_URL` replaces `https://<module path>` as where an update without a row and the notice read the module's `main` (a local repo in the tests; the `cmd/bmesh` tests set it, and `XDG_STATE_HOME`, for the whole package, so no test reaches the network or touches the box's notice). `BMESH_SECURITY_COMMAND` replaces the macOS `security` the Keychain key store runs (`sh <repo>/testdata/fake-security.sh`, which keeps items under `$FAKE_SECURITY_DIR` and prints the access list `$FAKE_SECURITY_ACL` names). A level's plugin refresh runs `claude` through `BMESH_CLAUDE_COMMAND` (`sh <repo>/testdata/fake-claude-plugin.sh`) and `codex` through `BMESH_CODEX_COMMAND` (`sh <repo>/testdata/fake-codex.sh`; unset, `codex` runs only when it is on `PATH`). `BMESH_KEY_STORE` (`keychain` or `file`) replaces the key store's default when `[hosts] key_store` is unset; the `cmd/bmesh` tests set it to `file`, and `BMESH_SECURITY_COMMAND`, `BMESH_CLAUDE_COMMAND` and `BMESH_CODEX_COMMAND` to the fakes, for the whole package (a test sets its own over them), so no test reaches the real Keychain and its dialog, or the box's own `claude` and `codex`. `BMESH_CACHE_DIR`, an absolute path, replaces the user cache dir (`os.UserCacheDir`: `~/.cache` or `$XDG_CACHE_HOME` on Linux, always `~/Library/Caches` on macOS) where briefs and a claude session's files go; the `cmd/bmesh` tests set it for the whole package, so they stay out of the box's cache. Leave all ten unset outside tests; the real Keychain dialog is checked by hand on a Mac. The t3 runner, `bmesh t3 login`, the expiry pushes and the `lead start`, `build`, `ideate` and `node forget` tests run against `internal/runner/t3mcp/t3fake`, an `httptest` T3 0.1.0 (the environment document, the MCP OAuth endpoints and the MCP tools below) answering with the shapes recorded from a live 0.1.0 server, kept in `testdata/t3v2/`.
+
+`scripts/seed.sh [seeder args]` starts a throwaway `bmesh serve` in the background (embedded NATS and HTTP on free loopback ports, routines and ntfy off) with a seeded mesh holding every state the map draws: each node state (`working`, `asking`, `blocked`, `silent`, `held`, `done`, `idle`), a done lead on the shelf, a round and its engineers, routines with done instances, a queued job, leases, a digest and quota lines, and a landed spec with steps for the operator still open (a band row). It prints the map's URL, the check command for it and a CLI config for poking the mesh, and returns; serve keeps running. State lives under `~/.cache/bmesh-scratch/seed/<checkout directory name>` (`BMESH_SEED_DIR` overrides it, `BMESH_SEED_HTTP` the listen address), wiped on each run, so two checkouts seed side by side; `seed.pid` there holds serve's pid, and a run stops its checkout's previous one first. `scripts/seed.sh stop` stops it by that pidfile; never `pkill -f` its command line, which matches the caller's own shell. The seeded serve reads the page from the checkout's `internal/web/` on every request, so an edit to `index.html`, `map.js` or `map.css` shows on reload; a Go change needs a re-run. `BMESH_WEB_DIR=<dir>` does that for any `bmesh serve` (it logs `bmesh serve: map page from <dir>`); unset, the page is the one embedded at build.
+
+`node scripts/check.mjs <url> <width> <height> [png]` (Node 22 or later) is the map's browser check: it loads `url` (adding `?check=1`) in headless Chromium at that viewport over the DevTools protocol, waits for the self-check title to show a loaded tree on a live connection (`trees=` at least 1, `conn=` ending `live`), prints the title, writes a screenshot of the viewport to `png` when given, and exits 0, or 1 when no such title showed within 20 s (the last title printed all the same), 2 on a usage or browser error. A hash picks the view (`/#/lead/<path>`, `/#/routines`). Chromium is `$CHROME`, else the newest headless shell or Chromium in the Playwright cache (`$PLAYWRIGHT_BROWSERS_PATH`, `~/.cache/ms-playwright`, `~/Library/Caches/ms-playwright`); stderr names the one it runs. `chromium --dump-dom` is no substitute: the page's `/events` stream never ends, so it never returns. A UI change's check is `scripts/seed.sh`, then the printed `node scripts/check.mjs ... 390 844 shot.png` and the same at `1280 800`, then `scripts/seed.sh stop`.
+
+Go tests share fixtures in `internal/meshtest`: `Start` (an embedded server), `Git(t, dir, args...)` (git with a fixed identity and no global config, hooks or signing; its output, trimmed), `CommitFiles(t, repo, files)` (writes and commits them, returns the commit), `SyncBuffer` (a log sink goroutines and the test share), `ForceState(t, c, path, mesh.State{...})` (writes a node's state past the transition table, for a fixture that needs `done` or `silent` in one step) and `QueueJob(t, c, kind, from, job)` (creates the kind's consumer, then sends the job, so it counts toward the kind's depth).
+
 ## License
 
 MIT.
+
+<br>
+
+<p align="center"><img alt="" src="docs/assets/logo.svg" width="56"></p>

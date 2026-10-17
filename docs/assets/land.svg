@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 458" width="960" height="458" role="img" aria-label="A lead runs bmesh land: it rebases its branch onto main, runs verify, carries its review across the rebase because the diff is unchanged, writes the verified line, marks the spec done, pushes main, then runs bmesh done">
+<title>bmesh land, then bmesh done</title>
+<defs><clipPath id="k"><rect x=".75" y=".75" width="958.5" height="456.5" rx="10"/></clipPath></defs>
+<style>
+text{font:14px ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;fill:#8b949e;white-space:pre}
+.tt{font:13px -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif;fill:#8b949e}
+.p{fill:#39c5bb}.c{fill:#e6edf3}.h{fill:#58a6ff}.g{fill:#3fb950}.m{fill:#a371f7}
+.e{fill:#e6edf3;font-weight:600}.L{fill:#3fb950;font-weight:600}
+.cv{fill:#0d1117}.cur{fill:#e6edf3;opacity:.85;animation:bl 1s infinite steps(1,end)}
+@keyframes bl{0%{opacity:.85}50%{opacity:0}}
+.sc{animation:sc 16s linear infinite}
+@keyframes sc{0%{opacity:0}2%,96.875%{opacity:1}100%{opacity:0}}
+.t0{transform:translateX(84.0px);animation:t0 16s infinite steps(10,end)}@keyframes t0{0%,3.125%{transform:translateX(0)}9.375%,100%{transform:translateX(84.0px)}}
+.v0{opacity:0;animation:v0 16s infinite steps(1,end)}@keyframes v0{0%,0%{opacity:0}0.062%,10.312%{opacity:1}10.375%,100%{opacity:0}}
+.l1{animation:l1 16s linear infinite}@keyframes l1{0%,11.25%{opacity:0}11.75%,100%{opacity:1}}
+.l2{animation:l2 16s linear infinite}@keyframes l2{0%,14.375%{opacity:0}14.875%,100%{opacity:1}}
+.l3{animation:l3 16s linear infinite}@keyframes l3{0%,17.5%{opacity:0}18%,100%{opacity:1}}
+.l4{animation:l4 16s linear infinite}@keyframes l4{0%,20.625%{opacity:0}21.125%,100%{opacity:1}}
+.l5{animation:l5 16s linear infinite}@keyframes l5{0%,23.75%{opacity:0}24.25%,100%{opacity:1}}
+.l6{animation:l6 16s linear infinite}@keyframes l6{0%,34.375%{opacity:0}34.875%,100%{opacity:1}}
+.l7{animation:l7 16s linear infinite}@keyframes l7{0%,38.125%{opacity:0}38.625%,100%{opacity:1}}
+.l8{animation:l8 16s linear infinite}@keyframes l8{0%,41.875%{opacity:0}42.375%,100%{opacity:1}}
+.l9{animation:l9 16s linear infinite}@keyframes l9{0%,45%{opacity:0}45.5%,100%{opacity:1}}
+.l10{animation:l10 16s linear infinite}@keyframes l10{0%,48.125%{opacity:0}48.625%,100%{opacity:1}}
+.l11{animation:l11 16s linear infinite}@keyframes l11{0%,51.25%{opacity:0}51.75%,100%{opacity:1}}
+.l12{animation:l12 16s linear infinite}@keyframes l12{0%,54.375%{opacity:0}54.875%,100%{opacity:1}}
+.l13{animation:l13 16s linear infinite}@keyframes l13{0%,57.5%{opacity:0}58%,100%{opacity:1}}
+.l14{animation:l14 16s linear infinite}@keyframes l14{0%,60.625%{opacity:0}61.125%,100%{opacity:1}}
+.l15{animation:l15 16s linear infinite}@keyframes l15{0%,63.125%{opacity:0}63.625%,100%{opacity:1}}
+.t1{transform:translateX(235.2px);animation:t1 16s infinite steps(28,end)}@keyframes t1{0%,65%{transform:translateX(0)}73.75%,100%{transform:translateX(235.2px)}}
+.v1{opacity:0;animation:v1 16s infinite steps(1,end)}@keyframes v1{0%,63.125%{opacity:0}63.188%,75.938%{opacity:1}76%,100%{opacity:0}}
+.l16{animation:l16 16s linear infinite}@keyframes l16{0%,76.875%{opacity:0}77.375%,100%{opacity:1}}
+.l17{animation:l17 16s linear infinite}@keyframes l17{0%,78.125%{opacity:0}78.625%,100%{opacity:1}}
+.w{opacity:0;animation:w 16s infinite steps(1,end)}@keyframes w{0%,24.062%{opacity:0}24.125%,34.25%{opacity:1}34.312%,100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+<rect x=".75" y=".75" width="958.5" height="456.5" rx="10" fill="#0d1117"/>
+<rect clip-path="url(#k)" x="0" y="0" width="960" height="36" fill="#161b22"/>
+<path d="M.75 36H959.25" stroke="#30363d" stroke-width="1.5"/>
+<g opacity=".7"><circle cx="22" cy="18" r="6" fill="#f85149"/><circle cx="42" cy="18" r="6" fill="#d29922"/><circle cx="62" cy="18" r="6" fill="#3fb950"/></g>
+<text class="tt" x="480" y="22.5" text-anchor="middle">app-012 — ~/.t3/worktrees/app/bmesh-7c41e2d0…</text>
+<rect x=".75" y=".75" width="958.5" height="456.5" rx="10" fill="none" stroke="#30363d" stroke-width="1.5"/>
+<g class="sc">
+<text x="28" y="66" textLength="100.8" lengthAdjust="spacing"><tspan class="p">$</tspan> <tspan class="c">bmesh land</tspan></text>
+<text class="l1" x="28" y="87.5" textLength="588.0" lengthAdjust="spacing">required: verify (the repo's verify kind), review (t:<tspan class="h">81d0b7a4</tspan> at HEAD)</text>
+<text class="l2" x="28" y="109" textLength="117.6" lengthAdjust="spacing">lease land.app</text>
+<text class="l3" x="28" y="130.5" textLength="218.4" lengthAdjust="spacing">fetch origin/main <tspan class="h">5e17c0d2</tspan></text>
+<text class="l4" x="28" y="152" textLength="260.4" lengthAdjust="spacing">rebase onto <tspan class="h">5e17c0d2</tspan>: 3 commits</text>
+<text class="l5" x="28" y="173.5" textLength="210.0" lengthAdjust="spacing">scaffold: follows the row</text>
+<text class="l6" x="28" y="195" textLength="260.4" lengthAdjust="spacing">verify <tspan class="g">ok</tspan> t:<tspan class="h">3f2a9c1e</tspan> (recorded)</text>
+<text class="l7" x="28" y="216.5" textLength="823.2" lengthAdjust="spacing">review <tspan class="g">ok</tspan> t:<tspan class="h">3f2a9c1e</tspan> m:<tspan class="m">claude-opus-5-5</tspan> c:<tspan class="h">81d0b7a4</tspan> (carried from t:<tspan class="h">81d0b7a4</tspan>: the diff is unchanged)</text>
+<text class="l8" x="28" y="238" textLength="680.4" lengthAdjust="spacing"><tspan class="e">verified:</tspan> review <tspan class="g">ok</tspan> t:<tspan class="h">3f2a9c1e</tspan> m:<tspan class="m">claude-opus-5-5</tspan> c:<tspan class="h">81d0b7a4</tspan>; verify <tspan class="g">ok</tspan> t:<tspan class="h">3f2a9c1e</tspan></text>
+<text class="l9" x="28" y="259.5" textLength="680.4" lengthAdjust="spacing">spec 012 done: merged <tspan class="h">a4c93e07</tspan>, branch bmesh/7c41e2d0-5b9a-4f3e-a1c6-02d8e9b4f713</text>
+<text class="l10" x="28" y="281" textLength="310.8" lengthAdjust="spacing">commit <tspan class="h">9b2e6f15</tspan> 012: done at <tspan class="h">a4c93e07</tspan></text>
+<text class="l11" x="28" y="302.5" textLength="210.0" lengthAdjust="spacing">push origin main <tspan class="h">9b2e6f15</tspan></text>
+<text class="l12" x="28" y="324" textLength="109.2" lengthAdjust="spacing">main <tspan class="h">9b2e6f15</tspan></text>
+<text class="l13" x="28" y="345.5" textLength="142.8" lengthAdjust="spacing">released land.app</text>
+<text class="l14" x="28" y="367" textLength="126.0" lengthAdjust="spacing"><tspan class="L">landed</tspan> <tspan class="h">9b2e6f15</tspan></text>
+<text class="l15" x="28" y="388.5" textLength="252.0" lengthAdjust="spacing"><tspan class="p">$</tspan> <tspan class="c">bmesh done --commit 9b2e6f15</tspan></text>
+<text class="l16" x="28" y="410" textLength="176.4" lengthAdjust="spacing"><tspan class="e">done</tspan> app-012 <tspan class="h">9b2e6f15</tspan></text>
+<text class="l17" x="28" y="431.5"><tspan class="p">$</tspan></text>
+<g class="l17"><rect class="cur" x="44.8" y="418.5" width="8.4" height="17"/></g>
+<g class="w"><rect class="cur" x="28" y="182" width="8.4" height="17"/></g>
+</g>
+<g class="t0"><rect class="cv" x="44.8" y="51" width="96.0" height="20"/><g class="v0"><rect class="cur" x="44.8" y="53" width="8.4" height="17"/></g></g>
+<g class="t1"><rect class="cv" x="44.8" y="373.5" width="247.2" height="20"/><g class="v1"><rect class="cur" x="44.8" y="375.5" width="8.4" height="17"/></g></g>
+</svg>
