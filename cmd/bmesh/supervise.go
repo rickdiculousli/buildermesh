@@ -12,9 +12,10 @@ import (
 )
 
 // supervisor runs `bmesh serve` as a child and starts it again from the
-// same path whenever it exits, whatever the exit code: after an update on
-// Windows, where serve exits 0 for the new binary to be started, and after
-// a crash anywhere.
+// same path whenever it exits, whatever the exit code but exitConfig: after
+// an update on Windows, where serve exits 0 for the new binary to be
+// started, and after a crash anywhere. A child that refused its config
+// (exit 78) is not started again: the supervisor exits 78 itself.
 type supervisor struct {
 	exe  string   // the binary, read once at start: an update moves the running file aside
 	args []string // the child's arguments
@@ -64,6 +65,10 @@ func (s *supervisor) run(ctx context.Context) error {
 			select {
 			case err := <-done:
 				s.logf("serve exited (%s)", exitText(err, cmd.ProcessState))
+				if st := cmd.ProcessState; st != nil && st.Exited() && st.ExitCode() == exitConfig {
+					s.logf("serve exited %d (config check failed); not restarting: fix the config and start it again", exitConfig)
+					return fail(exitConfig, "")
+				}
 			case <-ctx.Done():
 				s.stop(cmd, done)
 				return nil

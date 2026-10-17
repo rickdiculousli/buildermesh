@@ -10,6 +10,7 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 )
 
 // cmdHub runs this box's NATS hub or leaf from [hub] until SIGTERM or
@@ -25,7 +26,7 @@ func (a *app) cmdHub(args []string) error {
 	if len(pos) != 0 {
 		return fail(exitUsage, "usage: bmesh hub")
 	}
-	if err := a.loadConfig(); err != nil {
+	if err := a.loadServiceConfig(); err != nil {
 		return err
 	}
 	o, err := hubOptions(a.cfg)
@@ -42,6 +43,13 @@ func (a *app) cmdHub(args []string) error {
 			o.Name, o.Listen, orNone(o.LeafListen), o.Domain, o.Store)
 	} else {
 		fmt.Fprintf(a.stderr, "bmesh hub: leaf %s on %s, dialing %s\n", o.Name, o.Listen, o.Remote)
+	}
+	// hub.json is how hosts --here, mesh-status and update tell a hub
+	// left on an older binary than serve.
+	if remove, err := selfupdate.WriteProc(config.StateDir(), "hub", buildVersion()); err != nil {
+		fmt.Fprintf(a.stderr, "bmesh hub: no hub.json: %v\n", err)
+	} else {
+		defer remove()
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()

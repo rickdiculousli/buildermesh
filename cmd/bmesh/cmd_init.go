@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -443,8 +444,11 @@ const (
 
 // writeService writes the unit that keeps u's command running: a systemd
 // user unit on Linux, a launchd agent on macOS, each restarting always
-// (the tailnet address a hub binds may not exist yet at boot), placed as
-// placeUnit says. It returns the file, what was done with it and the
+// (the tailnet address a hub binds may not exist yet at boot) but on
+// exitConfig, a config the binary refused (systemd's
+// RestartPreventExitStatus; serve's launchd agent, launchd having no
+// per-code stop, restarts at most every 5 minutes), placed as placeUnit
+// says. It returns the file, what was done with it and the
 // commands that enable it; on Windows, with no file, the schtasks commands
 // that set up a logon task for serve; on another OS (and for the hub on
 // Windows), only the advice.
@@ -476,7 +480,8 @@ func writeService(configDir string, u unit, force bool) (string, string, []strin
 			kill = "KillMode=process\n" // a restart must not take the claude turns the daemon started with it
 		}
 		body := "[Unit]\nDescription=" + u.desc + "\nAfter=network-online.target\n\n[Service]\n" +
-			"ExecStart=" + exe + " " + u.cmd + "\nRestart=always\nRestartSec=5\n" + kill +
+			"ExecStart=" + exe + " " + u.cmd + "\nRestart=always\nRestartSec=5\n" +
+			"RestartPreventExitStatus=" + strconv.Itoa(exitConfig) + "\n" + kill +
 			"Environment=" + strings.ReplaceAll(env, "\n", "\nEnvironment=") + "\n\n" +
 			"[Install]\nWantedBy=default.target\n"
 		state, err := placeUnit(file, body, force)
@@ -494,6 +499,12 @@ func writeService(configDir string, u unit, force bool) (string, string, []strin
 			return "", "", nil, err
 		}
 		log := filepath.Join(home, "Library", "Logs", u.name+".log")
+		// launchd has no per-code stop: serve refusing its config (exit 78)
+		// is started again at most every 5 minutes, not in a tight loop.
+		throttle := ""
+		if u == serveUnit {
+			throttle = "\t<key>ThrottleInterval</key><integer>300</integer>\n"
+		}
 		body := `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -504,7 +515,7 @@ func writeService(configDir string, u unit, force bool) (string, string, []strin
 ` + plistEnv(env) + `	</dict>
 	<key>RunAtLoad</key><true/>
 	<key>KeepAlive</key><true/>
-	<key>StandardOutPath</key><string>` + log + `</string>
+` + throttle + `	<key>StandardOutPath</key><string>` + log + `</string>
 	<key>StandardErrorPath</key><string>` + log + `</string>
 </dict>
 </plist>
