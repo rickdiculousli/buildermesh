@@ -561,3 +561,36 @@ func TestBuildBriefAsksForUpgradingInOwnRepo(t *testing.T) {
 		t.Fatalf("brief lacks the Upgrading bullet:\n%s", b)
 	}
 }
+
+func TestBuildStartedLineRepeatsCommandClashes(t *testing.T) {
+	_, repo, _ := buildSetup(t)
+	dir := filepath.Join(repo, "docs", "proposals")
+	for name, def := range map[string]string{"002-second": "- **`bmesh frob <repo>`** frobs.", "009-ninth": "- **`bmesh frob`**"} {
+		p := filepath.Join(dir, name+".md")
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, append(b, def+"\n"...), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	meshtest.Git(t, repo, "commit", "-qam", "frob")
+	meshtest.Git(t, repo, "push", "-q", "origin", "main")
+	out, errs, code := runCLI(t, nil, "build", "--accepted", "demo")
+	if code != 0 {
+		t.Fatalf("code %d out %q err %q", code, out, errs)
+	}
+	var s002, s004 string
+	for _, l := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(l, "started 002 "):
+			s002 = l
+		case strings.HasPrefix(l, "started 004 "):
+			s004 = l
+		}
+	}
+	if !strings.HasSuffix(s002, "); warning: 002 defines bmesh frob, which 009 (accepted) also defines") || strings.Contains(s004, "warning") {
+		t.Fatalf("%q", out)
+	}
+}

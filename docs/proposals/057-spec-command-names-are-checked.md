@@ -28,6 +28,8 @@ In:
   A word another spec also defines, or that `main` already has, prints `warning: 048 defines bmesh release, which 046 (accepted) also defines`. The reply still lands, and the operator decides.
 - **`bmesh build` repeats the warning** in its started line, so the coordinator sees it again at dispatch.
 
+As built, to keep the warning quiet enough to read: a definition is a bold run that is the synopsis alone (``**`bmesh release <repo>`**``, optionally closed by `.`, `:`, `,` or `;` inside the bold), so ``**`bmesh build` repeats the warning**`` talks about a command and doesn't define it, nor does one quoted inside a code span (a backtick right outside the bold), as this spec quotes its example. The name is the synopsis's leading bare words, a subcommand's with them (`bmesh spec verified [--commit C]` defines `spec verified`, which `bmesh spec list` doesn't clash with). A synopsis that goes straight to a flag (`bmesh build --hold land|now`) adds a flag, which is Out. `main`'s commands are the ones the running binary's `bmesh help` lists, the binary built from `main` on an up-to-date box. Two specs accepted in one reply that define one command warn once, from the higher id.
+
 Out: flags and config keys (much noisier to read from prose); refusing the accept.
 
 Judge: opus, because it reads command names out of prose, and a noisy warning gets ignored.
@@ -40,5 +42,8 @@ The repo's verify, plus `cmd_spec_test.go` cases: two accepted specs that define
 
 ## Risks and the alternative considered
 A spec that redefines a command on purpose (a change to `bmesh update`) warns every time. The warning names the other spec or `main`, and the operator reads past it. Alternative: check at land time. By then the lead has built on the name.
+
+## Upgrading
+nothing
 
 ## Needs from the operator

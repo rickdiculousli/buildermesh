@@ -41,6 +41,8 @@ type buildStarted struct {
 	Building string `json:"building"`
 	Family   string `json:"family"`
 	Hold     string `json:"hold,omitempty"` // the gate build --hold held it at
+	// The spec's command clashes, as choose-ideas warned at its accept.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // cmdBuild dispatches an accepted spec: bmesh build <repo> <NNN> records
@@ -174,7 +176,7 @@ func (a *app) cmdBuild(args []string) error {
 	if *accepted {
 		return a.buildAccepted(ctx, row, repoPath, specs, *model, *effort, family, *holdGate)
 	}
-	started, err := a.buildOne(ctx, row, repoPath, s, *model, *effort, *pathFlag, family, *holdGate)
+	started, err := a.buildOne(ctx, row, repoPath, s, specs, *model, *effort, *pathFlag, family, *holdGate)
 	if err != nil {
 		return err
 	}
@@ -227,8 +229,9 @@ func nextFamily(ctx context.Context, c *mesh.Client, repo string) (string, error
 // start that fails moves the spec back to accepted. With hold (land or
 // now) the lead's bm-holds key is written before the runner starts it, and
 // the hold message follows the start; without, a hold left on the path by
-// an earlier lead is deleted.
-func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s *spec.Spec, model, effort, pathFlag, family, hold string) (buildStarted, error) {
+// an earlier lead is deleted. specs is the ledger on main, which the
+// started line's command clashes are read against.
+func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s *spec.Spec, specs []*spec.Spec, model, effort, pathFlag, family, hold string) (buildStarted, error) {
 	if s.Status() != "accepted" {
 		return buildStarted{}, fail(exitRefused, "refused: spec %s is %s, not accepted", s.IDString(), s.Status())
 	}
@@ -322,7 +325,8 @@ func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s 
 			fmt.Fprintf(a.stderr, "build: %s is held %s, but the hold message failed: %v\n", p, mesh.GatePhrase(hold), err)
 		}
 	}
-	return buildStarted{leadStarted: started, Model: model, Spec: s.IDString(), Building: sha, Family: family, Hold: hold}, nil
+	return buildStarted{leadStarted: started, Model: model, Spec: s.IDString(), Building: sha, Family: family, Hold: hold,
+		Warnings: spec.CommandClashes(s, specs, mainCommands())}, nil
 }
 
 // recordOnMain sets spec id's status and fields on main: in a bmesh
@@ -411,7 +415,7 @@ func (a *app) buildAccepted(ctx context.Context, row config.Repo, repoPath strin
 			l.State, l.Reason = "waits", "on "+strings.Join(waits, ", ")
 		} else if working >= buildSlots {
 			l.State, l.Reason = "waits", fmt.Sprintf("%d leads working on %s", working, row.Name)
-		} else if started, err := a.buildOne(ctx, row, repoPath, s, model, effort, "", family, hold); err != nil {
+		} else if started, err := a.buildOne(ctx, row, repoPath, s, specs, model, effort, "", family, hold); err != nil {
 			l.State, l.Reason = "not started", err.Error()
 		} else {
 			l.State, l.buildStarted = "started", &started
@@ -431,7 +435,11 @@ func (a *app) buildAccepted(ctx context.Context, row config.Repo, repoPath strin
 			if l.Hold != "" {
 				held = ", held " + mesh.GatePhrase(l.Hold)
 			}
-			fmt.Fprintf(a.stdout, "started %s %s: %s on %s (thread %s, branch %s, building %s, family %s%s)\n", l.ID, l.Title, l.Path, l.Model, l.Thread, l.Branch, l.Building[:8], l.Family, held)
+			warn := ""
+			for _, w := range l.Warnings {
+				warn += "; warning: " + w
+			}
+			fmt.Fprintf(a.stdout, "started %s %s: %s on %s (thread %s, branch %s, building %s, family %s%s)%s\n", l.ID, l.Title, l.Path, l.Model, l.Thread, l.Branch, l.Building[:8], l.Family, held, warn)
 		default:
 			fmt.Fprintf(a.stdout, "%s %s %s: %s\n", l.State, l.ID, l.Title, l.Reason)
 		}

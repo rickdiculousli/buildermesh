@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -368,6 +369,7 @@ func (a *app) applyReview(ctx context.Context, wt, repo, reply string) (lines, c
 		}
 	}
 	date := time.Now().UTC().Format("2006-01-02")
+	accepted := map[int]bool{}
 	for _, id := range order {
 		o := merged[id]
 		s, _ := spec.Find(specs, id)
@@ -405,15 +407,42 @@ func (a *app) applyReview(ctx context.Context, wt, repo, reply string) (lines, c
 		}
 		lines = append(lines, line)
 		changed = append(changed, fmt.Sprintf("%03d %s", n.ID, to))
+		if to == "accepted" && old != "accepted" {
+			accepted[n.ID] = true
+		}
 	}
 	for _, u := range r.Unmatched {
 		lines = append(lines, "unmatched: "+u)
 	}
-	if _, err := spec.Scan(wt, a.cfg.Spec.Glob); err != nil {
+	after, err := spec.Scan(wt, a.cfg.Spec.Glob)
+	if err != nil {
 		return nil, nil, ledgerFail(err)
+	}
+	for _, w := range acceptClashes(after, accepted) {
+		lines = append(lines, "warning: "+w)
 	}
 	return lines, changed, nil
 }
+
+// acceptClashes is the command clashes (spec.CommandClashes) of each spec
+// this review accepted, against main's commands and the ledger as the
+// review left it. Two specs accepted together that define one command
+// warn once, from the higher id, naming the lower.
+func acceptClashes(specs []*spec.Spec, accepted map[int]bool) []string {
+	var out []string
+	for _, s := range specs {
+		if !accepted[s.ID] {
+			continue
+		}
+		others := slices.DeleteFunc(slices.Clone(specs), func(o *spec.Spec) bool { return accepted[o.ID] && o.ID > s.ID })
+		out = append(out, spec.CommandClashes(s, others, mainCommands())...)
+	}
+	return out
+}
+
+// mainCommands is the commands this binary's `bmesh help` lists: main's,
+// on a box whose bmesh is up to date.
+func mainCommands() []string { return spec.UsageCommands(usage) }
 
 // latestRanks is the pitch the operator saw last, as ranks: the text of
 // the repo's newest settled round (state done or blocked, which is what was
