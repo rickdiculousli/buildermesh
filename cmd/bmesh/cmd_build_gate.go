@@ -123,16 +123,18 @@ func familyBase(f string) string {
 	return ""
 }
 
-// codeHead is the newest commit of ref that changes anything outside the
-// spec directory (ref itself when only specs ever changed), so ledger
-// commits don't count as code: the commit a build verifies and a release
-// tags.
-func (a *app) codeHead(repoPath, ref string) (string, error) {
-	return selfupdate.CodeHead(repoPath, ref, a.specDir())
+// codeHead is the newest commit of ref that changes repo's code (codePaths;
+// ref itself when none does), so a commit outside it (a ledger commit, a
+// document) never counts: the commit a build verifies and a release tags.
+func (a *app) codeHead(repo, repoPath, ref string) (string, error) {
+	return selfupdate.CodeHead(repoPath, ref, a.codePaths(repo))
 }
 
-// specDir is the spec directory, as a git pathspec.
-func (a *app) specDir() string { return filepath.ToSlash(spec.Dir(a.cfg.Spec.Glob)) }
+// codePaths is repo's code as git pathspecs (selfupdate.CodePaths): its
+// registry row's code, else everything but the spec files.
+func (a *app) codePaths(repo string) []string {
+	return selfupdate.CodePaths(a.cfg.Repos[repo].Code, a.cfg.Spec.Glob)
+}
 
 // verifyMain checks sha, main's code head (codeHead), before a lead
 // branches from it or a release tags it. A verify result recorded for its

@@ -25,6 +25,7 @@ verify = ["npm test", "npm run lint"]
 surfaces = ["desk / at 1280x800", "phone / at 390x844"]
 pin = "v2"
 routines = ["verify"]
+code = ["*.go", "cmd/**"]
 `), 0o644)
 	t.Setenv("BMESH_CONFIG", cfg)
 	return cfg
@@ -64,12 +65,15 @@ func TestReposShow(t *testing.T) {
 	reposSetup(t)
 	out, _, code := runCLI(t, nil, "repos", "show", "app")
 	if code != 0 || !strings.Contains(out, "name: app\n") || !strings.Contains(out, "verify: npm test; npm run lint\n") ||
-		!strings.Contains(out, "routines: verify\n") {
+		!strings.Contains(out, "routines: verify\n") || !strings.Contains(out, "code: *.go, cmd/**\n") {
 		t.Fatalf("%d %q", code, out)
+	}
+	if out, _, _ := runCLI(t, nil, "repos", "show", "zeta"); !strings.Contains(out, "code: (everything but the spec files)\n") {
+		t.Fatalf("zeta: %q", out)
 	}
 	out, _, code = runCLI(t, nil, "repos", "show", "app", "--json")
 	var r map[string]any
-	if err := json.Unmarshal([]byte(out), &r); err != nil || code != 0 || r["remote"] != "o/app" {
+	if err := json.Unmarshal([]byte(out), &r); err != nil || code != 0 || r["remote"] != "o/app" || len(r["code"].([]any)) != 2 {
 		t.Fatalf("%v %d %q", err, code, out)
 	}
 	_, errs, code := runCLI(t, nil, "repos", "show", "nope")

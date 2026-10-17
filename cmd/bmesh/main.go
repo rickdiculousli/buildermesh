@@ -129,7 +129,7 @@ commands:
   release <repo> [--minor|--patch] [--dry-run]
                                            tag main's code head as the next vX.Y.Z (v0.1.0 first; minor up when a
                                            feature landed since, else patch) and push the tag; refused while a lead
-                                           works, feedback is pending, verify isn't ok or only specs changed
+                                           works, feedback is pending, verify isn't ok or nothing under code changed
   hold <path>|--family F [--gate land|now] --text T
                                            hold a lead (every live lead of the family) at a gate: bm-holds <path>
                                            and a hold message; land refuses bmesh land, now stops it at its next

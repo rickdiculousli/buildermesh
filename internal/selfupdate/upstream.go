@@ -120,13 +120,13 @@ var doneAt = regexp.MustCompile(`^([0-9]{3,}): done at ([0-9a-f]{7,40})`)
 // behind t, read on ref (main): for a release, `bmesh: v0.2.0 is out (you
 // run v0.1.0: 046, 047); run bmesh update, then update the buildermesh
 // plugin`; for a code head, `bmesh: N commits behind main (landed since:
-// NNN <title>, …); run …`, N the commits in own..t that change anything
-// outside specDir and each spec titled from its file on ref. The specs are
+// NNN <title>, …); run …`, N the commits in own..t that change code
+// (pathspecs as CodePaths gives them) and each spec titled from its file on ref. The specs are
 // those whose `NNN: done at <sha8>` landings in own..ref name a merged
 // commit t has and own hasn't (or one dir doesn't know), oldest first. It
 // is "" when own is not behind t (Stand): current, ahead, or not in its
 // history.
-func Notice(dir, own, ref string, t Target, specDir string) (string, error) {
+func Notice(dir, own, ref string, t Target, code []string) (string, error) {
 	if Stand(dir, own, t.Commit) != Behind {
 		return "", nil
 	}
@@ -149,7 +149,7 @@ func Notice(dir, own, ref string, t Target, specDir string) (string, error) {
 		}
 		return line + ")" + tail, nil
 	}
-	n, err := git(dir, "rev-list", "--count", own+".."+t.Commit, "--", ".", ":(exclude)"+specDir)
+	n, err := git(dir, append([]string{"rev-list", "--count", own + ".." + t.Commit, "--"}, code...)...)
 	if err != nil {
 		return "", err
 	}

@@ -68,8 +68,8 @@ type released struct {
 // pushes the tag. The first release is v0.1.0; after it the minor version
 // goes up when a spec landed since is a feature, else the patch version,
 // unless --minor or --patch says which. A release already on the code
-// head is reported and left; it refuses (exit 3) when only specs changed
-// since a release on another commit, while a lead of the repo is still working or a family of
+// head is reported and left; it refuses (exit 3) when nothing under code
+// changed since a release on another commit, while a lead of the repo is still working or a family of
 // the repo has feedback pending (heldBy, with no family of its own), and
 // while verify at the code head isn't ok (verifyMain). In bmesh's own repo
 // it refuses as well when the release's upgrade notes are missing, don't
@@ -108,7 +108,7 @@ func (a *app) cmdRelease(args []string) error {
 		}
 		ref = "origin/main"
 	}
-	head, err := a.codeHead(repoPath, ref)
+	head, err := a.codeHead(row.Name, repoPath, ref)
 	if err != nil {
 		return err
 	}
@@ -119,7 +119,7 @@ func (a *app) cmdRelease(args []string) error {
 	revs := ref
 	if last != "" {
 		revs = last + ".." + ref
-		code, err := gitIn(ctx, repoPath, "rev-list", "-1", revs, "--", ".", ":(exclude)"+a.specDir())
+		code, err := gitIn(ctx, repoPath, append([]string{"rev-list", "-1", revs, "--"}, a.codePaths(row.Name)...)...)
 		if err != nil {
 			return err
 		}
@@ -132,7 +132,7 @@ func (a *app) cmdRelease(args []string) error {
 				fmt.Fprintf(a.stdout, "already released %s %s at %s\n", row.Name, last, head[:8])
 				return nil
 			}
-			return fail(exitRefused, "nothing to release since %s: only specs changed", last)
+			return fail(exitRefused, "nothing to release since %s: nothing under code changed", last)
 		}
 	}
 	ids, err := selfupdate.Landed(repoPath, revs)

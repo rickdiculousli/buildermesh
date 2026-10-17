@@ -491,6 +491,31 @@ func TestBuildVerifiesMainsCodeHead(t *testing.T) {
 	}
 }
 
+// With the row's code set, a README commit on main is not its code head:
+// build answers from the record of the commit under it.
+func TestBuildAnswersAReadmeHeadFromTheCodeHead(t *testing.T) {
+	_, repo, _ := buildSetup(t)
+	writeRepos(t, "[repos.demo]\npath = \""+repo+"\"\nremote = \"example/demo\"\ncode = [\"check.sh\"]\n")
+	vlog := filepath.Join(t.TempDir(), "verify.log")
+	t.Setenv("VERIFY_LOG", vlog)
+	green := verifyKind(t, repo, "echo all good", "Add the verify kind")
+	tree := gitOut(t, "-C", repo, "rev-parse", "main^{tree}")
+	out, errs, code := runCLI(t, nil, "build", "demo", "002")
+	if code != 0 || !strings.Contains(errs, "verify main "+green[:8]+": ok t:"+tree[:8]+" (recorded)\n") {
+		t.Fatalf("green: %d %q %q", code, out, errs)
+	}
+	var got buildStarted
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("%q: %v", out, err)
+	}
+	commitFile(t, repo, "README.md", "# demo\n", "Rework the README")
+	_, errs, code = runCLI(t, nil, "build", "demo", "004", "--family", got.Family)
+	if b, _ := os.ReadFile(vlog); code != 0 || !strings.Contains(errs, "verify main "+green[:8]+": ok t:"+tree[:8]+" (answered from the record)\n") ||
+		strings.Count(string(b), "ran\n") != 1 {
+		t.Fatalf("README on top: %d %q runs %q", code, errs, b)
+	}
+}
+
 // build --hold land writes the lead's hold before the runner starts it (the
 // node has no event yet) and puts the hold message in its inbox.
 func TestBuildHoldWritesTheHoldBeforeTheLeadStarts(t *testing.T) {

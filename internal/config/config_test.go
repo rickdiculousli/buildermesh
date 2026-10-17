@@ -203,7 +203,7 @@ func TestLoadReposFixture(t *testing.T) {
 	// A row with only a path gets the defaults: mode ship, routines verify and review, empty lists.
 	b := c.Repos["bare"]
 	if b.Name != "bare" || b.Mode != "ship" || fmt.Sprint(b.Routines) != "[verify review]" || b.Verify == nil || len(b.Verify) != 0 ||
-		b.Surfaces == nil || len(b.Surfaces) != 0 || b.Host != "" {
+		b.Surfaces == nil || len(b.Surfaces) != 0 || b.Code == nil || len(b.Code) != 0 || b.Host != "" {
 		t.Fatalf("bare row: %+v", b)
 	}
 	if fmt.Sprint(c.RepoNames()) != "[bare demo]" {
@@ -232,6 +232,7 @@ func TestLoadReposRefusals(t *testing.T) {
 		"[repos.x]\npath = \"p\"\nmode = \"shipped\"\n": `[repos.x]: mode "shipped" is not one of ship, companion, publish, fork, dormant`,
 		"[repos.x]\npath = \"p\"\nhots = \"k\"\n":       "unknown key repos.x.hots",
 		"[repos.\"a/b\"]\npath = \"p\"\n":               `[repos.a/b]: name "a/b": a name matches`,
+		"[repos.x]\npath = \"p\"\ncode = [\"*.go\", \" \"]\n": "[repos.x]: code: an empty pathspec",
 	} {
 		os.WriteFile(repos, []byte(body), 0o644)
 		_, err := Load(cfg)
@@ -245,7 +246,7 @@ func TestWriteRepoRoundTrips(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "repos.toml")
 	r := Repo{Name: "app", Path: "~/repos/app", Mode: "fork", Remote: "o/app", Host: "k16", UXHost: "mac",
 		Verify: []string{`test -z "$(gofmt -l .)"`, "go test ./..."}, Surfaces: []string{"desk at 1280x800"}, Pin: "v1",
-		Routines: []string{"verify"}}
+		Routines: []string{"verify"}, Code: []string{"*.go", "cmd/**"}}
 	if err := WriteRepo(p, r); err != nil {
 		t.Fatal(err)
 	}

@@ -172,8 +172,36 @@ func TestRelease(t *testing.T) {
 	meshtest.Git(t, repo, "tag", "-a", "-m", "by hand", "v0.2.2")
 	meshtest.Git(t, repo, "commit", "-q", "--allow-empty", "-m", "Review: 026 accepted")
 	meshtest.Git(t, repo, "push", "-q", "origin", "main", "v0.2.2")
-	if _, errs, exit := runCLI(t, nil, "release", "demo"); exit != exitRefused || errs != "bmesh: nothing to release since v0.2.2: only specs changed\n" {
+	if _, errs, exit := runCLI(t, nil, "release", "demo"); exit != exitRefused || errs != "bmesh: nothing to release since v0.2.2: nothing under code changed\n" {
 		t.Fatalf("spec-only: %d %q", exit, errs)
+	}
+}
+
+// With the row's code set, a README commit on top of the code head is not
+// code: release tags the code head, answered from its record.
+func TestReleaseTagsTheCodeHeadUnderTheRowsCode(t *testing.T) {
+	_, repo, _ := proposeSetup(t, `code = ["*.txt", "check.sh"]`+"\n")
+	vlog := filepath.Join(t.TempDir(), "verify.log")
+	t.Setenv("VERIFY_LOG", vlog)
+	verifyKind(t, repo, "echo all good", "Add the verify kind")
+	code := landRelease(t, repo, "020", "feature")
+	tree := gitOut(t, "-C", repo, "rev-parse", code+"^{tree}")
+	if _, errs, exit := runCLI(t, nil, "release", "demo", "--dry-run"); exit != 0 || !strings.Contains(errs, "verify main "+code[:8]+": ok t:"+tree[:8]+" (recorded)\n") {
+		t.Fatalf("dry run: %d %q", exit, errs)
+	}
+	commitFile(t, repo, "README.md", "# demo\n", "Rework the README")
+	out, errs, exit := runCLI(t, nil, "release", "demo")
+	if exit != 0 || out != "released demo v0.1.0 at "+code[:8]+" (020)\n" ||
+		!strings.Contains(errs, "verify main "+code[:8]+": ok t:"+tree[:8]+" (answered from the record)\n") {
+		t.Fatalf("release: %d %q %q", exit, out, errs)
+	}
+	if b, _ := os.ReadFile(vlog); strings.Count(string(b), "ran\n") != 1 {
+		t.Fatalf("verify ran %q", b)
+	}
+	// Art since the tag is no code either: the release stands.
+	commitFile(t, repo, "art/logo.svg", "<svg/>\n", "Add the logo")
+	if out, errs, exit := runCLI(t, nil, "release", "demo"); exit != 0 || out != "already released demo v0.1.0 at "+code[:8]+"\n" {
+		t.Fatalf("again: %d %q %q", exit, out, errs)
 	}
 }
 

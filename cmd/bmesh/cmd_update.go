@@ -148,7 +148,7 @@ func (a *app) cmdUpdate(args []string) error {
 		return err
 	}
 	defer unlock()
-	t, err := selfupdate.Follow(src.dir, src.ref, track, a.specDir())
+	t, err := selfupdate.Follow(src.dir, src.ref, track, a.codePaths(src.name))
 	if err != nil {
 		return err
 	}

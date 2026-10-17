@@ -20,6 +20,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/scaffold"
+	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
@@ -46,6 +47,7 @@ type lander struct {
 
 	before   map[string]*source // per kind with a result before land touched the branch: where it is
 	required []string           // the kinds the landed tree must carry
+	ran      map[string]string  // per inline kind, the last tree it was ok at in this run
 
 	landed string // the commit main points at after the push
 }
@@ -100,7 +102,7 @@ func (a *app) cmdLand(args []string) error {
 	case err != nil:
 		return err
 	}
-	l := &lander{a: a, top: top, holder: a.cfg.HostName()}
+	l := &lander{a: a, top: top, holder: a.cfg.HostName(), ran: map[string]string{}}
 	repo := a.repoNameAt(top)
 	if p != nil {
 		l.holder = p.String()
@@ -413,6 +415,10 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 		return false, err
 	}
 	fmt.Fprintf(out, "fetch %s %s\n", l.base, baseSHA[:8])
+	preTree, err := git("rev-parse", "HEAD^{tree}")
+	if err != nil {
+		return false, err
+	}
 	for _, src := range l.before {
 		if src.base == "" {
 			if src.base, err = git("merge-base", src.head, baseSHA); err != nil {
@@ -468,7 +474,7 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 		return false, err
 	}
 
-	entries, err := l.results(ctx, merged, tree, baseSHA)
+	entries, err := l.results(ctx, merged, tree, baseSHA, preTree)
 	if err != nil {
 		return false, err
 	}
@@ -605,13 +611,15 @@ func (l *lander) mainMoved(ctx context.Context, baseSHA string) bool {
 }
 
 // results makes sure the rebased tree carries every required kind: an
-// inline kind runs (a deterministic one is answered from its record);
+// inline kind runs (a deterministic one is answered from its record, or
+// carried to tree by carryCode from preTree, the branch's tree before the
+// rebase, or the last tree it was ok at in this run);
 // another must have its own result there or one carried to it by patch-id
 // (spec.ComposeVerified), unless the branch had an ok one before the rebase
 // (land's, or the one by hand its source names) that recorded no patch-id
 // and the rebase left the diff unchanged, which is carried. It returns the verified entries for the tree,
 // refusing a failing one.
-func (l *lander) results(ctx context.Context, merged, tree, baseSHA string) ([]spec.Entry, error) {
+func (l *lander) results(ctx context.Context, merged, tree, baseSHA, preTree string) ([]spec.Entry, error) {
 	out := l.a.stdout
 	_, kinds, err := cwdKinds()
 	if err != nil {
@@ -630,11 +638,27 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA string) ([]s
 		if k.IsModel() {
 			model = k.ModelsList()[0]
 		}
+		line := spec.Entry{Kind: name, OK: true, Tree8: tree[:8], Model: model}.String()
+		if k.Deterministic {
+			from := []string{l.ran[name], preTree}
+			if src := l.before[name]; src != nil {
+				from = append(from, src.tree)
+			}
+			old, err := l.carryCode(ctx, k, model, merged, tree, from)
+			if err != nil {
+				return nil, err
+			}
+			if old != "" {
+				fmt.Fprintf(out, "%s (carried from t:%s: nothing under code changed)\n", line, old[:8])
+				l.ran[name] = tree
+				continue
+			}
+		}
 		ok, output, how, err := l.a.runInline(ctx, k, l.top, merged, tree, l.holder, model, "", "", nil, false)
 		if err != nil {
 			return nil, err
 		}
-		line := spec.Entry{Kind: name, OK: ok, Tree8: tree[:8], Model: model}.String()
+		line = spec.Entry{Kind: name, OK: ok, Tree8: tree[:8], Model: model}.String()
 		if !ok {
 			if output != "" && !strings.HasSuffix(output, "\n") {
 				output += "\n"
@@ -643,6 +667,7 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA string) ([]s
 			return nil, fail(exitError, "%s failed at t:%s; fix it, commit and run bmesh land again", name, tree[:8])
 		}
 		fmt.Fprintf(out, "%s (%s)\n", line, how)
+		l.ran[name] = tree
 	}
 	composeCtx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
@@ -720,6 +745,45 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA string) ([]s
 		}
 	}
 	return entries, nil
+}
+
+// carryCode carries deterministic kind k's ok result to tree, which has no
+// result of its own, from the first tree of from that has one and differs
+// from tree only outside the repo's code (selfupdate.CodeSame of codePaths):
+// it is stored again for tree and merged, so done and spec verified match it
+// as any recorded result. It returns the tree it came from, "" when none
+// carries.
+func (l *lander) carryCode(ctx context.Context, k kind.Kind, model, merged, tree string, from []string) (string, error) {
+	if _, ok, err := mesh.GetResult(ctx, l.a.client, mesh.ResultKey(k.Name, tree, nil, model)); err != nil || ok {
+		return "", err
+	}
+	code := l.a.codePaths(l.repo)
+	for _, old := range from {
+		if old == "" || old == tree {
+			continue
+		}
+		r, ok, err := mesh.GetResult(ctx, l.a.client, mesh.ResultKey(k.Name, old, nil, model))
+		if err != nil {
+			return "", err
+		}
+		if !ok || !r.OK {
+			continue
+		}
+		same, err := selfupdate.CodeSame(l.top, old, tree, code)
+		if err != nil {
+			return "", err
+		}
+		if !same {
+			continue
+		}
+		r.Tree, r.Commit, r.By, r.At = tree, merged, l.holder, ""
+		r.Output = mesh.Truncate(fmt.Sprintf("carried from t:%s: nothing under code changed\n%s", old[:8], r.Output))
+		if err := mesh.PutResult(ctx, l.a.client, r); err != nil {
+			return "", err
+		}
+		return old, nil
+	}
+	return "", nil
 }
 
 // carry puts a kind's model results at its source's tree, which read the

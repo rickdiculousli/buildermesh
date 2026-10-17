@@ -832,3 +832,115 @@ func TestLandAnUnscaffoldedRepo(t *testing.T) {
 		t.Fatalf("land: %d\n%s\n%q", code, out, errs)
 	}
 }
+
+// codeRow writes the registry with r's main checkout as row "repo" whose
+// code is the TOML array items given ("" for a row without code).
+func codeRow(t *testing.T, r landRepo, code string) {
+	t.Helper()
+	row := "[repos.repo]\npath = \"" + r.repo + "\"\n"
+	if code != "" {
+		row += "code = [" + code + "]\n"
+	}
+	writeRepos(t, row)
+}
+
+// countRuns makes $HOOK log each verify run before body and returns the
+// count so far.
+func countRuns(t *testing.T, r landRepo, body string) func() int {
+	t.Helper()
+	log := filepath.Join(r.root, "runs.log")
+	writeFile(t, os.Getenv("HOOK"), "echo ran >> '"+log+"'\n"+body+"\n")
+	return func() int {
+		b, _ := os.ReadFile(log)
+		return strings.Count(string(b), "ran\n")
+	}
+}
+
+// Main moves with a commit outside the row's code while verify runs: the
+// retry carries the verify to the new tree, stores it there, and done
+// accepts the landing.
+func TestLandCarriesVerifyOverACommitOutsideTheCode(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	codeRow(t, r, `"*.txt"`)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	if _, errs, code := runCLI(t, as("app-012"), "started"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	other := filepath.Join(r.root, "other")
+	meshtest.Git(t, r.root, "clone", "-q", "-b", "main", r.origin, other)
+	mark := filepath.Join(r.root, "moved")
+	runs := countRuns(t, r, "test -e '"+mark+"' && exit 0\ntouch '"+mark+"'\n"+
+		"cd '"+other+"' && echo art > logo.svg && git add logo.svg && git commit -qm 'art' && git push -q origin HEAD:main")
+	first := gitOut(t, "rev-parse", "HEAD^{tree}")
+
+	out, errs, code := runCLI(t, as("app-012"), "land")
+	rec := gitOut(t, "rev-parse", "HEAD")
+	tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+	if code != 0 || runs() != 1 || strings.Count(out, "main moved; again from the fetch\n") != 1 ||
+		!strings.Contains(out, "verify ok t:"+first[:8]+" (recorded)\n") ||
+		!strings.Contains(out, "verify ok t:"+tree[:8]+" (carried from t:"+first[:8]+": nothing under code changed)\n") ||
+		!strings.HasSuffix(out, "landed "+rec[:8]+"\n") {
+		t.Fatalf("land: %d runs %d\n%s\nerr %q", code, runs(), out, errs)
+	}
+	if gitOut(t, "-C", r.origin, "show", "main:logo.svg") != "art" {
+		t.Fatal("not landed over the moved main")
+	}
+	got, ok, err := mesh.GetResult(ctx, c, mesh.ResultKey("verify", tree, nil, ""))
+	if err != nil || !ok || !got.OK || got.Commit != gitOut(t, "rev-parse", "HEAD~1") ||
+		!strings.HasPrefix(got.Output, "carried from t:"+first[:8]+": nothing under code changed\n") {
+		t.Fatalf("stored %+v %v %v", got, ok, err)
+	}
+	if front := r.specOnOrigin(t); !strings.Contains(front, "verified: verify ok t:"+tree[:8]+"\n") {
+		t.Fatalf("spec on origin:\n%s", front)
+	}
+	if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", rec); code != 0 || out != "done app-012 "+rec[:8]+"\n" {
+		t.Fatalf("done: %d %q %q", code, out, errs)
+	}
+}
+
+// A verify recorded for the branch carries over a commit main gained
+// outside the code, and is run again for one inside it: a file the row's
+// code lists, the routine kinds whatever it lists, and without code
+// everything but the spec files, a README beside them included.
+func TestLandCarriesVerifyOnlyOutsideTheCode(t *testing.T) {
+	kindFile := ".bmesh/routines/verify.toml"
+	for _, tc := range []struct {
+		name, code, file, body string
+		carried                bool
+	}{
+		{"readme outside the code", `"*.txt"`, "README.md", "# app\n", true},
+		{"a listed file", `"*.txt"`, "c.txt", "c\n", false},
+		{"the verify kind", `"*.txt"`, kindFile, "mode = \"inline\"\ndeterministic = true\ncommand = \"sh \\\"$HOOK\\\"\"\n# again\n", false},
+		{"no code: a spec file", "", "docs/proposals/013-other.md", "---\nid: 13\nstatus: accepted\n---\n", true},
+		{"no code: the spec README", "", "docs/proposals/README.md", "# specs\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, ctx := setup(t)
+			r := newLandRepo(t)
+			codeRow(t, r, tc.code)
+			putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+			runs := countRuns(t, r, "true")
+			before := gitOut(t, "rev-parse", "HEAD^{tree}")
+			if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "verify", Tree: before, Commit: gitOut(t, "rev-parse", "HEAD"),
+				OK: true, By: "app-012"}); err != nil {
+				t.Fatal(err)
+			}
+			r.pushOther(t, tc.file, tc.body)
+
+			out, errs, code := runCLI(t, as("app-012"), "land")
+			tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+			if code != 0 {
+				t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+			}
+			carried := "verify ok t:" + tree[:8] + " (carried from t:" + before[:8] + ": nothing under code changed)\n"
+			ran := "verify ok t:" + tree[:8] + " (recorded)\n"
+			if tc.carried && (runs() != 0 || !strings.Contains(out, carried)) || !tc.carried && (runs() != 1 || !strings.Contains(out, ran)) {
+				t.Fatalf("carried %v: runs %d\n%s", tc.carried, runs(), out)
+			}
+			if front := r.specOnOrigin(t); !strings.Contains(front, "verified: verify ok t:"+tree[:8]+"\n") {
+				t.Fatalf("spec on origin:\n%s", front)
+			}
+		})
+	}
+}

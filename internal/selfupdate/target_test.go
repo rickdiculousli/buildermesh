@@ -24,8 +24,10 @@ func bareOrigin(t *testing.T) (origin, work string, push func()) {
 	return origin, work, push
 }
 
-// code commits a change outside the spec directory in dir; ledger one
-// inside it.
+// specs is the code of a row without code: everything but the spec files.
+var specs = CodePaths(nil, "docs/proposals/{id}-*.md")
+
+// code commits a change outside the spec files in dir; ledger a spec file.
 func code(t *testing.T, dir, name string) string {
 	t.Helper()
 	return meshtest.CommitFiles(t, dir, map[string]string{name: name})
@@ -34,6 +36,57 @@ func code(t *testing.T, dir, name string) string {
 func ledger(t *testing.T, dir, name string) string {
 	t.Helper()
 	return meshtest.CommitFiles(t, dir, map[string]string{"docs/proposals/" + name + ".md": name})
+}
+
+// CodeHead and CodeSame read a row's code, and the routine kinds always;
+// without code, everything but the spec files is code, a README beside
+// them included.
+func TestCodeHeadAndCodeSame(t *testing.T) {
+	dir, _ := repo(t, "one")
+	listed := CodePaths([]string{"*.go", "cmd/**"}, "docs/proposals/{id}-*.md")
+	head := func(code []string) string {
+		t.Helper()
+		sha, err := CodeHead(dir, "HEAD", code)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sha
+	}
+	same := func(a, b string, code []string) bool {
+		t.Helper()
+		ok, err := CodeSame(dir, a, b, code)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	goFile := meshtest.CommitFiles(t, dir, map[string]string{"internal/x/x.go": "package x\n"})
+	readme := code(t, dir, "README.md")
+	art := code(t, dir, "art/logo.svg")
+	spec := ledger(t, dir, "001-a")
+	if got := head(listed); got != goFile {
+		t.Fatalf("with code: head %s, want the .go commit %s", got, goFile)
+	}
+	if got := head(specs); got != art {
+		t.Fatalf("without code: head %s, want the svg commit %s", got, art)
+	}
+	if !same(goFile, spec, listed) || same(goFile, spec, specs) || !same(art, spec, specs) {
+		t.Fatal("CodeSame: a README, an svg and a spec are not code with code set; only the spec without it")
+	}
+	if same(readme+"^{tree}", goFile+"~1^{tree}", listed) {
+		t.Fatal("CodeSame across the .go commit")
+	}
+	indexReadme := meshtest.CommitFiles(t, dir, map[string]string{"docs/proposals/README.md": "how\n"})
+	if head(specs) != indexReadme || same(spec, indexReadme, specs) {
+		t.Fatal("without code, a README beside the spec files is code")
+	}
+	kind := meshtest.CommitFiles(t, dir, map[string]string{".bmesh/routines/verify.toml": "mode = \"inline\"\n"})
+	if head(listed) != kind || same(indexReadme, kind, listed) {
+		t.Fatal("a routine kind is code whatever code says")
+	}
+	if _, err := CodeSame(dir, "nope", kind, listed); err == nil {
+		t.Fatal("CodeSame of an unknown rev")
+	}
 }
 
 func TestFollowReleaseAndLatestOverATaggedOrigin(t *testing.T) {
@@ -47,7 +100,7 @@ func TestFollowReleaseAndLatestOverATaggedOrigin(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer unlock()
-		tg, err := Follow(dir, "refs/heads/main", track, "docs/proposals")
+		tg, err := Follow(dir, "refs/heads/main", track, specs)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -194,7 +247,7 @@ func TestInstallBuildsTheTargetAndMovesBack(t *testing.T) {
 	}
 	defer unlock()
 	main, _ := Head(dir)
-	tg, err := Follow(dir, "HEAD", TrackRelease, "docs/proposals")
+	tg, err := Follow(dir, "HEAD", TrackRelease, specs)
 	if err != nil || tg.Commit != c1 || tg.Tag != "v0.1.0" {
 		t.Fatalf("the clone's release %+v %v", tg, err)
 	}

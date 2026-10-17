@@ -65,8 +65,10 @@ The repo's verify, plus, over a bare origin with a row that sets `code`:
 - **Alternative: exclusion globs (`ignore = ["docs/**", "*.svg"]`).** That was the operator's first thought, and they ruled it out. A new kind of file is code until someone remembers to exclude it, which is safe but slow; with inclusion, it isn't code until it's listed, which is fast but needs the list kept. The embedded `docs/` files show exclusion is the one that goes wrong silently.
 
 ## Upgrading
-nothing: a row without `code` keeps today's rule, narrowed to the spec files.
+- The registry rows gain an optional key, `code` (git pathspecs of the repo's code). A row without it keeps today's rule, narrowed to the spec files themselves (`[spec] glob`), so a `README.md` beside them now counts as code. Nothing to set on any box.
+- A binary from before this release refuses a registry whose row sets `code` (an unknown key), and keeps the registry it had. Set `code` on a row, and publish it, only once every box runs this release.
 
 ## Needs from the operator
-Set bmesh's own row, with the admin's `bmesh repos propose buildermesh` (or edit and publish):
-`code = ["*.go", "go.mod", "go.sum", "cmd/**", "internal/**", "testdata/**", "examples/**", "docs/agents-snippet.md", "docs/proposals/README.md", ".bmesh/**", "scripts/**", "hooks/**"]`. The lead checks this list against the `go:embed` lines and the tests' reads before landing, and names any change to it.
+Set bmesh's own row once every box runs this release, with the admin's `bmesh repos propose buildermesh` (or edit and publish):
+`code = ["*.go", "go.mod", "go.sum", "cmd/**", "internal/**", "testdata/**", "examples/**", "docs/agents-snippet.md", "docs/proposals/README.md", "docs/upgrading/**", "skills/**", ".bmesh/**", "scripts/**", "hooks/**"]`.
+Checked against the `go:embed` lines (`assets.go`: `docs/agents-snippet.md`, `docs/proposals/README.md`, `examples/routines/*.toml`; `internal/brief` and `internal/web` embed files under `internal/`) and the tests' reads (`testdata/`, `examples/routines/`, `skills/*/SKILL.md` in `internal/brief`'s tests, `docs/upgrading/*.toml` in `internal/upgrade`'s). Two entries were added to the list this spec proposed: `skills/**` and `docs/upgrading/**`, both read by tests, so a change to either alone must run verify.

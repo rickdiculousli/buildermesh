@@ -98,13 +98,13 @@ func history(t *testing.T) (string, map[string]string) {
 
 func TestNoticeCountsAndNamesTheSpecs(t *testing.T) {
 	dir, at := history(t)
-	latest, err := Follow(dir, "main", TrackLatest, "docs/proposals")
+	latest, err := Follow(dir, "main", TrackLatest, specs)
 	if err != nil || latest.Commit != at["c031"] || latest.Tag != "" {
 		t.Fatalf("latest %+v %v", latest, err)
 	}
 	notice := func(own string, tg Target) string {
 		t.Helper()
-		line, err := Notice(dir, own, "main", tg, "docs/proposals")
+		line, err := Notice(dir, own, "main", tg, specs)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -137,7 +137,7 @@ func TestNoticeCountsAndNamesTheSpecs(t *testing.T) {
 	// Releases name the tag and what the binary runs.
 	meshtest.Git(t, dir, "tag", "-a", "-m", "v0.1.0", "v0.1.0", at["c030"])
 	meshtest.Git(t, dir, "tag", "-a", "-m", "v0.2.0", "v0.2.0", at["c031"])
-	rel, err := Follow(dir, "main", TrackRelease, "docs/proposals")
+	rel, err := Follow(dir, "main", TrackRelease, specs)
 	if err != nil || rel.Commit != at["c031"] || rel.Tag != "v0.2.0" || rel.NoTag {
 		t.Fatalf("release %+v %v", rel, err)
 	}

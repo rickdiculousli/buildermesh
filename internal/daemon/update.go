@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
-	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
 // revision is this daemon's revision as published: the full commit, or
@@ -91,15 +89,17 @@ func (r *routineSet) installed(dir string) string {
 	return selfupdate.OwnCommit(dir, own)
 }
 
-// specDir is the spec directory as a pathspec: commits that change only it
-// are ledger, never a code head.
-func (d *Deps) specDir() string { return filepath.ToSlash(spec.Dir(d.Cfg.Spec.Glob)) }
+// codePaths is [update] repo's code as git pathspecs (selfupdate.CodePaths):
+// a commit outside it is never a code head.
+func (d *Deps) codePaths() []string {
+	return selfupdate.CodePaths(d.Cfg.Repos[d.Cfg.Update.Repo].Code, d.Cfg.Spec.Glob)
+}
 
 // target is what [update] track follows on ref in dir (selfupdate.Follow);
 // a release track with no release tag yet follows the code head, which it
 // logs once.
 func (r *routineSet) target(dir, ref string) (selfupdate.Target, error) {
-	t, err := selfupdate.Follow(dir, ref, r.d.Cfg.Update.Track, r.d.specDir())
+	t, err := selfupdate.Follow(dir, ref, r.d.Cfg.Update.Track, r.d.codePaths())
 	if err == nil && t.NoTag && !r.noTagSaid {
 		r.noTagSaid = true
 		r.d.Log.Info("update: no release tag on main yet; following its code head", "head", selfupdate.Short(t.Commit))
@@ -271,7 +271,7 @@ func (r *routineSet) checkMain(rowDir string) bool {
 		return false
 	}
 	own := r.installed(dir)
-	line, err := selfupdate.Notice(dir, own, ref, t, d.specDir())
+	line, err := selfupdate.Notice(dir, own, ref, t, d.codePaths())
 	if err != nil {
 		d.Log.Warn("update: read main's history", "err", err)
 		return false

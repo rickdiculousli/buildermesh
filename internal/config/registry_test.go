@@ -53,11 +53,11 @@ func TestWriteReposTextKeepsThePreviousFile(t *testing.T) {
 func TestDiffRepos(t *testing.T) {
 	old, _ := ParseRepos(twoRows)
 	next, _ := ParseRepos(strings.Replace(twoRows, `["npm test"]`, `["npm test", "npm run lint"]`, 1) +
-		"\n[repos.new]\npath = \"~/repos/new\"\n")
+		"\n[repos.new]\npath = \"~/repos/new\"\ncode = [\"*.go\"]\n")
 	delete(next, "tools")
 	got := strings.Join(DiffRepos(old, next), "\n")
 	want := `~ app: verify: ["npm test"] -> ["npm test", "npm run lint"]
-+ new: path ~/repos/new, mode ship, routines ["verify", "review"]
++ new: path ~/repos/new, mode ship, routines ["verify", "review"], code ["*.go"]
 - tools`
 	if got != want {
 		t.Fatalf("diff:\n%s\nwant:\n%s", got, want)

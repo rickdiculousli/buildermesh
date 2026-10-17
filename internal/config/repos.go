@@ -42,6 +42,7 @@ type Repo struct {
 	Surfaces []string `json:"surfaces" toml:"surfaces"`
 	Pin      string   `json:"pin" toml:"pin"`
 	Routines []string `json:"routines" toml:"routines"`
+	Code     []string `json:"code" toml:"code"`
 }
 
 type reposFile struct {
@@ -185,7 +186,7 @@ func DiffRepos(old, new map[string]Repo) []string {
 func repoFields(r Repo) [][2]string {
 	return [][2]string{{"path", r.Path}, {"mode", r.Mode}, {"remote", r.Remote}, {"host", r.Host},
 		{"ux_host", r.UXHost}, {"verify", listText(r.Verify)}, {"surfaces", listText(r.Surfaces)}, {"pin", r.Pin},
-		{"routines", listText(r.Routines)}}
+		{"routines", listText(r.Routines)}, {"code", listText(r.Code)}}
 }
 
 func listText(l []string) string {
@@ -228,6 +229,14 @@ func (r *Repo) check() error {
 	}
 	if r.Surfaces == nil {
 		r.Surfaces = []string{}
+	}
+	if r.Code == nil {
+		r.Code = []string{}
+	}
+	for _, p := range r.Code {
+		if strings.TrimSpace(p) == "" {
+			return errors.New("code: an empty pathspec")
+		}
 	}
 	return nil
 }
@@ -303,6 +312,9 @@ func renderRepos(repos map[string]Repo) string {
 		}
 		if r.Routines != nil && strings.Join(r.Routines, ",") != strings.Join(DefaultRoutines, ",") {
 			fmt.Fprintf(&b, "routines = %s\n", tomlList(r.Routines))
+		}
+		if len(r.Code) > 0 {
+			fmt.Fprintf(&b, "code = %s\n", tomlList(r.Code))
 		}
 	}
 	return b.String()

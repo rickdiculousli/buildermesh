@@ -1,7 +1,9 @@
 package selfupdate
 
 import (
+	"errors"
 	"fmt"
+	"os/exec"
 	"regexp"
 	"slices"
 	"strconv"
@@ -55,15 +57,40 @@ func NewestRelease(dir, ref string) (string, error) {
 	return last, nil
 }
 
-// CodeHead is the newest commit of ref that changes anything outside
-// specDir (ref itself when only specs ever changed), so ledger commits
-// don't count as code.
-func CodeHead(dir, ref, specDir string) (string, error) {
-	sha, err := git(dir, "rev-list", "-1", ref, "--", ".", ":(exclude)"+specDir)
+// AlwaysCode is code whatever a row's code says: the routine kinds and the
+// repo's routine config, which say what verify is.
+const AlwaysCode = ".bmesh/**"
+
+// CodePaths is a repo's code as git pathspecs, from its registry row's code
+// (pathspecs relative to the repo's root) and AlwaysCode; a row without code
+// is everything but the spec files, the paths specGlob (`<dir>/{id}-*.md`)
+// matches.
+func CodePaths(code []string, specGlob string) []string {
+	if len(code) > 0 {
+		return append(slices.Clone(code), AlwaysCode)
+	}
+	return []string{".", ":(exclude,glob)" + strings.ReplaceAll(specGlob, "{id}", "[0-9][0-9][0-9]*")}
+}
+
+// CodeHead is the newest commit of ref that changes code, pathspecs as
+// CodePaths gives them (ref itself when no commit does), so a commit
+// outside the code (a spec, a document) never counts.
+func CodeHead(dir, ref string, code []string) (string, error) {
+	sha, err := git(dir, append([]string{"rev-list", "-1", ref, "--"}, code...)...)
 	if err != nil || sha != "" {
 		return sha, err
 	}
 	return git(dir, "rev-parse", "--verify", ref+"^{commit}")
+}
+
+// CodeSame reports whether trees (or commits) a and b differ only outside
+// code, pathspecs as CodePaths gives them.
+func CodeSame(dir, a, b string, code []string) (bool, error) {
+	_, err := git(dir, append([]string{"diff", "--quiet", a, b, "--"}, code...)...)
+	if exit := (*exec.ExitError)(nil); errors.As(err, &exit) && exit.ExitCode() == 1 {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // Target is the commit a box follows.
@@ -75,8 +102,8 @@ type Target struct {
 
 // Follow is what track (TrackRelease, or "") or TrackLatest follows on ref
 // in dir: the newest release tag in ref's history, or ref's code head
-// (CodeHead), which a release track with no tag yet follows too.
-func Follow(dir, ref, track, specDir string) (Target, error) {
+// (CodeHead of code), which a release track with no tag yet follows too.
+func Follow(dir, ref, track string, code []string) (Target, error) {
 	if track != TrackLatest {
 		tag, err := NewestRelease(dir, ref)
 		if err != nil {
@@ -90,7 +117,7 @@ func Follow(dir, ref, track, specDir string) (Target, error) {
 			return Target{Commit: sha, Tag: tag}, nil
 		}
 	}
-	head, err := CodeHead(dir, ref, specDir)
+	head, err := CodeHead(dir, ref, code)
 	if err != nil {
 		return Target{}, err
 	}
