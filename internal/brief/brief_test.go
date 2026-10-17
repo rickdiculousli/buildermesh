@@ -65,6 +65,7 @@ func TestBuildBriefEmbedsSpecAndNode(t *testing.T) {
 	v := RowValues(pb, "/home/x/repos/pb")
 	v["date"], v["node"], v["spec_id"], v["spec_path"] = "2026-10-15", "pb-012", "012", "docs/proposals/012-a.md"
 	v["spec"] = "---\nid: 012\n---\n\n## Opportunity\nuses {{nope}} literally\n"
+	v["upgrading"] = ""
 	out, err := Render("", "build", v)
 	if err != nil {
 		t.Fatal(err)
@@ -185,6 +186,31 @@ func TestLeadSkillLandsTheWorktreesBranch(t *testing.T) {
 	for _, s := range []string{"`bmesh land`", "`git branch --show-current`", "never the name in your brief"} {
 		if !strings.Contains(sec, s) {
 			t.Errorf("lead skill §7 missing %q", s)
+		}
+	}
+}
+
+func TestWithUpgrading(t *testing.T) {
+	half, _, err := Template("", "half-pager")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if HasSection(half, "Upgrading") {
+		t.Fatal("the embedded half-pager has an Upgrading section")
+	}
+	got := WithUpgrading(half)
+	if !strings.Contains(got, "\n## Upgrading\n"+UpgradingRule+"\n\n## Needs from the operator\n") || strings.Count(got, "## Upgrading") != 1 {
+		t.Fatalf("%s", got)
+	}
+	if WithUpgrading(got) != got {
+		t.Fatal("added twice")
+	}
+	if got := WithUpgrading("## Proposal\nx"); got != "## Proposal\nx\n\n"+UpgradingSection {
+		t.Fatalf("no Needs section: %q", got)
+	}
+	for _, bad := range []string{"k16", "Rick", "Mac"} {
+		if strings.Contains(UpgradingBullet, bad) {
+			t.Errorf("bullet names %q", bad)
 		}
 	}
 }
