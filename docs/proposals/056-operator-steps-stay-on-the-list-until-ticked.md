@@ -4,11 +4,14 @@ title: A landed spec's steps for the operator stay on mesh-status until they're 
 kind: feature
 size: M
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: dfdc9673-27b2-4f3f-9f17-95a5b436de66
 proposed_on: 2026-10-17
 from_feedback: buildermesh-build-7 (buildermesh-041)
+built_by: 2128f0e7-4526-4ddc-86c7-7043a794d9b0
+host: k16
+family: buildermesh-build-9
 ---
 
 ## Opportunity
