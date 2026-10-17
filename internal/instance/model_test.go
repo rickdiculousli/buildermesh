@@ -162,30 +162,30 @@ func TestModelVerdictParsing(t *testing.T) {
 	j := Job{ID: "j1", Kind: "review", Text: "t", Dir: t.TempDir()}
 	for _, c := range []struct {
 		name, result, exit string
-		ok                 bool
+		ok, judged         bool
 	}{
-		{"fail verdict", `findings...\nVERDICT: fail`, "0", false},
-		{"ok verdict", "VERDICT: ok", "0", true},
-		{"last verdict wins", `VERDICT: fail\nfixed\nVERDICT: OK `, "0", true},
-		{"exit 1 beats ok verdict", `VERDICT: ok`, "1", false},
-		{"no verdict exit 0", "all good", "0", true},
-		{"no verdict exit 2", "broken", "2", false},
-		{"bold line", `findings\n**VERDICT: fail**`, "0", false},
-		{"bold key", `**VERDICT:** fail`, "0", false},
-		{"bold value", `VERDICT: **ok**`, "0", true},
-		{"heading and code", "## VERDICT: `fail`", "0", false},
-		{"quoted", `> VERDICT: _fail_`, "0", false},
+		{"fail verdict", `findings...\nVERDICT: fail`, "0", false, true},
+		{"ok verdict", "VERDICT: ok", "0", true, true},
+		{"last verdict wins", `VERDICT: fail\nfixed\nVERDICT: OK `, "0", true, true},
+		{"exit 1 beats ok verdict", `VERDICT: ok`, "1", false, false},
+		{"no verdict exit 0", "all good", "0", true, true},
+		{"no verdict exit 2", "broken", "2", false, false},
+		{"bold line", `findings\n**VERDICT: fail**`, "0", false, true},
+		{"bold key", `**VERDICT:** fail`, "0", false, true},
+		{"bold value", `VERDICT: **ok**`, "0", true, true},
+		{"heading and code", "## VERDICT: `fail`", "0", false, true},
+		{"quoted", `> VERDICT: _fail_`, "0", false, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Setenv("FAKE_RESULT", c.result)
 			t.Setenv("FAKE_EXIT", c.exit)
 			t.Setenv("FAKE_CACHE", "500")
 			r := NewModel(k, "m-test", fakeClaude(t)).Run(context.Background(), j)
-			if r.OK != c.ok {
-				t.Fatalf("OK = %v, want %v (%+v)", r.OK, c.ok, r)
+			if r.OK != c.ok || r.Judged != c.judged {
+				t.Fatalf("OK, Judged = %v, %v, want %v, %v (%+v)", r.OK, r.Judged, c.ok, c.judged, r)
 			}
-			if c.exit == "0" && (r.Context != 1500 || r.Output != strings.ReplaceAll(c.result, `\n`, "\n")) {
-				t.Fatalf("reply %+v: want context 1500 and the result text", r)
+			if r.Output != strings.ReplaceAll(c.result, `\n`, "\n") || c.exit == "0" && r.Context != 1500 {
+				t.Fatalf("reply %+v: want the result text, and context 1500 on exit 0", r)
 			}
 		})
 	}
@@ -199,8 +199,8 @@ func TestModelVerdictParsing(t *testing.T) {
 		t.Run("prompt asks: "+c.result, func(t *testing.T) {
 			t.Setenv("FAKE_RESULT", c.result)
 			r := NewModel(asks, "m-test", fakeClaude(t)).Run(context.Background(), j)
-			if r.OK != c.ok || r.Output != c.result {
-				t.Fatalf("reply %+v: want OK %v and the result text", r, c.ok)
+			if r.OK != c.ok || !r.Judged || r.Output != c.result {
+				t.Fatalf("reply %+v: want OK %v, judged, and the result text", r, c.ok)
 			}
 		})
 	}
@@ -209,15 +209,18 @@ func TestModelVerdictParsing(t *testing.T) {
 		t.Setenv("FAKE_RESULT", "VERDICT: ok")
 		t.Setenv("FAKE_IS_ERROR", "1")
 		r := NewModel(k, "m-test", fakeClaude(t)).Run(context.Background(), j)
-		if r.OK || r.Output != "VERDICT: ok" {
-			t.Fatalf("reply %+v: want not OK with the result text", r)
+		if r.OK || r.Judged || r.Output != "VERDICT: ok" {
+			t.Fatalf("reply %+v: want unjudged with the result text", r)
 		}
 	})
 
 	t.Run("not json", func(t *testing.T) {
 		r := NewModel(k, "m-test", "echo").Run(context.Background(), j)
-		if r.OK || !strings.HasPrefix(r.Output, "[bad claude output]") {
-			t.Fatalf("reply %+v: want a bad output failure", r)
+		if r.OK || r.Judged || !strings.HasPrefix(r.Output, "[bad claude output]") {
+			t.Fatalf("reply %+v: want an unjudged bad output", r)
+		}
+		if got := r.Unjudged(); got != "model run failed: [bad claude output]; nothing recorded" {
+			t.Fatalf("Unjudged %q", got)
 		}
 	})
 
@@ -227,7 +230,7 @@ func TestModelVerdictParsing(t *testing.T) {
 		kt.Timeout = time.Second
 		start := time.Now()
 		r := NewModel(kt, "m-test", fakeClaude(t)).Run(context.Background(), j)
-		if r.OK || !strings.Contains(r.Output, "timeout") || time.Since(start) > 3*time.Second {
+		if r.OK || r.Judged || !strings.Contains(r.Output, "timeout") || time.Since(start) > 3*time.Second {
 			t.Fatalf("reply %+v after %s: want a quick timeout", r, time.Since(start))
 		}
 	})

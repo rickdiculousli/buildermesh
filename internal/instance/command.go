@@ -24,11 +24,11 @@ func (c command) Run(ctx context.Context, j Job) Reply {
 	var out bytes.Buffer
 	note, err := run(ctx, c.k.Timeout, j, func(ctx context.Context) *exec.Cmd { return shell.Command(ctx, c.k.Command, j.Args...) }, nil, &out, &out)
 	if note != "" {
-		return Reply{Output: out.String() + newline(out.String()) + note}
+		return Reply{Judged: true, Output: out.String() + newline(out.String()) + note}
 	}
 	var ee *exec.ExitError
 	if err != nil && !errors.As(err, &ee) {
 		out.WriteString(newline(out.String()) + "[" + err.Error() + "]\n") // sh did not start
 	}
-	return Reply{OK: err == nil, Output: out.String()}
+	return Reply{OK: err == nil, Judged: true, Output: out.String()}
 }

@@ -1744,6 +1744,7 @@ Runs a kind inline, in the requester's process, on the cwd worktree's HEAD, and 
 | a `--commit` other than HEAD | 3 | `inline runs run HEAD; check out <commit> or queue the job` |
 | a command kind's setup failed (see Details) | 3 | `setup failed: <why>; nothing recorded`, then the last 30 lines of its output |
 | a command kind's setup left the tree dirty | 3 | `setup dirtied the tree: <paths>; nothing recorded` |
+| a model kind's claude never answered (see Model kinds in [Kinds](#kinds)) | 3 | `model run failed: <why>; nothing recorded` |
 
 It also refuses (exit 2) a `--model` with spaces or `;`, a `--model` the kind lacks, an `--effort` outside the five values, and any effort for a command kind, with the messages of [`bmesh routine queue`](#bmesh-routine-queue).
 
@@ -2751,8 +2752,9 @@ A kind is `.bmesh/routines/<kind>.toml` (the directory is `[routines] dir` in th
 **Model kinds** run `claude -p --model M --output-format json --session-id|--resume <uuid> [--effort E] --allowedTools <list> --max-turns 40` with the job on stdin: a header line `job: <id> commit: <sha> tree: <tree>`, the job's `--text` and its args.
 
 - `--effort` is passed only when the job set one. The jobs of a pooled session each run at their own effort.
-- The run is ok unless claude errs or the reply's last `VERDICT:` line reads `VERDICT: fail` (the line is `VERDICT: ok` or `VERDICT: fail`). Leading `*`, `_`, `#`, `` ` ``, `>` and spaces are ignored, around the value too: `**VERDICT: fail**`, `**VERDICT:** fail` and `VERDICT: **ok**` all parse.
-- When the prompt contains `VERDICT:`, a reply without a verdict line fails. Otherwise claude's exit code decides.
+- A run whose claude never answered judges nothing and records nothing: claude was killed or timed out, didn't start, exited non-zero, printed no result, or returned an `is_error` result (a failed sign-in, say). The daemon answers the job `ok=false`, and `routine run` refuses (exit 3), with `model run failed: <why>; nothing recorded`, `<why>` the output's first non-empty line (claude's error, `[bad claude output]`, or `[timeout after <d>]`), so a re-queued job records the real verdict.
+- A run claude answered is ok unless the reply's last `VERDICT:` line reads `VERDICT: fail` (the line is `VERDICT: ok` or `VERDICT: fail`). Leading `*`, `_`, `#`, `` ` ``, `>` and spaces are ignored, around the value too: `**VERDICT: fail**`, `**VERDICT:** fail` and `VERDICT: **ok**` all parse.
+- When the prompt contains `VERDICT:`, a reply without a verdict line fails (and is recorded). Otherwise it is ok.
 
 A run's output is stdout and stderr (a command) or the reply text (a model).
 
@@ -2815,6 +2817,7 @@ The daemon answers `ok=false` with the reason (`routine wait` prints it and exit
 - an unknown model;
 - a commit whose kind runs on another OS (see Another OS below);
 - a setup that failed, timed out or dirtied the tree, `setup failed: <why>; nothing recorded` (or `setup dirtied the tree: <paths>; nothing recorded`) and the last 30 lines of its output;
+- a model run whose claude never answered, `model run failed: <why>; nothing recorded` (see Model kinds in [Kinds](#kinds)); its `job <id> fail <ms>` progress event is sent as for any failed job;
 - a lost lease.
 
 **Deferred.** A daemon leaves a job it can't judge for a box that can, with no reply. It defers a job for a repo

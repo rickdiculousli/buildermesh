@@ -302,6 +302,7 @@ Results live in KV `bm-results`, key `<kind>.<tree>[.<args8>][.<model-short>]`: 
 - `model` is omitted for a command kind.
 - `patch_id` is the `git patch-id --verbatim` (`--stable`, whitespace kept, so a re-indented hunk is another diff) of the diff a model was asked to read, from the commit the job text's `base: <sha>` names to the job's commit (`git diff-tree -r -p --binary --full-index --no-renames`, so no user config changes it). Omitted for a command kind, a job text naming no base and an empty diff.
 - `output` is cut at 64 KiB.
+- Only a run that judged its job is stored. A command's run always did (its exit code is the verdict); a model's only when claude returned a parsed result with no `is_error`. An unjudged model reply (killed, timed out, a non-zero exit, no result, an error result) is never stored, by the daemon or by `routine run`: it is answered `model run failed: <why>; nothing recorded`.
 
 `bmesh serve` provisions `bm-results` with `[routines] keep_results` as the stream's age.
 

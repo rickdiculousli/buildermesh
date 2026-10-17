@@ -374,9 +374,12 @@ func (w *worker) handle(dl *delivery) {
 		return
 	}
 	ok := rep.OK && lost == ""
-	if lost != "" {
+	switch {
+	case lost != "":
 		fail("lease lost")
-	} else {
+	case !rep.Judged: // claude never answered: no verdict to record
+		fail(rep.Unjudged())
+	default:
 		pctx, cancel := r.settleCtx()
 		rec := mesh.Result{Kind: kc.Name, Tree: tree, Commit: j.Commit, Args: j.Args, OK: rep.OK,
 			Output: mesh.Truncate(rep.Output), By: w.path, Model: w.model, PatchID: patch}

@@ -705,6 +705,51 @@ batch_idle = "1s"
 	}
 }
 
+// A model job whose claude never answered (an error result, output that
+// isn't a result, a timeout) is answered and records nothing; a verdict is
+// still recorded.
+func TestModelRunThatNeverAnsweredRecordsNothing(t *testing.T) {
+	f := routineSetup(t, map[string]string{".bmesh/routines/review.toml": `
+models = ["m-a"]
+prompt = "P"
+timeout = "1s"
+batch_idle = "1s"
+`})
+	tree := meshtest.Git(t, f.repo, "rev-parse", "HEAD^{tree}")
+	key := mesh.ResultKey("review", tree, nil, "m-a")
+	f.start(t)
+	for _, c := range []struct {
+		name, why string
+		env       map[string]string
+	}{
+		{"no sign-in", "Failed to authenticate: OAuth session expired",
+			map[string]string{"FAKE_IS_ERROR": "1", "FAKE_EXIT": "1", "FAKE_RESULT": "Failed to authenticate: OAuth session expired"}},
+		{"not json", "[bad claude output]", map[string]string{"FAKE_NOJSON": "1"}},
+		{"timeout", "[timeout after 1s]", map[string]string{"FAKE_SLEEP": "5", "FAKE_RESULT": "VERDICT: ok"}},
+	} {
+		for _, v := range []string{"FAKE_IS_ERROR", "FAKE_EXIT", "FAKE_RESULT", "FAKE_NOJSON", "FAKE_SLEEP"} {
+			t.Setenv(v, c.env[v])
+		}
+		r := f.reply(t, f.queue(t, mesh.Job{Kind: "review", Go: true}), 20*time.Second)
+		if want := "model run failed: " + c.why + "; nothing recorded"; r.OK || r.ResultKey != "" || r.Output != want {
+			t.Fatalf("%s: reply %+v, want %q", c.name, r, want)
+		}
+		if rec, ok, err := mesh.GetResult(f.ctx, f.c, key); err != nil || ok {
+			t.Fatalf("%s: recorded %+v %v", c.name, rec, err)
+		}
+	}
+	for _, v := range []string{"FAKE_IS_ERROR", "FAKE_EXIT", "FAKE_NOJSON", "FAKE_SLEEP"} {
+		t.Setenv(v, "")
+	}
+	t.Setenv("FAKE_RESULT", "findings\nVERDICT: fail")
+	if r := f.reply(t, f.queue(t, mesh.Job{Kind: "review", Go: true}), 20*time.Second); r.OK || r.ResultKey != key {
+		t.Fatalf("fail verdict: reply %+v", r)
+	}
+	if rec, ok, err := mesh.GetResult(f.ctx, f.c, key); err != nil || !ok || rec.OK {
+		t.Fatalf("fail verdict: record %+v %v %v", rec, ok, err)
+	}
+}
+
 // A job fetched while the loop stops is returned to the inbox, not refused.
 func TestJobFetchedWhileStoppingStaysQueued(t *testing.T) {
 	f := routineSetup(t, map[string]string{".bmesh/routines/verify.toml": "timeout = \"30s\"\ncommand = \"echo ran\"\n"})
