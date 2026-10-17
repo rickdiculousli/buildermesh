@@ -74,6 +74,7 @@ Judge: opus, because it changes the spec template, `release` and `update`, which
 - **Alternative: concatenate the specs' sections.** That is mechanical and nobody has to judge it, but it hands an install every intermediate step: keys added then dropped, files moved twice. The operator ruled that out: the coordinator teases out the minimal steps.
 
 ## Upgrading
-Nothing for an install at v0.1.0 beyond what the notes walk does itself. The template's new section appears only in bmesh's own repo.
+- The units `bmesh init --service` writes gain a guard against a restart loop on a config bmesh refuses (`serve` and `hub` exit 78): the systemd units `RestartPreventExitStatus=78`, the launchd `serve` agent `ThrottleInterval` 300. A box with units from before runs `bmesh init --service` again, which leaves each new unit beside the old as `<unit>.new`; it takes the new one (diff, move over, `systemctl --user daemon-reload` or `launchctl bootout` then `bootstrap`).
+- Nothing else for an install at v0.1.0 beyond what the notes walk does itself. The template's new section appears only in bmesh's own repo.
 
 ## Needs from the operator
