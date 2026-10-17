@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
@@ -30,17 +29,6 @@ func claudeRepo(t *testing.T) (Claude, string, string) {
 		t.Fatal(err)
 	}
 	return Claude{Claude: "claude", Worktrees: filepath.Join(root, "wt"), Dir: filepath.Join(root, "state")}, repo, brief
-}
-
-// until polls cond for up to five seconds.
-func until(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
-		if cond() {
-			return
-		}
-	}
-	t.Fatalf("timed out waiting for %s", what)
 }
 
 func idle(t *testing.T, r Claude, thread string) func() bool {
@@ -76,7 +64,7 @@ func TestClaudeStartRunsFirstTurn(t *testing.T) {
 	if meshtest.Git(t, wt, "rev-parse", "HEAD") != meshtest.Git(t, repo, "rev-parse", "main") {
 		t.Fatal("worktree not branched from main")
 	}
-	until(t, "turn 1 to end", idle(t, r, "th-1"))
+	meshtest.Until(t, "turn 1 to end", idle(t, r, "th-1"))
 	if l := readLog(t, log); l != "-p --output-format json --session-id th-1 --model m --dangerously-skip-permissions\n" {
 		t.Fatalf("log %q", l)
 	}
@@ -99,7 +87,7 @@ func TestClaudeStartOmitsEmptyModelAndRefusesBadBase(t *testing.T) {
 	if _, err := r.Start(context.Background(), StartSpec{RepoPath: repo, BriefPath: brief, ThreadID: "th-1", Branch: "other"}); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "turn 1 to end", idle(t, r, "th-1"))
+	meshtest.Until(t, "turn 1 to end", idle(t, r, "th-1"))
 	if l := readLog(t, log); l != "-p --output-format json --session-id th-1 --dangerously-skip-permissions\n" {
 		t.Fatalf("log %q", l)
 	}
@@ -112,7 +100,7 @@ func TestClaudeSendQueuesWhileRunning(t *testing.T) {
 	if _, err := r.Start(context.Background(), StartSpec{RepoPath: repo, BriefPath: brief, ThreadID: "th-1"}); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the fake to start", func() bool { return readLog(t, log) != "" })
+	meshtest.Until(t, "the fake to start", func() bool { return readLog(t, log) != "" })
 	if st, err := r.Status(context.Background(), "th-1"); err != nil || !st.Running {
 		t.Fatalf("status %+v %v", st, err)
 	}
@@ -123,7 +111,7 @@ func TestClaudeSendQueuesWhileRunning(t *testing.T) {
 		t.Fatalf("send ran claude mid-turn: %q", readLog(t, log))
 	}
 	t.Setenv("FAKE_SLEEP", "")
-	until(t, "Status to start the queued send", func() bool {
+	meshtest.Until(t, "Status to start the queued send", func() bool {
 		if _, err := r.Status(context.Background(), "th-1"); err != nil {
 			t.Fatal(err)
 		}
@@ -132,7 +120,7 @@ func TestClaudeSendQueuesWhileRunning(t *testing.T) {
 	if l := lines(t, log)[1]; l != "-p --output-format json --resume th-1 --dangerously-skip-permissions" {
 		t.Fatalf("resume argv %q", l)
 	}
-	until(t, "turn 2 to end", idle(t, r, "th-1"))
+	meshtest.Until(t, "turn 2 to end", idle(t, r, "th-1"))
 	if in := readLog(t, log+".stdin"); in != "do the thingnext please" {
 		t.Fatalf("stdin %q", in)
 	}
@@ -147,12 +135,12 @@ func TestClaudeSendWhenIdleResumes(t *testing.T) {
 	if _, err := r.Start(context.Background(), StartSpec{RepoPath: repo, BriefPath: brief, ThreadID: "th-1", Model: "m", Effort: "xhigh"}); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "turn 1 to end", idle(t, r, "th-1"))
+	meshtest.Until(t, "turn 1 to end", idle(t, r, "th-1"))
 	t.Setenv("FAKE_RESULT", "second")
 	if err := r.Send(context.Background(), "th-1", "wake up"); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "turn 2 to end", func() bool {
+	meshtest.Until(t, "turn 2 to end", func() bool {
 		st, err := r.Status(context.Background(), "th-1")
 		return err == nil && !st.Running && st.LastReply == "second"
 	})
@@ -171,7 +159,7 @@ func TestClaudeErrorResultShowsInStatus(t *testing.T) {
 	if _, err := r.Start(context.Background(), StartSpec{RepoPath: repo, BriefPath: brief, ThreadID: "th-1"}); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "turn 1 to end", idle(t, r, "th-1"))
+	meshtest.Until(t, "turn 1 to end", idle(t, r, "th-1"))
 	st, err := r.Status(context.Background(), "th-1")
 	if err != nil || st.Running || !strings.HasPrefix(st.LastReply, "[error") || !strings.Contains(st.LastReply, "session gone") {
 		t.Fatalf("%+v %v", st, err)
@@ -195,7 +183,7 @@ func TestClaudeInterruptKillsTurn(t *testing.T) {
 	if _, err := r.Start(context.Background(), StartSpec{RepoPath: repo, BriefPath: brief, ThreadID: "th-1"}); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the fake to start", func() bool { return readLog(t, log) != "" })
+	meshtest.Until(t, "the fake to start", func() bool { return readLog(t, log) != "" })
 	if st, _ := r.Status(context.Background(), "th-1"); !st.Running {
 		t.Fatalf("status %+v", st)
 	}
@@ -207,7 +195,7 @@ func TestClaudeInterruptKillsTurn(t *testing.T) {
 	if err := r.Interrupt(context.Background(), "th-1"); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the turn to die", idle(t, r, "th-1"))
+	meshtest.Until(t, "the turn to die", idle(t, r, "th-1"))
 	if strings.Count(readLog(t, log), "--resume") != 0 {
 		t.Fatalf("a queued send ran after the stop: %q", readLog(t, log))
 	}
@@ -225,12 +213,12 @@ func TestClaudeSendKeepsOrderBehindQueue(t *testing.T) {
 	if _, err := r.Start(context.Background(), StartSpec{RepoPath: repo, BriefPath: brief, ThreadID: "th-1"}); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the fake to start", func() bool { return readLog(t, log) != "" })
+	meshtest.Until(t, "the fake to start", func() bool { return readLog(t, log) != "" })
 	if err := r.Send(context.Background(), "th-1", "A"); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("FAKE_SLEEP", "")
-	until(t, "turn 1 to end", func() bool {
+	meshtest.Until(t, "turn 1 to end", func() bool {
 		d, _ := r.dir("th-1")
 		return !running(d, 1)
 	})
@@ -241,14 +229,17 @@ func TestClaudeSendKeepsOrderBehindQueue(t *testing.T) {
 	if n := len(lines(t, log)); n != 1 {
 		t.Fatalf("B ran ahead of A: %q", readLog(t, log))
 	}
+	// At least i+2 turns, not exactly: a turn that ends between two polls
+	// lets the next poll's Status start the send after it. The stdin check
+	// below holds the order.
 	for i := 0; i < 2; i++ {
-		until(t, "Status to start the next queued send", func() bool {
+		meshtest.Until(t, "Status to start the next queued send", func() bool {
 			if _, err := r.Status(context.Background(), "th-1"); err != nil {
 				t.Fatal(err)
 			}
-			return len(lines(t, log)) == i+2
+			return len(lines(t, log)) >= i+2
 		})
-		until(t, "the turn to end", idle(t, r, "th-1"))
+		meshtest.Until(t, "the turn to end", idle(t, r, "th-1"))
 	}
 	if in := readLog(t, log+".stdin"); in != "do the thingAB" {
 		t.Fatalf("stdin %q", in)
@@ -264,13 +255,13 @@ func TestClaudeFailedTurnShowsInStatus(t *testing.T) {
 	if _, err := r.Start(context.Background(), StartSpec{RepoPath: repo, BriefPath: brief, ThreadID: "th-1"}); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "turn 1 to end", idle(t, r, "th-1"))
+	meshtest.Until(t, "turn 1 to end", idle(t, r, "th-1"))
 	t.Setenv("FAKE_NOJSON", "1")
 	t.Setenv("FAKE_EXIT", "1")
 	if err := r.Send(context.Background(), "th-1", "again"); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "turn 2 to end", idle(t, r, "th-1"))
+	meshtest.Until(t, "turn 2 to end", idle(t, r, "th-1"))
 	st, err := r.Status(context.Background(), "th-1")
 	if err != nil || st.Running || !strings.HasPrefix(st.LastReply, "[turn 2 failed]") {
 		t.Fatalf("%+v %v", st, err)

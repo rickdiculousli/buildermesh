@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"os"
 	"os/exec"
@@ -210,6 +209,15 @@ func TestLandRefusesWhenMainKeepsMoving(t *testing.T) {
 	assertNoLeases(t, c, ctx)
 }
 
+// waitingForLease waits until land, run in the background, says it is
+// waiting for the land lease.
+func waitingForLease(t *testing.T, out *meshtest.SyncBuffer) {
+	t.Helper()
+	meshtest.Until(t, "land to wait for the lease", func() bool {
+		return strings.Contains(out.String(), "waiting for land.repo")
+	})
+}
+
 // Another lead holds the lease: land waits, naming it, and lands once it
 // is released.
 func TestLandWaitsForHeldLease(t *testing.T) {
@@ -222,10 +230,10 @@ func TestLandWaitsForHeldLease(t *testing.T) {
 	}
 	base := r.originMain(t)
 	t.Setenv("BMESH_NODE", "app-012")
-	var out, errb bytes.Buffer
+	var out, errb meshtest.SyncBuffer
 	res := make(chan int, 1)
 	go func() { res <- run([]string{"land"}, strings.NewReader(""), &out, &errb) }()
-	time.Sleep(500 * time.Millisecond)
+	waitingForLease(t, &out)
 	select {
 	case code := <-res:
 		t.Fatalf("land finished under a held lease: %d %q %q", code, out.String(), errb.String())
@@ -243,7 +251,7 @@ func TestLandWaitsForHeldLease(t *testing.T) {
 			!strings.Contains(out.String(), "landed ") {
 			t.Fatalf("land: %d\n%s\nerr %q", code, out.String(), errb.String())
 		}
-	case <-time.After(30 * time.Second):
+	case <-time.After(meshtest.Within(t)):
 		t.Fatal("land never took the released lease")
 	}
 	if r.originMain(t) == base {
@@ -576,10 +584,10 @@ func TestLandReadsTheInboxAgainUnderTheLease(t *testing.T) {
 	}
 	base := r.originMain(t)
 	t.Setenv("BMESH_NODE", "app-012")
-	var out, errb bytes.Buffer
+	var out, errb meshtest.SyncBuffer
 	res := make(chan int, 1)
 	go func() { res <- run([]string{"land"}, strings.NewReader(""), &out, &errb) }()
-	time.Sleep(300 * time.Millisecond)
+	waitingForLease(t, &out)
 	sendTo(t, c, ctx, "app-012", mesh.Message{From: "operator", Kind: "message", Text: "hold"})
 	if err := mesh.ReleaseLease(ctx, c, key, "app-011"); err != nil {
 		t.Fatal(err)
@@ -592,7 +600,7 @@ func TestLandReadsTheInboxAgainUnderTheLease(t *testing.T) {
 			errb.String() != "bmesh: refused: 1 unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh land again\n" {
 			t.Fatalf("land: %d\n%s\nerr %q", code, out.String(), errb.String())
 		}
-	case <-time.After(30 * time.Second):
+	case <-time.After(meshtest.Within(t)):
 		t.Fatal("land never took the released lease")
 	}
 	if r.originMain(t) != base {

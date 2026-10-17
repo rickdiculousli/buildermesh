@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
 // startLeaseRun runs `lock-lease run solo --ttl 3s` on a shell that starts a
@@ -31,7 +32,7 @@ func startLeaseRun(t *testing.T, c *mesh.Client, ctx context.Context) (int, <-ch
 			strings.NewReader(""), &out, &errb)
 		res <- [2]any{code, errb.String()}
 	}()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := meshtest.Deadline(t)
 	for {
 		b, err := os.ReadFile(pidFile)
 		if pid, perr := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && perr == nil {
@@ -54,10 +55,10 @@ func assertExit(t *testing.T, res <-chan [2]any, pid int, wantErr string) {
 		if r[0] != 1 || r[1] != wantErr {
 			t.Fatalf("exit %v %q, want 1 %q", r[0], r[1], wantErr)
 		}
-	case <-time.After(10 * time.Second):
+	case <-time.After(meshtest.Within(t)):
 		t.Fatal("command not killed")
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := meshtest.Deadline(t)
 	for syscall.Kill(pid, 0) == nil {
 		if time.Now().After(deadline) {
 			syscall.Kill(pid, syscall.SIGKILL)
