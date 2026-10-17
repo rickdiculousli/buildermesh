@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"os"
@@ -239,6 +240,36 @@ func (r *Repo) check() error {
 		}
 	}
 	return nil
+}
+
+// ModuleRepo is the row whose checkout's go.mod declares module (bmesh's own
+// row, for the module this binary was built from), "" for none.
+func (c *Config) ModuleRepo(module string) string {
+	if module == "" {
+		return ""
+	}
+	for _, n := range c.RepoNames() {
+		if _, p, err := c.RepoPath(n); err == nil && ModulePath(filepath.Join(p, "go.mod")) == module {
+			return n
+		}
+	}
+	return ""
+}
+
+// ModulePath is the module a go.mod declares, "" when unreadable.
+func ModulePath(goMod string) string {
+	f, err := os.Open(goMod)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(sc.Text()), "module "); ok {
+			return strings.Trim(strings.TrimSpace(rest), `"`)
+		}
+	}
+	return ""
 }
 
 // RepoNames is the registry's names, sorted.

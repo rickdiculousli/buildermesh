@@ -361,6 +361,26 @@ func TestNoticeWrittenWhenBehindAndRemovedWhenCurrent(t *testing.T) {
 	}
 }
 
+// With no [update] repo, the daemon reads the code of the row whose go.mod
+// declares its module, as bmesh update does: a README commit outside the
+// row's code is no code head, so no notice; a code commit is.
+func TestNoticeReadsTheOwnModuleRowsCode(t *testing.T) {
+	u := upstreamSetup(t, false)
+	u.d.Cfg.Update.Repo = ""
+	row := u.d.Cfg.Repos["app"]
+	row.Code = []string{"*.txt"}
+	u.d.Cfg.Repos["app"] = row
+	u.d.Revision = meshtest.CommitFiles(t, u.repo, map[string]string{"go.mod": "module example.com/app\n"})
+	meshtest.CommitFiles(t, u.repo, map[string]string{"README.md": "# app\n"})
+	u.start(t)
+	time.Sleep(time.Second)
+	if got := u.notice(); got != "" {
+		t.Fatalf("notice for a README commit: %q", got)
+	}
+	u.land(t, "first.txt")
+	waitFor(t, 20*time.Second, "the notice", func() bool { return strings.HasPrefix(u.notice(), "bmesh: 1 commit behind main") })
+}
+
 func TestNoticeOffWithCheckEveryZero(t *testing.T) {
 	u := upstreamSetup(t, false)
 	u.d.Cfg.Update.CheckEvery = 0

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -89,10 +90,13 @@ func (r *routineSet) installed(dir string) string {
 	return selfupdate.OwnCommit(dir, own)
 }
 
-// codePaths is [update] repo's code as git pathspecs (selfupdate.CodePaths):
-// a commit outside it is never a code head.
+// codePaths is the code, as git pathspecs (selfupdate.CodePaths), of the
+// row main is read for: [update] repo, else the row of this binary's own
+// module, as bmesh update finds it, so both read one code head. A commit
+// outside it is never a code head.
 func (d *Deps) codePaths() []string {
-	return selfupdate.CodePaths(d.Cfg.Repos[d.Cfg.Update.Repo].Code, d.Cfg.Spec.Glob)
+	repo := cmp.Or(d.Cfg.Update.Repo, d.Cfg.ModuleRepo(d.Module))
+	return selfupdate.CodePaths(d.Cfg.Repos[repo].Code, d.Cfg.Spec.Glob)
 }
 
 // target is what [update] track follows on ref in dir (selfupdate.Follow);

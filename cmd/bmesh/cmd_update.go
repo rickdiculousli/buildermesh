@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -266,22 +265,6 @@ func (a *app) ownRepo() string {
 	for _, n := range a.cfg.RepoNames() {
 		if _, p, err := a.cfg.RepoPath(n); err == nil && ownModuleRepo(p) {
 			return n
-		}
-	}
-	return ""
-}
-
-// modulePath is the module a go.mod declares, "" when unreadable.
-func modulePath(goMod string) string {
-	f, err := os.Open(goMod)
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		if rest, ok := strings.CutPrefix(strings.TrimSpace(sc.Text()), "module "); ok {
-			return strings.Trim(strings.TrimSpace(rest), `"`)
 		}
 	}
 	return ""
