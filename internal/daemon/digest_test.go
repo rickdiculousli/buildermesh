@@ -227,3 +227,25 @@ func TestDigestNestsExecutorAsks(t *testing.T) {
 		t.Errorf("old ask: changed %v body %q", changed, body)
 	}
 }
+
+// A hold is named once per whole day of its age: in the pass whose window
+// holds its 24h (or 48h) mark, and in no other.
+func TestDigestNamesDayOldHoldsOnceADay(t *testing.T) {
+	at := time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC)
+	holds := []mesh.LeadHold{
+		{Path: "a-001", Gate: "land", Text: "hub move first", By: "operator", At: at.Format(time.RFC3339)},
+		{Path: "a-002", Gate: "now", Text: "fresh", By: "operator", At: at.Add(20 * time.Hour).Format(time.RFC3339)},
+	}
+	now := at.Add(24*time.Hour + 30*time.Minute)
+	got := HoldLines(holds, now.Add(-time.Hour), now)
+	if len(got) != 1 || got[0] != "a-001: held before land by operator 1d0h ago: hub move first" {
+		t.Fatalf("first day %q", got)
+	}
+	if got := HoldLines(holds, now, now.Add(time.Hour)); len(got) != 0 {
+		t.Fatalf("next pass %q", got)
+	}
+	later := at.Add(48*time.Hour + 10*time.Minute)
+	if got := HoldLines(holds, later.Add(-time.Hour), later); len(got) != 1 || !strings.HasPrefix(got[0], "a-001: held before land by operator 2d0h ago") {
+		t.Fatalf("second day %q", got)
+	}
+}

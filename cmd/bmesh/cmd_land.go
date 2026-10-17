@@ -193,6 +193,9 @@ func (a *app) acquireWait(slot, holder string, ttl, wait time.Duration) (string,
 // land had done that rebase itself. A kind takes the nearest head with a
 // result for it. It prints the kinds and where each came from.
 func (l *lander) prepare(ctx context.Context) error {
+	if err := l.gate(ctx); err != nil {
+		return err
+	}
 	if err := refuseDirty(); err != nil {
 		return err
 	}
@@ -281,6 +284,20 @@ func (l *lander) prepare(ctx context.Context) error {
 	}
 	fmt.Fprintf(l.a.stdout, "required: %s\n", strings.Join(said, ", "))
 	return nil
+}
+
+// gate refuses the landing while the node is held (bm-holds), at either
+// gate: nothing is pushed, and the lead runs bmesh held and waits for the
+// release. Land run outside a node has no hold to read.
+func (l *lander) gate(ctx context.Context) error {
+	if l.node == nil {
+		return nil
+	}
+	h, ok, err := mesh.GetLeadHold(ctx, l.a.client, l.node.String())
+	if err != nil || !ok {
+		return err
+	}
+	return fail(exitRefused, "%s; nothing is pushed: run bmesh held and end your turn, and run bmesh land again once the release wakes you", h.Line(time.Now()))
 }
 
 // mail peeks the node's inbox, holding and acking nothing: a message the
@@ -374,8 +391,11 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 		defer cancel()
 		return gitIn(c, l.top, args...)
 	}
-	// Read again under the lease: the operator may have written while land
-	// waited for it.
+	// Read again under the lease: the operator may have held or written
+	// while land waited for it.
+	if err := l.gate(ctx); err != nil {
+		return false, err
+	}
 	if err := l.mail(ctx, false); err != nil {
 		return false, err
 	}

@@ -93,3 +93,26 @@ func TestRoutineProgressKeepsRequesterAlive(t *testing.T) {
 		t.Fatalf("the instance's own activity: %v", got)
 	}
 }
+
+// A held lead waits on its coordinator: quiet past grace, it is never
+// marked silent nor woken.
+func TestSilenceNeverMarksHeld(t *testing.T) {
+	f := setup(t)
+	a := NewActivity()
+	f.lead(t, "h", "th-h", "held")
+	base := time.Now()
+	a.Observe("bm.h.held", base)
+	f.now = base.Add(3 * time.Hour)
+
+	silenceOnce(f.ctx, f.d, a)
+
+	if s, _, _ := mesh.ReadState(f.ctx, f.c, "h"); s.State != "held" {
+		t.Fatalf("h: %+v", s)
+	}
+	if evs := f.daemonEvents(t, "silent"); len(evs) != 0 {
+		t.Fatalf("silent events %+v", evs)
+	}
+	if sends := f.sends(t); len(sends) != 0 {
+		t.Fatalf("sends %q", sends)
+	}
+}

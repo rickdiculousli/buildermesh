@@ -108,17 +108,26 @@ commands:
                                            bmesh worktree from main, as nodes <repo>-round-<N>.eng|ux; --context
                                            puts the operator's words in both briefs
   choose-ideas <repo> "<reply>"            apply the operator's review to the proposed specs and land it on main
-  build <repo> <NNN> [--model M] [--effort E] [--path P] [--family F]
+  build <repo> <NNN> [--model M] [--effort E] [--path P] [--family F] [--hold land|now]
                                            dispatch an accepted spec: record building on main, render the build
                                            brief and start the lead (as lead start); the lead joins build family
-                                           F, else a fresh <repo>-build-<N>
-  build --accepted <repo> [--model M] [--effort E] [--family F]
+                                           F, else a fresh <repo>-build-<N>; --hold writes the lead's hold before
+                                           it starts
+  build --accepted <repo> [--model M] [--effort E] [--family F] [--hold land|now]
                                            dispatch every accepted spec, lowest id first, a spec naming a lower id
                                            after that one is done, three leads at a time; print what waits
   release <repo> [--minor|--patch] [--dry-run]
                                            tag main's code head as the next vX.Y.Z (v0.1.0 first; minor up when a
                                            feature landed since, else patch) and push the tag; refused while a lead
                                            works, feedback is pending, verify isn't ok or only specs changed
+  hold <path>|--family F [--gate land|now] --text T
+                                           hold a lead (every live lead of the family) at a gate: bm-holds <path>
+                                           and a hold message; land refuses bmesh land, now stops it at its next
+                                           inbox; executors are never held
+  unhold <path>|--family F [--text T]      release the hold and wake the lead with a release message; <path>: not
+                                           held when there is none (exit 0)
+  held                                     a held lead at its gate: publish held with the hold's gate and why, then
+                                           end the turn; the release wakes it (refused when not held)
   feedback "<text>" [--repo R] [--where <file|command>] [--fixed SHA]
                                            a lead's lesson for its build family's coordinator, before done
   feedback list <family> [--json]          the family's pending feedback, each with its stream sequence
@@ -306,6 +315,12 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdBuild(rest)
 	case "release":
 		return a.cmdRelease(rest)
+	case "hold":
+		return a.cmdHold(rest)
+	case "unhold":
+		return a.cmdUnhold(rest)
+	case "held":
+		return a.cmdHeld(rest)
 	case "feedback":
 		return a.cmdFeedback(rest)
 	case "scaffold":

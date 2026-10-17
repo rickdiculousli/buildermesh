@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/nats-io/nuid"
 
@@ -58,7 +59,8 @@ func (a *app) cmdSend(args []string) error {
 }
 
 // cmdInbox prints this node's messages, acking them unless --peek, or
-// `inbox: empty` (nothing under --json).
+// `inbox: empty` (nothing under --json), after the node's hold at the gate
+// now, when it has one.
 func (a *app) cmdInbox(args []string) error {
 	fs := a.flags("inbox")
 	peek := fs.Bool("peek", false, "leave the messages unread")
@@ -74,6 +76,20 @@ func (a *app) cmdInbox(args []string) error {
 	p, err := a.identity(ctx, "inbox")
 	if err != nil {
 		return err
+	}
+	// A hold at the gate now is printed first, as its own line, on every
+	// read while it stands: the lead stops at this checkpoint.
+	if h, ok, err := mesh.GetLeadHold(ctx, a.client, p.String()); err != nil {
+		return err
+	} else if ok && h.Gate == mesh.GateNow {
+		line := h.Line(time.Now()) + "; stop here: run bmesh held, end your turn, and wait for the release"
+		if a.json {
+			if err := a.printJSON(mesh.Message{From: h.By, To: h.Path, Kind: "held", At: h.At, Text: line}); err != nil {
+				return err
+			}
+		} else {
+			fmt.Fprintln(a.stdout, line)
+		}
 	}
 	msgs, err := mesh.Fetch(ctx, a.client, p, !*peek)
 	if err != nil {
