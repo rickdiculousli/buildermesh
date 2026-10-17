@@ -4,7 +4,7 @@ title: A repo names its code paths, and a change outside them (specs, docs, art,
 kind: time-cost
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: dfdc9673-27b2-4f3f-9f17-95a5b436de66
 proposed_on: 2026-10-17
@@ -13,6 +13,8 @@ built_by: 22ce3cc7-f589-4ee1-8cd4-de418070885a
 host: k16
 family: buildermesh-build-9
 branch: bmesh/22ce3cc7-f589-4ee1-8cd4-de418070885a
+merged: 6e40bac6c6baff921c0f6556e6dcd8994dedb846
+verified: verify ok t:df7930f4
 ---
 
 ## Opportunity
