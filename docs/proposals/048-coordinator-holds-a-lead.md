@@ -4,10 +4,13 @@ title: A coordinator holds a lead at a gate, and the lead waits until it's relea
 kind: feature
 size: L
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
+built_by: f0ae77ee-f879-462f-be44-a79154ce057e
+host: k16
+family: buildermesh-build-7
 ---
 
 ## Opportunity
