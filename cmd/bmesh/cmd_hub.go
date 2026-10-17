@@ -73,7 +73,7 @@ func hubOptions(c *config.Config) (mesh.HubOptions, error) {
 	h := c.Hub
 	o := mesh.HubOptions{Name: c.HostName(), Listen: h.Listen}
 	if h.Role == "" {
-		return o, fail(exitRefused, "hub: [hub] role is unset: set it to hub or leaf (README: Several boxes); a single box needs no bmesh hub, since bmesh serve embeds it")
+		return o, fail(exitRefused, "hub: [hub] role is unset: set it to hub or leaf (docs/manual.md: Several boxes); a single box needs no bmesh hub, since bmesh serve embeds it")
 	}
 	if err := boundAddr("listen", h.Listen); err != nil {
 		return o, err
@@ -101,7 +101,7 @@ func hubOptions(c *config.Config) (mesh.HubOptions, error) {
 		o.Remote = h.Remote
 	}
 	if c.Mesh.TokenFile == "" {
-		return o, fail(exitRefused, "hub: [mesh] token_file is unset: the hub and every box share one token (README: Several boxes)")
+		return o, fail(exitRefused, "hub: [mesh] token_file is unset: the hub and every box share one token (docs/manual.md: Several boxes)")
 	}
 	tok, err := c.Token()
 	if err != nil {

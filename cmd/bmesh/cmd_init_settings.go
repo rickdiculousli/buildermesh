@@ -59,7 +59,7 @@ func settings(c *config.Config, service string) []setting {
 			token = "token from " + c.Mesh.TokenFile
 		}
 		out = append(out,
-			setting{"setup", "several boxes", "This box shares a hub with other boxes (README: Several boxes)", "[mesh] nats"},
+			setting{"setup", "several boxes", "This box shares a hub with other boxes (docs/manual.md: Several boxes)", "[mesh] nats"},
 			setting{"hub", redact(hub) + ", " + token, whyHub, "[mesh] nats, token_file"})
 	}
 	switch h := c.Hub; h.Role {

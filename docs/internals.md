@@ -1,10 +1,10 @@
 # bmesh internals
 
-How the mesh works inside: the NATS subjects, consumers and buckets bmesh uses, the record shapes it stores, how it signs messages between boxes, and how its daemons agree on who does what. The [README](../README.md) covers everything you run, configure and see; each section here starts with a link to the README section it belongs to.
+How the mesh works inside: the NATS subjects, consumers and buckets bmesh uses, the record shapes it stores, how it signs messages between boxes, and how its daemons agree on who does what. The [manual](manual.md) covers everything you run, configure and see; each section here starts with a link to the manual section it belongs to.
 
 ## Quickstart
 
-[README: Quickstart](../README.md#quickstart)
+[Manual: `bmesh init`](manual.md#bmesh-init)
 
 **The units `init --service` writes.** The systemd units carry `RestartPreventExitStatus=78`, so a refused config (exit 78) is not restarted. launchd has no per-code stop, so serve's launchd agent carries `ThrottleInterval` 300 instead.
 
@@ -12,11 +12,11 @@ How the mesh works inside: the NATS subjects, consumers and buckets bmesh uses, 
 
 **The supervisor.** `bmesh serve --restart` runs `bmesh serve` as a child from the binary path it read at start, with its own arguments less `--restart` and `--detach` (a `--config` given before `serve` is passed on) and `BMESH_SUPERVISED=1` in the environment. The restart delay is 5 seconds, as the unit's `RestartSec=5`. On Ctrl-C or SIGTERM it stops the child by SIGTERM on Unix and kills it after 30 s; on Windows it kills it. On Windows the child gets its own console with no window, and `--detach` starts the supervisor again with `CREATE_NO_WINDOW`, outside the starting process's job where the job allows it.
 
-**The Windows task command.** Each path is quoted for `schtasks`, so one with spaces passes. `cmd` has no escape for the `\"` that quoting takes, so to `cmd` each path stands outside quotes; a path holding a character `cmd` reads there is refused (see the README).
+**The Windows task command.** Each path is quoted for `schtasks`, so one with spaces passes. `cmd` has no escape for the `\"` that quoting takes, so to `cmd` each path stands outside quotes; a path holding a character `cmd` reads there is refused (see [`bmesh init`](manual.md#bmesh-init)).
 
 ### Updates
 
-[README: Updates](../README.md#updates)
+[Manual: Updates](manual.md#updates)
 
 **Resolving a release.** A binary installed as `go install <module>/cmd/bmesh@vX.Y.Z` names a version and no commit. Every update path resolves that tag to its commit in the repo it reads (fetched with its `v*` tags) before comparing. Revisions compare by prefix, in the hint and in every update below, so a module install's 12 hex match a full commit.
 
@@ -64,7 +64,7 @@ An upstream install (`[update] upstream = true`) publishes `update`, drains and 
 
 ## Upgrading
 
-[README: Upgrading](../README.md#upgrading)
+[Manual: Upgrading](manual.md#upgrading)
 
 **Which releases a walk covers** is read from the running binary's revision, not guessed: the release tags in the target's history that its own history lacks.
 
@@ -76,7 +76,7 @@ An upstream install (`[update] upstream = true`) publishes `update`, drains and 
 
 ## Several boxes
 
-[README: Several boxes](../README.md#several-boxes)
+[Manual: Several boxes](manual.md#several-boxes)
 
 **Stale hub detection.** `bmesh hub` and `bmesh serve` (the daemon, not the `--restart` supervisor) write `<state dir>/hub.json` and `<state dir>/serve.json` at start, `{"pid","revision","release","time"}` of their binary, removed on a clean stop. The hub is stale when its pid is alive and its binary is a different, older commit than serve's (by commit time when both have one, else any difference).
 
@@ -90,7 +90,7 @@ An upstream install (`[update] upstream = true`) publishes `update`, drains and 
 
 ## Runners
 
-[README: Runners](../README.md#runners)
+[Manual: Runners](manual.md#runners)
 
 Each runner implements `start`, `status`, `send` and `stop` behind one interface. The `t3` runner's `send` reads `status` first and returns `ErrRunning` mid-turn, so nothing is sent; the daemon's wake treats that as "not delivered" and tries again on its next poll. `claude` queues the send; `tmux` sends regardless.
 
@@ -142,7 +142,7 @@ A launch has no retry key: after a lost or timed-out reply, `start` reads the pr
 
 ### T3 sign-in
 
-[README: T3 sign-in](../README.md#t3-sign-in)
+[Manual: `bmesh t3 login`](manual.md#bmesh-t3-login)
 
 **OAuth.** `bmesh t3 login` registers through `<server>/.well-known/oauth-authorization-server`: dynamic registration, PKCE S256, grant `authorization_code`. T3 binds the code to the origin the browser approved it on (`iss`), and the exchange carries that origin, which is why a browser that reached T3 as `localhost` through a tunnel still signs in a bmesh on `127.0.0.1`.
 
@@ -156,7 +156,7 @@ The runner reads its token through one credential interface, so a self-renewing 
 
 ## Proposal rounds
 
-[README: Proposal rounds](../README.md#proposal-rounds)
+[Manual: `bmesh ideate`](manual.md#bmesh-ideate)
 
 **Nodes.** The round node has role `round`; `N` is one past the repo's highest round in `bm-nodes`. Its children have role `engineer` and `parent` the round. With `--idea` the round node carries `"idea": true`.
 
@@ -170,13 +170,13 @@ The runner reads its token through one credential interface, so a self-renewing 
 
 ### Holds
 
-[README: Holds](../README.md#holds)
+[Manual: Holds](manual.md#holds)
 
 `hold` writes KV `bm-holds` `<path>` to `{"gate","text","by","at"}`; a new hold replaces the key. `unhold` deletes the key, and `node forget` deletes it with the node. `bmesh land` reads `bm-holds` before it takes the lease and again once it holds it; `bmesh held` reads the lead's own key; `build --hold` writes the key before the runner starts the lead.
 
 ## Feedback
 
-[README: Feedback](../README.md#feedback)
+[Manual: `bmesh feedback`](manual.md#bmesh-feedback)
 
 `feedback` publishes `{"from","family","repo","spec","commit","where","fixed","text","at"}` on `bm.feedback.<family>` in `bm-mesh`, `commit` the node's worktree HEAD when it is on this box. There is no consumer: a message is pending exactly as long as it is in the stream, until drained or the stream's 30 days pass.
 
@@ -184,7 +184,7 @@ The runner reads its token through one credential interface, so a self-renewing 
 
 ### The fixer
 
-[README: The fixer](../README.md#the-fixer)
+[Manual: The fixer](manual.md#the-fixer)
 
 The daemon decides on every feedback message and on each minute's pass, from the issues and fixer nodes that exist, never from what an earlier pass meant to do.
 
@@ -193,7 +193,7 @@ The daemon decides on every feedback message and on each minute's pass, from the
 
 ## Executors
 
-[README: Executors](../README.md#executors)
+[Manual: `bmesh executor`](manual.md#bmesh-executor)
 
 **The node record.** `executor new` registers `<parent path>.<name>` with `role: executor`, `parent`, branch, worktree, repo, host and model. `executor remove` leaves the node and its branch name in `bm-nodes` until `node forget`.
 
@@ -201,7 +201,7 @@ The daemon decides on every feedback message and on each minute's pass, from the
 
 ## Finished nodes
 
-[README: Finished nodes](../README.md#finished-nodes)
+[Manual: `bmesh node forget`](manual.md#bmesh-node-forget)
 
 **Routine node cleanup.** A fresh run's node, state and runner sample are deleted once its run ends and its checkout is removed; its `started`, `progress` and `done` events stay in the stream for the map, and its reply's `by` still names it. The daemon's kind rescan, once a minute, deletes the node, state and runner sample of every routine instance on its host that is not running and has been `done` for `[status] keep_done` (`0`: never), a fresh run's leftovers included.
 
@@ -209,7 +209,7 @@ The daemon decides on every feedback message and on each minute's pass, from the
 
 ### Stopping a node
 
-[README: Stopping a node](../README.md#stopping-a-node)
+[Manual: `bmesh node stop`](manual.md#bmesh-node-stop)
 
 `node stop` writes the `blocked` state before it interrupts the thread, so the daemon's poll finds the node `blocked` and never puts its own stop over the reason; a thread that reported between the two steps is written again.
 
@@ -219,11 +219,11 @@ An interrupt reported by the runner marks the node with the run as its id, and t
 
 ## Routines
 
-[README: Routines](../README.md#routines)
+[Manual: Routines](manual.md#routines)
 
 ### Modes
 
-[README: Modes](../README.md#modes)
+[Manual: Modes](manual.md#modes)
 
 **Instance names.** A fresh instance is `routine.<kind>.f<id8>`, a pooled one `routine.<kind>.<host>-<model-short>-<n>` (`<host>-cmd-<n>` for a command kind):
 
@@ -241,13 +241,13 @@ An interrupt reported by the runner marks the node with the run as its id, and t
 
 ### Jobs
 
-[README: Jobs](../README.md#jobs)
+[Manual: Jobs](manual.md#jobs)
 
 A job is answered once the kind's consumer acked it or the requester's inbox holds its reply. `status` reads KV `bm-jobs` (below) for `held` and `running`; the jobs of a daemon whose entry wasn't rewritten within the kind's `AckWait` read `waiting`.
 
 #### Queueing
 
-[README: Queueing](../README.md#queueing)
+[Manual: `bmesh routine queue`](manual.md#bmesh-routine-queue)
 
 A job is an inbox message (`kind: "job"`) to `routine.<kind>` with the job id as `Nats-Msg-Id`, so one queued twice is stored once.
 
@@ -261,7 +261,7 @@ A job is an inbox message (`kind: "job"`) to `routine.<kind>` with the job id as
 
 #### Running
 
-[README: Running](../README.md#running)
+[Manual: `bmesh routine run`](manual.md#bmesh-routine-run)
 
 **Deferral.** A daemon that can't judge a job NAKs it with a delay of 2 s × 2^(n-1) (`n` the delivery count), at most 1m, less a random part of up to a quarter so redelivery doesn't fall in step with its own next fetch; sends no reply; and logs `routines: deferred job <id>: <repo> <why> here` once per job. A deferred job uses none of the box's capacity. A kind no configured repo defines on its main has no feed.
 
@@ -269,7 +269,7 @@ A job is an inbox message (`kind: "job"`) to `routine.<kind>` with the job id as
 
 #### Replies
 
-[README: Replies](../README.md#replies)
+[Manual: Jobs](manual.md#jobs)
 
 A reply is an inbox message (`kind: "reply"`) to the requester carrying `{"job","kind","tree","ok","output","result_key","by"}`.
 
@@ -277,13 +277,13 @@ A reply is an inbox message (`kind: "reply"`) to the requester carrying `{"job",
 
 ### Leases
 
-[README: Leases](../README.md#leases)
+[Manual: Leases](manual.md#leases)
 
 Leases live in KV `bm-leases`, key `<slot>.<n>` (`n` below the capacity), value `{"holder","expires_at"}`; an expired entry is free.
 
 ### Results
 
-[README: Results](../README.md#results)
+[Manual: Results](manual.md#results)
 
 Results live in KV `bm-results`, key `<kind>.<tree>[.<args8>][.<model-short>]`: `tree` the commit's full tree hash, `args8` the first 8 hex of the sha256 of the args joined by NUL (only with args), `model-short` as in Modes (only for a model). The record:
 
@@ -299,19 +299,19 @@ Results live in KV `bm-results`, key `<kind>.<tree>[.<args8>][.<model-short>]`: 
 
 ### `verified`
 
-[README: `verified`](../README.md#verified)
+[Manual: The verified line](manual.md#the-verified-line)
 
 `bmesh done` matches a carried entry by a model record at the tree its `c:` names (first 8 hex), with the same `ok` and model, whose `patch_id` is the diff `merged` landed: that of `<a>..<merged>` for one of the nearest 100 first-parent ancestors `<a>` of `merged`. `spec verified` carries a result whose `patch_id` equals that of HEAD's diff from its merge-base with `main` (`origin/main` when there is an origin).
 
 ## Landing
 
-[README: Landing](../README.md#landing)
+[Manual: `bmesh land`](manual.md#bmesh-land)
 
 The land lease is `bm-leases` key `land.<repo>.0`, one place per repo.
 
 ## Hosts
 
-[README: Hosts](../README.md#hosts)
+[Manual: Hosts](manual.md#hosts)
 
 **The join handshake.** The new box sends `{name, key, approve_key, ts, salt}` on `bmhosts.join.<id>` (core NATS request/reply, outside the stream: nothing stored), MACed with HMAC-SHA256 under `HKDF-SHA256(secret, salt=id, info="bmesh join request v1")`. The admin burns the invite on the first request whose MAC verifies; a request whose MAC fails is dropped without burning, and the third such failure burns it. The reply is `{roster, admin_key}` under the same MAC (`info="bmesh join reply v1"`, bound to the request's salt). The new box takes the first reply whose MAC verifies (ignoring junk) and checks that the roster carries its key before pinning the admin key and storing the roster.
 
@@ -355,7 +355,7 @@ Roster, signature, `to` and replay failures are published as `bm.daemon.<host>.r
 
 ## Names
 
-[README: Names](../README.md#names)
+[Manual: Names](manual.md#names)
 
 The stream, subjects and buckets built on node paths:
 
@@ -391,7 +391,7 @@ The map, `watch`, status, the push loop and the activity reader skip subjects wh
 
 ### config.toml
 
-[README: config.toml](../README.md#configtoml)
+[Manual: config.toml](manual.md#configtoml)
 
 **Daemon events.** Each digest is also published as a `digest` event on `bm.daemon.<host>.digest` (title as `text`, body as `body`). A wake's text is published as a `wake` event on `bm.daemon.<host>.wake`; a node marked silent is published as `silent` on `bm.daemon.<host>.silent`.
 
@@ -399,7 +399,7 @@ The map, `watch`, status, the push loop and the activity reader skip subjects wh
 
 ### Pushes
 
-[README: Pushes](../README.md#pushes)
+[Manual: Pushes](manual.md#pushes)
 
 **Claims.** Before posting, a daemon claims the event by publishing `bm.daemon.<host>.push` (`to` the lead, `text` the title, `seq` the event's stream sequence) with `Nats-Msg-Id` `push-<seq>`; a duplicate reply means another daemon has it. On start it pushes, in order, the unclaimed listed events no older than `catch_up` (by the event's `at`, else its stored time), then follows live. A live event stored over a minute ago (the backlog a hub reconnect delivers) is dropped the same way when older than `catch_up` or when any daemon's `push` claim names its seq.
 
@@ -407,13 +407,13 @@ The map, `watch`, status, the push loop and the activity reader skip subjects wh
 
 ### Quota reminders
 
-[README: Quota reminders](../README.md#quota-reminders)
+[Manual: Quota reminders](manual.md#quota-reminders)
 
 The reset is rounded to the minute because readings jitter by fractions of a second. Once per window, across daemons and restarts: before posting, a daemon creates `quota.<provider>.<rounded reset unix>` in `bm-claims`; a key already there means another daemon (or this one, an hour ago) has it. A failed post deletes its claim, so the next reading retries.
 
 ### Map
 
-[README: Map](../README.md#map)
+[Manual: Map](manual.md#map)
 
 #### Blocks and the shelf
 
@@ -439,7 +439,7 @@ A band row leaves live or on the next tree read. The operator rows read each rep
 
 ### Testing
 
-[README: Testing](../README.md#testing)
+[Manual: Testing](manual.md#testing)
 
 These variables swap what bmesh runs or reads (commands split on spaces):
 

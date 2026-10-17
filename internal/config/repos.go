@@ -315,7 +315,7 @@ func renderRepos(repos map[string]Repo) string {
 	}
 	sort.Strings(names)
 	var b strings.Builder
-	b.WriteString("# bmesh's repo registry: one [repos.<name>] per repo (see README.md, Config).\n")
+	b.WriteString("# bmesh's repo registry: one [repos.<name>] per repo (see docs/manual.md, Config).\n")
 	for _, n := range names {
 		r := repos[n]
 		fmt.Fprintf(&b, "\n[repos.%s]\n", tomlKey(n))

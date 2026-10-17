@@ -118,12 +118,12 @@ commands:
                                            puts the operator's words in both briefs; --idea starts only the
                                            engineer, to write the one idea --context gives as its spec
   choose-ideas <repo> "<reply>"            apply the operator's review to the proposed specs and land it on main
-  build <repo> <NNN> [--model M] [--effort E] [--path P] [--family F] [--hold land|now]
+  build <repo> <NNN> [--model M] [--effort E] [--path P] [--family F] [--hold land|now] [--force]
                                            dispatch an accepted spec: record building on main, render the build
                                            brief and start the lead (as lead start); the lead joins build family
                                            F, else a fresh <repo>-build-<N>; --hold writes the lead's hold before
                                            it starts
-  build --accepted <repo> [--model M] [--effort E] [--family F] [--hold land|now]
+  build --accepted <repo> [--model M] [--effort E] [--family F] [--hold land|now] [--force]
                                            dispatch every accepted spec, lowest id first, a spec naming a lower id
                                            after that one is done, three leads at a time; print what waits
   release <repo> [--minor|--patch] [--dry-run]
@@ -205,7 +205,7 @@ commands:
   result find <kind> [--commit C] [--model M] [--json] [-- args...]
                                            print the result of kind at the commit's tree, without --model every
                                            model's (exit 3 when none)
-  result record <kind> --ok|--fail [--commit C] [--model M] [--output FILE|-] [-- args...]
+  result record <kind> --ok|--fail [--commit C] [--model M [--base B]] [--output FILE|-] [-- args...]
                                            record a result of kind at the commit's tree
   lock-lease acquire <slot> [--ttl D]      take a place in a slot and print its key (exit 3 when busy)
   lock-lease renew <key> [--ttl D]         extend a held lease
@@ -214,12 +214,12 @@ commands:
                                            hold a lease while a command runs; exit with its code
   routine list [--json]                    the repo's kinds with their instances and queue depth
   routine status [<kind>] [--json]         a kind's (or every kind's) instances with state and model
-  routine queue <kind> [--commit C] [--model M] [--go] [--rerun] [--again] [--text T] [-- args...]
+  routine queue <kind> [--commit C] [--model M] [--effort E] [--go] [--rerun] [--again] [--text T] [-- args...]
                                            queue a job (a deterministic kind answers from a recorded result; a
                                            review for a branch that has one is refused without --again)
   routine go <kind>                        tell the kind's instances to start on waiting jobs
   routine wait <job id> [--timeout D]      wait for a job's reply; print its output, exit 0 ok / 1 fail / 5 timeout
-  routine run <kind> [--commit HEAD] [--model M] [--here] [--rerun] [--text T] [-- args...]
+  routine run <kind> [--commit HEAD] [--model M] [--effort E] [--here] [--rerun] [--text T] [-- args...]
                                            run a kind in this worktree and record its result; a deterministic
                                            kind needs a clean tree and answers from a recorded result; ends with
                                            <kind> ok|fail t:<tree8>; exit 0 ok / 1 fail
@@ -229,6 +229,9 @@ commands:
   spec set --id NNN --status S [--repo R] [--from A,B] [--field K=V]...
                                            set a spec's status and fields (--from refuses another status)
   spec template [--repo R]                 print the half-pager (the repo's .bmesh/briefs/half-pager.md, else embedded)
+  spec steps [<NNN>] [--repo R] [--tick N,N [--note W] | --check [--wait D]]
+                                           a landed spec's steps for the operator, or with no id every open one;
+                                           --tick records steps done on main, --check runs their checks
   spec verified [--spec NNN] [--commit C] [--write]
                                            print the verified line from the results for HEAD's tree, or C's (exit 3
                                            when none); --write sets it in the spec's file in this worktree

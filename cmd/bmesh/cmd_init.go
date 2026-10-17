@@ -262,7 +262,7 @@ func statOK(p string) (os.FileInfo, bool) {
 // its default.
 func configBody(m meshAnswer, kind string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# bmesh config, written by bmesh init on %s. Keys not set here keep the defaults (README, Config).\n", time.Now().UTC().Format("2006-01-02"))
+	fmt.Fprintf(&b, "# bmesh config, written by bmesh init on %s. Keys not set here keep the defaults (docs/manual.md, Config).\n", time.Now().UTC().Format("2006-01-02"))
 	b.WriteString("[mesh]\n")
 	if m.nats == "" {
 		fmt.Fprintf(&b, "nats = \"\"   # \"\" = the hub embedded on [mesh] listen: %s\n", whyEmbedded)

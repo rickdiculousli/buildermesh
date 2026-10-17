@@ -513,7 +513,7 @@ func Load(path string) (*Config, error) {
 		}
 	}
 	if f.Repos != nil {
-		return nil, fmt.Errorf("config %s: [repos] has moved to %s: one [repos.<name>] table per repo with path, mode, remote, host, ux_host, verify, surfaces, pin and routines (see README, Config)",
+		return nil, fmt.Errorf("config %s: [repos] has moved to %s: one [repos.<name>] table per repo with path, mode, remote, host, ux_host, verify, surfaces, pin and routines (see docs/manual.md, Config)",
 			path, ReposPath(path))
 	}
 	return c, nil
