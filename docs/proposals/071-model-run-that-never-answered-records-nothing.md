@@ -4,13 +4,16 @@ title: A model job whose claude never answered (no sign-in, a crash, a timeout) 
 kind: refinement
 size: M
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: buildermesh-fix-2
 proposed_on: 2026-10-17
 ruled: [root, failing-first, smallest, no-new-surface]
 fix_of: 070
 from_feedback: buildermesh-build-10 (buildermesh-070) #2086
+built_by: 74a4dbc2-c4b4-42a9-a9e0-9709f2c98ac3
+host: k16
+family: buildermesh-fix-2
 ---
 
 ## Opportunity
