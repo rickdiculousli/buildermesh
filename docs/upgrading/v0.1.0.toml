@@ -92,12 +92,14 @@ else
   echo "no $conf: no nats-server of bmesh's here"
 fi
 bin=$(command -v nats-server || true)
-gobin="$(go env GOPATH 2>/dev/null)/bin"
-case "$bin" in
-  "$gobin"/*) echo "removing $bin"; rm -f "$bin" ;;
-  "") ;;
-  *) echo "nats-server at $bin is not from go install: remove it with what installed it, if only bmesh used it" ;;
-esac
+gp=$(go env GOPATH 2>/dev/null || true)
+if [ -z "$bin" ]; then
+  echo "no nats-server on PATH"
+elif [ -n "$gp" ] && [ "${bin#"$gp"/bin/}" != "$bin" ]; then
+  echo "removing $bin"; rm -f "$bin"
+else
+  echo "nats-server at $bin is not from go install: remove it with what installed it, if only bmesh used it"
+fi
 '''
 
 [[step]]
