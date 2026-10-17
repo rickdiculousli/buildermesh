@@ -107,3 +107,28 @@ func TestPendingSinceTheRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The repo's own notes parse and name only keys this binary has.
+func TestRepoNotesParse(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("..", "..", Dir, "*.toml"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no notes: %v", err)
+	}
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tag := strings.TrimSuffix(filepath.Base(f), ".toml")
+		n, err := Parse(tag, string(b))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if u := n.Unknown(); len(u) > 0 {
+			t.Fatalf("%s names unknown keys %v", f, u)
+		}
+		if tag == First && !n.StartOver {
+			t.Fatalf("%s: the first release's notes start over", f)
+		}
+	}
+}

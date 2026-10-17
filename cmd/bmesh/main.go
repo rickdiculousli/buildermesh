@@ -167,14 +167,24 @@ commands:
   version                                  print this binary's commit: <rev8> <time> [modified], or unknown;
                                            <release> (<rev8> <time>) when built at or past a release tag; a
                                            tagged module install prints its release alone
-  update [--repo R] [--latest]             build what [update] track follows on R's main (the newest vX.Y.Z tag,
+  update [--repo R] [--latest] [--answer KEY=VALUE]... [--defaults] [--apply [--yes]]
+                                           build what [update] track follows on R's main (the newest vX.Y.Z tag,
                                            or the code head; --latest: the code head this once) over this binary
                                            (default [update] repo, else the row this binary's module is from;
                                            with none, go install it from the module), keeping it as bmesh.prev;
-                                           print <old> -> <new> (v0.1.0 -> v0.2.0), up to date, or ahead of
-                                           <release>, up to date (never back); then the restart this box's daemon
-                                           needs, when it runs another build
-  update --notice                          print the daemon's behind-main notice (<state dir>/update.txt), if any
+                                           the new binary first checks the config and answers the upgrade notes'
+                                           asks (refused: the old binary kept), and after the swap runs their
+                                           steps (--apply; --yes for the ones that ask first); print <old> -> <new>
+                                           (v0.1.0 -> v0.2.0), up to date (resuming a walk left unfinished, or
+                                           one pending), or ahead of <release>, up to date (never back); then the
+                                           restart this box's daemon needs, and the hub's when it runs older
+  update --plan [--json]                   the upgrade walk to the target (asks with their defaults, steps) and
+                                           the config check; changes nothing
+  update --walk --from REV [--to REV] [--dir D] [--before-swap] [...]
+                                           walk the notes from REV to this binary with it (what update runs on
+                                           the new binary; --before-swap: config check and asks only)
+  update --notice                          print the daemon's behind-main notice (<state dir>/update.txt), and
+                                           upgrade notes pending, if any
   land [--spec NNN] [--ttl D] [--wait D]   land this worktree's branch on main under the lease land.<repo> (waits
                                            while another lead holds it): print the kinds it requires (a branch
                                            rebased by hand requires what the head before the rebase had), fetch,
