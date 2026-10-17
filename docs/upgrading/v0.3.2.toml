@@ -1,0 +1,10 @@
+# Upgrade notes for v0.3.2, distilled from the Upgrading sections of the
+# specs it carries. 070's registry keys `setup`, `setup_inputs` and
+# `setup_timeout` are set per repo, only on the rows whose verify needs
+# installed dependencies, and only once every box running that repo's
+# routines or leads runs this release (an older bmesh refuses the registry):
+# an order for the admin, not a step a box takes, and a registry ask would
+# set the key on every row. Their default, none, is today's behaviour. 071
+# needs nothing but the update itself.
+
+summary = "Nothing to run. Optional: once every box running a repo's routines or leads runs v0.3.2, give that repo a setup command in its registry row (setup, setup_inputs), publish the registry, then bmesh scaffold <repo> and commit what it writes; an older bmesh refuses a registry with these keys."
