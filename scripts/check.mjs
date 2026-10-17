@@ -3,7 +3,8 @@
 // the DevTools protocol, waits for the self-check title to show a loaded
 // tree on a live connection, prints the title, writes a screenshot of the
 // viewport to png when given, and exits: 0 once the title showed, 1 when it
-// did not within 20 s (the last title is printed all the same), 2 on a
+// did not within 20 s or its bandHeld= is a non-zero number (a held node
+// in the needs-you band; the last title is printed all the same), 2 on a
 // usage or browser error. No --dump-dom: the page's /events stream never
 // ends, so a plain headless load never returns.
 //
@@ -127,7 +128,9 @@ try {
     console.log(`  screenshot ${png}`);
   }
   if (!ready) console.error("check.mjs: no loaded tree on a live connection within 20 s");
-  code = ready ? 0 : 1;
+  const bandHeld = /bandHeld=([1-9]\d*)/.test(t);
+  if (bandHeld) console.error("check.mjs: a held node is in the needs-you band");
+  code = ready && !bandHeld ? 0 : 1;
   ws.close();
 } catch (e) {
   console.error(`check.mjs: ${e.message}`);
