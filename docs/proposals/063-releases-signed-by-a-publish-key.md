@@ -1,6 +1,6 @@
 ---
 id: 063
-title: A bmesh release installs only when its publisher signed it, on every box that runs bmesh, so a push from an agent's box can't reach anyone's
+title: A bmesh release installs only when bmesh's publish key signed it, on every box that runs bmesh, so a push from an agent's box can't reach anyone's
 kind: feature
 size: L
 judge: opus
@@ -19,13 +19,18 @@ Every box builds and runs whatever bmesh's repo says, and nothing checks who wro
 
 Anything that can push to the repo or create a tag can therefore run code on every box, the admin box included. On 2026-10-17 that is every agent on k16, which pushes to GitHub as the operator. One of those leads reading content a third party wrote (an upstream fork, a web page) is enough. A prompt injection there becomes a commit, then a tag, and then it runs on the Mac at the operator's next `bmesh update`.
 
-The admin box already holds a key that no agent can use. It sits behind the Keychain dialog (or the file store's passphrase), and it signs the roster and approves held levels, and every box pins its fingerprint. Only releases go unsigned.
+The admin box already holds a key that no agent can use. It sits behind the Keychain dialog (or the file store's passphrase), and it signs the roster and approves held levels, and every box pins its fingerprint. Releases have no such key, and they go unsigned. That guard is the model for one.
 
 On the GitHub side, 2026-10-17 hardened what it could: rulesets on `main` and `v*` tags (no force-push, move or delete), Actions off, and a fine-grained token on k16 with no admin rights. None of that stops a push or a new tag from an agent's box.
 
 ## Proposal
-**Two roles, one key here.** The *publisher* signs bmesh's releases. A fleet's *admin* signs its roster. On this fleet they are the same Ed25519 key, the admin key, behind the Keychain dialog. Anyone else who installs bmesh has their own admin, who never signed bmesh's releases, so releases are checked against the publisher's key, never against a box's roster:
-- **The publisher's public key is compiled into the binary** (`internal/selfupdate.Publisher`, a list, so a rotation can overlap). Every box checks a release against the key in the binary it runs: this fleet's, another fleet's, or a single box with no roster.
+**Two roles, two keys.** The *publish key* signs bmesh's releases; a fleet's *admin key* signs its roster. They are separate on purpose:
+- the admin key's dialog comes up for every roster change, approval and registry publish, so answering it is a habit, while the publish key's comes up only when a release ships to every install;
+- re-making a fleet's admin (a lost box, a new admin box) must not stop every bmesh install from updating, and a new publish key must not touch a roster;
+- a key used once per release can be kept more strictly than an everyday one.
+
+**The publish key** is made once, on the box that releases, with `bmesh release key new`. It's an Ed25519 key stored like the admin key (macOS Keychain behind its own item and dialog; elsewhere the file store with its own passphrase), never readable by an agent. `bmesh release key show` prints its public half, and `bmesh release key backup <file>` writes it encrypted under a passphrase asked at the terminal, for the operator to keep off the box. Releases are checked against the publish key, never against a box's roster:
+- **The publish key's public half is compiled into the binary** (`internal/selfupdate.Publisher`, a list, so a rotation can overlap). Every box checks a release against the key in the binary it runs: this fleet's, another fleet's, or a single box with no roster.
 - **A rotation is a release.** A release signed by a key the running binary trusts may carry a new key list, and the next binary trusts that. A release that only changes the key, signed by an unknown key, is passed over like any unsigned one.
 - **The first install is trusted the way Go trusts a module.** `go install .../cmd/bmesh@vX.Y.Z` is checked against Go's checksum database (`sum.golang.org`), which proves the tag never changed but not who made it. The README says so, and says how to check the signature by hand (`bmesh release --verify <tag>`).
 - **A fleet that follows its own fork** (`[update] upstream` naming another repo) names its publisher in its roster: `bmesh hosts set --publisher <hex>` on its admin box, signed with the roster. It never goes in a box's `config.toml`, which an agent on the box can edit.
@@ -33,16 +38,16 @@ On the GitHub side, 2026-10-17 hardened what it could: rulesets on `main` and `v
 The rest applies to the repo `[update]` follows, on every box:
 - **A release is a tag the admin signed.**
   - `bmesh release <repo>` still works out the version, checks verify and writes nothing new.
-  - On the publisher's box (here the admin box), at its own screen, it signs with the publisher key, behind the announced Keychain dialog. It creates an annotated tag whose message ends with a trailer, `bmesh-signed: <publisher fingerprint> <hex Ed25519 signature>`.
+  - On the box holding the publish key, at its own screen, it signs with that key, behind its own Keychain dialog. It creates an annotated tag whose message ends with a trailer, `bmesh-signed: <publisher fingerprint> <hex Ed25519 signature>`.
   - The signature covers, in a fixed order: the repo's name, the tag, the commit's full SHA, and the blob hash of `docs/upgrading/<tag>.toml` at that commit, or `none`.
-  - Off the admin box, or with no terminal, `release` doesn't tag. It records the release as **proposed**: a `release` event on the mesh, `<repo> v0.3.1 at <sha8> waits on the admin's signature (NNN, ...)`, pushed once through `[notify]` and shown on `mesh-status` and the map, with the command that signs it: `bmesh release <repo> --sign v0.3.1`.
+  - On a box without the publish key, or with no terminal, `release` doesn't tag. It records the release as **proposed**: a `release` event on the mesh, `<repo> v0.3.1 at <sha8> waits on the publish key's signature (NNN, ...)`, pushed once through `[notify]` and shown on `mesh-status` and the map, with the command that signs it: `bmesh release <repo> --sign v0.3.1`.
   - The fix lead's release step and the `build` skill's step 7 propose; the operator signs.
 - **`update` and the daemon install only signed releases.**
   - The newest release is the newest `v*` tag whose trailer verifies against a publisher key the running binary trusts (or the roster's `publisher`) and whose commit is the tag's.
   - An unsigned or badly signed tag is passed over, never installed. It is named once in the log and on `bmesh update`: `v0.3.1 is not signed by bmesh's publisher: passed over`.
   - A release that would come after a passed-over tag waits, and nothing newer is guessed.
 - **The notes run are the notes signed.** The walk reads `docs/upgrading/<tag>.toml` at the signed commit, and the file's blob must match the signed hash.
-  - A fix to a release's notes after it is tagged (the fixes on 2026-10-17 to v0.2.0's and v0.3.0's notes) is a signed notes amendment: `bmesh release <repo> --sign-notes v0.3.0`, on the admin box, signs the current file from `main`. It creates a tag `bmesh-notes/v0.3.0/<n>` with the same trailer over the same fields.
+  - A fix to a release's notes after it is tagged (the fixes on 2026-10-17 to v0.2.0's and v0.3.0's notes) is a signed notes amendment: `bmesh release <repo> --sign-notes v0.3.0`, on the box holding the publish key, signs the current file from `main`. It creates a tag `bmesh-notes/v0.3.0/<n>` with the same trailer over the same fields.
   - The walk takes the newest signed amendment over the release's own notes.
   - Unsigned notes on `main` are never run.
 - **`--latest` stays possible, and it's never quiet.**
@@ -71,8 +76,9 @@ Judge: opus, because it changes `release`, `update`, the daemon and the walk, wh
 ## Verification
 The repo's verify, plus, over a bare origin with a roster:
 - **`cmd_release_test.go`:**
-  - `release` off the admin box proposes and creates no tag;
-  - `--sign` on the admin box creates the tag with a trailer that verifies;
+  - `release` on a box without the publish key proposes and creates no tag;
+  - `--sign` with the publish key creates the tag with a trailer that verifies, and the admin key's signature does not;
+  - `release key new` refuses when a key exists, `show` prints the public half, and `backup` writes a file that only its passphrase opens;
   - an unsigned tag at the next version is skipped;
   - `--sign-notes` makes a verifying amendment tag.
 - **`cmd_update_test.go` and the daemon's update tests:**
@@ -88,9 +94,9 @@ The repo's verify, plus, over a bare origin with a roster:
 
 ## Risks and the alternative considered
 - **The operator becomes the release bottleneck,** which is intended: a release reaches every box, so one dialog per release is the cost of keeping the fix pipeline automated everywhere else. A release waiting on a signature is pushed and shown until it's signed.
-- **The publisher key is lost.** No box anywhere can take a release until a binary with a new key is installed by hand (`go install ...@<tag>`), so the key needs a backup (the README says where, for the file store and the Keychain). A rotation release, made while the old key still works, is the planned way.
+- **The publish key is lost.** No box anywhere can take a release until a binary with a new key is installed by hand (`go install ...@<tag>`), so it is backed up when it's made (`bmesh release key backup`). A rotation release, made while the old key still works, is the planned way.
 - **Another fleet's operator can't tell a good release from a signed bad one.** Signing proves who released, not that the release is safe; that is still the publisher's review, and the notes the walk shows before `--apply`.
-- **Alternative: git's own signed tags** (`gpg` or SSH signing, `git verify-tag`). They need a signing key that git can use without the Keychain dialog's guard, and an allowed-signers file on every box. The admin key is already pinned everywhere and already guarded.
+- **Alternative: git's own signed tags** (`gpg` or SSH signing, `git verify-tag`). They need a signing key that git can use without the Keychain dialog's guard, and an allowed-signers file on every box. bmesh's own key store already guards a key behind the Keychain dialog or a passphrase, and the binary is already what every box trusts.
 - **Alternative: hold every self-update for approval,** like a secure box's level. That asks on every box for every release, while a signature asks once, on one box.
 
 ## Upgrading
@@ -99,4 +105,4 @@ The repo's verify, plus, over a bare origin with a roster:
 - A box with `[update] track = "latest"` either gets `unsigned-ok` on its roster row or changes `track` to `release` (an ask, default `release`).
 
 ## Needs from the operator
-Sign the first release after this lands, at the Mac, and keep a backup of the admin key: it is now the key every bmesh install trusts.
+After this lands, at the Mac: `bmesh release key new`, `bmesh release key backup <file>` kept off the Mac, then the lead's commit that compiles the public half in, and the first `bmesh release buildermesh --sign`. The publish key is the key every bmesh install trusts.
