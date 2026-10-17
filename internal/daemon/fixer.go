@@ -104,7 +104,7 @@ func fixerOnce(ctx context.Context, d Deps) {
 	}
 	start := d.StartFixer
 	if start == nil {
-		start = func(ctx context.Context) (string, error) { return execFix(ctx, d.Exe) }
+		start = func(ctx context.Context) (string, error) { return execFix(ctx, d.Exe, d.Cfg.Path()) }
 	}
 	sctx, cancel := context.WithTimeout(ctx, fixStartTimeout)
 	defer cancel()
@@ -170,11 +170,16 @@ func unseen(fx mesh.Fixers, open []mesh.Feedback) []mesh.Feedback {
 	return out
 }
 
-// execFix runs `bmesh fix` with exe, this binary, as the operator would.
-func execFix(ctx context.Context, exe string) (string, error) {
+// execFix runs `bmesh fix` with exe, this binary, as the operator would,
+// on the daemon's own config file (config, when it read one).
+func execFix(ctx context.Context, exe, config string) (string, error) {
 	if exe == "" {
 		return "", fmt.Errorf("no bmesh binary path")
 	}
-	out, err := exec.CommandContext(ctx, exe, "fix").CombinedOutput()
+	var args []string
+	if config != "" {
+		args = append(args, "--config", config)
+	}
+	out, err := exec.CommandContext(ctx, exe, append(args, "fix")...).CombinedOutput()
 	return string(out), err
 }

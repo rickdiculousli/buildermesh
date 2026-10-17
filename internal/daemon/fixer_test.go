@@ -246,3 +246,18 @@ func TestFixerNotStarted(t *testing.T) {
 		t.Fatalf("blocked fixer restarted: %v", got)
 	}
 }
+
+// The daemon's own start runs `<Exe> fix` on the daemon's config file.
+func TestExecFixPassesTheConfig(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "bmesh")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\necho \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := execFix(t.Context(), exe, "/etc/bm.toml"); err != nil || out != "--config /etc/bm.toml fix\n" {
+		t.Fatalf("%q %v", out, err)
+	}
+	if out, err := execFix(t.Context(), exe, ""); err != nil || out != "fix\n" {
+		t.Fatalf("no file: %q %v", out, err)
+	}
+}
