@@ -628,3 +628,21 @@ func TestNoticeNamesTheRelease(t *testing.T) {
 	want := "bmesh: v0.2.0 is out (you run v0.1.0: 001); run bmesh update, then update the buildermesh plugin"
 	waitFor(t, 20*time.Second, "the release notice", func() bool { return u.notice() == want })
 }
+
+// A binary `bmesh update --latest` swapped in past the release, before
+// this daemon restarted into it, is not built over with the older release.
+func TestUpdateKeepsANewerBinaryOnDisk(t *testing.T) {
+	u := updateSetup(t, map[string]string{})
+	u.d.Cfg.Update.Track = "release"
+	rel := u.land(t, "a.txt")
+	u.tag(t, "v0.2.0", rel)
+	head := u.land(t, "b.txt")
+	if err := os.WriteFile(u.exe, []byte("#!/bin/sh\necho bmesh "+head[:8]+" 2026-10-16T00:00:00Z\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	u.start(t) // this daemon still runs the revision before the release
+	u.noRestart(t, 1500*time.Millisecond)
+	if l := lines(t, u.goLog); len(l) != 0 {
+		t.Fatalf("built: %v", l)
+	}
+}

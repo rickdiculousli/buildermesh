@@ -75,14 +75,20 @@ func updateRepo(d Deps) string {
 	return ""
 }
 
-// own is this binary's commit as dir knows it: its revision, or the
-// commit its release tag names there (a tagged module install); "" when
-// neither.
-func (d *Deps) own(dir string) string {
-	if d.Revision != "" {
-		return d.Revision
+// installed is the commit, as dir knows it, of the binary at Exe: what its
+// `version` names, so a `bmesh update` that already swapped in a newer one
+// is never built over, else this daemon's own revision or release tag; a
+// tag resolved to its commit there (a tagged module install). "" when none
+// of them names one.
+func (r *routineSet) installed(dir string) string {
+	own := selfupdate.Installed(r.ctx, r.d.Exe)
+	if own == "" {
+		own = r.d.Revision
 	}
-	return selfupdate.OwnCommit(dir, d.Tag)
+	if own == "" {
+		own = r.d.Tag
+	}
+	return selfupdate.OwnCommit(dir, own)
 }
 
 // specDir is the spec directory as a pathspec: commits that change only it
@@ -102,8 +108,8 @@ func (r *routineSet) target(dir, ref string) (selfupdate.Target, error) {
 }
 
 // checkUpdate compares the target [update] track follows in main's
-// checkout dir (the newest release, or the code head) with this binary's
-// revision. When the target has the revision in its history and is ahead
+// checkout dir (the newest release, or the code head) with the binary at
+// Exe (installed). When the target has the revision in its history and is ahead
 // it builds the target over the binary, publishes update, drains and asks
 // serve to restart; it reports whether it did. A binary that is the target
 // or has it in its history is current: it never goes back. Each target is
@@ -129,7 +135,7 @@ func (r *routineSet) checkUpdate(dir string) bool {
 		return false
 	}
 	r.updateSeen = t.Commit
-	own := r.d.own(dir)
+	own := r.installed(dir)
 	old, next := selfupdate.Label(dir, own), selfupdate.Label(dir, t.Commit)
 	switch selfupdate.Stand(dir, own, t.Commit) {
 	case selfupdate.Current, selfupdate.Ahead:
@@ -258,14 +264,7 @@ func (r *routineSet) checkMain(rowDir string) bool {
 		d.Log.Warn("update: read main", "err", err)
 		return false
 	}
-	own := selfupdate.Installed(r.ctx, d.Exe)
-	if own == "" {
-		own = d.Revision
-	}
-	if own == "" {
-		own = d.Tag
-	}
-	own = selfupdate.OwnCommit(dir, own)
+	own := r.installed(dir)
 	line, err := selfupdate.Notice(dir, own, ref, t, d.specDir())
 	if err != nil {
 		d.Log.Warn("update: read main's history", "err", err)
