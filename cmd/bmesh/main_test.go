@@ -1,10 +1,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"testing"
+
+	"github.com/rickdiculousli/buildermesh/internal/config"
 )
 
 // TestMain keeps every test off the box's real tools and cache. Briefs,
@@ -18,6 +22,9 @@ import (
 // a path that does not exist, so no test reads or removes the box's notice
 // or reaches the network. A test that sets its own fake overrides these.
 func TestMain(m *testing.M) {
+	if os.Getenv("BMESH_TEST_AS_BMESH") == "1" {
+		os.Exit(asBmesh())
+	}
 	os.Exit(func() int {
 		testdata, err := filepath.Abs(filepath.Join("..", "..", "testdata"))
 		if err != nil {
@@ -47,4 +54,20 @@ func TestMain(m *testing.M) {
 		}
 		return m.Run()
 	}())
+}
+
+// asBmesh runs this test binary as bmesh itself, for testdata/fake-go.sh's
+// built binary to exec with $FAKE_GO_BMESH: built from $BMESH_TEST_REV of
+// module example.com/bm, and with $BMESH_TEST_REJECT set rejecting every
+// config with it, as a newer binary may reject what an older one took.
+func asBmesh() int {
+	rev := os.Getenv("BMESH_TEST_REV")
+	readBuildInfo = func() (*debug.BuildInfo, bool) {
+		return &debug.BuildInfo{Main: debug.Module{Path: "example.com/bm"}, Settings: []debug.BuildSetting{
+			{Key: "vcs.revision", Value: rev}, {Key: "vcs.time", Value: "2026-10-17T00:00:00Z"}}}, true
+	}
+	if msg := os.Getenv("BMESH_TEST_REJECT"); msg != "" {
+		configRule = func(*config.Config) error { return errors.New(msg) }
+	}
+	return run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
 }

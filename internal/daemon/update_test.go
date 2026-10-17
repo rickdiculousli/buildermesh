@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
+	"github.com/rickdiculousli/buildermesh/internal/upgrade"
 )
 
 // ufix is a routine fixture whose repo "app" is also the [update] repo: the
@@ -644,5 +646,71 @@ func TestUpdateKeepsANewerBinaryOnDisk(t *testing.T) {
 	u.noRestart(t, 1500*time.Millisecond)
 	if l := lines(t, u.goLog); len(l) != 0 {
 		t.Fatalf("built: %v", l)
+	}
+}
+
+// fakeNew makes the binary the update builds answer `config check` and
+// `update --plan --json` from a script: exit config's code (printing why),
+// and print plan as the plan.
+func fakeNew(t *testing.T, config int, plan string) {
+	t.Helper()
+	script := filepath.Join(t.TempDir(), "new.sh")
+	body := "#!/bin/sh\ncase \"$*\" in\n*config\\ check*) [ " + strconv.Itoa(config) + " = 0 ] || { echo 'bmesh: config check failed: config x: [runner] t3_server is empty' >&2; exit " + strconv.Itoa(config) + "; } ;;\n" +
+		"*update\\ --plan*) printf '%s\\n' '" + plan + "' ;;\nesac\nexit 0\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FAKE_GO_BMESH", "sh "+script)
+}
+
+// The new binary's checks hold the swap: a config it rejects, or notes
+// with an ask; the daemon logs it once and leaves it as the notice.
+func TestUpdateHeldByTheNewBinary(t *testing.T) {
+	for _, tc := range []struct {
+		name, plan, want string
+		config           int
+	}{
+		{"config", `{}`, "config check failed: config x: [runner] t3_server is empty; keeping this binary", 3},
+		{"asks", `{"asks":2,"steps":1,"confirm":1}`, "waits on bmesh update (2 asks, 1 step that asks first)", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := updateSetup(t, map[string]string{})
+			u.d.StateDir = t.TempDir()
+			fakeNew(t, tc.config, tc.plan)
+			u.start(t)
+			next := u.land(t, "a.txt")
+			deadline := time.Now().Add(20 * time.Second)
+			for !strings.Contains(u.log.String(), tc.want) && time.Now().Before(deadline) {
+				time.Sleep(100 * time.Millisecond)
+			}
+			u.noRestart(t, 500*time.Millisecond)
+			if b, _ := os.ReadFile(u.exe); string(b) != "old" {
+				t.Fatalf("binary %q; log:\n%s", b, u.log.String())
+			}
+			if n := strings.Count(u.log.String(), tc.want); n != 1 {
+				t.Fatalf("%d lines with %q; log:\n%s", n, tc.want, u.log.String())
+			}
+			if got := selfupdate.ReadNotice(u.d.StateDir); !strings.Contains(got, next[:8]) || !strings.Contains(got, tc.want) {
+				t.Fatalf("notice %q", got)
+			}
+		})
+	}
+}
+
+// A swap whose walk has nothing to do records the new binary as installed
+// and the old one as previous.
+func TestUpdateSwapRecordsInstalledAndPrevious(t *testing.T) {
+	u := updateSetup(t, map[string]string{})
+	u.d.StateDir = t.TempDir()
+	old := u.d.Revision
+	fakeNew(t, 0, `{"asks":0,"steps":0}`)
+	u.start(t)
+	next := u.land(t, "a.txt")
+	u.restarted(t, 20*time.Second)
+	if got := upgrade.ReadPrevious(u.d.StateDir); got != old {
+		t.Fatalf("previous %q, want %s", got, old)
+	}
+	if rec, ok := upgrade.ReadInstalled(u.d.StateDir); !ok || rec.Revision != next {
+		t.Fatalf("installed %+v %v", rec, ok)
 	}
 }
