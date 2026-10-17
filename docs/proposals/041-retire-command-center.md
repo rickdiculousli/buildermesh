@@ -4,10 +4,13 @@ title: Retire command-center: its last files and rules to their homes, then the 
 kind: maintenance
 size: M
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-16
+built_by: fca6fddf-cc75-4fe1-8f42-1118396f8fac
+host: k16
+family: buildermesh-build-7
 ---
 
 ## Opportunity
