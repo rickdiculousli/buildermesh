@@ -104,5 +104,6 @@ On the Mac: answer the keep-or-drop list; write the Mac's `notes.md`; move the c
 3. Copy the "Repos that need care" and "Replies" sections of k16's `~/.claude/CLAUDE.md` into the Mac's, and replace its "central coordinator repo" line as k16's was.
 4. Add to Sparks-of-a-Tempering-Mind's AGENTS.md: after `uv run _tools/publish.py <draft>`, `site/` matches what's live.
 5. `bmesh sync --all`, to bring the Mac's gametrainer, party-buzzer and rickdiculousli-tools up to the re-scaffolds.
+   computer-use's re-scaffold (`bmesh scaffold computer-use`, its row's verify, push) is the coordinator's, on the Mac, before step 6.
 6. Drop the Mac's command-center `cache/` and its 16 worktrees, then `bmesh repos remove command-center --checkouts --ignored-ok --apply` (`--ignored-ok` because `cache/` and `__pycache__` are ignored files the remove otherwise refuses).
 7. Archive or delete `rickdiculousli/command-center` on GitHub.
