@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	holdUsage        = `usage: bmesh hold <path>|--family F [--gate land|now] --text "<why>"`
-	releaseHoldUsage = `usage: bmesh release <path>|--family F [--text "<words>"]`
+	holdUsage   = `usage: bmesh hold <path>|--family F [--gate land|now] --text "<why>"`
+	unholdUsage = `usage: bmesh unhold <path>|--family F [--text "<words>"]`
 )
 
 // cmdHold holds a lead (or every live lead of a build family) at a gate:
@@ -71,9 +71,14 @@ func (a *app) hold(ctx context.Context, h mesh.LeadHold) error {
 	if err := mesh.PutLeadHold(ctx, a.client, h); err != nil {
 		return err
 	}
-	_, err := mesh.Send(ctx, a.client, mesh.Message{ID: newID(), From: h.By, To: h.Path, Kind: "hold",
-		Text: fmt.Sprintf("hold from %s (%s): %s", h.By, h.Gate, h.Text)})
+	_, err := mesh.Send(ctx, a.client, holdMessage(h))
 	return err
+}
+
+// holdMessage is what a hold puts in its lead's inbox.
+func holdMessage(h mesh.LeadHold) mesh.Message {
+	return mesh.Message{ID: newID(), From: h.By, To: h.Path, Kind: "hold",
+		Text: fmt.Sprintf("hold from %s (%s): %s", h.By, h.Gate, h.Text)}
 }
 
 // holdable is path's node when it is a lead that can be held: registered,
@@ -134,35 +139,11 @@ func (a *app) familyLeads(ctx context.Context, family string) ([]mesh.Node, erro
 	return out, nil
 }
 
-// releasesHold reports whether a release's arguments name a hold rather
-// than a repo to tag: --family or --text, or a positional that is neither
-// a repos.toml name nor an existing directory.
-func (a *app) releasesHold(args []string) bool {
-	fs := a.flags("release")
-	fs.Bool("minor", false, "")
-	fs.Bool("patch", false, "")
-	fs.Bool("dry-run", false, "")
-	family := fs.String("family", "", "")
-	text := fs.String("text", "", "")
-	pos, err := parse(fs, args)
-	if err != nil {
-		return false
-	}
-	if *family != "" || *text != "" {
-		return true
-	}
-	if len(pos) != 1 || a.loadConfig() != nil {
-		return false
-	}
-	_, _, err = a.cfg.RepoPath(pos[0])
-	return err != nil
-}
-
-// cmdReleaseHold releases a lead's hold (or every hold of a build
-// family's leads): it deletes the key and sends the lead a message of kind
-// release, which wakes it. A lead not held prints <path>: not held.
-func (a *app) cmdReleaseHold(args []string) error {
-	fs := a.flags("release")
+// cmdUnhold releases a lead's hold (or every hold of a build family's
+// leads): it deletes the key and sends the lead a message of kind release,
+// which wakes it. A lead not held prints <path>: not held.
+func (a *app) cmdUnhold(args []string) error {
+	fs := a.flags("unhold")
 	family := fs.String("family", "", "release every held lead of this build family")
 	text := fs.String("text", "", "what the lead reads with the release")
 	pos, err := parse(fs, args)
@@ -170,11 +151,11 @@ func (a *app) cmdReleaseHold(args []string) error {
 		return err
 	}
 	if (len(pos) == 1) == (*family != "") || len(pos) > 1 {
-		return fail(exitUsage, releaseHoldUsage)
+		return fail(exitUsage, unholdUsage)
 	}
 	ctx, cancel := cmdCtx()
 	defer cancel()
-	by, err := a.identityOrHost(ctx, "release")
+	by, err := a.identityOrHost(ctx, "unhold")
 	if err != nil {
 		return err
 	}
@@ -200,7 +181,7 @@ func (a *app) cmdReleaseHold(args []string) error {
 	} else {
 		p, err := mesh.ParsePath(pos[0])
 		if err != nil {
-			return fail(exitUsage, "release: %s is neither a repo (repos.toml) nor a node path: %v", pos[0], err)
+			return fail(exitUsage, "%v", err)
 		}
 		paths = []string{p.String()}
 	}

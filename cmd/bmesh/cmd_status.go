@@ -78,12 +78,14 @@ type statusRow struct {
 	State  mesh.State         `json:"state"`
 	Runner *mesh.RunnerSample `json:"runner"`
 	Unread int                `json:"unread"`
+	Hold   *holdRow           `json:"hold,omitempty"` // its bm-holds entry
 }
 
 // cmdMeshStatus prints the registered nodes with their state, runner and
 // unread count: every one with --all or --json, else all but those done for
 // longer than [status] keep_done, which a closing line counts; then a line
-// per build family with feedback not yet drained.
+// per hold, with its age, and per build family with feedback not yet
+// drained.
 func (a *app) cmdMeshStatus(args []string) error {
 	fs := a.flags("mesh-status")
 	all := fs.Bool("all", false, "show every node, finished ones too")
@@ -107,9 +109,20 @@ func (a *app) cmdMeshStatus(args []string) error {
 	if err != nil {
 		return err
 	}
+	holds, err := mesh.ListLeadHolds(ctx, a.client)
+	if err != nil {
+		return err
+	}
+	holdOf := map[string]holdRow{}
+	for _, r := range holdRows(holds) {
+		holdOf[r.Path] = r
+	}
 	rows := make([]statusRow, 0, len(nodes))
 	for _, n := range nodes {
 		r := statusRow{Node: n, State: mesh.State{State: "idle"}}
+		if h, ok := holdOf[n.Path]; ok {
+			r.Hold = &h
+		}
 		if s, ok := states[n.Path]; ok {
 			r.State = s
 		}
@@ -153,6 +166,10 @@ func (a *app) cmdMeshStatus(args []string) error {
 			noun = "node"
 		}
 		fmt.Fprintf(a.stdout, "… %d finished %s older than %s (--all shows them)\n", n, noun, config.FormatDuration(keep))
+	}
+	now := time.Now()
+	for _, h := range holds {
+		fmt.Fprintf(a.stdout, "%s %s\n", h.Path, h.Line(now))
 	}
 	pending, err := mesh.PendingFeedback(ctx, a.client)
 	if err != nil {

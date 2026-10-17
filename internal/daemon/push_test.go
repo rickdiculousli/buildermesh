@@ -207,6 +207,9 @@ func TestPushRequest(t *testing.T) {
 	if _, ok := Push(mesh.Event{From: "a", Event: "progress"}, lead, cfg, ""); ok {
 		t.Error("progress pushed")
 	}
+	if _, ok := Push(mesh.Event{From: "a", Event: "held"}, lead, config.NotifyConfig{Push: []string{"ask", "blocked", "done", "held"}}, ""); ok {
+		t.Error("held pushed")
+	}
 	cfg.Push = []string{"done"}
 	if _, ok := Push(mesh.Event{From: "a", Event: "ask"}, lead, cfg, ""); ok {
 		t.Error("ask pushed though not listed")
@@ -232,7 +235,8 @@ func TestNoPushForExecutorsOrUnlistedEvents(t *testing.T) {
 	f.event(t, mesh.Event{From: "a.x", Event: "done", Text: "built", Commit: "abc"})
 	f.event(t, mesh.Event{From: "a", Event: "progress", Text: "half"})
 	f.event(t, mesh.Event{From: "a", Event: "started"})
-	f.event(t, mesh.Event{From: "b", Event: "ask", Text: "sentinel"}) // processed after the rest
+	f.event(t, mesh.Event{From: "a", Event: "held", Text: "before land by operator: hub move first"}) // the coordinator put it there
+	f.event(t, mesh.Event{From: "b", Event: "ask", Text: "sentinel"})                                 // processed after the rest
 	if got := n.waitRequests(t, 1); got[0].Title != "b asks" {
 		t.Errorf("request = %+v", got[0])
 	}

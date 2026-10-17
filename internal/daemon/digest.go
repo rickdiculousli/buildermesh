@@ -131,6 +131,26 @@ func Digest(host string, states map[string]mesh.State, nodes []mesh.Node, since,
 	return title, strings.Join(lines, "\n"), len(lines) > 0
 }
 
+// HoldLines names each hold at least a day old whose age reached a whole
+// number of days in the window (since, now], "<path>: held before land by
+// operator 1d0h ago: <why>", so a forgotten hold is named once a day.
+func HoldLines(holds []mesh.LeadHold, since, now time.Time) []string {
+	var out []string
+	for _, h := range holds {
+		at, err := time.Parse(time.RFC3339, h.At)
+		if err != nil {
+			continue
+		}
+		for t := at.Add(24 * time.Hour); !t.After(now); t = t.Add(24 * time.Hour) {
+			if inWindow(t, since, now) {
+				out = append(out, h.Path+": "+h.Line(now))
+				break
+			}
+		}
+	}
+	return out
+}
+
 // treeMember splits a path under a lead (an executor, "a.x") into the lead
 // and the rest; routine instances and leads themselves are not members.
 func treeMember(p string) (lead, name string, ok bool) {
@@ -153,7 +173,8 @@ func age(d time.Duration) string {
 }
 
 // digestOnce sends one digest if anything needs attention or newly finished,
-// then moves *since to now. A failed delivery leaves *since alone so the next
+// or a hold turned a whole number of days old (HoldLines), then moves
+// *since to now. A failed delivery leaves *since alone so the next
 // pass reports the same things again.
 func digestOnce(ctx context.Context, d Deps, since *time.Time) {
 	now := d.Now() // before the read, so the window (since, now] has no gap
@@ -172,6 +193,14 @@ func digestOnce(ctx context.Context, d Deps, since *time.Time) {
 		label += " " + selfupdate.Short(d.Revision)
 	}
 	title, body, changed := Digest(label, states, nodes, *since, now)
+	holds, err := mesh.ListLeadHolds(ctx, d.Client)
+	if err != nil {
+		d.Log.Warn("digest: list holds", "err", err)
+	}
+	if lines := HoldLines(holds, *since, now); len(lines) > 0 {
+		body = strings.TrimPrefix(body+"\n"+strings.Join(lines, "\n"), "\n")
+		changed = true
+	}
 	if !changed {
 		return
 	}

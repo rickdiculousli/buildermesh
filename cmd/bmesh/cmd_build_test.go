@@ -486,3 +486,32 @@ func TestBuildVerifiesMainsCodeHead(t *testing.T) {
 		t.Fatalf("--accepted: %d %q %q runs %d", code, out, errs, runs())
 	}
 }
+
+// build --hold land writes the lead's hold before the runner starts it (the
+// node has no event yet) and puts the hold message in its inbox.
+func TestBuildHoldWritesTheHoldBeforeTheLeadStarts(t *testing.T) {
+	c, _, _ := buildSetup(t)
+	ctx := t.Context()
+	out, errs, code := runCLI(t, as("operator"), "build", "demo", "002", "--hold", "land")
+	if code != 0 {
+		t.Fatalf("code %d out %q err %q", code, out, errs)
+	}
+	var got buildStarted
+	if err := json.Unmarshal([]byte(out), &got); err != nil || got.Hold != "land" {
+		t.Fatalf("%q: %v", out, err)
+	}
+	h, ok, err := mesh.GetLeadHold(ctx, c, "demo-002")
+	if err != nil || !ok || h.Gate != "land" || h.By != "operator" || h.Text != "held at dispatch (build --hold land)" {
+		t.Fatalf("hold %+v %v %v", h, ok, err)
+	}
+	if s, _, _ := mesh.ReadState(ctx, c, "demo-002"); s.State != "idle" {
+		t.Fatalf("state %+v", s)
+	}
+	pending, err := mesh.Pending(ctx, c, mesh.Path{"demo-002"})
+	if err != nil || len(pending) != 1 || pending[0].Kind != "hold" || pending[0].Text != "hold from operator (land): held at dispatch (build --hold land)" {
+		t.Fatalf("inbox %+v %v", pending, err)
+	}
+	if _, _, code := runCLI(t, nil, "build", "demo", "003", "--hold", "later"); code != 2 {
+		t.Fatalf("bad gate: %d", code)
+	}
+}
