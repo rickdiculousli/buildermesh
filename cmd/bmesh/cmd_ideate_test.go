@@ -202,6 +202,26 @@ func TestIdeateCarriesTheOperatorsContext(t *testing.T) {
 	}
 }
 
+// Each child's brief opens with bmesh setup in its worktree when the repo
+// names a [setup].
+func TestIdeateBriefsStartWithSetup(t *testing.T) {
+	_, repo, _ := proposeSetup(t, "")
+	commitFile(t, repo, ".bmesh/config.toml", "[setup]\ncommand = \"npm ci\"\n", "Name the setup")
+	if out, errs, code := runCLI(t, nil, "ideate", "demo"); code != 0 {
+		t.Fatalf("code %d out %q err %q", code, out, errs)
+	}
+	for _, child := range []string{"eng", "ux"} {
+		b, err := os.ReadFile(filepath.Join(os.Getenv("BMESH_CACHE_DIR"), "bmesh", "briefs", "demo-round-1-"+child+".md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		i := strings.Index(string(b), "## First: bmesh setup\n\nBefore anything else, run `cd ")
+		if i < 0 || i != strings.Index(string(b), "\n## ")+1 || !strings.Contains(string(b), "demo-round-1-"+child+" && bmesh setup`.") {
+			t.Fatalf("%s brief:\n%s", child, b)
+		}
+	}
+}
+
 func TestIdeateIdeaStartsOnlyTheEngineer(t *testing.T) {
 	c, _, fake := proposeSetup(t, "ux_host = \"other\"\n")
 	ctx := t.Context()

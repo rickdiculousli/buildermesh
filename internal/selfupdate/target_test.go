@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"testing"
 
@@ -25,7 +26,7 @@ func bareOrigin(t *testing.T) (origin, work string, push func()) {
 }
 
 // specs is the code of a row without code: everything but the spec files.
-var specs = CodePaths(nil, "docs/proposals/{id}-*.md")
+var specs = CodePaths(nil, nil, "docs/proposals/{id}-*.md")
 
 // code commits a change outside the spec files in dir; ledger a spec file.
 func code(t *testing.T, dir, name string) string {
@@ -41,9 +42,28 @@ func ledger(t *testing.T, dir, name string) string {
 // CodeHead and CodeSame read a row's code, and the routine kinds always;
 // without code, everything but the spec files is code, a README beside
 // them included.
+// A row's setup_inputs are code beside its code: a commit that only bumps
+// a lockfile is a code head, and changes the code.
+func TestCodePathsIncludeSetupInputs(t *testing.T) {
+	dir, _ := repo(t, "one")
+	paths := CodePaths([]string{"*.go"}, []string{":(glob)**/package-lock.json"}, "docs/proposals/{id}-*.md")
+	if want := []string{"*.go", ":(glob)**/package-lock.json", AlwaysCode}; !slices.Equal(paths, want) {
+		t.Fatalf("paths %q, want %q", paths, want)
+	}
+	goFile := meshtest.CommitFiles(t, dir, map[string]string{"x.go": "package x\n"})
+	lock := meshtest.CommitFiles(t, dir, map[string]string{"web/package-lock.json": "{}\n"})
+	ledger(t, dir, "001-a")
+	if sha, err := CodeHead(dir, "HEAD", paths); err != nil || sha != lock {
+		t.Fatalf("head %s %v, want the lockfile commit %s", sha, err, lock)
+	}
+	if same, err := CodeSame(dir, goFile, lock, paths); err != nil || same {
+		t.Fatalf("a lockfile-only commit read as no code change: %v %v", same, err)
+	}
+}
+
 func TestCodeHeadAndCodeSame(t *testing.T) {
 	dir, _ := repo(t, "one")
-	listed := CodePaths([]string{"*.go", "cmd/**"}, "docs/proposals/{id}-*.md")
+	listed := CodePaths([]string{"*.go", "cmd/**"}, nil, "docs/proposals/{id}-*.md")
 	head := func(code []string) string {
 		t.Helper()
 		sha, err := CodeHead(dir, "HEAD", code)

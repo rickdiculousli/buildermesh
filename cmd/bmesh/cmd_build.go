@@ -13,6 +13,7 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/brief"
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/runner"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
@@ -285,6 +286,13 @@ func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s 
 	if err != nil {
 		return buildStarted{}, err
 	}
+	// The lead's worktree is made from main after this brief is written,
+	// so its first step is the setup main names.
+	rc, err := kind.LoadRepoConfigAt(repoPath, "main")
+	if err != nil {
+		return buildStarted{}, err
+	}
+	text = brief.WithSetup(text, brief.SetupStep(rc.Setup.Command, ""))
 	briefPath, err := writeBrief(p, text)
 	if err != nil {
 		return buildStarted{}, err

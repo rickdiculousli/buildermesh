@@ -577,10 +577,11 @@ func (a *app) cmdRoutineWait(args []string) error {
 const waitQueueing = 20 * time.Minute
 
 // waitTimeout is wait's default: waitQueueing plus the job's kind's timeout
-// plus the 1m the daemon allows beyond it (its kind consumer's AckWait), when
+// plus the 1m the daemon allows beyond it (its kind consumer's AckWait), and
+// for a command kind the repo's setup timeout when it names a setup, when
 // the cwd repo defines the kind the job was queued to; else waitQueueing.
 func waitTimeout(ctx context.Context, c *mesh.Client, id string) time.Duration {
-	_, kinds, err := cwdKinds()
+	top, kinds, err := cwdKinds()
 	if err != nil || len(kinds) == 0 {
 		return waitQueueing
 	}
@@ -590,7 +591,11 @@ func waitTimeout(ctx context.Context, c *mesh.Client, id string) time.Duration {
 	}
 	for _, k := range kinds {
 		if k.Name == name {
-			return waitQueueing + k.Timeout + time.Minute
+			d := waitQueueing + k.Timeout + time.Minute
+			if rc, err := kind.LoadRepoConfig(top); err == nil && rc.Setup.Command != "" && !k.IsModel() {
+				d += rc.Setup.Timeout
+			}
+			return d
 		}
 	}
 	return waitQueueing

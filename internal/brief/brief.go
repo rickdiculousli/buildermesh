@@ -186,6 +186,39 @@ func RowValues(r config.Repo, repoPath string) map[string]string {
 	}
 }
 
+// SetupStep is the section a brief opens with when the repo names a setup
+// command (its .bmesh/config.toml [setup]): the thread's first command is
+// bmesh setup in its worktree, from inside it when worktree is given (a
+// thread whose shell doesn't start there). "" for no command.
+func SetupStep(command, worktree string) string {
+	if command == "" {
+		return ""
+	}
+	run := "`bmesh setup`"
+	if worktree != "" {
+		run = "`cd " + worktree + " && bmesh setup`"
+	}
+	return "## First: bmesh setup\n\nBefore anything else, run " + run + ". This repo names a setup command (`" + command +
+		"`) that installs what its verify needs and a fresh worktree lacks; `bmesh setup` runs it when the installs aren't current. " +
+		"If it fails, read its output and fix what it names before going on. Run it again after you change dependencies; a verify runs it too.\n\n"
+}
+
+// WithSetup is text with section (SetupStep's) before its first `## `
+// heading, or at its end when it has none; text itself for no section or
+// one it already holds, so a repo's own template gets it too.
+func WithSetup(text, section string) string {
+	if section == "" || strings.Contains(text, section) {
+		return text
+	}
+	if strings.HasPrefix(text, "## ") {
+		return section + text
+	}
+	if i := strings.Index(text, "\n## "); i >= 0 {
+		return text[:i+1] + section + text[i+1:]
+	}
+	return strings.TrimRight(text, "\n") + "\n\n" + strings.TrimRight(section, "\n") + "\n"
+}
+
 // UpgradingRule is what an `## Upgrading` section holds, shared by the
 // half-pager's section and the build brief's bullet in bmesh's own repo:
 // the steps an install from the previous release needs, for any fleet.

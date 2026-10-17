@@ -96,7 +96,7 @@ func (r *routineSet) installed(dir string) string {
 // outside it is never a code head.
 func (d *Deps) codePaths() []string {
 	repo := cmp.Or(d.Cfg.Update.Repo, d.Cfg.ModuleRepo(d.Module))
-	return selfupdate.CodePaths(d.Cfg.Repos[repo].Code, d.Cfg.Spec.Glob)
+	return selfupdate.CodePaths(d.Cfg.Repos[repo].Code, d.Cfg.Repos[repo].SetupInputs, d.Cfg.Spec.Glob)
 }
 
 // target is what [update] track follows on ref in dir (selfupdate.Follow);

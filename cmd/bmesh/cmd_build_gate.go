@@ -128,9 +128,9 @@ func (a *app) codeHead(repo, repoPath, ref string) (string, error) {
 }
 
 // codePaths is repo's code as git pathspecs (selfupdate.CodePaths): its
-// registry row's code, else everything but the spec files.
+// registry row's code and setup_inputs, else everything but the spec files.
 func (a *app) codePaths(repo string) []string {
-	return selfupdate.CodePaths(a.cfg.Repos[repo].Code, a.cfg.Spec.Glob)
+	return selfupdate.CodePaths(a.cfg.Repos[repo].Code, a.cfg.Repos[repo].SetupInputs, a.cfg.Spec.Glob)
 }
 
 // verifyMain checks sha, main's code head (codeHead), before a lead

@@ -123,6 +123,25 @@ func TestExecutorNewMakesWorktreeBranchNode(t *testing.T) {
 
 // The done report names the worktree's current branch (renamed here) and the
 // full commit; a detached worktree falls back to the recorded branch.
+// An executor's header has bmesh setup as its first step when the lead's
+// commit names a [setup], and no such step otherwise.
+func TestExecutorHeaderStartsWithSetup(t *testing.T) {
+	_, repo, root := executorSetup(t)
+	out, errs, code := runCLI(t, nil, "executor", "new", "--name", "alpha")
+	if code != 0 || strings.Contains(out, "bmesh setup") {
+		t.Fatalf("without [setup]: %d %q %q", code, out, errs)
+	}
+	writeFile(t, filepath.Join(repo, ".bmesh", "config.toml"), "[setup]\ncommand = \"npm ci\"\n")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-qm", "setup")
+	out, errs, code = runCLI(t, nil, "executor", "new", "--name", "beta")
+	wt := filepath.Join(root, "demo", "demo-012.beta")
+	if code != 0 || !strings.Contains(out, "Before anything else run `cd "+wt+" && bmesh setup` (the repo's setup command, `npm ci`, ") ||
+		!strings.Contains(out, "run it again after you change dependencies), then `cd "+wt+" && bmesh --node demo-012.beta started") {
+		t.Fatalf("with [setup]: %d %q %q", code, out, errs)
+	}
+}
+
 func TestExecutorDoneReportsWorktreeBranch(t *testing.T) {
 	c, _, _ := executorSetup(t)
 	ctx := t.Context()

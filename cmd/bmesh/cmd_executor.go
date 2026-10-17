@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
 
@@ -25,10 +26,20 @@ const executorUsage = "usage: bmesh executor new --name N [--base REF] [--model 
 const executorHeader = "You are executor %s in buildermesh. Work only in %s on branch %s: every file path you touch is under it, " +
 	"and every shell command starts with `cd %s &&` (the working directory and environment do not persist between tool calls). " +
 	"Every bmesh command carries --node %s. " +
-	"Before anything else run `cd %s && bmesh --node %s started --text \"<what you will do>\"`. " +
+	"Before anything else run %s`cd %s && bmesh --node %s started --text \"<what you will do>\"`. " +
 	"Report the finished piece with `bmesh --node %s done --commit <sha> --text \"<one line>\"` alone: " +
 	"the mesh puts it, with your branch, in your lead's inbox. " +
 	"Read your brief below, then invoke the `buildermesh:executor` skill.\n"
+
+// executorSetupStep is the header's first step when the repo names a setup
+// command: bmesh setup in the executor's worktree, before started.
+func executorSetupStep(command, wt string) string {
+	if command == "" {
+		return ""
+	}
+	return "`cd " + wt + " && bmesh setup` (the repo's setup command, `" + command + "`, installs what its verify needs and a fresh worktree lacks; " +
+		"if it fails, read its output and fix what it names; run it again after you change dependencies), then "
+}
 
 var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
@@ -163,6 +174,10 @@ func (a *app) cmdExecutorNew(args []string) error {
 	if err != nil {
 		return fail(exitUsage, "--base %q is not a commit in %s", start, parent.Worktree)
 	}
+	rc, err := kind.LoadRepoConfigAt(parent.Worktree, sha)
+	if err != nil {
+		return err
+	}
 	// The branch must be ours to roll back: refuse one that already exists.
 	if _, err := gitIn(ctx, parent.Worktree, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
 		return fail(exitRefused, "refused: branch %s already exists; remove it or pick another name", branch)
@@ -196,7 +211,7 @@ func (a *app) cmdExecutorNew(args []string) error {
 	}
 	fmt.Fprintf(a.stdout, "%s\n", line)
 	if !a.json {
-		fmt.Fprintf(a.stdout, executorHeader, path, wt, branch, wt, path, wt, path, path)
+		fmt.Fprintf(a.stdout, executorHeader, path, wt, branch, wt, path, executorSetupStep(rc.Setup.Command, wt), wt, path, path)
 	}
 	return nil
 }

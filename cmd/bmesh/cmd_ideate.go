@@ -19,6 +19,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/brief"
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/daemon"
+	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/runner"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
@@ -389,6 +390,12 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 		undo()
 		return childStarted{}, err
 	}
+	rc, err := kind.LoadRepoConfig(wt)
+	if err != nil {
+		undo()
+		return childStarted{}, err
+	}
+	text = brief.WithSetup(text, brief.SetupStep(rc.Setup.Command, wt))
 	if section := values["operator_context"]; section != "" && !strings.Contains(text, section) {
 		// A repo's own template without {{operator_context}} still gets
 		// the operator's words.

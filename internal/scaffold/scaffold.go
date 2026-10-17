@@ -1,9 +1,10 @@
 // Package scaffold gives a ship repo what a buildermesh build expects of it:
 // the "Definition of done", "Proposals" and "Buildermesh" sections of its
 // AGENTS.md between markers, docs/proposals/README.md and assets/.gitkeep,
-// and the routine kinds its registry row names, seeded from the embedded
-// examples. Only the text between the markers is rewritten and an existing
-// kind is left alone, so a second run changes nothing.
+// the routine kinds its registry row names, seeded from the embedded
+// examples, and the row's setup as .bmesh/config.toml's [setup]. Only the
+// text between the markers and the [setup] table are rewritten and an
+// existing kind is left alone, so a second run changes nothing.
 package scaffold
 
 import (
@@ -164,8 +165,10 @@ func (t Target) Changed() bool { return !t.Exists || t.Current != t.Want }
 // Targets is every file scaffold would write for the row in the repo at
 // repoPath: AGENTS.md (created when missing), the proposals README and
 // .gitkeep when missing, a kind file for each of the row's routines that
-// the repo lacks, and an existing verify kind whose command is not the
-// row's verify commands. A routine with no embedded example is an error; a
+// the repo lacks, an existing verify kind whose command is not the
+// row's verify commands, and .bmesh/config.toml when its [setup] is not
+// the row's (merged in: the rest of the file is kept; a row with no setup
+// leaves the file alone). A routine with no embedded example is an error; a
 // verify kind for a row with no verify commands is skipped and named in
 // skipped.
 func Targets(repoPath string, r config.Repo, snippet string) (targets []Target, skipped []string, err error) {
@@ -230,7 +233,112 @@ func Targets(repoPath string, r config.Repo, snippet string) (targets []Target, 
 			}
 		}
 	}
+	if r.Setup != "" {
+		t, err := read(repoPath, kind.ConfigFile)
+		if err != nil {
+			return nil, nil, err
+		}
+		if t.Want, err = FollowSetup(t.Current, r); err != nil {
+			return nil, nil, err
+		}
+		if t.Changed() {
+			targets = append(targets, t)
+		}
+	}
 	return targets, skipped, nil
+}
+
+// RowSetup is the [setup] a row asks for, as the repo config reads it.
+func RowSetup(r config.Repo) (kind.Setup, error) {
+	rc, err := kind.ParseRepoConfig(SetupBlock(r))
+	if err != nil {
+		return kind.Setup{}, err
+	}
+	return rc.Setup, nil
+}
+
+// SetupBlock is the [setup] table scaffold writes for a row: its command,
+// and its inputs and timeout when it names them.
+func SetupBlock(r config.Repo) string {
+	if r.Setup == "" {
+		return ""
+	}
+	b := "[setup]\ncommand = " + tomlString(r.Setup) + "\n"
+	if len(r.SetupInputs) > 0 {
+		q := make([]string, len(r.SetupInputs))
+		for i, p := range r.SetupInputs {
+			q[i] = tomlString(p)
+		}
+		b += "inputs = [" + strings.Join(q, ", ") + "]\n"
+	}
+	if r.SetupTimeout != "" {
+		b += "timeout = " + tomlString(r.SetupTimeout) + "\n"
+	}
+	return b
+}
+
+// FollowSetup is a repo config's text with its [setup] table the row's:
+// text itself when the table already reads the same (formatting and
+// comments kept), else the table replaced in place (from its header to the
+// next table's) or appended, the rest of the file ([slots], [routines])
+// kept. Text that doesn't parse is an error.
+func FollowSetup(text string, r config.Repo) (string, error) {
+	want, err := RowSetup(r)
+	if err != nil {
+		return "", err
+	}
+	rc, err := kind.ParseRepoConfig(text)
+	if err != nil {
+		return "", err
+	}
+	if sameSetup(rc.Setup, want) {
+		return text, nil
+	}
+	lines := strings.SplitAfter(text, "\n")
+	start, end := -1, len(lines)
+	for i, l := range lines {
+		t := strings.TrimSpace(l)
+		if !strings.HasPrefix(t, "[") {
+			continue
+		}
+		if start >= 0 {
+			end = i
+			break
+		}
+		if h, _, ok := strings.Cut(strings.TrimPrefix(t, "["), "]"); ok && strings.TrimSpace(h) == "setup" {
+			start = i
+		}
+	}
+	block := SetupBlock(r)
+	var out string
+	if start < 0 {
+		out = text
+		if out != "" && !strings.HasSuffix(out, "\n") {
+			out += "\n"
+		}
+		if out != "" {
+			out += "\n"
+		}
+		out += block
+	} else {
+		// The comment lines right above the next table lead into it.
+		for end > start+1 && end < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[end-1]), "#") {
+			end--
+		}
+		rest := strings.Join(lines[end:], "")
+		if rest != "" {
+			rest = "\n" + rest
+		}
+		out = strings.Join(lines[:start], "") + block + rest
+	}
+	if got, err := kind.ParseRepoConfig(out); err != nil || !sameSetup(got.Setup, want) {
+		return "", fmt.Errorf("%s: its [setup] is not a table scaffold can rewrite; set it to the row's setup by hand", kind.ConfigFile)
+	}
+	return out, nil
+}
+
+func sameSetup(a, b kind.Setup) bool {
+	return a.Command == b.Command && a.Timeout == b.Timeout && strings.Join(a.Inputs, "\x00") == strings.Join(b.Inputs, "\x00")
 }
 
 func verifyRel(rc kind.RepoConfig) string {
@@ -275,8 +383,9 @@ func verifyCommand(text string) (string, error) {
 func trimCommand(s string) string { return strings.TrimRight(s, " \t\r\n;") }
 
 // Drift is the unified diff of the scaffolded text a branch changed that the
-// row doesn't write: AGENTS.md's marked blocks (when agents), and the verify
-// kind's command, each only when it differs from the base's (at reads a
+// row doesn't write: AGENTS.md's marked blocks (when agents), the verify
+// kind's command and the repo config's [setup] (when the row names a
+// setup), each only when it differs from the base's (at reads a
 // repo-relative file there: its text and whether it exists). So a row or a
 // snippet that moved under an untouched file is not the branch's drift, and
 // a file scaffold would create is not drift at all. A repo whose AGENTS.md
@@ -329,6 +438,32 @@ func Drift(repoPath string, r config.Repo, snippet string, agents bool, at func(
 		}
 		if now != was {
 			if t.Want, err = FollowVerify(t.Rel, t.Current, r); err != nil {
+				return "", true, err
+			}
+			if t.Changed() {
+				drift = append(drift, t)
+			}
+		}
+	}
+	if r.Setup != "" {
+		t, err := read(repoPath, kind.ConfigFile)
+		if err != nil {
+			return "", true, err
+		}
+		base, _, err := at(t.Rel)
+		if err != nil {
+			return "", true, err
+		}
+		was, err := kind.ParseRepoConfig(base)
+		if err != nil {
+			was = kind.RepoConfig{}
+		}
+		now, err := kind.ParseRepoConfig(t.Current)
+		if err != nil {
+			return "", true, err
+		}
+		if !sameSetup(now.Setup, was.Setup) {
+			if t.Want, err = FollowSetup(t.Current, r); err != nil {
 				return "", true, err
 			}
 			if t.Changed() {

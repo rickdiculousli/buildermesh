@@ -220,6 +220,15 @@ func parseRepoConfig(data []byte) (RepoConfig, error) {
 	return rc, nil
 }
 
+// ParseRepoConfig reads a .bmesh/config.toml's text; empty text yields the
+// defaults.
+func ParseRepoConfig(text string) (RepoConfig, error) {
+	if text == "" {
+		return parseRepoConfig(nil)
+	}
+	return parseRepoConfig([]byte(text))
+}
+
 // LoadRepoConfig reads <repoPath>/.bmesh/config.toml; a missing file yields the defaults.
 func LoadRepoConfig(repoPath string) (RepoConfig, error) {
 	b, err := os.ReadFile(filepath.Join(repoPath, filepath.FromSlash(ConfigFile)))

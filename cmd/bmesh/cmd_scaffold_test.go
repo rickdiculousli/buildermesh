@@ -68,3 +68,30 @@ func TestScaffoldWritesChecksAndRefuses(t *testing.T) {
 		t.Fatalf("%s", b)
 	}
 }
+
+// The row's setup is merge-written into .bmesh/config.toml: [slots] kept.
+func TestScaffoldMergesTheRowsSetup(t *testing.T) {
+	setup(t)
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, ".bmesh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".bmesh", "config.toml"), []byte("[slots]\nbrowser = 2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeRepos(t, "[repos.demo]\npath = \""+repo+"\"\nverify = [\"npm test\"]\nsetup = \"npm ci\"\nsetup_inputs = [\":(glob)**/package-lock.json\"]\nsetup_timeout = \"15m\"\n")
+	out, errs, code := runCLI(t, nil, "scaffold", "demo", "--check")
+	if code != 1 || !strings.Contains(out, "+++ b/.bmesh/config.toml\n") || !strings.Contains(out, "+[setup]\n+command = \"npm ci\"\n") {
+		t.Fatalf("check: %d %q %q", code, out, errs)
+	}
+	if out, errs, code = runCLI(t, nil, "scaffold", "demo"); code != 0 || !strings.Contains(out, "wrote .bmesh/config.toml\n") {
+		t.Fatalf("write: %d %q %q", code, out, errs)
+	}
+	b, _ := os.ReadFile(filepath.Join(repo, ".bmesh", "config.toml"))
+	if string(b) != "[slots]\nbrowser = 2\n\n[setup]\ncommand = \"npm ci\"\ninputs = [\":(glob)**/package-lock.json\"]\ntimeout = \"15m\"\n" {
+		t.Fatalf("config %q", b)
+	}
+	if out, errs, code = runCLI(t, nil, "scaffold", "demo", "--check"); code != 0 || out != "" {
+		t.Fatalf("check after write: %d %q %q", code, out, errs)
+	}
+}

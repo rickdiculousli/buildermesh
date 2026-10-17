@@ -62,12 +62,14 @@ func NewestRelease(dir, ref string) (string, error) {
 const AlwaysCode = ".bmesh/**"
 
 // CodePaths is a repo's code as git pathspecs, from its registry row's code
-// (pathspecs relative to the repo's root) and AlwaysCode; a row without code
-// is everything but the spec files, the paths specGlob (`<dir>/{id}-*.md`)
+// (pathspecs relative to the repo's root), its setup_inputs (a lockfile
+// says what verify runs against, so a commit that only bumps one is
+// verified, never carried) and AlwaysCode; a row without code is
+// everything but the spec files, the paths specGlob (`<dir>/{id}-*.md`)
 // matches.
-func CodePaths(code []string, specGlob string) []string {
+func CodePaths(code, setupInputs []string, specGlob string) []string {
 	if len(code) > 0 {
-		return append(slices.Clone(code), AlwaysCode)
+		return append(append(slices.Clone(code), setupInputs...), AlwaysCode)
 	}
 	return []string{".", ":(exclude,glob)" + strings.ReplaceAll(specGlob, "{id}", "[0-9][0-9][0-9]*")}
 }

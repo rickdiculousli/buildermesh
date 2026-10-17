@@ -355,3 +355,93 @@ func writeTest(t *testing.T, p, body string) {
 		t.Fatal(err)
 	}
 }
+
+func TestFollowSetup(t *testing.T) {
+	row := config.Repo{Name: "pb", Setup: "npm ci", SetupInputs: []string{":(glob)**/package-lock.json"}}
+	block := "[setup]\ncommand = \"npm ci\"\ninputs = [\":(glob)**/package-lock.json\"]\n"
+	for _, c := range []struct{ name, text, want, err string }{
+		{"appended", "", block, ""},
+		{"kept beside the rest", "[slots]\ngame = 2\n\n[routines]\ndir = \"ci\"\n",
+			"[slots]\ngame = 2\n\n[routines]\ndir = \"ci\"\n\n" + block, ""},
+		{"replaced in place", "[slots]\ngame = 2\n\n[setup]\ncommand = \"npm install\" # old\n\n# kinds\n[routines]\ndir = \"ci\"\n",
+			"[slots]\ngame = 2\n\n" + block + "\n# kinds\n[routines]\ndir = \"ci\"\n", ""},
+		{"follows already", "# mine\n[setup]\ncommand = 'npm ci'\ninputs = [':(glob)**/package-lock.json']\ntimeout = \"10m\"\n",
+			"# mine\n[setup]\ncommand = 'npm ci'\ninputs = [':(glob)**/package-lock.json']\ntimeout = \"10m\"\n", ""},
+		{"not a config", "[setup\n", "", "toml"},
+	} {
+		got, err := FollowSetup(c.text, row)
+		if got != c.want || (c.err == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), c.err)) {
+			t.Errorf("%s: %q, %v", c.name, got, err)
+		}
+	}
+	row.SetupTimeout = "20m"
+	if got, _ := FollowSetup(block, row); got != block+"timeout = \"20m\"\n" {
+		t.Errorf("timeout: %q", got)
+	}
+}
+
+func TestTargetsWriteTheRowsSetup(t *testing.T) {
+	repo := t.TempDir()
+	writeTest(t, filepath.Join(repo, ".bmesh", "config.toml"), "[slots]\ngame = 2\n")
+	row := config.Repo{Name: "pb", Mode: "ship", Verify: []string{"npm test"}, Setup: "npm ci"}
+	targets, _, err := Targets(repo, row, snippet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Write(repo, targets); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo, ".bmesh", "config.toml")); string(b) != "[slots]\ngame = 2\n\n[setup]\ncommand = \"npm ci\"\n" {
+		t.Fatalf("config %q", b)
+	}
+	if targets, _, _ = Targets(repo, row, snippet); Plan(targets) != "" {
+		t.Fatalf("second run: %s", Plan(targets))
+	}
+	// A row with no setup leaves the file alone.
+	row.Setup = ""
+	targets, _, _ = Targets(repo, row, snippet)
+	for _, tg := range targets {
+		if tg.Rel == ".bmesh/config.toml" {
+			t.Fatalf("a row without setup wrote the config: %q", tg.Want)
+		}
+	}
+}
+
+func TestDriftCoversTheBranchsSetup(t *testing.T) {
+	repo := t.TempDir()
+	row := config.Repo{Name: "pb", Mode: "ship", Verify: []string{"npm test"}, Setup: "npm ci"}
+	targets, _, err := Targets(repo, row, snippet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Write(repo, targets); err != nil {
+		t.Fatal(err)
+	}
+	agents, _ := os.ReadFile(filepath.Join(repo, Agents))
+	cfgPath := filepath.Join(repo, ".bmesh", "config.toml")
+	cfg, _ := os.ReadFile(cfgPath)
+	base := map[string]string{Agents: string(agents), ".bmesh/config.toml": string(cfg)}
+	at := func(rel string) (string, bool, error) { s, ok := base[rel]; return s, ok, nil }
+	if d, _, err := Drift(repo, row, snippet, true, at); d != "" || err != nil {
+		t.Fatalf("clean: %q %v", d, err)
+	}
+	// The row moved under an untouched file: not the branch's drift.
+	moved := row
+	moved.Setup = "pnpm install --frozen-lockfile"
+	if d, _, _ := Drift(repo, moved, snippet, true, at); d != "" {
+		t.Fatalf("untouched: %s", d)
+	}
+	// A [slots] edit is the repo's own.
+	writeTest(t, cfgPath, string(cfg)+"\n[slots]\ngame = 2\n")
+	if d, _, _ := Drift(repo, row, snippet, true, at); d != "" {
+		t.Fatalf("slots: %s", d)
+	}
+	// The branch's own edit of [setup] is drift, unless the row says the same.
+	writeTest(t, cfgPath, "[setup]\ncommand = \"pnpm install --frozen-lockfile\"\n")
+	if d, _, _ := Drift(repo, row, snippet, true, at); !strings.Contains(d, "--- a/.bmesh/config.toml") || !strings.Contains(d, "+command = \"npm ci\"") {
+		t.Fatalf("setup drift: %s", d)
+	}
+	if d, _, _ := Drift(repo, moved, snippet, true, at); d != "" {
+		t.Fatalf("following the row: %s", d)
+	}
+}

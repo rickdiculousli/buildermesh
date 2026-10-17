@@ -768,7 +768,7 @@ func TestLandRefusesAVerifyKindTheRowDoesntWrite(t *testing.T) {
 	base := r.originMain(t)
 	out, errs, code := runCLI(t, as("app-012"), "land")
 	if code != 3 || errs != "bmesh: refused: the branch's scaffolded files differ from what bmesh scaffold writes from repo's row; "+
-		"the row's verify is the source: bmesh repos propose with the new verify, or restore the scaffolded files\n" {
+		"the row's verify and setup are the source: bmesh repos propose with the new verify or setup, or restore the scaffolded files\n" {
 		t.Fatalf("land: %d\n%s\n%q", code, out, errs)
 	}
 	for _, w := range []string{"--- a/.bmesh/routines/verify.toml\n", "-command = \"sh \\\"$HOOK\\\" && true\"\n", "+command = \"sh \\\"$HOOK\\\"\"\n"} {
@@ -789,7 +789,30 @@ func TestLandRefusesAVerifyKindTheRowDoesntWrite(t *testing.T) {
 	writeFile(t, agents, strings.ReplaceAll(string(b), "`sh \"$HOOK\"`", "`sh \"$HOOK\"`, `true`"))
 	meshtest.Git(t, r.wt, "commit", "-qam", "AGENTS.md by hand")
 	out, errs, code = runCLI(t, as("app-012"), "land")
-	if code != 3 || !strings.Contains(errs, "the row's verify is the source") || !strings.Contains(out, "--- a/AGENTS.md\n") {
+	if code != 3 || !strings.Contains(errs, "the row's verify and setup are the source") || !strings.Contains(out, "--- a/AGENTS.md\n") {
+		t.Fatalf("land: %d\n%s\n%q", code, out, errs)
+	}
+}
+
+// A row's setup is scaffolded into .bmesh/config.toml; a branch that edits
+// that [setup] by hand is refused like a verify kind edited by hand.
+func TestLandRefusesASetupTheRowDoesntWrite(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	writeRepos(t, "[repos.repo]\npath = \""+r.repo+"\"\nverify = [\"sh \\\"$HOOK\\\"\"]\nroutines = [\"verify\"]\nsetup = \"true\"\n")
+	if out, errs, code := runCLI(t, nil, "scaffold", "repo"); code != 0 || !strings.Contains(out, "wrote .bmesh/config.toml\n") {
+		t.Fatalf("scaffold: %d %q %q", code, out, errs)
+	}
+	meshtest.Git(t, r.repo, "add", "-A")
+	meshtest.Git(t, r.repo, "commit", "-m", "scaffold")
+	meshtest.Git(t, r.repo, "push", "-q", "origin", "main")
+	meshtest.Git(t, r.wt, "rebase", "-q", "main")
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	writeFile(t, filepath.Join(r.wt, ".bmesh", "config.toml"), "[setup]\ncommand = \"echo by hand\"\n")
+	meshtest.Git(t, r.wt, "commit", "-qam", "setup by hand")
+	out, errs, code := runCLI(t, as("app-012"), "land")
+	if code != 3 || !strings.Contains(errs, "the row's verify and setup are the source") ||
+		!strings.Contains(out, "--- a/.bmesh/config.toml\n") || !strings.Contains(out, "+command = \"true\"\n") {
 		t.Fatalf("land: %d\n%s\n%q", code, out, errs)
 	}
 }
@@ -919,17 +942,23 @@ func TestLandCarriesVerifyOnlyOutsideTheCode(t *testing.T) {
 	for _, tc := range []struct {
 		name, code, file, body string
 		carried                bool
+		inputs                 string
 	}{
-		{"readme outside the code", `"*.txt"`, "README.md", "# app\n", true},
-		{"a listed file", `"*.txt"`, "c.txt", "c\n", false},
-		{"the verify kind", `"*.txt"`, kindFile, "mode = \"inline\"\ndeterministic = true\ncommand = \"sh \\\"$HOOK\\\"\"\n# again\n", false},
-		{"no code: a spec file", "", "docs/proposals/013-other.md", "---\nid: 13\nstatus: accepted\n---\n", true},
-		{"no code: the spec README", "", "docs/proposals/README.md", "# specs\n", false},
+		{"readme outside the code", `"*.txt"`, "README.md", "# app\n", true, ""},
+		{"a lockfile outside the code", `"*.txt"`, "web/package-lock.json", "{}\n", true, ""},
+		{"a setup input", `"*.txt"`, "web/package-lock.json", "{}\n", false, `":(glob)**/package-lock.json"`},
+		{"a listed file", `"*.txt"`, "c.txt", "c\n", false, ""},
+		{"the verify kind", `"*.txt"`, kindFile, "mode = \"inline\"\ndeterministic = true\ncommand = \"sh \\\"$HOOK\\\"\"\n# again\n", false, ""},
+		{"no code: a spec file", "", "docs/proposals/013-other.md", "---\nid: 13\nstatus: accepted\n---\n", true, ""},
+		{"no code: the spec README", "", "docs/proposals/README.md", "# specs\n", false, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, ctx := setup(t)
 			r := newLandRepo(t)
 			codeRow(t, r, tc.code)
+			if tc.inputs != "" {
+				writeRepos(t, "[repos.repo]\npath = \""+r.repo+"\"\ncode = ["+tc.code+"]\nsetup = \"true\"\nsetup_inputs = ["+tc.inputs+"]\n")
+			}
 			putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
 			runs := countRuns(t, r, "true")
 			before := gitOut(t, "rev-parse", "HEAD^{tree}")

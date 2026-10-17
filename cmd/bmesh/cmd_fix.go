@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/brief"
+	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
@@ -88,6 +89,11 @@ func (a *app) cmdFix(args []string) error {
 	if err != nil {
 		return err
 	}
+	rc, err := kind.LoadRepoConfigAt(repoPath, "main")
+	if err != nil {
+		return err
+	}
+	text = brief.WithSetup(text, brief.SetupStep(rc.Setup.Command, ""))
 	briefPath, err := writeBrief(path, text)
 	if err != nil {
 		return err

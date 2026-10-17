@@ -617,6 +617,40 @@ func TestBuildBriefAsksForUpgradingInOwnRepo(t *testing.T) {
 	}
 }
 
+// A lead's brief opens with bmesh setup when main names a [setup], and
+// says nothing of it otherwise.
+func TestBuildBriefStartsWithSetup(t *testing.T) {
+	_, repo, _ := buildSetup(t)
+	read := func(id string) string {
+		t.Helper()
+		b, err := os.ReadFile(filepath.Join(os.Getenv("BMESH_CACHE_DIR"), "bmesh", "briefs", "demo-"+id+".md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	out, errs, code := runCLI(t, nil, "build", "demo", "002")
+	if code != 0 {
+		t.Fatalf("code %d out %q err %q", code, out, errs)
+	}
+	if b := read("002"); strings.Contains(b, "bmesh setup") {
+		t.Fatalf("a repo without [setup] got the step:\n%s", b)
+	}
+	var got buildStarted
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("%q: %v", out, err)
+	}
+	commitFile(t, repo, ".bmesh/config.toml", "[setup]\ncommand = \"npm ci\"\n", "Name the setup")
+	if out, errs, code := runCLI(t, nil, "build", "demo", "004", "--family", got.Family); code != 0 {
+		t.Fatalf("code %d out %q err %q", code, out, errs)
+	}
+	b := read("004")
+	i, j := strings.Index(b, "## First: bmesh setup\n\nBefore anything else, run `bmesh setup`. This repo names a setup command (`npm ci`)"), strings.Index(b, "\n## ")
+	if i < 0 || j+1 != i {
+		t.Fatalf("the setup step is not the brief's first section:\n%s", b)
+	}
+}
+
 func TestBuildStartedLineRepeatsCommandClashes(t *testing.T) {
 	_, repo, _ := buildSetup(t)
 	dir := filepath.Join(repo, "docs", "proposals")

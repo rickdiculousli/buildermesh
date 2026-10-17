@@ -216,3 +216,26 @@ func TestWithUpgrading(t *testing.T) {
 		}
 	}
 }
+
+func TestWithSetupOpensTheBrief(t *testing.T) {
+	if SetupStep("", "/wt") != "" || WithSetup("# T\n\n## A\n", "") != "# T\n\n## A\n" {
+		t.Fatal("no command, no section")
+	}
+	step := SetupStep("npm ci", "")
+	if !strings.HasPrefix(step, "## First: bmesh setup\n\nBefore anything else, run `bmesh setup`. This repo names a setup command (`npm ci`)") {
+		t.Fatalf("step %q", step)
+	}
+	if s := SetupStep("npm ci", "/wt"); !strings.Contains(s, "run `cd /wt && bmesh setup`.") {
+		t.Fatalf("with a worktree %q", s)
+	}
+	got := WithSetup("# Title\n\nIntro.\n\n## A\n\nbody\n\n## B\n", step)
+	if got != "# Title\n\nIntro.\n\n"+step+"## A\n\nbody\n\n## B\n" {
+		t.Fatalf("got %q", got)
+	}
+	if WithSetup(got, step) != got {
+		t.Fatal("a second pass added it again")
+	}
+	if got := WithSetup("# mine\n", step); got != "# mine\n\n"+strings.TrimRight(step, "\n")+"\n" {
+		t.Fatalf("no heading: %q", got)
+	}
+}

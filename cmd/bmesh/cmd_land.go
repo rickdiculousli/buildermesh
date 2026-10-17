@@ -567,7 +567,8 @@ func ownModuleRepo(repoPath string) bool {
 // scaffolded refuses a rebased tree whose scaffolded text the branch changed
 // to read otherwise than scaffold writes it from the repo's ship row (see
 // scaffold.Drift): the row's verify is the source of the verify kind's
-// command and of AGENTS.md's blocks. A repo with no ship row, or never
+// command and of AGENTS.md's blocks, and its setup of the repo config's
+// [setup]. A repo with no ship row, or never
 // scaffolded, is not checked. A tree of this binary's own module renders its
 // own blocks, which this binary may not, so there only the verify kind is.
 func (l *lander) scaffolded(ctx context.Context, baseSHA string) error {
@@ -602,7 +603,7 @@ func (l *lander) scaffolded(ctx context.Context, baseSHA string) error {
 		}
 		fmt.Fprint(l.a.stdout, strings.Join(lines, ""))
 		return fail(exitRefused, "refused: the branch's scaffolded files differ from what bmesh scaffold writes from %s's row; "+
-			"the row's verify is the source: bmesh repos propose with the new verify, or restore the scaffolded files", l.repo)
+			"the row's verify and setup are the source: bmesh repos propose with the new verify or setup, or restore the scaffolded files", l.repo)
 	case own:
 		fmt.Fprintln(l.a.stdout, "scaffold: the verify kind follows the row (AGENTS.md is rendered by this tree's own bmesh, not checked)")
 	default:
