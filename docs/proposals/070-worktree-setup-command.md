@@ -4,10 +4,13 @@ title: A repo names its setup command, and every worktree bmesh works in runs it
 kind: refinement
 size: L
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-17
+built_by: e64e8811-bc3b-49a5-9119-5abe0523d21a
+host: k16
+family: buildermesh-build-10
 ---
 
 ## Opportunity
