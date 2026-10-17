@@ -3,9 +3,11 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
+	"github.com/rickdiculousli/buildermesh/internal/brief"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
@@ -16,13 +18,20 @@ import (
 // returns the code commit.
 func landRelease(t *testing.T, repo, id, kind string) string {
 	t.Helper()
+	return landReleaseWith(t, repo, id, kind, "")
+}
+
+// landReleaseWith is landRelease with more of the spec's body after its
+// Proposal.
+func landReleaseWith(t *testing.T, repo, id, kind, more string) string {
+	t.Helper()
 	if err := os.WriteFile(filepath.Join(repo, "code-"+id+".txt"), []byte(id), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	meshtest.Git(t, repo, "add", "-A")
 	meshtest.Git(t, repo, "commit", "-qm", "build "+id)
 	code := gitOut(t, "-C", repo, "rev-parse", "HEAD")
-	text := "---\nid: " + id + "\ntitle: Spec " + id + "\nkind: " + kind + "\nsize: S\nstatus: done\nmerged: " + code + "\n---\n\n## Proposal\nx\n"
+	text := "---\nid: " + id + "\ntitle: Spec " + id + "\nkind: " + kind + "\nsize: S\nstatus: done\nmerged: " + code + "\n---\n\n## Proposal\nx\n" + more
 	if err := os.WriteFile(filepath.Join(repo, "docs", "proposals", id+"-spec.md"), []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -165,5 +174,111 @@ func TestRelease(t *testing.T) {
 	meshtest.Git(t, repo, "push", "-q", "origin", "main", "v0.2.2")
 	if _, errs, exit := runCLI(t, nil, "release", "demo"); exit != exitRefused || errs != "bmesh: nothing to release since v0.2.2: only specs changed\n" {
 		t.Fatalf("spec-only: %d %q", exit, errs)
+	}
+}
+
+// commitFile writes rel in repo, commits and pushes it to origin's main.
+func commitFile(t *testing.T, repo, rel, body, msg string) {
+	t.Helper()
+	p := filepath.Join(repo, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-qm", msg)
+	meshtest.Git(t, repo, "push", "-q", "origin", "main")
+}
+
+func TestReleaseOwnRepoChecksUpgradeNotes(t *testing.T) {
+	_, repo, _ := proposeSetup(t, "")
+	t.Setenv("VERIFY_LOG", filepath.Join(t.TempDir(), "verify.log"))
+	withRevision(t, "") // the binary's module is example.com/bm
+	commitFile(t, repo, "go.mod", "module example.com/bm\n\ngo 1.22\n", "go.mod")
+	verifyKind(t, repo, "echo all good", "Add the verify kind")
+	landReleaseWith(t, repo, "030", "feature", "\n## Upgrading\nRestart the hub once.\n\n## Needs from the operator\n")
+	landReleaseWith(t, repo, "031", "refinement", "\n## Upgrading\nNothing for an install.\n")
+	landReleaseWith(t, repo, "032", "refinement", "\n## Upgrading\nSet the new key.\n")
+	tags := func() string { return gitOut(t, "-C", repo, "ls-remote", "--tags", "origin") }
+
+	// Steps and no notes: refused, --dry-run too.
+	missing := "bmesh: refused: 030, 032 have Upgrading steps and docs/upgrading/v0.1.0.toml is missing: " +
+		"distil them into it (the build skill's step 7), commit it to main and release again\n"
+	for _, args := range [][]string{{"release", "demo"}, {"release", "demo", "--dry-run"}} {
+		if _, errs, exit := runCLI(t, nil, args...); exit != exitRefused || errs != missing {
+			t.Fatalf("%v: %d %q", args, exit, errs)
+		}
+	}
+
+	// Notes that don't parse, then notes naming a key this binary lacks.
+	commitFile(t, repo, "docs/upgrading/v0.1.0.toml", "[[step]]\nkind = \"jump\"\n", "Upgrade notes v0.1.0")
+	if _, errs, exit := runCLI(t, nil, "release", "demo"); exit != exitRefused ||
+		!strings.HasPrefix(errs, "bmesh: refused: docs/upgrading/v0.1.0.toml: step 1 (jump): kind \"jump\"") {
+		t.Fatalf("unparsed: %d %q", exit, errs)
+	}
+	commitFile(t, repo, "docs/upgrading/v0.1.0.toml", "[[step]]\nkind = \"ask\"\nkey = \"[runner] foo\"\nquestion = \"Foo?\"\ndefault = \"a\"\n", "Upgrade notes v0.1.0")
+	if _, errs, exit := runCLI(t, nil, "release", "demo"); exit != exitRefused ||
+		errs != "bmesh: refused: docs/upgrading/v0.1.0.toml names keys this binary doesn't know: [runner] foo\n" {
+		t.Fatalf("unknown key: %d %q", exit, errs)
+	}
+	if tags() != "" {
+		t.Fatal("a refused release tagged")
+	}
+
+	// Valid notes: released, and the tag message carries them.
+	notes := "summary = \"Restart the hub.\"\n\n[[step]]\nkind = \"run\"\ncommand = \"bmesh hub restart\"\nwhy = \"the hub runs the old binary\"\nwhen = '[runner] kind == \"t3\"'\n"
+	commitFile(t, repo, "docs/upgrading/v0.1.0.toml", notes, "Upgrade notes v0.1.0")
+	head := gitOut(t, "-C", repo, "rev-parse", "main")
+	out, errs, exit := runCLI(t, nil, "release", "demo", "--dry-run")
+	want := "demo v0.1.0\n\n030 Spec 030\n031 Spec 031\n032 Spec 032\n\nUpgrading to v0.1.0 (docs/upgrading/v0.1.0.toml):\nRestart the hub.\n" +
+		"1. the hub runs the old binary: `bmesh hub restart` when [runner] kind == \"t3\""
+	if exit != 0 || !strings.HasSuffix(out, "\n\n"+want+"\n") {
+		t.Fatalf("dry run: %d %q %q", exit, out, errs)
+	}
+	if out, errs, exit := runCLI(t, nil, "release", "demo"); exit != 0 || out != "released demo v0.1.0 at "+head[:8]+" (030, 031, 032)\n" {
+		t.Fatalf("release: %d %q %q", exit, out, errs)
+	}
+	if msg := gitOut(t, "-C", repo, "tag", "--list", "--format=%(contents)", "v0.1.0"); msg != want {
+		t.Fatalf("message %q", msg)
+	}
+
+	// A spec with steps and only "nothing" since: no notes needed.
+	landReleaseWith(t, repo, "033", "refinement", "\n## Upgrading\nnothing\n")
+	if out, errs, exit := runCLI(t, nil, "release", "demo", "--dry-run"); exit != 0 || !strings.HasSuffix(out, "\n\ndemo v0.1.1\n\n033 Spec 033\n") {
+		t.Fatalf("nothing: %d %q %q", exit, out, errs)
+	}
+
+	// Another repo (go.mod declares another module): steps need no notes.
+	readBuildInfo = func() (*debug.BuildInfo, bool) {
+		return &debug.BuildInfo{Main: debug.Module{Path: "example.com/other"}}, true
+	}
+	code := landReleaseWith(t, repo, "034", "refinement", "\n## Upgrading\nSet the new key.\n")
+	if out, errs, exit := runCLI(t, nil, "release", "demo"); exit != 0 || out != "released demo v0.1.1 at "+code[:8]+" (033, 034)\n" {
+		t.Fatalf("other repo: %d %q %q", exit, out, errs)
+	}
+	if msg := gitOut(t, "-C", repo, "tag", "--list", "--format=%(contents)", "v0.1.1"); msg != "demo v0.1.1\n\n033 Spec 033\n034 Spec 034" {
+		t.Fatalf("other repo message %q", msg)
+	}
+}
+
+func TestSpecTemplateUpgradingOnlyInOwnRepo(t *testing.T) {
+	_, repo, _ := proposeSetup(t, "")
+	withRevision(t, "")
+	plain, errs, exit := runCLI(t, nil, "spec", "template", "--repo", "demo")
+	if exit != 0 || strings.Contains(plain, "## Upgrading") {
+		t.Fatalf("other repo: %d %q %q", exit, plain, errs)
+	}
+	commitFile(t, repo, "go.mod", "module example.com/bm\n", "go.mod")
+	own, errs, exit := runCLI(t, nil, "spec", "template", "--repo", "demo")
+	if exit != 0 || own != strings.Replace(plain, "## Needs from the operator", brief.UpgradingSection+"\n## Needs from the operator", 1) {
+		t.Fatalf("own repo: %d %q %q", exit, own, errs)
+	}
+	// An override that has the section already is printed as written.
+	override := "## Proposal\n\n## Upgrading\nours\n"
+	commitFile(t, repo, ".bmesh/briefs/half-pager.md", override, "override")
+	if out, _, exit := runCLI(t, nil, "spec", "template", "--repo", "demo"); exit != 0 || out != override {
+		t.Fatalf("override: %d %q", exit, out)
 	}
 }

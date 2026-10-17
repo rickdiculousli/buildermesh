@@ -271,6 +271,10 @@ func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s 
 		"spec_id": s.IDString(), "node": p, "date": time.Now().UTC().Format("2006-01-02")} {
 		values[k] = v
 	}
+	values["upgrading"] = ""
+	if ownModuleRepo(repoPath) {
+		values["upgrading"] = brief.UpgradingBullet
+	}
 	text, err := brief.Render(repoPath, "build", values)
 	if err != nil {
 		return buildStarted{}, err

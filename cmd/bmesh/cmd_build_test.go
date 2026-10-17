@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rickdiculousli/buildermesh/internal/brief"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 	"github.com/rickdiculousli/buildermesh/internal/runner/t3mcp/t3fake"
@@ -102,6 +103,9 @@ func TestBuildRecordsBuildingThenStartsTheLead(t *testing.T) {
 	}
 	if strings.Contains(string(b), "{{") || strings.Contains(string(b), "Rick") {
 		t.Fatal("placeholder or operator name in the brief")
+	}
+	if strings.Contains(string(b), "bmesh's own repo") {
+		t.Fatal("another repo's brief asks for an Upgrading section")
 	}
 	if l := launches(fake); len(l) != 1 || l[0]["title"] != "[build] demo 002: Spec 002" || l[0]["runtimeMode"] != "auto" ||
 		jsonOf(l[0]["modelSelection"]) != `{"model":"claude-opus-5-5","options":{"effort":"high"},"provider":"claudeAgent"}` ||
@@ -513,5 +517,22 @@ func TestBuildHoldWritesTheHoldBeforeTheLeadStarts(t *testing.T) {
 	}
 	if _, _, code := runCLI(t, nil, "build", "demo", "003", "--hold", "later"); code != 2 {
 		t.Fatalf("bad gate: %d", code)
+	}
+}
+
+func TestBuildBriefAsksForUpgradingInOwnRepo(t *testing.T) {
+	_, repo, _ := buildSetup(t)
+	withRevision(t, "") // the binary's module is example.com/bm
+	commitFile(t, repo, "go.mod", "module example.com/bm\n", "go.mod")
+	if out, errs, code := runCLI(t, nil, "build", "demo", "002"); code != 0 {
+		t.Fatalf("code %d out %q err %q", code, out, errs)
+	}
+	b, err := os.ReadFile(filepath.Join(os.Getenv("BMESH_CACHE_DIR"), "bmesh", "briefs", "demo-002.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "- Build what the Proposal section puts In, and nothing it puts Out.\n- This is bmesh's own repo: fill the spec's `## Upgrading` section as built"
+	if !strings.Contains(string(b), want) || !strings.Contains(string(b), brief.UpgradingRule) {
+		t.Fatalf("brief lacks the Upgrading bullet:\n%s", b)
 	}
 }

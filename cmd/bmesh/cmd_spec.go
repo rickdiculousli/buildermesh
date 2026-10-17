@@ -193,7 +193,8 @@ func (a *app) cmdSpecSet(args []string) error {
 }
 
 // cmdSpecTemplate prints the half-pager: the repo's override when it has
-// one, else the embedded template.
+// one, else the embedded template. In bmesh's own repo (ownModuleRepo) it
+// carries an `## Upgrading` section before `## Needs from the operator`.
 func (a *app) cmdSpecTemplate(args []string) error {
 	fs := a.flags("spec template")
 	repo := fs.String("repo", "", "repo whose override to prefer (default the current directory)")
@@ -218,6 +219,9 @@ func (a *app) cmdSpecTemplate(args []string) error {
 	text, _, err := brief.Template(repoPath, "half-pager")
 	if err != nil {
 		return err
+	}
+	if repoPath != "" && ownModuleRepo(repoPath) {
+		text = brief.WithUpgrading(text)
 	}
 	fmt.Fprint(a.stdout, text)
 	return nil
