@@ -4,7 +4,7 @@ title: A repo can require upgrade notes per release, distilled by the coordinato
 kind: feature
 size: L
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-17
