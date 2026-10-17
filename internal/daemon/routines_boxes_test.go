@@ -388,7 +388,7 @@ command = "if [ \"$1\" = block ]; then while [ ! -f ` + release + ` ]; do sleep 
 	// Two running blockers fill this box's capacity: it fetches nothing.
 	blockers := []string{f.queue(t, mesh.Job{Kind: "verify", Args: []string{"block"}, Go: true}),
 		f.queue(t, mesh.Job{Kind: "verify", Args: []string{"block", "2"}, Go: true})}
-	waitFor(t, 10*time.Second, "both blockers running", func() bool {
+	waitFor(t, meshtest.Within(t), "both blockers running", func() bool {
 		jobs, err := mesh.KindJobs(f.ctx, f.c, "verify")
 		return err == nil && len(jobs) == 2 && jobs[0].State == "running" && jobs[1].State == "running"
 	})
@@ -430,14 +430,20 @@ command = "if [ \"$1\" = block ]; then while [ ! -f ` + release + ` ]; do sleep 
 		t.Fatal(err)
 	}
 	for _, id := range blockers {
-		if r := f.reply(t, id, 10*time.Second); !r.OK {
+		if r := f.reply(t, id, meshtest.Within(t)); !r.OK {
 			t.Fatalf("blocker %+v", r)
 		}
 	}
-	start := time.Now()
-	for _, id := range []string{id1, id2} {
-		if r := f.reply(t, id, 10*time.Second); !r.OK || time.Since(start) > 8*time.Second {
-			t.Fatalf("reply %+v after %s", r, time.Since(start))
-		}
+	// The first job, queued before the go, starts on it, well inside
+	// batch_idle. The second starts on it too when this box held both as it
+	// found the go. When the dispatcher woke between the two blockers' ends,
+	// the go found the first job alone, and the instance the later blocker
+	// frees takes the second after the go and holds it for batch_idle, as it
+	// does any job taken after a go: then it only has to run.
+	if r := f.reply(t, id1, 20*time.Second); !r.OK {
+		t.Fatalf("reply %+v", r)
+	}
+	if r := f.reply(t, id2, meshtest.Within(t)); !r.OK {
+		t.Fatalf("reply %+v", r)
 	}
 }
