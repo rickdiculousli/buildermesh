@@ -1,5 +1,5 @@
 ---
-id: 064
+id: 065
 title: The two tests the first Mac soak failed pass there: one stops reading the box's BMESH_CONFIG, one waits for the stdin it checks
 kind: maintenance
 size: M
