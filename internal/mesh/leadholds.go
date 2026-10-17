@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -133,4 +134,33 @@ func ListLeadHolds(ctx context.Context, c *Client) ([]LeadHold, error) {
 		}
 	}
 	return out, nil
+}
+
+// Line says the hold as land, inbox and mesh-status print it: held before
+// land by operator 3m ago: hub move first.
+func (h LeadHold) Line(now time.Time) string {
+	s := "held " + GatePhrase(h.Gate) + " by " + h.By
+	if at, err := time.Parse(time.RFC3339, h.At); err == nil {
+		s += " " + HoldAge(now.Sub(at)) + " ago"
+	}
+	if h.Text != "" {
+		s += ": " + h.Text
+	}
+	return s
+}
+
+// HoldAge renders d to the minute, whole days as d: 0m, 3m, 2h5m, 1d3h.
+func HoldAge(d time.Duration) string {
+	if d < time.Minute {
+		return "0m"
+	}
+	d = d.Round(time.Minute)
+	days, h, m := int(d/(24*time.Hour)), int(d%(24*time.Hour)/time.Hour), int(d%time.Hour/time.Minute)
+	switch {
+	case days > 0:
+		return fmt.Sprintf("%dd%dh", days, h)
+	case h > 0:
+		return fmt.Sprintf("%dh%dm", h, m)
+	}
+	return fmt.Sprintf("%dm", m)
 }
