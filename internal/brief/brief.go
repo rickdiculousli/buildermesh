@@ -156,6 +156,24 @@ func OperatorIdea(text string) string {
 		"Propose nothing else. Your ranked list is those specs.\n\n" + strings.TrimSpace(text) + "\n\n"
 }
 
+// RoundValues are the engineer brief's lines that differ for an idea
+// round: what to bring back, who runs beside it and how the ids are
+// split.
+func RoundValues(idea bool) map[string]string {
+	if idea {
+		return map[string]string{
+			"round_ask":     "Write up the operator's one idea, in the section below, as the half-page spec (or two or three in build order) the operator can accept, adjust or reject in a sentence.",
+			"round_partner": "There is no UI/UX engineer on this round: it is the operator's one idea, and yours alone.",
+			"ux_ids":        "",
+		}
+	}
+	return map[string]string{
+		"round_ask":     "Find what would most improve this repo and bring back three to five ranked half-page specs that the operator can accept, adjust or reject in a sentence.",
+		"round_partner": "The UI/UX engineer runs beside you on the same round and lands on the same `main`.",
+		"ux_ids":        " The UI/UX engineer numbers from five past that, so a gap is expected.",
+	}
+}
+
 // RowValues are the placeholders every brief gets from a registry row.
 func RowValues(r config.Repo, repoPath string) map[string]string {
 	return map[string]string{

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -118,6 +119,9 @@ func (a *app) cmdIdeate(args []string) error {
 		}
 		if *idea && *child != "eng" {
 			return fail(exitUsage, "--idea starts only the engineer (--child eng)")
+		}
+		if *idea && *focus == "" {
+			return fail(exitUsage, "--idea needs the idea itself in --context")
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
@@ -379,6 +383,7 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 	} {
 		values[k] = v
 	}
+	maps.Copy(values, brief.RoundValues(idea))
 	text, err := brief.Render(repoPath, tmpl, values)
 	if err != nil {
 		undo()

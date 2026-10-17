@@ -1,6 +1,7 @@
 package brief
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,7 @@ func proposalValues(nextID string) map[string]string {
 		"branch": "pb-round-1-eng", "operator_context": ""} {
 		v[k] = s
 	}
+	maps.Copy(v, RoundValues(false))
 	return v
 }
 

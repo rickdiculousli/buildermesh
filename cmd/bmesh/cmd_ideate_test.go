@@ -231,11 +231,42 @@ func TestIdeateIdeaStartsOnlyTheEngineer(t *testing.T) {
 	}
 	b, err := os.ReadFile(filepath.Join(os.Getenv("BMESH_CACHE_DIR"), "bmesh", "briefs", "demo-round-1-eng.md"))
 	if err != nil || !strings.Contains(string(b), "## The operator's idea\n") || !strings.Contains(string(b), "an automated fix lead") ||
-		strings.Contains(string(b), "## The operator's focus") {
+		strings.Contains(string(b), "## The operator's focus") || strings.Contains(string(b), "UI/UX engineer runs beside you") ||
+		strings.Contains(string(b), "bring back three to five") || strings.Contains(string(b), "{{") {
 		t.Fatalf("%v %q", err, b)
 	}
 	if _, errs, code := runCLI(t, nil, "ideate", "demo", "--idea", "--child", "ux", "--round", "2", "--next-id", "20", "--thread-id", "x"); code != exitUsage {
 		t.Fatalf("an idea's ux child: %d %q", code, errs)
+	}
+	if _, errs, code := runCLI(t, nil, "ideate", "demo", "--idea", "--child", "eng", "--round", "2", "--next-id", "20", "--thread-id", "x"); code != exitUsage {
+		t.Fatalf("an idea child with no words: %d %q", code, errs)
+	}
+}
+
+func TestIdeateIdeaOnAnotherHostCarriesIdea(t *testing.T) {
+	c, _, _ := proposeSetup(t, "host = \"other\"\n")
+	t.Setenv("FAKE_SSH_OUTPUT", `{"path":"demo-round-1.eng","thread":"t-remote","branch":"demo-round-1-eng","worktree":"/other/wt","host":"other"}`)
+	if out, errs, code := runCLI(t, nil, "ideate", "demo", "--idea", "--context", "one thing"); code != 0 {
+		t.Fatalf("code %d out %q err %q", code, out, errs)
+	}
+	l, _ := os.ReadFile(os.Getenv("FAKE_SSH_LOG"))
+	if !strings.Contains(string(l), "--child eng") || !strings.Contains(string(l), "--idea") || strings.Contains(string(l), "--child ux") {
+		t.Fatalf("ssh log:\n%s", l)
+	}
+	if round, ok, err := mesh.GetNode(t.Context(), c, "demo-round-1"); err != nil || !ok || !round.Idea {
+		t.Fatalf("round %+v %v %v", round, ok, err)
+	}
+}
+
+func TestIdeateIdeaBlocksWhenTheEngineerDoesNotStart(t *testing.T) {
+	c, _, _ := proposeSetup(t, "host = \"other\"\n")
+	t.Setenv("FAKE_SSH_OUTPUT", "not json")
+	if _, errs, code := runCLI(t, nil, "ideate", "demo", "--idea", "--context", "one thing"); code != 1 {
+		t.Fatalf("code %d err %q", code, errs)
+	}
+	st, _, err := mesh.ReadState(t.Context(), c, "demo-round-1")
+	if err != nil || st.State != "blocked" || !strings.HasPrefix(st.Text, "eng blocked: did not start") {
+		t.Fatalf("%+v %v", st, err)
 	}
 }
 
