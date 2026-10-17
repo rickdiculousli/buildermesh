@@ -4,7 +4,7 @@ title: bmesh node stop stops a node's thread and keeps it stopped, and a thread 
 kind: refinement
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-17
@@ -12,6 +12,8 @@ built_by: e72f660b-8604-4064-bab7-1b438d79461a
 host: k16
 family: buildermesh-build-9
 branch: bmesh/e72f660b-8604-4064-bab7-1b438d79461a
+merged: 998f0a40f4a43fd6c02edadff60514aff6bd6534
+verified: verify ok t:0b90f7c0
 ---
 
 ## Opportunity
