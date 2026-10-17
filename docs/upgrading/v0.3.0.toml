@@ -5,8 +5,9 @@
 # --check run on another box) defaults to left out, so it is no step, only
 # named in the summary. 061's registry key `code` is set on a row only once
 # every box runs this release, which is an order for the admin, not a step a
-# box takes. 054, 057, 058 and 059 need nothing. The hub runs the binary it
-# started with, so it is restarted last.
+# box takes. 054, 057, 058 and 059 need nothing. hosts set signs at the
+# admin's own screen, so it is given the terminal, not the script's pipe.
+# The hub runs the binary it started with, so it is restarted last.
 
 summary = "On the admin box, let every box accept stop-thread; restart the hub. Optional: --accept ...,check-step lets bmesh spec steps --check run on a box from elsewhere. Set a registry row's new code key only once every box runs v0.3.0: an older bmesh refuses that registry."
 
@@ -30,7 +31,11 @@ for h in r["hosts"]:
         print(name + " accepts stop-thread"); continue
     new = ",".join(sorted(set(acc) | {"stop-thread"}))
     print("bmesh hosts set %s --accept %s" % (name, new))
-    if subprocess.call(["bmesh", "hosts", "set", name, "--accept", new]) != 0:
+    try:
+        tty = open("/dev/tty")
+    except OSError:
+        print("no terminal: run that at the admin box's own screen"); sys.exit(1)
+    if subprocess.call(["bmesh", "hosts", "set", name, "--accept", new], stdin=tty) != 0:
         sys.exit(1)
 '
 '''
