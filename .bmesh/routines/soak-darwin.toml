@@ -1,0 +1,10 @@
+# The repo's tests ten times over on a Mac, for a spec whose Verification asks
+# for repeated runs there (`go test -count=10`). Push the branch, then
+# `bmesh routine queue soak-darwin --go` from a lead's worktree and
+# `bmesh routine wait <job id>` for the Mac's output. Not deterministic: each
+# queue is a fresh sample, since a soak looks for flakes.
+mode = "pooled"
+os = "darwin"
+deterministic = false
+timeout = "100m"
+command = "mkdir -p \"$HOME/.cache/bmesh-scratch/tmp\" && TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test -count=10 -timeout 90m ./..."

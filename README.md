@@ -1003,6 +1003,8 @@ TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test ./...
 GOOS=windows go vet ./...    # type-checks the Windows-only files a Linux go vet skips
 ```
 
+A spec that asks for repeated runs on a Mac (`go test -count=10`) uses the repo's `soak-darwin` kind: push the branch, then `bmesh routine queue soak-darwin --go` and `bmesh routine wait <job id>`. Only a darwin box takes it, and each queue is a fresh run.
+
 Tests never use `/tmp`: `meshtest.Start` fails when `TMPDIR` is `/tmp`.
 
 ### Testing
