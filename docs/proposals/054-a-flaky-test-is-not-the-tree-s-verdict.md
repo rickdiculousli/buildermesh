@@ -4,7 +4,7 @@ title: A test that fails by timing doesn't become the tree's recorded verify fai
 kind: refinement
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: dfdc9673-27b2-4f3f-9f17-95a5b436de66
 proposed_on: 2026-10-17
@@ -13,6 +13,8 @@ built_by: 23672fac-942b-4ddc-a4d0-909604fb3bf5
 host: k16
 family: buildermesh-build-9
 branch: bmesh/23672fac-942b-4ddc-a4d0-909604fb3bf5
+merged: b7bf19aea10585a7489fe2afb382e7210ebf1723
+verified: review ok t:67a7ef86 m:claude-opus-5-5 c:f6920b9e; verify ok t:67a7ef86
 ---
 
 ## Opportunity
