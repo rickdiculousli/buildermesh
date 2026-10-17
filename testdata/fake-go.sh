@@ -6,7 +6,9 @@
 # "bmesh <rev8>" for `version` ("bmesh <release> (<rev8> ...)" when the flags
 # stamp a stampRelease) and "fake bmesh <commit>" otherwise. <rev8> is
 # $FAKE_GO_REVISION when set, else the stampRevision in the flags (unknown
-# without one).
+# without one). Run with any other arguments (the update's own walk and
+# config check), the written binary exits 0 silently, or with $FAKE_GO_BMESH
+# set execs it with them and BMESH_TEST_REV set to the commit.
 # `install [-ldflags <flags>] <module>/cmd/bmesh@<commit>` appends "install
 # <module>@<commit>" to $FAKE_GO_LOG and, with the same $FAKE_GO_EXIT, writes
 # $GOBIN/bmesh printing "bmesh <rev8>" for `version` and "fake bmesh
@@ -51,4 +53,4 @@ rev=$(printf '%.8s' "${rev:-unknown}")
 release=$(printf '%s\n' "$flags" | sed -n 's/.*stampRelease=\([^ ]*\).*/\1/p')
 said="$rev 2026-10-16T00:00:00Z"
 [ -n "$release" ] && said="$release ($said)"
-printf '#!/bin/sh\n[ "$1" = version ] && { echo "bmesh %s"; exit 0; }\necho fake bmesh %s\n' "$said" "$commit" > "$out"
+printf '#!/bin/sh\n[ "$1" = version ] && { echo "bmesh %s"; exit 0; }\n[ $# -gt 0 ] && { [ -n "$FAKE_GO_BMESH" ] && BMESH_TEST_REV=%s exec $FAKE_GO_BMESH "$@"; exit 0; }\necho fake bmesh %s\n' "$said" "$commit" "$commit" > "$out"

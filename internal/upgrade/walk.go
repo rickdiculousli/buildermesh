@@ -136,6 +136,7 @@ type State struct {
 	FromAs  string            `json:"from_label"`        // how it was named (v0.1.0, <rev8>)
 	To      string            `json:"to"`                // the revision walked to
 	ToAs    string            `json:"to_label"`          // its label (v0.2.0)
+	Shown   bool              `json:"shown"`             // the walk's header was printed
 	Done    []string          `json:"done"`              // step ids done
 	Answers map[string]string `json:"answers,omitempty"` // ask answers by step id
 }

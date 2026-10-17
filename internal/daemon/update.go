@@ -148,17 +148,23 @@ func (r *routineSet) checkUpdate(dir string) bool {
 		}
 		return false
 	}
-	err = selfupdate.Install(r.ctx, dir, r.d.Exe, t.Commit)
+	var steps bool
+	err = selfupdate.Install(r.ctx, dir, r.d.Exe, t.Commit, r.gate(dir, own, t, &steps))
 	unlock()
 	var refused *selfupdate.Refused
-	if errors.As(err, &refused) {
+	var h *held
+	switch {
+	case errors.As(err, &refused):
 		r.d.Log.Warn("update: "+err.Error(), "main", next)
 		return false
-	}
-	if err != nil {
+	case errors.As(err, &h):
+		r.hold(h)
+		return false
+	case err != nil:
 		r.d.Log.Warn("update: build failed; keeping this binary", "main", next, "err", err)
 		return false
 	}
+	r.swapped(dir, own, t, steps)
 	r.restartInto(t.Commit, old+" -> "+next)
 	return true
 }
@@ -272,16 +278,25 @@ func (r *routineSet) checkMain(rowDir string) bool {
 	}
 	if line != "" && r.upstream != "" && rowDir == "" {
 		text := selfupdate.Label(dir, own) + " -> " + selfupdate.Label(dir, t.Commit)
-		err := selfupdate.InstallModule(r.ctx, dir, r.upstream, d.Exe, t)
+		var steps bool
+		err := selfupdate.InstallModule(r.ctx, dir, r.upstream, d.Exe, t, r.gate(dir, own, t, &steps))
 		unlock()
 		if err == nil {
 			d.writeNotice("")
+			r.swapped(dir, own, t, steps)
 			r.restartInto(t.Commit, text)
 			return true
 		}
+		var h *held
 		if t.Commit != r.failedAt {
 			r.failedAt = t.Commit
+			if errors.As(err, &h) {
+				r.hold(h)
+				return false
+			}
 			d.Log.Warn("update: install failed; keeping this binary", "main", selfupdate.Label(dir, t.Commit), "err", err)
+		} else if errors.As(err, &h) {
+			return false // the notice it wrote stands
 		}
 	}
 	d.writeNotice(line)
