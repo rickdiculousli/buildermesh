@@ -1,0 +1,67 @@
+# Upgrade notes for v0.2.0, distilled from the Upgrading sections of the
+# specs it carries. Only 055 names steps: the units init --service writes
+# gain a guard against a restart loop on a config bmesh refuses (exit 78).
+# The guard is added to the units in place rather than by taking init's
+# <unit>.new, so a unit tuned by hand keeps its tuning. 041, 048 and 053, and
+# ideate --idea, need nothing of an install. The hub runs the binary it
+# started with, so it is restarted last.
+
+summary = "Add the restart-loop guard to bmesh's units, then restart the hub."
+
+[[step]]
+kind = "run"
+why = "bmesh serve and bmesh hub exit 78 on a config they refuse: add RestartPreventExitStatus=78 to the bmesh and bmesh-hub units this box has, keeping everything else in them"
+os = ["linux"]
+command = '''
+d="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+changed=""
+for u in bmesh.service bmesh-hub.service; do
+  f="$d/$u"
+  [ -f "$f" ] || continue
+  if grep -q '^RestartPreventExitStatus=' "$f"; then echo "$u has the guard"; continue; fi
+  sed -i '/^\[Service\]/a RestartPreventExitStatus=78' "$f" && echo "guarded $u" && changed=1
+done
+[ -z "$changed" ] || systemctl --user daemon-reload
+echo "units checked"
+'''
+
+[[step]]
+kind = "run"
+why = "bmesh serve exits 78 on a config it refuses, and launchd has no per-code stop: give serve's agent ThrottleInterval 300 so it restarts at most every 5 minutes; reloading the agent restarts serve, which kills the daemon's running jobs"
+os = ["darwin"]
+confirm = true
+command = '''
+f="$HOME/Library/LaunchAgents/com.buildermesh.bmesh.plist"
+if [ ! -f "$f" ]; then echo "no $f: nothing to guard"; exit 0; fi
+if plutil -extract ThrottleInterval raw "$f" >/dev/null 2>&1; then echo "serve's agent has ThrottleInterval"; exit 0; fi
+plutil -insert ThrottleInterval -integer 300 "$f" || exit 1
+launchctl bootout "gui/$(id -u)" "$f" 2>/dev/null || true
+launchctl bootstrap "gui/$(id -u)" "$f" && echo "guarded and reloaded $f"
+'''
+
+[[step]]
+kind = "run"
+why = "bmesh hub runs the binary it started with: restart it so it runs this release (a hub run by hand, restart it yourself)"
+os = ["linux"]
+when = '[hub] role != ""'
+command = '''
+if [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/bmesh-hub.service" ]; then
+  systemctl --user restart bmesh-hub && echo "restarted bmesh-hub"
+else
+  echo "no bmesh-hub unit: restart bmesh hub yourself"
+fi
+'''
+
+[[step]]
+kind = "run"
+why = "bmesh hub runs the binary it started with: restart it so it runs this release (a hub run by hand, restart it yourself)"
+os = ["darwin"]
+when = '[hub] role != ""'
+command = '''
+if [ -f "$HOME/Library/LaunchAgents/com.buildermesh.bmesh-hub.plist" ]; then
+  launchctl kickstart -k "gui/$(id -u)/com.buildermesh.bmesh-hub" && echo "restarted bmesh-hub"
+else
+  echo "no bmesh-hub agent: restart bmesh hub yourself"
+fi
+'''
+
