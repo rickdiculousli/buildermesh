@@ -209,6 +209,8 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 
 ## All commands and flags
 
+> **Honestly, you can mostly skip this.** With the plugin installed, just ask your agent to run the mesh for you: "proposals for app", "build what's accepted in app", "what's building", "sync my repos". The skills know these commands so you don't have to. This list is here for when you're curious or something needs a closer look.
+
 `--config FILE`, `--node PATH` and `--json` go before or after any command ([Synopsis](docs/manual.md#synopsis)). Each command links to its section of the [manual](docs/manual.md).
 
 **Setup and updates**
