@@ -118,14 +118,16 @@ func (m *Model) Run(ctx context.Context, j Job) Reply {
 	}
 	m.mu.Unlock()
 
-	// Every reply but the last judges nothing: claude never answered.
+	// Every reply but the last judges nothing: claude never answered. Its
+	// first line is why (Reply.Unjudged).
 	switch {
 	case note != "":
-		return Reply{Output: raw + newline(raw) + note}
+		return Reply{Output: note + raw}
 	case err != nil:
-		if ee := (*exec.ExitError)(nil); !errors.As(err, &ee) {
-			raw += newline(raw) + "[" + err.Error() + "]\n" // claude did not start
-		} else if parsed && res.Result != "" {
+		if ee := (*exec.ExitError)(nil); !errors.As(err, &ee) || raw == "" {
+			return Reply{Output: "[" + err.Error() + "]\n" + raw} // claude did not start, or said nothing
+		}
+		if parsed && res.Result != "" {
 			return Reply{Output: res.Result} // its error, say a failed sign-in
 		}
 		return Reply{Output: raw}

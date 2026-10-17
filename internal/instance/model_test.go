@@ -224,14 +224,21 @@ func TestModelVerdictParsing(t *testing.T) {
 		}
 	})
 
+	t.Run("silent exit", func(t *testing.T) {
+		r := NewModel(k, "m-test", "false").Run(context.Background(), j)
+		if got := r.Unjudged(); r.Judged || got != "model run failed: [exit status 1]; nothing recorded" {
+			t.Fatalf("reply %+v: Unjudged %q", r, got)
+		}
+	})
+
 	t.Run("timeout", func(t *testing.T) {
 		t.Setenv("FAKE_SLEEP", "5")
 		kt := k
 		kt.Timeout = time.Second
 		start := time.Now()
 		r := NewModel(kt, "m-test", fakeClaude(t)).Run(context.Background(), j)
-		if r.OK || r.Judged || !strings.Contains(r.Output, "timeout") || time.Since(start) > 3*time.Second {
-			t.Fatalf("reply %+v after %s: want a quick timeout", r, time.Since(start))
+		if r.OK || r.Judged || r.Unjudged() != "model run failed: [timeout after 1s]; nothing recorded" || time.Since(start) > 3*time.Second {
+			t.Fatalf("reply %+v after %s: want a quick timeout, the note first", r, time.Since(start))
 		}
 	})
 }
