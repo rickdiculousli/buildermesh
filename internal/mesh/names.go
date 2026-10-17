@@ -16,6 +16,7 @@ const (
 	BucketLeases  = "bm-leases"
 	BucketClaims  = "bm-claims"
 	BucketJobs    = "bm-jobs"
+	BucketHolds   = "bm-holds"
 )
 
 var pathRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*$`)
