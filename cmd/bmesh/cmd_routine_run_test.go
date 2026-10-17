@@ -287,6 +287,43 @@ func TestInlineModelKindThroughFake(t *testing.T) {
 	}
 }
 
+// routine run --here refuses a model run whose claude never answered and
+// records nothing; a reply without the verdict its prompt asks for is still
+// recorded as a fail.
+func TestInlineModelRunThatNeverAnsweredRecordsNothing(t *testing.T) {
+	c, ctx := setup(t)
+	fake, err := filepath.Abs("../../testdata/fake-claude.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BMESH_CLAUDE_COMMAND", "sh "+fake)
+	t.Setenv("FAKE_IS_ERROR", "1")
+	t.Setenv("FAKE_EXIT", "1")
+	t.Setenv("FAKE_RESULT", "Failed to authenticate: OAuth session expired")
+	kindRepo(t, map[string]string{
+		"review": "mode = \"pooled\"\nmodels = [\"m1\"]\nprompt = \"End with VERDICT: ok or VERDICT: fail.\"\n",
+	})
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
+
+	out, errs, code := runCLI(t, nil, "routine", "run", "review", "--here")
+	if code != 3 || out != "" || errs != "bmesh: model run failed: Failed to authenticate: OAuth session expired; nothing recorded\n" {
+		t.Fatalf("run: %d %q %q", code, out, errs)
+	}
+	if r, ok, err := mesh.GetResult(ctx, c, "review."+tree+".m1"); err != nil || ok {
+		t.Fatalf("recorded %+v %v", r, err)
+	}
+
+	t.Setenv("FAKE_IS_ERROR", "")
+	t.Setenv("FAKE_EXIT", "")
+	t.Setenv("FAKE_RESULT", "all good")
+	if out, errs, code := runCLI(t, nil, "routine", "run", "review", "--here"); code != 1 || !strings.HasSuffix(out, "review fail t:"+tree[:8]+" m:m1 (recorded)\n") {
+		t.Fatalf("no verdict: %d %q %q", code, out, errs)
+	}
+	if r, ok, err := mesh.GetResult(ctx, c, "review."+tree+".m1"); err != nil || !ok || r.OK {
+		t.Fatalf("no verdict: record %+v %v %v", r, ok, err)
+	}
+}
+
 // setupLog points $SETUP_LOG at a file outside the repo a setup command
 // appends to, and returns a count of its runs.
 func setupLog(t *testing.T) func() int {

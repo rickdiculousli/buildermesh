@@ -39,3 +39,6 @@ A review job on a box whose claude can't sign in comes back as `model run failed
 
 ## Verification
 Failing first: in `internal/daemon/routines_test.go`, a pooled model job run against `testdata/fake-claude.sh` with `FAKE_IS_ERROR=1 FAKE_EXIT=1 FAKE_RESULT='Failed to authenticate: OAuth session expired'` today leaves a failed result under the job's key. After the fix, no result is stored and the reply reads `model run failed: Failed to authenticate: OAuth session expired; nothing recorded`. The same holds for `FAKE_NOJSON=1` and a `FAKE_SLEEP` past the kind's timeout. In `cmd/bmesh/cmd_routine_run_test.go`, `routine run review --here` with the same fake exits 3 with that message and records nothing, where today it records `review fail`. A reply with `VERDICT: fail`, and one with no verdict when the prompt asks for one, are still recorded as fails. `internal/instance/model_test.go` checks the judged flag for each case its `Run` table covers. The manual's daemon answer list (Running) and the `routine run` refusal table gain the line, and internals' result-recording section says an unjudged model reply is never stored.
+
+## Upgrading
+nothing: no config, registry or record changes. A daemon on the previous release still records a model run that never answered as a fail, so upgrade the boxes that run model kinds' jobs to stop those false fails.

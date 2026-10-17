@@ -24,11 +24,26 @@ type Job struct {
 	Text, Dir, Effort                   string
 }
 
-// Reply is a job's outcome. Context is the model's context tokens (0 for commands).
+// Reply is a job's outcome. Judged is whether the run judged the job: a
+// command's reply always does, its exit code being the verdict; a model's
+// only when claude returned a result that isn't an error. An unjudged reply
+// is never recorded. Context is the model's context tokens (0 for commands).
 type Reply struct {
-	OK      bool
-	Output  string
-	Context int
+	OK, Judged bool
+	Output     string
+	Context    int
+}
+
+// Unjudged is the answer for a reply that judged nothing:
+// "model run failed: <the output's first non-empty line>; nothing recorded".
+func (r Reply) Unjudged() string {
+	why := ""
+	for _, line := range strings.Split(r.Output, "\n") {
+		if why = strings.TrimSpace(line); why != "" {
+			break
+		}
+	}
+	return "model run failed: " + why + "; nothing recorded"
 }
 
 // Instance runs jobs.

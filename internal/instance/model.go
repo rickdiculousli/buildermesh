@@ -118,12 +118,15 @@ func (m *Model) Run(ctx context.Context, j Job) Reply {
 	}
 	m.mu.Unlock()
 
+	// Every reply but the last judges nothing: claude never answered.
 	switch {
 	case note != "":
 		return Reply{Output: raw + newline(raw) + note}
 	case err != nil:
 		if ee := (*exec.ExitError)(nil); !errors.As(err, &ee) {
 			raw += newline(raw) + "[" + err.Error() + "]\n" // claude did not start
+		} else if parsed && res.Result != "" {
+			return Reply{Output: res.Result} // its error, say a failed sign-in
 		}
 		return Reply{Output: raw}
 	case !parsed:
@@ -139,7 +142,7 @@ func (m *Model) Run(ctx context.Context, j Job) Reply {
 	if v, found := verdict(res.Result); found {
 		ok = strings.EqualFold(v, "ok")
 	}
-	return Reply{OK: ok, Output: res.Result, Context: res.Usage.InputTokens + res.Usage.CacheReadInputTokens}
+	return Reply{OK: ok, Judged: true, Output: res.Result, Context: res.Usage.InputTokens + res.Usage.CacheReadInputTokens}
 }
 
 // jobText is what a model sees of a job: a header line, the text and the args.

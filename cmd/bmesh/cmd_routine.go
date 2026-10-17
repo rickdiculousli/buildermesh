@@ -730,7 +730,12 @@ func (a *app) runInline(ctx context.Context, k kind.Kind, top, head, tree, self,
 	if err != nil {
 		return false, "", "", err
 	}
-	// Every inline run ran HEAD, so every one records (R12); only a
+	// A model run whose claude never answered is an infrastructure error,
+	// like a failed setup: refused, never a recorded result.
+	if !reply.Judged {
+		return false, "", "", fail(exitRefused, "%s", reply.Unjudged())
+	}
+	// Every inline run that judged ran HEAD, so every one records (R12); only a
 	// deterministic kind is answered from its record.
 	putCtx, cancel := cmdCtx() // the run may have outlasted ctx
 	defer cancel()
