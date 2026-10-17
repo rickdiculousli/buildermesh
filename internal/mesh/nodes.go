@@ -99,8 +99,8 @@ func GetNode(ctx context.Context, c *Client, path string) (Node, bool, error) {
 	return n, ok, err
 }
 
-// ForgetNode deletes path's node, state and runner sample and its inbox
-// consumer; what is already gone is skipped. Its events stay in the stream.
+// ForgetNode deletes path's node, state, runner sample and hold and its
+// inbox consumer; what is already gone is skipped. Its events stay in the stream.
 func ForgetNode(ctx context.Context, c *Client, path string) error {
 	for _, name := range []string{BucketNodes, BucketState, BucketRunner} {
 		kv, err := bucket(ctx, c, name)
@@ -110,6 +110,9 @@ func ForgetNode(ctx context.Context, c *Client, path string) error {
 		if err := kv.Purge(ctx, path); err != nil && !errors.Is(err, jetstream.ErrKeyNotFound) {
 			return fmt.Errorf("%s %s: %w", name, path, err)
 		}
+	}
+	if _, err := DeleteLeadHold(ctx, c, path); err != nil {
+		return fmt.Errorf("%s %s: %w", BucketHolds, path, err)
 	}
 	p, err := ParsePath(path)
 	if err != nil {
