@@ -4,7 +4,7 @@ title: bmesh node stop stops a node's thread and keeps it stopped, and a thread 
 kind: refinement
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-17
