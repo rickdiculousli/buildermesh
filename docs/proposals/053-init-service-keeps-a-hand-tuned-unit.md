@@ -4,11 +4,14 @@ title: bmesh init --service leaves a unit that differs from what it would write,
 kind: refinement
 size: S
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: dfdc9673-27b2-4f3f-9f17-95a5b436de66
 proposed_on: 2026-10-17
 from_feedback: buildermesh-build-5 (buildermesh-040)
+built_by: db4a6067-e565-49e1-8e8c-3a4620937e38
+host: k16
+family: buildermesh-build-6
 ---
 
 ## Opportunity
