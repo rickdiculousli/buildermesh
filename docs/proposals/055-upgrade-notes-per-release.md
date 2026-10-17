@@ -4,7 +4,7 @@ title: bmesh's own releases carry upgrade notes the coordinator distils, and bme
 kind: feature
 size: L
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-17
@@ -12,6 +12,8 @@ built_by: c1a518fb-e214-4cbe-94bc-e533d2578bed
 host: k16
 family: buildermesh-build-8
 branch: bmesh/c1a518fb-e214-4cbe-94bc-e533d2578bed
+merged: 866924044ea37cbee9a35b7fa1a4f52160f34c1b
+verified: verify ok t:9deb4866
 ---
 
 ## Opportunity
