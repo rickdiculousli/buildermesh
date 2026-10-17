@@ -1,0 +1,255 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 314" width="960" height="314" class="light" role="img" aria-label="task-1 queues an xcode job that needs macOS; it waits on the NATS hub until the laptop's bmesh serve takes it and runs routine.xcode, and the result comes back to task-1">
+<title>buildermesh across boxes: route</title>
+<defs><filter id="mist" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="1.6"/></filter></defs>
+<style>
+svg{--fg:#e6edf3;--mu:#8b949e;--pf:#161b22;--ps:#30363d;--ed:#3d4652;--sc:#0d1117;--cp:#1c2129;--wk:#58a6ff;--tl:#39c5bb;--am:#d29922;--pu:#a371f7;--ok:#3fb950;--hd:#8fa7c4;--rd:#f85149;--cm:#c3cbd4}
+svg.light{--fg:#1f2328;--mu:#59636e;--pf:#f6f8fa;--ps:#d0d7de;--ed:#c3ccd5;--sc:#ffffff;--cp:#ffffff;--wk:#0969da;--tl:#1a7f72;--am:#9a6700;--pu:#8250df;--ok:#1a7f37;--hd:#57728f;--rd:#cf222e;--cm:#6b7480}
+text{fill:var(--fg)}
+.s13,.s14,.s16,.s20{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif}
+.s13{font-size:13px}.s14{font-size:14px}.s16{font-size:16px}.s20{font-size:20px}
+.m13,.m14{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace}
+.m13{font-size:13px}.m14{font-size:14px}.m13,.m14{word-spacing:-0.3em}.ws{word-spacing:normal}
+.b{font-weight:600}.mu{fill:var(--mu)}.tl{fill:var(--tl)}.am{fill:var(--am)}.pu{fill:var(--pu)}.ok{fill:var(--ok)}.wk{fill:var(--wk)}.hd{fill:var(--hd)}
+.pn{fill:var(--pf);stroke:var(--ps);stroke-width:1.5}
+.cmp{fill:var(--cp);stroke:var(--ed);stroke-width:1.5}
+.nd{fill:none;stroke:var(--ps);stroke-width:1.5}.ck-row{stroke-dasharray:3 3}
+.ln{stroke:var(--ed);stroke-width:1.5;fill:none}
+.dash{stroke-dasharray:4 6;stroke:var(--cm)}.down{stroke-dasharray:4 6}
+.tr{stroke:var(--ps);stroke-width:1.5;fill:none}
+.ck{fill:none;stroke:var(--ok);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.pb{fill:none;stroke:var(--ps);stroke-width:1.5}.pt{fill:var(--mu)}
+.sl .pb{stroke:var(--hd)}.sl .pt{fill:var(--hd)}
+.rg{fill:none;stroke-width:2}
+.lit{fill:none;stroke-linecap:round;stroke-dasharray:100 100}.an.lit{animation-timing-function:cubic-bezier(.25,.8,.35,1)}
+.haze{stroke-width:10;stroke-opacity:.22;filter:url(#mist)}.glow{stroke-width:5;stroke-opacity:.4}.core{stroke-width:2.5}
+.tl-s{stroke:var(--tl)}.am-s{stroke:var(--am)}.pu-s{stroke:var(--pu)}.hd-s{stroke:var(--hd)}.wk-s{stroke:var(--wk)}
+.cm-f2{fill:var(--cm);opacity:.3}.tg{fill:var(--pf);stroke:var(--cm);stroke-width:1.2}.hl{fill:var(--cm);fill-opacity:.25}.cm{fill:var(--cm)}.cm-s{stroke:var(--cm)}
+.scr{fill:var(--sc);stroke:var(--ps);stroke-width:1}.card{fill:var(--pf);stroke:var(--ps);stroke-width:1.5}
+.notch{fill:var(--ps)}
+svg.light .bf{fill-opacity:.35}
+.trk{fill:var(--ps)}.bf{fill:var(--mu);fill-opacity:.6;transform-box:fill-box;transform-origin:left center}.b0{transform:scaleX(0)}
+.an{animation-duration:10.25s;animation-iteration-count:infinite;animation-timing-function:ease-in-out}
+.hide{opacity:0}
+.wkf{fill:var(--wk)}.tlf{fill:var(--tl)}.amf{fill:var(--am)}.puf{fill:var(--pu)}.hdf{fill:var(--hd)}
+.spin{transform-box:fill-box;transform-origin:center;animation:sp .96s steps(8) infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.arc{fill:none;stroke:var(--tl);stroke-width:1.8;stroke-linecap:round}.a2{animation:pg 1.8s ease-in-out infinite}
+@keyframes pg{0%,100%{opacity:.45}50%{opacity:1}}
+.cap{opacity:.42}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}.cap{opacity:1}}
+@keyframes k0{0%,100%{opacity:0}}
+@keyframes k1{0%,100%{opacity:0}}
+@keyframes k2{0%,100%{opacity:0}}
+@keyframes k3{0%,100%{opacity:0}}
+@keyframes k4{0%,100%{opacity:0}}
+@keyframes k5{0%,100%{opacity:0}}
+@keyframes k6{0%,100%{opacity:0}}
+@keyframes k7{0%,100%{opacity:0}}
+@keyframes k8{0%,100%{opacity:0}}
+@keyframes k9{0%,100%{opacity:0}}
+@keyframes ka{0%,100%{opacity:0}}
+@keyframes kb{0%,100%{opacity:0}}
+@keyframes kc{0%,100%{opacity:0}}
+@keyframes kd{0%,100%{opacity:0}}
+@keyframes ke{0%,100%{opacity:0}}
+@keyframes kf{0%,100%{opacity:0}}
+@keyframes kg{0%,100%{opacity:0}}
+@keyframes kh{0%,100%{opacity:0}}
+@keyframes ki{0%,100%{opacity:0}}
+@keyframes kj{0%,100%{opacity:0}}
+@keyframes kk{0%,100%{opacity:0}}
+@keyframes kl{0%,100%{opacity:0}}
+@keyframes km{0%,100%{opacity:0}}
+@keyframes kn{0%,100%{opacity:0}}
+@keyframes ko{0%,100%{opacity:0}}
+@keyframes kp{0%,100%{opacity:0}}
+@keyframes kq{0%,100%{opacity:0}}
+@keyframes kr{0%,100%{opacity:0}}
+@keyframes ks{0%,100%{opacity:0}}
+@keyframes kt{0%,100%{opacity:0}}
+@keyframes ku{0%,5.85%,22.33%,100%{opacity:0}7.8%,18.43%{opacity:1}}
+@keyframes kv{0%,95.16%,100%{opacity:0}1.95%,92.23%{opacity:1}}
+@keyframes kw{0%,34.6%,59%,100%{opacity:0}36.56%,56.07%{opacity:1}}
+@keyframes kx{0%,34.6%,48.26%,100%{opacity:0}36.56%,44.36%{opacity:1}}
+@keyframes ky{0%,57.04%,81.5%,100%{opacity:0}59%,77.6%{opacity:1}}
+@keyframes kz{0%,70.77%,84.43%,100%{opacity:0}72.72%,80.53%{opacity:1}}
+@keyframes k10{0%,100%{opacity:0}}
+@keyframes k11{0%,100%{opacity:0}}
+@keyframes k12{0%,100%{opacity:0}}
+@keyframes k13{0%,100%{opacity:0}}
+@keyframes k14{0%,100%{opacity:0}}
+@keyframes k15{0%,100%{opacity:0}}
+@keyframes k16{0%,100%{opacity:0}}
+@keyframes k17{0%,100%{opacity:0}}
+@keyframes k18{0%,100%{opacity:0}}
+@keyframes k19{0%,100%{opacity:0}}
+@keyframes k1a{0%,100%{opacity:0}}
+@keyframes k1b{0%,100%{opacity:0}}
+@keyframes k1c{0%,100%{opacity:0}}
+@keyframes k1d{0%,100%{opacity:0}}
+@keyframes k1e{0%,100%{opacity:0}}
+@keyframes k1f{0%,100%{opacity:0}}
+@keyframes k1g{0%,100%{opacity:1}}
+@keyframes k1h{0%,100%{opacity:0}}
+@keyframes k1i{0%,100%{opacity:1}}
+@keyframes k1j{0%,100%{opacity:0}}
+@keyframes k1k{0%,100%{opacity:1}}
+@keyframes k1l{0%,100%{opacity:0}}
+@keyframes k1m{0%,100%{opacity:1}}
+@keyframes k1n{0%,100%{opacity:0}}
+@keyframes k1o{0%,100%{opacity:0.28}}
+@keyframes k1p{0%,100%{opacity:1}}
+@keyframes k1q{0%,100%{opacity:1}}
+@keyframes k1r{0%,100%{opacity:0}}
+@keyframes k1s{0%,100%{opacity:0}}
+@keyframes k1t{0%,6.83%{opacity:0;stroke-dashoffset:100}7.22%{opacity:1;stroke-dashoffset:100}7.97%,18.43%{opacity:1;stroke-dashoffset:0}22.82%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k1u{0%,7.41%{opacity:0;stroke-dashoffset:100}7.8%{opacity:1;stroke-dashoffset:100}8.95%,18.43%{opacity:1;stroke-dashoffset:0}22.82%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k1v{0%,8.2%{opacity:0;stroke-dashoffset:100}8.59%{opacity:1;stroke-dashoffset:100}9.73%,18.43%{opacity:1;stroke-dashoffset:0}22.82%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k1w{0%,9.34%{opacity:0;stroke-dashoffset:100}9.73%{opacity:1;stroke-dashoffset:100}11.8%,18.43%{opacity:1;stroke-dashoffset:0}22.82%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k1x{0%,9.92%{opacity:0;stroke-dashoffset:100}10.31%{opacity:1;stroke-dashoffset:100}12.77%,18.43%{opacity:1;stroke-dashoffset:0}22.82%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k1y{0%,10.7%{opacity:0;stroke-dashoffset:100}11.09%{opacity:1;stroke-dashoffset:100}13.55%,18.43%{opacity:1;stroke-dashoffset:0}22.82%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k1z{0%,28.19%{opacity:0;stroke-dashoffset:100}28.58%{opacity:1;stroke-dashoffset:100}29.54%,41.43%{opacity:1;stroke-dashoffset:0}45.82%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k20{0%,28.77%{opacity:0;stroke-dashoffset:100}29.16%{opacity:1;stroke-dashoffset:100}30.52%,41.43%{opacity:1;stroke-dashoffset:0}45.82%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k21{0%,29.55%{opacity:0;stroke-dashoffset:100}29.94%{opacity:1;stroke-dashoffset:100}31.3%,41.43%{opacity:1;stroke-dashoffset:0}45.82%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k22{0%,30.91%{opacity:0;stroke-dashoffset:100}31.3%{opacity:1;stroke-dashoffset:100}31.86%,41.43%{opacity:1;stroke-dashoffset:0}45.82%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k23{0%,31.49%{opacity:0;stroke-dashoffset:100}31.88%{opacity:1;stroke-dashoffset:100}32.84%,41.43%{opacity:1;stroke-dashoffset:0}45.82%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k24{0%,32.27%{opacity:0;stroke-dashoffset:100}32.66%{opacity:1;stroke-dashoffset:100}33.62%,41.43%{opacity:1;stroke-dashoffset:0}45.82%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k25{0%,33.23%{opacity:0;stroke-dashoffset:100}33.62%{opacity:1;stroke-dashoffset:100}34.8%,41.43%{opacity:1;stroke-dashoffset:0}45.82%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k26{0%,33.81%{opacity:0;stroke-dashoffset:100}34.2%{opacity:1;stroke-dashoffset:100}35.78%,41.43%{opacity:1;stroke-dashoffset:0}45.82%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k27{0%,34.6%{opacity:0;stroke-dashoffset:100}34.99%{opacity:1;stroke-dashoffset:100}36.56%,41.43%{opacity:1;stroke-dashoffset:0}45.82%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k28{0%,58.02%{opacity:0;stroke-dashoffset:100}58.41%{opacity:1;stroke-dashoffset:100}59.59%,77.6%{opacity:1;stroke-dashoffset:0}81.99%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k29{0%,58.6%{opacity:0;stroke-dashoffset:100}59%{opacity:1;stroke-dashoffset:100}60.57%,77.6%{opacity:1;stroke-dashoffset:0}81.99%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k2a{0%,59.39%{opacity:0;stroke-dashoffset:100}59.78%{opacity:1;stroke-dashoffset:100}61.35%,77.6%{opacity:1;stroke-dashoffset:0}81.99%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k2b{0%,60.96%{opacity:0;stroke-dashoffset:100}61.35%{opacity:1;stroke-dashoffset:100}61.91%,77.6%{opacity:1;stroke-dashoffset:0}81.99%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k2c{0%,61.54%{opacity:0;stroke-dashoffset:100}61.93%{opacity:1;stroke-dashoffset:100}62.89%,77.6%{opacity:1;stroke-dashoffset:0}81.99%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k2d{0%,62.32%{opacity:0;stroke-dashoffset:100}62.71%{opacity:1;stroke-dashoffset:100}63.67%,77.6%{opacity:1;stroke-dashoffset:0}81.99%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k2e{0%,63.28%{opacity:0;stroke-dashoffset:100}63.67%{opacity:1;stroke-dashoffset:100}64.63%,77.6%{opacity:1;stroke-dashoffset:0}81.99%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k2f{0%,63.86%{opacity:0;stroke-dashoffset:100}64.25%{opacity:1;stroke-dashoffset:100}65.61%,77.6%{opacity:1;stroke-dashoffset:0}81.99%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k2g{0%,64.64%{opacity:0;stroke-dashoffset:100}65.03%{opacity:1;stroke-dashoffset:100}66.39%,77.6%{opacity:1;stroke-dashoffset:0}81.99%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k2h{0%,66%{opacity:0;stroke-dashoffset:100}66.39%{opacity:1;stroke-dashoffset:100}68.46%,77.6%{opacity:1;stroke-dashoffset:0}81.99%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k2i{0%,66.59%{opacity:0;stroke-dashoffset:100}66.98%{opacity:1;stroke-dashoffset:100}69.43%,77.6%{opacity:1;stroke-dashoffset:0}81.99%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k2j{0%,67.37%{opacity:0;stroke-dashoffset:100}67.76%{opacity:1;stroke-dashoffset:100}70.21%,77.6%{opacity:1;stroke-dashoffset:0}81.99%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k2k{0%,69.82%{opacity:0;stroke-dashoffset:100}70.21%{opacity:1;stroke-dashoffset:100}70.97%,77.6%{opacity:1;stroke-dashoffset:0}81.99%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k2l{0%,70.41%{opacity:0;stroke-dashoffset:100}70.8%{opacity:1;stroke-dashoffset:100}71.94%,77.6%{opacity:1;stroke-dashoffset:0}81.99%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k2m{0%,71.19%{opacity:0;stroke-dashoffset:100}71.58%{opacity:1;stroke-dashoffset:100}72.72%,77.6%{opacity:1;stroke-dashoffset:0}81.99%,100%{opacity:0;stroke-dashoffset:0}}
+@keyframes k2n{0%,100%{opacity:0}}
+@keyframes k2o{0%,100%{opacity:0}}
+@keyframes k2p{0%,11.31%,33.06%,100%{opacity:0}12.77%,29.16%{opacity:1}}
+@keyframes k2q{0%,64.15%,81.5%,100%{opacity:0}65.61%,77.6%{opacity:1}}
+@keyframes k2r{0%,7.48%,22.33%,100%{opacity:0}8.95%,18.43%{opacity:1}}
+@keyframes k2s{0%,67.97%,81.5%,100%{opacity:0}69.43%,77.6%{opacity:1}}
+@keyframes k2t{0%,100%{opacity:0}}
+@keyframes k2u{0%,61.42%,81.5%,100%{opacity:0}62.89%,77.6%{opacity:1}}
+@keyframes k2v{0%,29.05%,45.34%,100%{opacity:0}30.52%,41.43%{opacity:1}}
+@keyframes k2w{0%,100%{opacity:0}}
+@keyframes k2x{0%,31.38%,45.34%,100%{opacity:0}32.84%,41.43%{opacity:1}}
+@keyframes k2y{0%,59.1%,81.5%,100%{opacity:0}60.57%,77.6%{opacity:1}}
+@keyframes k2z{0%,100%{opacity:0}}
+@keyframes k30{0%,12.09%,30.62%,100%{opacity:0}13.55%,29.16%{opacity:1}}
+@keyframes k31{0%,100%{opacity:0}}
+@keyframes k32{0%,15.5%,40.46%,100%{opacity:0}17.45%,36.56%{opacity:1}}
+@keyframes k33{0%,34.6%,59.97%,100%{opacity:0}36.56%,56.07%{opacity:1}}
+@keyframes k34{0%,100%{opacity:1}}
+@keyframes k35{0%,100%{opacity:0}}
+@keyframes k36{0%,100%{opacity:0;transform:translate(0px,0px)}}
+@keyframes k37{0%,100%{opacity:0;transform:translate(0px,0px)}}
+@keyframes k38{0%,100%{opacity:0;transform:translate(0px,0px)}}
+</style>
+<rect x="20" y="16" width="292" height="282" rx="10" class="pn"/>
+<circle cx="38" cy="40" r="5" fill="var(--ok)"/><text x="51" y="45.5" class="s16 b">build-box</text><g class="pl"><rect x="143.8" y="29" width="56" height="22" rx="11" class="pb"/><text x="171.8" y="44.5" class="s13 pt" text-anchor="middle">client</text></g><text x="296" y="45.5" class="s13 mu" text-anchor="end">linux</text>
+<rect x="334" y="16" width="292" height="282" rx="10" class="pn"/>
+<circle cx="352" cy="40" r="5" fill="var(--ok)"/><text x="365" y="45.5" class="s16 b">hub-box</text><g class="pl"><rect x="439.4" y="29" width="114" height="22" rx="11" class="pb"/><text x="496.4" y="44.5" class="s13 pt" text-anchor="middle">hub · always on</text></g><text x="610" y="45.5" class="s13 mu" text-anchor="end">linux</text>
+<g class="an" style="animation-name:k1o"><path class="ln" d="M98 130 L98 108 L346 108 M42 156 V273 M42 177 H52 M42 273 H52"/></g>
+<g class="an" style="animation-name:k1p"><path class="ln" d="M234 130 L234 108 L346 108 M290 156 V177 M290 177 H282"/></g>
+<g class="an" style="animation-name:k1o"><path class="ln" d="M412 130 L412 116"/></g>
+<g class="an" style="animation-name:k1o"><path class="ln" d="M548 130 L548 116 M604 156 V273 M604 177 H596 M604 209 H596 M604 273 H596"/></g>
+<g class="an" style="animation-name:k1p"><text x="36" y="79" class="s13 mu">no NATS here: its bmesh dials</text><text x="36" y="97" class="s13 mu">hub-box's hub</text></g>
+<g class="an" style="animation-name:k1o"><rect x="32" y="130" width="132" height="26" rx="8" class="cmp"/><text x="56" y="147.5" class="m13">bmesh serve</text></g><circle cx="45" cy="143" r="4" fill="var(--ok)"/>
+<g class="an" style="animation-name:k1p"><rect x="168" y="130" width="132" height="26" rx="8" class="cmp"/><text x="234" y="147.5" class="m13" text-anchor="middle">bmesh cli</text></g>
+<g class="an" style="animation-name:k1p"><rect x="52" y="164" width="230" height="26" rx="6" class="nd"/><circle cx="66" cy="177" r="4.5" fill="var(--mu)"/><text x="79" y="181.9" class="m14">task-1</text><text x="270" y="181.5" class="s13 mu" text-anchor="end">lead</text><g class="an hide" style="animation-name:k2"><circle cx="66" cy="177" r="4.5" fill="var(--wk)"/><g transform="translate(232.6,177)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="270" y="181.5" class="s13 wk" text-anchor="end">lead</text></g><g class="an hide" style="animation-name:kh"><circle cx="66" cy="177" r="4.5" fill="var(--wk)"/><g transform="translate(232.6,177)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="270" y="181.5" class="s13 wk" text-anchor="end">lead</text></g><g class="an hide" style="animation-name:ki"><circle cx="66" cy="177" r="4.5" fill="var(--mu)"/><g transform="translate(232.6,177)" class="mu"><g ><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="270" y="181.5" class="s13 mu" text-anchor="end">lead</text></g><g class="an hide" style="animation-name:kv"><circle cx="66" cy="177" r="4.5" fill="var(--wk)"/><g transform="translate(232.6,177)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="270" y="181.5" class="s13 wk" text-anchor="end">lead</text></g><circle class="an hide" style="animation-name:k13" cx="66" cy="177" r="4.5" fill="var(--am)"/><g class="an hide" style="animation-name:k16"><circle cx="66" cy="177" r="4.5" fill="var(--ok)"/><g transform="translate(232.6,177)" class="ok"><path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3.5" class="ck"/></g><text x="270" y="181.5" class="s13 ok" text-anchor="end">lead</text></g></g>
+<g class="an" style="animation-name:k1o"><path class="tr" d="M66 190 V209 H70"/><rect x="70" y="196" width="212" height="26" rx="6" class="nd"/><circle cx="84" cy="209" r="4.5" fill="var(--mu)"/><text x="97" y="213.55" class="m13">task-1.a</text><text x="270" y="213.5" class="s13 mu" text-anchor="end">executor</text><g class="an hide" style="animation-name:k3"><circle cx="84" cy="209" r="4.5" fill="var(--wk)"/><g transform="translate(206.2,209)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="270" y="213.5" class="s13 wk" text-anchor="end">executor</text></g></g>
+<g class="an" style="animation-name:k1o"><rect x="52" y="228" width="230" height="26" rx="6" class="nd"/><circle cx="66" cy="241" r="4.5" fill="var(--mu)"/><text x="79" y="245.55" class="m13">routine.verify</text><text x="270" y="245.5" class="s13 mu" text-anchor="end">routine</text></g>
+<g class="an" style="animation-name:k1o"><rect x="52" y="260" width="230" height="26" rx="6" class="nd ck-row"/><text x="64" y="277.55" class="m13">app</text><g class="an" style="animation-name:k1g"><text x="270" y="277.55" class="m13" text-anchor="end"><tspan class="mu">main </tspan><tspan class="mu">3f2a9c1e</tspan></text></g><g class="an hide" style="animation-name:k1h"><text x="270" y="277.55" class="m13" text-anchor="end"><tspan class="s13 ws ok">+3</tspan> <tspan class="mu">main </tspan><tspan class="ok">81d0b7a4</tspan></text></g></g>
+<g class="an" style="animation-name:k1p"><rect x="346" y="60" width="268" height="56" rx="8" class="cmp"/><text x="360" y="81" class="s16 b">NATS hub</text><text x="360" y="100" class="s13 mu"><tspan class="m13">bmesh hub</tspan> · JetStream</text></g>
+<g class="an" style="animation-name:k1o"><rect x="346" y="130" width="132" height="26" rx="8" class="cmp"/><text x="370" y="147.5" class="m13">bmesh serve</text></g><circle cx="359" cy="143" r="4" fill="var(--ok)"/>
+<g class="an" style="animation-name:k1o"><rect x="482" y="130" width="132" height="26" rx="8" class="cmp"/><text x="548" y="147.5" class="m13" text-anchor="middle">bmesh cli</text></g>
+<g class="an" style="animation-name:k1o"><rect x="366" y="164" width="230" height="26" rx="6" class="nd"/><circle cx="380" cy="177" r="4.5" fill="var(--mu)"/><text x="393" y="181.9" class="m14">coordinator</text><g class="an hide" style="animation-name:k8"><circle cx="380" cy="177" r="4.5" fill="var(--wk)"/><g transform="translate(574.0,177)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g></g><g class="an hide" style="animation-name:k9"><circle cx="380" cy="177" r="4.5" fill="var(--cm)"/><g transform="translate(574.0,177)" class="cm"><rect x="-3.5" y="-4.5" width="2.5" height="9" rx="1"/><rect x="1" y="-4.5" width="2.5" height="9" rx="1"/></g></g><g class="an hide" style="animation-name:ka"><circle cx="380" cy="177" r="4.5" fill="var(--cm)"/><g transform="translate(574.0,177)" class="cm"><path d="M-3 -5 L4.5 0 L-3 5 Z"/></g></g><g class="an hide" style="animation-name:kb"><circle cx="380" cy="177" r="4.5" fill="var(--tl)"/><g transform="translate(574.0,177)" class="tl"><circle r="2.2"/><path class="arc" d="M-5 -3.5 A5 5 0 0 0 -5 3.5 M5 -3.5 A5 5 0 0 1 5 3.5"/><path class="arc a2" d="M-8.5 -6 A9 9 0 0 0 -8.5 6 M8.5 -6 A9 9 0 0 1 8.5 6"/></g></g><g class="an hide" style="animation-name:k1a"><circle cx="380" cy="177" r="4.5" fill="var(--wk)"/><g transform="translate(574.0,177)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g></g><g class="an hide" style="animation-name:k1b"><circle cx="380" cy="177" r="4.5" fill="var(--tl)"/><g transform="translate(574.0,177)" class="tl"><circle r="2.2"/><path class="arc" d="M-5 -3.5 A5 5 0 0 0 -5 3.5 M5 -3.5 A5 5 0 0 1 5 3.5"/><path class="arc a2" d="M-8.5 -6 A9 9 0 0 0 -8.5 6 M8.5 -6 A9 9 0 0 1 8.5 6"/></g></g></g>
+<g class="an" style="animation-name:k1o"><rect x="366" y="196" width="230" height="26" rx="6" class="nd"/><circle cx="380" cy="209" r="4.5" fill="var(--mu)"/><text x="393" y="213.9" class="m14">task-2</text><text x="584" y="213.5" class="s13 mu" text-anchor="end">lead</text><g class="an hide" style="animation-name:k0"><circle cx="380" cy="209" r="4.5" fill="var(--wk)"/><g transform="translate(546.6,209)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="584" y="213.5" class="s13 wk" text-anchor="end">lead</text></g><g class="an hide" style="animation-name:kg"><circle cx="380" cy="209" r="4.5" fill="var(--wk)"/><g transform="translate(546.6,209)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="584" y="213.5" class="s13 wk" text-anchor="end">lead</text></g><circle class="an hide" style="animation-name:k15" cx="380" cy="209" r="4.5" fill="var(--rd)"/></g>
+<g class="an" style="animation-name:k1o"><path class="tr" d="M380 222 V241 H384"/><rect x="384" y="228" width="212" height="26" rx="6" class="nd"/><circle cx="398" cy="241" r="4.5" fill="var(--mu)"/><text x="411" y="245.55" class="m13">task-2.a</text><text x="584" y="245.5" class="s13 mu" text-anchor="end">executor</text><g class="an hide" style="animation-name:k1"><circle cx="398" cy="241" r="4.5" fill="var(--wk)"/><g transform="translate(520.2,241)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="584" y="245.5" class="s13 wk" text-anchor="end">executor</text></g></g>
+<g class="an" style="animation-name:k1o"><rect x="366" y="260" width="230" height="26" rx="6" class="nd ck-row"/><text x="378" y="277.55" class="m13">app</text><g class="an" style="animation-name:k1i"><text x="584" y="277.55" class="m13" text-anchor="end"><tspan class="mu">main </tspan><tspan class="mu">3f2a9c1e</tspan></text></g><g class="an hide" style="animation-name:k1j"><text x="584" y="277.55" class="m13" text-anchor="end"><tspan class="s13 ws ok">+3</tspan> <tspan class="mu">main </tspan><tspan class="ok">81d0b7a4</tspan></text></g></g>
+<g class="an" style="animation-name:k34">
+<rect x="648" y="16" width="292" height="282" rx="10" class="pn"/>
+<circle cx="666" cy="40" r="5" fill="var(--ok)"/><text x="679" y="45.5" class="s16 b">laptop</text>
+<g class="an" style="animation-name:k1q"><g class="pl"><rect x="744.2" y="29" width="101" height="22" rx="11" class="pb"/><text x="794.7" y="44.5" class="s13 pt" text-anchor="middle">leaf · secure</text></g><text x="924" y="45.5" class="s13 mu" text-anchor="end">macOS</text></g>
+<g class="an" style="animation-name:k1p"><path class="ln" d="M726 130 L726 116 M670 156 V273 M670 209 H680 M670 241 H680 M670 273 H680"/></g>
+<g class="an" style="animation-name:k1o"><path class="ln" d="M862 130 L862 116 M918 156 V177 M918 177 H910"/></g>
+<g class="an" style="animation-name:k1p"><path class="ln an" style="animation-name:k1q" d="M614 108 H660"/><path class="ln down an hide" style="animation-name:k1r" d="M614 108 H660"/><path class="ln dash an hide" style="animation-name:k1s" d="M614 108 H660"/></g>
+<g class="an" style="animation-name:k1p"><rect x="660" y="60" width="268" height="56" rx="8" class="cmp"/><text x="674" y="81" class="s16 b">NATS leaf</text><text x="674" y="100" class="s13 mu"><tspan class="m13">bmesh hub</tspan> · relays to the hub</text></g>
+<g class="an" style="animation-name:k1p"><rect x="660" y="130" width="132" height="26" rx="8" class="cmp"/><text x="684" y="147.5" class="m13">bmesh serve</text></g><circle cx="673" cy="143" r="4" fill="var(--ok)"/>
+<g class="an" style="animation-name:k1o"><rect x="796" y="130" width="132" height="26" rx="8" class="cmp"/><text x="862" y="147.5" class="m13" text-anchor="middle">bmesh cli</text></g>
+<g class="an" style="animation-name:k1o"><rect x="680" y="164" width="230" height="26" rx="6" class="nd"/><circle cx="694" cy="177" r="4.5" fill="var(--mu)"/><text x="707" y="181.9" class="m14">task-3</text><text x="898" y="181.5" class="s13 mu" text-anchor="end">lead</text><g class="an hide" style="animation-name:k4"><circle cx="694" cy="177" r="4.5" fill="var(--wk)"/><g transform="translate(860.6,177)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="898" y="181.5" class="s13 wk" text-anchor="end">lead</text></g><g class="an hide" style="animation-name:km"><circle cx="694" cy="177" r="4.5" fill="var(--wk)"/><g transform="translate(860.6,177)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="898" y="181.5" class="s13 wk" text-anchor="end">lead</text></g><g class="an hide" style="animation-name:kn"><circle cx="694" cy="177" r="4.5" fill="var(--ok)"/><g transform="translate(860.6,177)" class="ok"><path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3.5" class="ck"/></g><text x="898" y="181.5" class="s13 ok" text-anchor="end">lead</text></g><circle class="an hide" style="animation-name:k11" cx="694" cy="177" r="4.5" fill="var(--ok)"/></g>
+<g class="an" style="animation-name:k1p"><rect x="680" y="196" width="230" height="26" rx="6" class="nd"/><circle cx="694" cy="209" r="4.5" fill="var(--mu)"/><text x="707" y="213.55" class="m13">routine.xcode</text><text x="898" y="213.5" class="s13 mu" text-anchor="end">routine</text><g class="an hide" style="animation-name:kw"><circle cx="694" cy="209" r="4.5" fill="var(--wk)"/><g transform="translate(840.8,209)" class="wk"><g class="spin"><circle cx="0.00" cy="-5.00" r="1.5" opacity="1.00"/><circle cx="3.54" cy="-3.54" r="1.5" opacity="0.89"/><circle cx="5.00" cy="-0.00" r="1.5" opacity="0.78"/><circle cx="3.54" cy="3.54" r="1.5" opacity="0.67"/><circle cx="0.00" cy="5.00" r="1.5" opacity="0.56"/><circle cx="-3.54" cy="3.54" r="1.5" opacity="0.45"/><circle cx="-5.00" cy="0.00" r="1.5" opacity="0.34"/><circle cx="-3.54" cy="-3.54" r="1.5" opacity="0.23"/></g></g><text x="898" y="213.5" class="s13 wk" text-anchor="end">routine</text></g></g>
+<g class="an" style="animation-name:k1o"><rect x="680" y="228" width="230" height="26" rx="6" class="nd ck-row"/><text x="692" y="245.55" class="m13">app</text><g class="an" style="animation-name:k1k"><text x="898" y="245.55" class="m13" text-anchor="end"><tspan class="mu">main </tspan><tspan class="mu">3f2a9c1e</tspan></text></g><g class="an hide" style="animation-name:k1l"><text x="898" y="245.55" class="m13" text-anchor="end"><tspan class="s13 ws ok">+3</tspan> <tspan class="mu">main </tspan><tspan class="ok">81d0b7a4</tspan></text></g></g>
+<g class="an" style="animation-name:k1o"><rect x="680" y="260" width="230" height="26" rx="6" class="nd ck-row"/><text x="692" y="277.55" class="m13">plugins</text><g class="an" style="animation-name:k1m"><text x="898" y="277.55" class="m13" text-anchor="end"><tspan class="mu">main </tspan><tspan class="mu">5c1e0a92</tspan></text></g><g class="an hide" style="animation-name:k1n"><g transform="translate(841.8,273)" class="hd"><rect x="-3.5" y="-4.5" width="2.5" height="9" rx="1"/><rect x="1" y="-4.5" width="2.5" height="9" rx="1"/></g><text x="898" y="277.5" class="s13 hd" text-anchor="end">held +2</text></g></g>
+</g>
+<circle class="an hide" style="animation-name:k35" cx="666" cy="40" r="5" fill="var(--mu)"/>
+<circle class="an hide" style="animation-name:k35" cx="673" cy="143" r="4" fill="var(--mu)"/>
+<g class="an hide" style="animation-name:k35"><g class="pl sl"><rect x="744.2" y="29" width="159" height="22" rx="11" class="pb"/><text x="823.7" y="44.5" class="s13 pt" text-anchor="middle">asleep · leaf · secure</text></g></g>
+<path class="an hide lit haze cm-s" pathLength="100" style="animation-name:k1t" d="M282 177 L290 177 L290 156"/><path class="an hide lit glow cm-s" pathLength="100" style="animation-name:k1u" d="M282 177 L290 177 L290 156"/><path class="an hide lit core cm-s" pathLength="100" style="animation-name:k1v" d="M282 177 L290 177 L290 156"/>
+<path class="an hide lit haze cm-s" pathLength="100" style="animation-name:k1w" d="M234 130 L234 108 L346 108"/><path class="an hide lit glow cm-s" pathLength="100" style="animation-name:k1x" d="M234 130 L234 108 L346 108"/><path class="an hide lit core cm-s" pathLength="100" style="animation-name:k1y" d="M234 130 L234 108 L346 108"/>
+<path class="an hide lit haze cm-s" pathLength="100" style="animation-name:k1z" d="M614 108 L660 108"/><path class="an hide lit glow cm-s" pathLength="100" style="animation-name:k20" d="M614 108 L660 108"/><path class="an hide lit core cm-s" pathLength="100" style="animation-name:k21" d="M614 108 L660 108"/>
+<path class="an hide lit haze cm-s" pathLength="100" style="animation-name:k22" d="M726 116 L726 130"/><path class="an hide lit glow cm-s" pathLength="100" style="animation-name:k23" d="M726 116 L726 130"/><path class="an hide lit core cm-s" pathLength="100" style="animation-name:k24" d="M726 116 L726 130"/>
+<path class="an hide lit haze cm-s" pathLength="100" style="animation-name:k25" d="M670 156 L670 209 L680 209"/><path class="an hide lit glow cm-s" pathLength="100" style="animation-name:k26" d="M670 156 L670 209 L680 209"/><path class="an hide lit core cm-s" pathLength="100" style="animation-name:k27" d="M670 156 L670 209 L680 209"/>
+<path class="an hide lit haze tl-s" pathLength="100" style="animation-name:k28" d="M680 209 L670 209 L670 156"/><path class="an hide lit glow tl-s" pathLength="100" style="animation-name:k29" d="M680 209 L670 209 L670 156"/><path class="an hide lit core tl-s" pathLength="100" style="animation-name:k2a" d="M680 209 L670 209 L670 156"/>
+<path class="an hide lit haze tl-s" pathLength="100" style="animation-name:k2b" d="M726 130 L726 116"/><path class="an hide lit glow tl-s" pathLength="100" style="animation-name:k2c" d="M726 130 L726 116"/><path class="an hide lit core tl-s" pathLength="100" style="animation-name:k2d" d="M726 130 L726 116"/>
+<path class="an hide lit haze tl-s" pathLength="100" style="animation-name:k2e" d="M660 108 L614 108"/><path class="an hide lit glow tl-s" pathLength="100" style="animation-name:k2f" d="M660 108 L614 108"/><path class="an hide lit core tl-s" pathLength="100" style="animation-name:k2g" d="M660 108 L614 108"/>
+<path class="an hide lit haze tl-s" pathLength="100" style="animation-name:k2h" d="M346 108 L234 108 L234 130"/><path class="an hide lit glow tl-s" pathLength="100" style="animation-name:k2i" d="M346 108 L234 108 L234 130"/><path class="an hide lit core tl-s" pathLength="100" style="animation-name:k2j" d="M346 108 L234 108 L234 130"/>
+<path class="an hide lit haze tl-s" pathLength="100" style="animation-name:k2k" d="M290 156 L290 177 L282 177"/><path class="an hide lit glow tl-s" pathLength="100" style="animation-name:k2l" d="M290 156 L290 177 L282 177"/><path class="an hide lit core tl-s" pathLength="100" style="animation-name:k2m" d="M290 156 L290 177 L282 177"/>
+<rect x="366" y="196" width="230" height="26" rx="6" class="rg cm-s an hide" style="animation-name:k5"/>
+<rect x="52" y="164" width="230" height="26" rx="6" class="rg cm-s an hide" style="animation-name:k6"/>
+<rect x="680" y="164" width="230" height="26" rx="6" class="rg cm-s an hide" style="animation-name:k7"/>
+<rect x="366" y="164" width="230" height="26" rx="6" class="rg cm-s an hide" style="animation-name:kc"/>
+<rect x="52" y="164" width="230" height="26" rx="6" class="rg cm-s an hide" style="animation-name:kd"/>
+<rect x="366" y="196" width="230" height="26" rx="6" class="rg cm-s an hide" style="animation-name:ke"/>
+<rect x="680" y="164" width="230" height="26" rx="6" class="rg cm-s an hide" style="animation-name:kf"/>
+<rect x="277" y="169" width="3" height="16" rx="1.5" class="cm an hide" style="animation-name:kj"/>
+<g class="an hide" style="animation-name:kk"><rect x="148" y="168" width="42" height="18" rx="9" class="tg"/><text x="169" y="181.3" class="s13 cm" text-anchor="middle">hold</text></g>
+<g class="an hide" style="animation-name:kl"><rect x="148" y="168" width="62" height="18" rx="9" class="tg"/><text x="179" y="181.3" class="s13 cm" text-anchor="middle">release</text></g>
+<rect x="366" y="164" width="230" height="26" rx="6" class="rg cm-s an hide" style="animation-name:ko"/>
+<rect x="52" y="164" width="230" height="26" rx="6" class="rg cm-s an hide" style="animation-name:kp"/>
+<rect x="680" y="164" width="230" height="26" rx="6" class="rg tl-s an hide" style="animation-name:kq"/>
+<rect x="366" y="164" width="230" height="26" rx="6" class="rg tl-s an hide" style="animation-name:kr"/>
+<rect x="366" y="164" width="230" height="26" rx="6" class="rg cm-s an hide" style="animation-name:ks"/>
+<rect x="52" y="164" width="230" height="26" rx="6" class="rg cm-s an hide" style="animation-name:kt"/>
+<rect x="52" y="164" width="230" height="26" rx="6" class="rg cm-s an hide" style="animation-name:ku"/>
+<rect x="680" y="196" width="230" height="26" rx="6" class="rg cm-s an hide" style="animation-name:kx"/>
+<rect x="680" y="196" width="230" height="26" rx="6" class="rg tl-s an hide" style="animation-name:ky"/>
+<rect x="52" y="164" width="230" height="26" rx="6" class="rg tl-s an hide" style="animation-name:kz"/>
+<rect x="680" y="164" width="230" height="26" rx="6" class="rg tl-s an hide" style="animation-name:k10"/>
+<rect x="52" y="164" width="230" height="26" rx="6" class="rg tl-s an hide" style="animation-name:k12"/>
+<rect x="366" y="196" width="230" height="26" rx="6" class="rg tl-s an hide" style="animation-name:k14"/>
+<rect x="52" y="260" width="230" height="26" rx="6" class="rg cm-s an hide" style="animation-name:k17"/>
+<rect x="52" y="164" width="230" height="26" rx="6" class="rg tl-s an hide" style="animation-name:k18"/>
+<rect x="366" y="164" width="230" height="26" rx="6" class="rg tl-s an hide" style="animation-name:k19"/>
+<rect x="366" y="260" width="230" height="26" rx="6" class="rg cm-s an hide" style="animation-name:k1c"/>
+<rect x="366" y="164" width="230" height="26" rx="6" class="rg cm-s an hide" style="animation-name:k1d"/>
+<rect x="680" y="228" width="230" height="26" rx="6" class="rg cm-s an hide" style="animation-name:k1e"/>
+<rect x="680" y="260" width="230" height="26" rx="6" class="rg cm-s an hide" style="animation-name:k1f"/>
+<rect x="482" y="130" width="132" height="26" rx="8" class="rg cm-s an hide" style="animation-name:k2n"/>
+<rect x="482" y="130" width="132" height="26" rx="8" class="rg tl-s an hide" style="animation-name:k2o"/>
+<rect x="346" y="60" width="268" height="56" rx="8" class="rg cm-s an hide" style="animation-name:k2p"/>
+<rect x="346" y="60" width="268" height="56" rx="8" class="rg tl-s an hide" style="animation-name:k2q"/>
+<rect x="168" y="130" width="132" height="26" rx="8" class="rg cm-s an hide" style="animation-name:k2r"/>
+<rect x="168" y="130" width="132" height="26" rx="8" class="rg tl-s an hide" style="animation-name:k2s"/>
+<rect x="796" y="130" width="132" height="26" rx="8" class="rg tl-s an hide" style="animation-name:k2t"/>
+<rect x="660" y="60" width="268" height="56" rx="8" class="rg tl-s an hide" style="animation-name:k2u"/>
+<rect x="660" y="60" width="268" height="56" rx="8" class="rg cm-s an hide" style="animation-name:k2v"/>
+<rect x="32" y="130" width="132" height="26" rx="8" class="rg cm-s an hide" style="animation-name:k2w"/>
+<rect x="660" y="130" width="132" height="26" rx="8" class="rg cm-s an hide" style="animation-name:k2x"/>
+<rect x="660" y="130" width="132" height="26" rx="8" class="rg tl-s an hide" style="animation-name:k2y"/>
+<rect x="346" y="130" width="132" height="26" rx="8" class="rg tl-s an hide" style="animation-name:k2z"/>
+<g class="an hide" style="animation-name:k30"><circle cx="598" cy="76" r="8" class="cm-f2"/><circle cx="598" cy="76" r="4.5" fill="var(--cm)"/><text x="584" y="81" class="s13 cm" text-anchor="end">xcode · needs macOS</text></g>
+<g class="an hide" style="animation-name:k31"><circle cx="598" cy="76" r="8" class="cm-f2"/><circle cx="598" cy="76" r="4.5" fill="var(--cm)"/><text x="584" y="81" class="s13 cm" text-anchor="end">1 job waits for laptop</text></g>
+<g class="an hide" style="animation-name:k32"><rect x="866" y="30" width="62" height="22" rx="11" class="tg"/><text x="924" y="45.5" class="s13 cm b" text-anchor="end">macOS</text></g>
+<g class="an hide" style="animation-name:k33"><rect x="767.4" y="200" width="43" height="18" rx="4" class="hl"/></g>
+</svg>

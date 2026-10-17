@@ -7,7 +7,7 @@ Every SVG in `docs/assets/` is written by a script here; edit the script, never 
 | `brand.mjs` | `logo.svg`, `banner-dark.svg`, `banner-light.svg` | `node docs/assets/gen/brand.mjs docs/assets` |
 | `land.py` | `land.svg` | `python3 docs/assets/gen/land.py docs/assets/land.svg` |
 | `lifecycle.py` | `lifecycle-dark.svg`, `lifecycle-light.svg` | `python3 docs/assets/gen/lifecycle.py docs/assets` |
-| `mesh.mjs` | `mesh-dark.svg`, `mesh-light.svg` | `node docs/assets/gen/mesh.mjs docs/assets` |
+| `mesh.mjs` | `mesh-{dark,light}.svg`, the demo: one workflow end to end across three boxes; `mesh-one-{dark,light}.svg`, the same workflow on a single box; `mesh-<scene>-{dark,light}.svg` for `build`, `coordinate`, `route`, `push` and `level`, each scene on its own loop | `node docs/assets/gen/mesh.mjs docs/assets` |
 | `frames.mjs` | PNG frames of an animated SVG, to check it | see Checking your work |
 
 The `map-*.png` screenshots are of the running map, not generated.

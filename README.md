@@ -35,16 +35,83 @@ Agents write half-page specs; you accept or reject them in plain words. A *lead*
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mesh-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/mesh-light.svg">
-    <img alt="Three boxes share one NATS hub, which runs on hub-box: every box builds at once; a coordinator holds one lead before it lands until another has; a check that needs macOS goes to the laptop's daemon; asks and finishes reach your phone; after a change lands, bmesh sync levels every box, the sleeping laptop when it wakes" src="docs/assets/mesh-light.svg" width="100%">
+    <img alt="Three boxes share one NATS hub on hub-box, and only bmesh talks to it. One workflow, end to end: the coordinator starts a lead on every box; task-1's check that needs macOS runs on the laptop and its result comes back; task-2's question reaches the phone; the coordinator holds task-1 until task-3 has landed, then releases it; task-1 lands, then task-2, each reported to the coordinator and the phone, each land moving its own box's checkout, and bmesh sync carries the last to build-box and the laptop" src="docs/assets/mesh-light.svg" width="100%">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mesh-one-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/mesh-one-light.svg">
+    <img alt="All of it on one box: the laptop's bmesh serve embeds the NATS hub. The coordinator starts two leads, the box's cap; task-1's xcode check runs on the same box; task-2 queues one too and waits on the hub while the routine is busy, then runs once it's free, and lands first; the freed slot starts task-3, which depends on task-1, so the coordinator holds it until task-1 lands, then releases it; each land moves the checkout and is pushed to the phone" src="docs/assets/mesh-one-light.svg" width="60%">
   </picture>
 </p>
 
 - **One hub.** `bmesh hub` runs NATS, a message server, inside the binary on an always-on box, over a tailnet such as Tailscale. Boxes share one token; nothing else is installed. A single box needs no hub: `bmesh serve` embeds one.
-- **A daemon on every box.** `bmesh serve` wakes quiet leads, runs routines, sends phone notifications and draws the map. A box set to update itself installs each bmesh release; on others, each session opens with a line to run `bmesh update`.
-- **A coordinator.** The session that started the builds follows its leads' events through the hub, and on your word holds a lead before it lands (`bmesh hold`) until another has landed, then releases it (`bmesh unhold`).
-- **Shared checks.** A check that runs apart from the lead, like the review, is queued once for every box that runs it, so a free box takes it. A check that needs macOS runs only on a Mac.
-- **Every box levels.** `bmesh sync` levels this box's checkout with origin and sends a `level` job to every other box that has the repo; each fast-forwards its own unless it's dirty or diverged, and a secure box holds a plugin change for your approval. A laptop that wakes takes the jobs it missed, in order; a job waits on the hub for a day.
+- **bmesh on every box.** Only `bmesh` talks to the hub: `bmesh serve`, the daemon, always on, which wakes quiet leads, runs routines, sends phone notifications and draws the map; and the `bmesh` commands sessions run. A box set to update itself installs each bmesh release; on others, each session opens with a line to run `bmesh update`.
 - **Signed jobs.** Boxes joined with `bmesh init --hosts` share a signed roster, and every job between them is signed and checked. The signing and approval keys sit where no agent can read them (on macOS, behind the Keychain password dialog). A secure box holds an update of its plugins, or of the repo bmesh updates itself from, until you approve it there.
+
+Each picture below plays one of the demo's steps on its own, on a loop. Grey lights a command, teal a message.
+
+**Every box builds.** Each box runs its own leads and executors, each in its own git worktree, all at once.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mesh-build-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/mesh-build-light.svg">
+    <img alt="The leads on build-box, hub-box and the laptop start one after another and keep running" src="docs/assets/mesh-build-light.svg" width="100%">
+  </picture>
+</p>
+
+**A coordinator keeps leads in step.** The session that started the builds starts a lead on each box in turn (over ssh on the other boxes), then follows their events through the hub. On your word it holds a lead (`bmesh hold`; with `--gate now` it stops at its next inbox read, as task-1 does here) until another has landed, then releases it (`bmesh unhold`), and the held lead's `bmesh serve` wakes it.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mesh-coordinate-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/mesh-coordinate-light.svg">
+    <img alt="The coordinator on hub-box starts a lead on each box, then listens; it holds task-1, which stops where it is, until task-3 has landed, then releases it, and build-box's bmesh serve wakes task-1" src="docs/assets/mesh-coordinate-light.svg" width="100%">
+  </picture>
+</p>
+
+**A check goes to the box that can run it.** A check that runs apart from the lead, like the review, is queued once for every box that runs it, so a free box takes it. One that needs macOS, like task-1's `xcode` here, waits on the hub until a Mac's `bmesh serve` takes it; the result comes back to the lead.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mesh-route-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/mesh-route-light.svg">
+    <img alt="task-1 queues an xcode job that needs macOS; it waits on the hub until the laptop's bmesh serve takes it and runs routine.xcode, and the result comes back to task-1" src="docs/assets/mesh-route-light.svg" width="100%">
+  </picture>
+</p>
+
+**Push notifications.** When a lead asks, is blocked or is done, its event goes through the hub to `bmesh serve` with an [ntfy](https://ntfy.sh) topic set (here, hub-box's), which pushes it to your phone, once.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mesh-push-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/mesh-push-light.svg">
+    <img alt="Three leads' events, done, asks and blocked, go through the hub to hub-box's bmesh serve, which pushes each to the phone" src="docs/assets/mesh-push-light.svg" width="100%">
+  </picture>
+</p>
+
+**Every box levels.** A lead's land moves its own box's checkout. `bmesh sync` levels this box's checkout with origin and sends a `level` job to every other box that has the repo (the box that landed is already level, so the picture leaves its job out); each fast-forwards its own unless it's dirty or diverged, and a secure box holds a plugin change for your approval. A laptop that wakes takes the jobs it missed, in order; a job waits on the hub for a day.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mesh-level-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/mesh-level-light.svg">
+    <img alt="task-1 lands and moves build-box's checkout; the coordinator runs bmesh sync, which levels hub-box and sends level jobs; the asleep laptop's waits on the hub, and it levels when it wakes and holds a plugins commit" src="docs/assets/mesh-level-light.svg" width="100%">
+  </picture>
+</p>
+
+**All of this works on one box too.** With no other boxes, `bmesh serve` embeds the hub, and the same commands drive the same flow. `[runner] max_leads` caps how many leads run at once (`bmesh build` refuses past it), so here the coordinator starts a third lead once one of the first two has landed, and holds it until the lead it depends on has landed too.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mesh-one-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/mesh-one-light.svg">
+    <img alt="All of it on one box: the laptop's bmesh serve embeds the NATS hub. The coordinator starts two leads, the box's cap; task-1's xcode check runs on the same box; task-2 queues one too and waits on the hub while the routine is busy, then runs once it's free, and lands first; the freed slot starts task-3, which depends on task-1, so the coordinator holds it until task-1 lands, then releases it; each land moves the checkout and is pushed to the phone" src="docs/assets/mesh-one-light.svg" width="60%">
+  </picture>
+</p>
 
 ## Proof before main
 
