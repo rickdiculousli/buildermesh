@@ -4,7 +4,7 @@ title: A lead on k16 queues bmesh's ten-run test soak on the Mac through a routi
 kind: time-cost
 size: XS
 judge: sonnet
-status: building
+status: done
 lens: eng
 proposed_by: buildermesh-fix-1
 proposed_on: 2026-10-17
@@ -15,6 +15,8 @@ built_by: 2efa43a1-176d-44ff-a18f-159024826d0d
 host: k16
 family: buildermesh-fix-1
 branch: bmesh/2efa43a1-176d-44ff-a18f-159024826d0d
+merged: fb449922322df56c5dc463522e05151562184dc5
+verified: verify ok t:31242478
 ---
 
 ## Opportunity
