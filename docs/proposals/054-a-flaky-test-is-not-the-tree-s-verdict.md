@@ -37,4 +37,7 @@ The repo's verify, run ten times on each box (`go test -count=10 ./...` with the
 ## Risks and the alternative considered
 Ten runs may not catch a one-in-fifty flake. The measurement is cheap to repeat, and a later flake comes back as feedback. Alternative: let `verify` record a fail only after a second failing run. That halves the cost of a flake, but it records a real intermittent bug as `ok`, and land trusts that record.
 
+## Upgrading
+nothing: only tests changed.
+
 ## Needs from the operator

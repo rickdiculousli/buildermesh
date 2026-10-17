@@ -79,6 +79,7 @@ func TestNoteRunnerLogsEachChangeOnce(t *testing.T) {
 	var buf bytes.Buffer
 	d := Deps{Log: slog.New(slog.NewTextHandler(&buf, nil))}
 	path := "note-" + t.Name()
+	notes.Delete(path) // the last note of an earlier run (go test -count) would hide the first
 	noteRunner(d, path, runner.Status{Running: true, Waiting: true})
 	noteRunner(d, path, runner.Status{Running: true, Waiting: true})
 	noteRunner(d, path, runner.Status{UsageLimit: true, LimitResetAt: "2026-10-16T09:00:00Z"})
