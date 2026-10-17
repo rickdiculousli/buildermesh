@@ -35,7 +35,7 @@ Agents write half-page specs; you accept or reject them in plain words. A *lead*
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mesh-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/mesh-light.svg">
-    <img alt="Three boxes share one NATS hub, which runs on hub-box: every box builds at once; a coordinator holds one lead before it lands until another has; a check that needs macOS goes to the laptop; asks and finishes reach your phone; after a change lands, bmesh sync levels every box, the sleeping laptop when it wakes" src="docs/assets/mesh-light.svg" width="100%">
+    <img alt="Three boxes share one NATS hub, which runs on hub-box: every box builds at once; a coordinator holds one lead before it lands until another has; a check that needs macOS goes to the laptop's daemon; asks and finishes reach your phone; after a change lands, bmesh sync levels every box, the sleeping laptop when it wakes" src="docs/assets/mesh-light.svg" width="100%">
   </picture>
 </p>
 
