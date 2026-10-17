@@ -17,7 +17,7 @@
 <p align="center">
   <a href="#one-mesh-many-boxes"><b>Many boxes</b></a> &nbsp;·&nbsp;
   <a href="#proof-before-main"><b>Proof before main</b></a> &nbsp;·&nbsp;
-  <a href="#how-a-change-reaches-main"><b>How it works</b></a> &nbsp;·&nbsp;
+  <a href="#how-you-drive-the-work"><b>Drive the work</b></a> &nbsp;·&nbsp;
   <a href="#quickstart-single-box"><b>Quickstart</b></a> &nbsp;·&nbsp;
   <a href="#all-commands-and-flags"><b>Commands</b></a> &nbsp;·&nbsp;
   <a href="docs/manual.md"><b>Manual</b></a>
@@ -131,7 +131,7 @@ verified: review ok t:3f2a9c1e m:claude-opus-5-5 c:81d0b7a4; verify ok t:3f2a9c1
 
 `t:` is the landed tree, `c:` the tree the review ran on before the rebase. `bmesh done` refuses until the spec on `origin/main` reads `done` with a merged commit and a recorded result for every entry.
 
-## How a change reaches main
+## How you drive the work
 
 <p align="center">
   <picture>
