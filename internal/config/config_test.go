@@ -228,10 +228,10 @@ func TestLoadReposRefusals(t *testing.T) {
 	}
 	os.Remove(cfg)
 	for body, want := range map[string]string{
-		"[repos.x]\nmode = \"ship\"\n":                  "[repos.x]: path is required",
-		"[repos.x]\npath = \"p\"\nmode = \"shipped\"\n": `[repos.x]: mode "shipped" is not one of ship, companion, publish, fork, dormant`,
-		"[repos.x]\npath = \"p\"\nhots = \"k\"\n":       "unknown key repos.x.hots",
-		"[repos.\"a/b\"]\npath = \"p\"\n":               `[repos.a/b]: name "a/b": a name matches`,
+		"[repos.x]\nmode = \"ship\"\n":                        "[repos.x]: path is required",
+		"[repos.x]\npath = \"p\"\nmode = \"shipped\"\n":       `[repos.x]: mode "shipped" is not one of ship, companion, publish, fork, dormant`,
+		"[repos.x]\npath = \"p\"\nhots = \"k\"\n":             "unknown key repos.x.hots",
+		"[repos.\"a/b\"]\npath = \"p\"\n":                     `[repos.a/b]: name "a/b": a name matches`,
 		"[repos.x]\npath = \"p\"\ncode = [\"*.go\", \" \"]\n": "[repos.x]: code: an empty pathspec",
 	} {
 		os.WriteFile(repos, []byte(body), 0o644)
