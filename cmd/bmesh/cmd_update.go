@@ -9,7 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
@@ -207,6 +209,7 @@ func (a *app) updateTo(exe, dir, from string, t selfupdate.Target, plugin bool, 
 			a.recordInstalled(dir, own)
 		}
 		a.restartLine(own)
+		a.hubLine(dir, own)
 		return clearNotice()
 	}
 	r := walkRange{dir: dir, from: own, to: t.Commit}
@@ -231,7 +234,26 @@ func (a *app) updateTo(exe, dir, from string, t selfupdate.Target, plugin bool, 
 		return err
 	}
 	a.restartLine(t.Commit)
+	a.hubLine(dir, t.Commit)
 	return clearNotice()
+}
+
+// hubLine prints, last, the line naming this box's bmesh hub when it runs
+// an older binary than rev, the one serve runs once restarted
+// (selfupdate.HubLine).
+func (a *app) hubLine(dir, rev string) {
+	if rev == "" {
+		return
+	}
+	v := selfupdate.Version{Revision: rev, Release: selfupdate.Describe(dir, rev)}
+	if ct, err := exec.Command("git", "-C", dir, "show", "-s", "--format=%ct", "--end-of-options", rev).Output(); err == nil {
+		if sec, err := strconv.ParseInt(strings.TrimSpace(string(ct)), 10, 64); err == nil {
+			v.Time = time.Unix(sec, 0).UTC().Format(time.RFC3339)
+		}
+	}
+	if line := selfupdate.HubLine(config.StateDir(), selfupdate.RecordOf(v)); line != "" {
+		fmt.Fprintln(a.stdout, line)
+	}
 }
 
 // clearNotice removes the daemon's notice once this box's binary is
@@ -241,13 +263,8 @@ func clearNotice() error { return selfupdate.WriteNotice(config.StateDir(), "") 
 // ownRepo is the registry row whose go.mod declares the module this binary
 // was built from, or "" when none does (or the binary does not say).
 func (a *app) ownRepo() string {
-	bi, ok := readBuildInfo()
-	if !ok || bi.Main.Path == "" {
-		return ""
-	}
 	for _, n := range a.cfg.RepoNames() {
-		_, p, err := a.cfg.RepoPath(n)
-		if err == nil && modulePath(filepath.Join(p, "go.mod")) == bi.Main.Path {
+		if _, p, err := a.cfg.RepoPath(n); err == nil && ownModuleRepo(p) {
 			return n
 		}
 	}

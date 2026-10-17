@@ -14,7 +14,8 @@
 # $GOBIN/bmesh printing "bmesh <rev8>" for `version` and "fake bmesh
 # <commit>" otherwise, <rev8> being $FAKE_GO_REVISION, else the stamp, else
 # the commit as a pseudo-version names it (unknown with $FAKE_GO_TAGGED set:
-# go resolved the commit to a tag, which names none).
+# go resolved the commit to a tag, which names none); other arguments as
+# for build.
 if [ "$1" = install ]; then
   shift
   flags=
@@ -31,7 +32,7 @@ if [ "$1" = install ]; then
   named=$commit
   [ -n "$FAKE_GO_TAGGED" ] && named=unknown
   rev=$(printf '%.8s' "${FAKE_GO_REVISION:-${stamped:-$named}}")
-  printf '#!/bin/sh\n[ "$1" = version ] && { echo "bmesh %s 2026-10-16T00:00:00Z"; exit 0; }\necho fake bmesh %s\n' "$rev" "$commit" > "$GOBIN/bmesh"
+  printf '#!/bin/sh\n[ "$1" = version ] && { echo "bmesh %s 2026-10-16T00:00:00Z"; exit 0; }\n[ $# -gt 0 ] && { [ -n "$FAKE_GO_BMESH" ] && BMESH_TEST_REV=%s exec $FAKE_GO_BMESH "$@"; exit 0; }\necho fake bmesh %s\n' "$rev" "$commit" "$commit" > "$GOBIN/bmesh"
   chmod +x "$GOBIN/bmesh"
   exit 0
 fi

@@ -22,6 +22,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/runner"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
+	"github.com/rickdiculousli/buildermesh/internal/upgrade"
 	"github.com/rickdiculousli/buildermesh/internal/web"
 )
 
@@ -69,6 +70,9 @@ func (a *app) cmdServe(args []string) error {
 	if err != nil {
 		fmt.Fprintf(a.stderr, "bmesh serve: no binary path, so no [update]: %v\n", err)
 		exe = ""
+	}
+	if line := upgrade.Pending(config.StateDir(), buildVersion().Release); line != "" {
+		fmt.Fprintf(a.stderr, "bmesh serve: %s\n", line)
 	}
 	if remove, err := selfupdate.WriteProc(config.StateDir(), "serve", buildVersion()); err != nil {
 		fmt.Fprintf(a.stderr, "bmesh serve: no serve.json: %v\n", err)
