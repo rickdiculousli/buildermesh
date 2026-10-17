@@ -4,7 +4,7 @@ title: A model job whose claude never answered (no sign-in, a crash, a timeout) 
 kind: refinement
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: buildermesh-fix-2
 proposed_on: 2026-10-17
@@ -15,6 +15,8 @@ built_by: 74a4dbc2-c4b4-42a9-a9e0-9709f2c98ac3
 host: k16
 family: buildermesh-fix-2
 branch: bmesh/74a4dbc2-c4b4-42a9-a9e0-9709f2c98ac3
+merged: aa8115bb4a00b8f9e5fdfcfe120549b8fd68ac9b
+verified: verify ok t:3c40b465
 ---
 
 ## Opportunity
