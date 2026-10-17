@@ -4,7 +4,7 @@ title: The daemon starts bmesh's own fix lead when feedback on bmesh arrives, so
 kind: time-cost
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: 3a280408-0b8a-43a8-951a-2545a4d777f3
 proposed_on: 2026-10-17
