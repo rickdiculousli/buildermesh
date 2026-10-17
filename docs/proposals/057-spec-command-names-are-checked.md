@@ -4,11 +4,14 @@ title: choose-ideas warns when an accepted spec names a bmesh command another sp
 kind: refinement
 size: S
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: dfdc9673-27b2-4f3f-9f17-95a5b436de66
 proposed_on: 2026-10-17
 from_feedback: buildermesh-build-7 (buildermesh-048)
+built_by: 0fc80b82-a02f-4851-89f7-6631e3f399dc
+host: k16
+family: buildermesh-build-9
 ---
 
 ## Opportunity
