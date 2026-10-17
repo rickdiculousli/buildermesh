@@ -107,8 +107,9 @@ func (a *app) cmdFix(args []string) error {
 }
 
 // nextFixer refuses while a fixer of repo is live and otherwise returns
-// one past the highest <repo>-fix-<N> registered in bm-nodes or still
-// holding feedback, so a fixer's family is never joined by the next.
+// one past the highest <repo>-fix-<N> registered in bm-nodes (as a path or
+// a fix lead's family) or still holding feedback, so a fixer's family is
+// never joined by the next.
 func (a *app) nextFixer(ctx context.Context, repo string) (int, error) {
 	nodes, err := mesh.ListNodes(ctx, a.client)
 	if err != nil {
@@ -130,7 +131,7 @@ func (a *app) nextFixer(ctx context.Context, repo string) (int, error) {
 				return 0, fail(exitRefused, "refused: fixer %s is %s; one fixer writes the queue", node.Path, cmp.Or(s, "idle"))
 			}
 		}
-		names = append(names, node.Path)
+		names = append(names, node.Path, node.Family)
 	}
 	for _, p := range pending {
 		names = append(names, p.Family)

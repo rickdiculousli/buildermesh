@@ -58,8 +58,11 @@ func TestFixStartsOneFixerWithTheRulings(t *testing.T) {
 	ctx := t.Context()
 	withRevision(t, "")
 	commitFile(t, repo, "go.mod", "module example.com/bm\n", "go.mod")
-	// A fix family left feedback once: the next fixer numbers past it.
-	pubFeedback(t, c, mesh.Feedback{From: "demo-040", Family: "demo-fix-2", Repo: "demo", Text: "x"})
+	// A fix family left feedback once, and a forgotten fixer's lead is
+	// still registered: the next fixer numbers past both.
+	pubFeedback(t, c, mesh.Feedback{From: "demo-040", Family: "demo-fix-1", Repo: "demo", Text: "x"})
+	putNode(t, c, ctx, mesh.Node{Path: "demo-041", Repo: "demo", Family: "demo-fix-2"})
+	meshtest.ForceState(t, c, "demo-041", mesh.State{State: "done", By: "node"})
 	out, errs, code := runCLI(t, nil, "fix")
 	if code != 0 || !strings.HasPrefix(out, "fix: demo-fix-3 started (thread ") || !strings.HasSuffix(out, ", claude-opus-5-5, on "+testHost+")\n") {
 		t.Fatalf("%d %q %q", code, out, errs)
