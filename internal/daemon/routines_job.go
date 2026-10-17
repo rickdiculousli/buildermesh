@@ -19,6 +19,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/instance"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	wsetup "github.com/rickdiculousli/buildermesh/internal/setup"
 )
 
 // settleTimeout bounds the writes made after a job (and after the loop's
@@ -327,6 +328,15 @@ func (w *worker) handle(dl *delivery) {
 		fail(err.Error())
 		return
 	}
+	// A command kind runs against the commit's installs, brought current
+	// before a slot is taken; a model kind reads diffs and needs none. A
+	// failed setup answers the job and records nothing.
+	if !kc.IsModel() {
+		if msg := w.setup(ctx); msg != "" {
+			fail(msg)
+			return
+		}
+	}
 	ttl := max(kc.Timeout+ackWaitExtra, 3*time.Second)
 	keys, err := w.acquire(kc, ttl)
 	if errors.Is(err, mesh.ErrBusy) {
@@ -395,6 +405,33 @@ func (w *worker) handle(dl *delivery) {
 		w.event("progress", "recycled", "")
 	}
 }
+
+// setup runs the checkout's [setup] (as committed at the job's commit,
+// which MoveTo checked out) when its installs are stale: on every job when
+// it names no inputs, since the move changed the commit under them. It
+// returns why it failed, with the output's tail, or "".
+func (w *worker) setup(ctx context.Context) string {
+	rc, err := kind.LoadRepoConfig(w.dir)
+	if err != nil {
+		return err.Error()
+	}
+	s := rc.Setup
+	if s.Command == "" {
+		return ""
+	}
+	_, out, err := wsetup.Ensure(ctx, w.dir, s, wsetup.Options{Always: len(s.Inputs) == 0, Clean: true})
+	if err == nil {
+		return ""
+	}
+	msg := err.Error() + "; nothing recorded"
+	if tail := wsetup.Tail(out, setupTail); tail != "" {
+		msg += "\n" + tail
+	}
+	return msg
+}
+
+// setupTail is how much of a failed setup's output a job's answer carries.
+const setupTail = 30
 
 // acquire takes a place in each of kc's slots for this instance, capacity
 // from the checkout's repo config; on failure it releases what it took.

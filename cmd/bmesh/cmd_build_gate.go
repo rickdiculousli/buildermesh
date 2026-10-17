@@ -3,6 +3,7 @@ package main
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -135,7 +136,9 @@ func (a *app) codePaths(repo string) []string {
 // verifyMain checks sha, main's code head (codeHead), before a lead
 // branches from it or a release tags it. A verify result recorded for its
 // tree answers; else the repo's verify kind, as that commit defines it,
-// runs inline in a bmesh worktree there and records, as land runs it. A
+// runs inline in a bmesh worktree there and records, as land runs it,
+// after the commit's [setup] installs what it needs (a failing setup
+// refuses with its output's tail and records nothing). A
 // repo with no verify kind says so and passes; a failing verify refuses
 // (exit 3) with fix and the tail of its output. With force, a fail or a
 // missing result is said and passed, and nothing runs. Each line goes to
@@ -197,6 +200,11 @@ func (a *app) verifyMain(ctx context.Context, row config.Repo, repoPath, sha str
 		default:
 			fmt.Fprintf(note, "verify main %s: running at t:%s\n", sha[:8], tree[:8])
 			if ok, output, how, err = a.runInline(ctx, k, wt, sha, tree, a.cfg.HostName(), model, "", "", nil, false); err != nil {
+				// A setup that fails refuses the build and records
+				// nothing: a registry flake never turns main red.
+				if ee := (*exitErr)(nil); errors.As(err, &ee) && strings.HasPrefix(ee.msg, "setup ") {
+					return fail(exitRefused, "verify main %s: %s", sha[:8], ee.msg)
+				}
 				return err
 			}
 		}

@@ -21,10 +21,10 @@ import (
 // ErrNotFound is wrapped by LoadAt when the kind file is absent at the commit.
 var ErrNotFound = errors.New("kind not found")
 
-const (
-	defaultDir = ".bmesh/routines"
-	configFile = ".bmesh/config.toml"
-)
+const defaultDir = ".bmesh/routines"
+
+// ConfigFile is a repo's own bmesh config: [slots], [routines], [setup].
+const ConfigFile = ".bmesh/config.toml"
 
 // NameRE is the grammar of kind and slot names.
 var NameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
@@ -167,7 +167,21 @@ func Parse(name string, data []byte) (Kind, error) {
 type RepoConfig struct {
 	Slots       map[string]int
 	RoutinesDir string
+	Setup       Setup
 }
+
+// Setup is a repo's [setup] table: the command that installs what a
+// worktree of it needs and the repo gitignores (its dependencies), the git
+// pathspecs whose tracked files decide when an install is stale, and the
+// cap on a run. A repo with no command has no setup.
+type Setup struct {
+	Command string
+	Inputs  []string
+	Timeout time.Duration
+}
+
+// DefaultSetupTimeout caps a setup run whose table names no timeout.
+const DefaultSetupTimeout = 10 * time.Minute
 
 func parseRepoConfig(data []byte) (RepoConfig, error) {
 	rc := RepoConfig{Slots: map[string]int{}, RoutinesDir: defaultDir}
@@ -177,9 +191,14 @@ func parseRepoConfig(data []byte) (RepoConfig, error) {
 	var f struct {
 		Slots    map[string]int
 		Routines struct{ Dir string }
+		Setup    struct {
+			Command string
+			Inputs  []string
+			Timeout duration
+		}
 	}
 	if _, err := toml.Decode(string(data), &f); err != nil {
-		return RepoConfig{}, fmt.Errorf("%s: %w", configFile, err)
+		return RepoConfig{}, fmt.Errorf("%s: %w", ConfigFile, err)
 	}
 	if f.Slots != nil {
 		rc.Slots = f.Slots
@@ -187,12 +206,23 @@ func parseRepoConfig(data []byte) (RepoConfig, error) {
 	if f.Routines.Dir != "" {
 		rc.RoutinesDir = f.Routines.Dir
 	}
+	if cmd := strings.TrimSpace(f.Setup.Command); cmd != "" {
+		for _, p := range f.Setup.Inputs {
+			if strings.TrimSpace(p) == "" {
+				return RepoConfig{}, fmt.Errorf("%s: [setup] inputs: an empty pathspec", ConfigFile)
+			}
+		}
+		rc.Setup = Setup{Command: cmd, Inputs: f.Setup.Inputs, Timeout: time.Duration(f.Setup.Timeout)}
+		if rc.Setup.Timeout <= 0 {
+			rc.Setup.Timeout = DefaultSetupTimeout
+		}
+	}
 	return rc, nil
 }
 
 // LoadRepoConfig reads <repoPath>/.bmesh/config.toml; a missing file yields the defaults.
 func LoadRepoConfig(repoPath string) (RepoConfig, error) {
-	b, err := os.ReadFile(filepath.Join(repoPath, filepath.FromSlash(configFile)))
+	b, err := os.ReadFile(filepath.Join(repoPath, filepath.FromSlash(ConfigFile)))
 	if errors.Is(err, os.ErrNotExist) {
 		return parseRepoConfig(nil)
 	}
@@ -247,14 +277,7 @@ func LoadAt(repoPath, commit, name string) (Kind, error) {
 	if err != nil {
 		return Kind{}, err
 	}
-	var cfg []byte
-	switch b, err := gitShow(repoPath, sha, configFile); {
-	case err == nil:
-		cfg = []byte(b)
-	case !errors.Is(err, ErrNotFound):
-		return Kind{}, err
-	}
-	rc, err := parseRepoConfig(cfg)
+	rc, err := repoConfigAt(repoPath, sha)
 	if err != nil {
 		return Kind{}, err
 	}
@@ -266,6 +289,27 @@ func LoadAt(repoPath, commit, name string) (Kind, error) {
 		return Kind{}, err
 	}
 	return Parse(name, []byte(data))
+}
+
+// LoadRepoConfigAt reads the repo's .bmesh/config.toml as committed at
+// commit; a commit without one yields the defaults.
+func LoadRepoConfigAt(repoPath, commit string) (RepoConfig, error) {
+	sha, err := resolveCommit(repoPath, commit)
+	if err != nil {
+		return RepoConfig{}, err
+	}
+	return repoConfigAt(repoPath, sha)
+}
+
+func repoConfigAt(repoPath, sha string) (RepoConfig, error) {
+	var cfg []byte
+	switch b, err := gitShow(repoPath, sha, ConfigFile); {
+	case err == nil:
+		cfg = []byte(b)
+	case !errors.Is(err, ErrNotFound):
+		return RepoConfig{}, err
+	}
+	return parseRepoConfig(cfg)
 }
 
 // resolveCommit turns a caller-supplied commit into a SHA, so a value that

@@ -49,8 +49,13 @@ func (a *app) cmdRepos(args []string) error {
 		for _, kv := range [][2]string{{"name", r.Name}, {"path", r.Path}, {"mode", r.Mode}, {"remote", r.Remote},
 			{"host", r.Host}, {"ux_host", r.UXHost}, {"verify", strings.Join(r.Verify, "; ")},
 			{"surfaces", strings.Join(r.Surfaces, ", ")}, {"pin", r.Pin}, {"routines", strings.Join(r.Routines, ", ")},
-			{"code", cmp.Or(strings.Join(r.Code, ", "), "(everything but the spec files)")}} {
+			{"code", cmp.Or(strings.Join(r.Code, ", "), "(everything but the spec files)")},
+			{"setup", cmp.Or(r.Setup, "(none)")}} {
 			fmt.Fprintf(a.stdout, "%s: %s\n", kv[0], kv[1])
+		}
+		if r.Setup != "" {
+			fmt.Fprintf(a.stdout, "setup_inputs: %s\n", cmp.Or(strings.Join(r.SetupInputs, ", "), "(none: once per worktree)"))
+			fmt.Fprintf(a.stdout, "setup_timeout: %s\n", cmp.Or(r.SetupTimeout, config.DefaultSetupTimeout))
 		}
 		return nil
 	}

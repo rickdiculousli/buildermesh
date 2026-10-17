@@ -140,6 +140,23 @@ func TestLoadRepoConfig(t *testing.T) {
 	}
 }
 
+func TestRepoConfigSetup(t *testing.T) {
+	rc, err := parseRepoConfig([]byte("[setup]\ncommand = \" npm ci \"\ninputs = [\"**/package-lock.json\"]\n"))
+	if err != nil || rc.Setup.Command != "npm ci" || len(rc.Setup.Inputs) != 1 || rc.Setup.Timeout != DefaultSetupTimeout {
+		t.Fatalf("%+v %v", rc.Setup, err)
+	}
+	rc, err = parseRepoConfig([]byte("[setup]\ncommand = \"make deps\"\ntimeout = \"90s\"\n[slots]\ngame = 2\n"))
+	if err != nil || rc.Setup.Timeout != 90*time.Second || rc.Slots["game"] != 2 {
+		t.Fatalf("%+v %v", rc, err)
+	}
+	if rc, err = parseRepoConfig([]byte("[slots]\ngame = 2\n")); err != nil || rc.Setup.Command != "" {
+		t.Fatalf("no [setup]: %+v %v", rc.Setup, err)
+	}
+	if _, err = parseRepoConfig([]byte("[setup]\ncommand = \"x\"\ninputs = [\" \"]\n")); err == nil {
+		t.Fatal("an empty input was read")
+	}
+}
+
 func git(t *testing.T, repo string, args ...string) string {
 	t.Helper()
 	full := append([]string{"-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"}, args...)

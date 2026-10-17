@@ -907,3 +907,59 @@ func TestRescanLogsAKindReadFailureOncePerCommit(t *testing.T) {
 		t.Fatalf("read kinds logged %d times:\n%s", n, out)
 	}
 }
+
+// A command job brings the checkout's installs current after the move:
+// again when an input changed, on every job when [setup] names no inputs;
+// a model job never runs it, and a failing setup answers ok=false with
+// nothing recorded.
+func TestCommandJobRunsSetupAfterTheMove(t *testing.T) {
+	slog := filepath.Join(t.TempDir(), "setup.log")
+	install := `mkdir -p node_modules && touch node_modules/dep && echo setup >> ` + slog
+	f := routineSetup(t, map[string]string{
+		".gitignore":         "node_modules/\n",
+		"web/lock.json":      "1\n",
+		".bmesh/config.toml": "[setup]\ncommand = \"" + install + "\"\ninputs = [\"web/lock.json\"]\n",
+		".bmesh/routines/check.toml": `
+mode = "pooled"
+timeout = "30s"
+command = "test -f node_modules/dep && echo deps"
+`,
+		".bmesh/routines/review.toml": `
+models = ["m-a"]
+prompt = "P"
+timeout = "30s"
+batch_idle = "1s"
+`})
+	t.Setenv("FAKE_RESULT", "VERDICT: ok")
+	setups := func() int { return len(lines(t, slog)) }
+	f.start(t)
+	job := func(kind, commit string, want int) mesh.Reply {
+		t.Helper()
+		r := f.reply(t, f.queue(t, mesh.Job{Kind: kind, Commit: commit, Go: true}), 20*time.Second)
+		if !r.OK || setups() != want {
+			t.Fatalf("%s at %.8s: %+v setups %d, want %d", kind, commit, r, setups(), want)
+		}
+		return r
+	}
+	c1 := meshtest.Git(t, f.repo, "rev-parse", "HEAD")
+	if r := job("check", c1, 1); r.Output != "deps\n" {
+		t.Fatalf("check %+v", r)
+	}
+	job("check", meshtest.CommitFiles(t, f.repo, map[string]string{"a.txt": "a\n"}), 1)
+	c3 := meshtest.CommitFiles(t, f.repo, map[string]string{"web/lock.json": "2\n"})
+	job("check", c3, 2)
+	job("review", c3, 2)
+	c4 := meshtest.CommitFiles(t, f.repo, map[string]string{".bmesh/config.toml": "[setup]\ncommand = \"" + install + "\"\n"})
+	job("check", c4, 3)
+	job("check", c4, 4)
+
+	c5 := meshtest.CommitFiles(t, f.repo, map[string]string{".bmesh/config.toml": "[setup]\ncommand = \"echo down; exit 1\"\n"})
+	r := f.reply(t, f.queue(t, mesh.Job{Kind: "check", Commit: c5, Go: true}), 20*time.Second)
+	if r.OK || r.ResultKey != "" || r.Output != "setup failed: exit status 1; nothing recorded\ndown" {
+		t.Fatalf("failing setup: %+v", r)
+	}
+	tree5 := meshtest.Git(t, f.repo, "rev-parse", c5+"^{tree}")
+	if _, ok, err := mesh.GetResult(f.ctx, f.c, mesh.ResultKey("check", tree5, nil, "")); err != nil || ok {
+		t.Fatalf("a failed setup recorded: %v %v", ok, err)
+	}
+}

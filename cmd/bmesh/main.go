@@ -400,6 +400,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdSync(rest)
 	case "prune":
 		return a.cmdPrune(rest)
+	case "setup":
+		return a.cmdSetup(rest)
 	case "help":
 		fmt.Fprint(a.stdout, usage)
 		return nil

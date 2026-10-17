@@ -228,11 +228,14 @@ func TestLoadReposRefusals(t *testing.T) {
 	}
 	os.Remove(cfg)
 	for body, want := range map[string]string{
-		"[repos.x]\nmode = \"ship\"\n":                        "[repos.x]: path is required",
-		"[repos.x]\npath = \"p\"\nmode = \"shipped\"\n":       `[repos.x]: mode "shipped" is not one of ship, companion, publish, fork, dormant`,
-		"[repos.x]\npath = \"p\"\nhots = \"k\"\n":             "unknown key repos.x.hots",
-		"[repos.\"a/b\"]\npath = \"p\"\n":                     `[repos.a/b]: name "a/b": a name matches`,
-		"[repos.x]\npath = \"p\"\ncode = [\"*.go\", \" \"]\n": "[repos.x]: code: an empty pathspec",
+		"[repos.x]\nmode = \"ship\"\n":                                            "[repos.x]: path is required",
+		"[repos.x]\npath = \"p\"\nmode = \"shipped\"\n":                           `[repos.x]: mode "shipped" is not one of ship, companion, publish, fork, dormant`,
+		"[repos.x]\npath = \"p\"\nhots = \"k\"\n":                                 "unknown key repos.x.hots",
+		"[repos.\"a/b\"]\npath = \"p\"\n":                                         `[repos.a/b]: name "a/b": a name matches`,
+		"[repos.x]\npath = \"p\"\ncode = [\"*.go\", \" \"]\n":                     "[repos.x]: code: an empty pathspec",
+		"[repos.x]\npath = \"p\"\nsetup_inputs = [\"a\"]\n":                       "[repos.x]: setup_inputs and setup_timeout need setup",
+		"[repos.x]\npath = \"p\"\nsetup = \"npm ci\"\nsetup_timeout = \"soon\"\n": `[repos.x]: setup_timeout "soon": want a positive duration`,
+		"[repos.x]\npath = \"p\"\nsetup = \"npm ci\"\nsetup_inputs = [\"\"]\n":    "[repos.x]: setup_inputs: an empty pathspec",
 	} {
 		os.WriteFile(repos, []byte(body), 0o644)
 		_, err := Load(cfg)
@@ -246,7 +249,8 @@ func TestWriteRepoRoundTrips(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "repos.toml")
 	r := Repo{Name: "app", Path: "~/repos/app", Mode: "fork", Remote: "o/app", Host: "k16", UXHost: "mac",
 		Verify: []string{`test -z "$(gofmt -l .)"`, "go test ./..."}, Surfaces: []string{"desk at 1280x800"}, Pin: "v1",
-		Routines: []string{"verify"}, Code: []string{"*.go", "cmd/**"}}
+		Routines: []string{"verify"}, Code: []string{"*.go", "cmd/**"},
+		Setup: "npm ci", SetupInputs: []string{":(glob)**/package-lock.json"}, SetupTimeout: "5m"}
 	if err := WriteRepo(p, r); err != nil {
 		t.Fatal(err)
 	}

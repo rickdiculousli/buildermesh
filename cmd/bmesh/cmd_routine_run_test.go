@@ -286,3 +286,72 @@ func TestInlineModelKindThroughFake(t *testing.T) {
 		t.Fatalf("unknown model: %d %q", code, errs)
 	}
 }
+
+// setupLog points $SETUP_LOG at a file outside the repo a setup command
+// appends to, and returns a count of its runs.
+func setupLog(t *testing.T) func() int {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "setup.log")
+	t.Setenv("SETUP_LOG", p)
+	return func() int {
+		b, _ := os.ReadFile(p)
+		return strings.Count(string(b), "setup\n")
+	}
+}
+
+// commitAll writes files into the cwd repo and commits them.
+func commitAll(t *testing.T, repo string, files map[string]string) {
+	t.Helper()
+	for rel, body := range files {
+		p := filepath.Join(repo, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-qm", "files")
+}
+
+const installSetup = `mkdir -p node_modules && touch node_modules/dep && echo setup >> \"$SETUP_LOG\"`
+
+// routine run brings the worktree's installs current before a command kind
+// runs: again when an input changed, not when none did, once with no inputs.
+func TestInlineRunsSetupWhenStale(t *testing.T) {
+	c, ctx := setup(t)
+	setups := setupLog(t)
+	repo := kindRepo(t, map[string]string{"verify": "mode = \"inline\"\ncommand = \"test -f node_modules/dep && echo deps\"\n"})
+	commitAll(t, repo, map[string]string{".gitignore": "node_modules/\n", "web/lock.json": "1\n",
+		".bmesh/config.toml": "[setup]\ncommand = \"" + installSetup + "\"\ninputs = [\"web/lock.json\"]\n"})
+	run := func(want int) {
+		t.Helper()
+		out, errs, code := runCLI(t, nil, "routine", "run", "verify")
+		if code != 0 || !strings.HasPrefix(out, "deps\nverify ok") || setups() != want {
+			t.Fatalf("run: %d %q %q setups %d, want %d", code, out, errs, setups(), want)
+		}
+	}
+	run(1)
+	run(1)
+	commitAll(t, repo, map[string]string{"a.txt": "b\n"})
+	run(1)
+	commitAll(t, repo, map[string]string{"web/lock.json": "2\n"})
+	run(2)
+	// With no inputs it runs once in the worktree.
+	commitAll(t, repo, map[string]string{".bmesh/config.toml": "[setup]\ncommand = \"" + installSetup + "\"\n"})
+	run(3)
+	commitAll(t, repo, map[string]string{"web/lock.json": "3\n"})
+	run(3)
+
+	// A setup that leaves an untracked file fails, and records nothing.
+	commitAll(t, repo, map[string]string{".bmesh/config.toml": "[setup]\ncommand = \"touch stray.txt\"\n"})
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
+	out, errs, code := runCLI(t, nil, "routine", "run", "verify")
+	if code != 3 || out != "" || errs != "bmesh: setup dirtied the tree: stray.txt; nothing recorded\n" {
+		t.Fatalf("dirty: %d %q %q", code, out, errs)
+	}
+	if _, ok, err := mesh.GetResult(ctx, c, mesh.ResultKey("verify", tree, nil, "")); err != nil || ok {
+		t.Fatalf("a dirtying setup recorded: %v %v", ok, err)
+	}
+}

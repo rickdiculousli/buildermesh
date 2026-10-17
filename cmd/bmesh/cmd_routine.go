@@ -18,6 +18,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/instance"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	wsetup "github.com/rickdiculousli/buildermesh/internal/setup"
 )
 
 const routineUsage = "usage: bmesh routine list [--json] | status [<kind>] [--json] | " +
@@ -694,6 +695,17 @@ func (a *app) runInline(ctx context.Context, k kind.Kind, top, head, tree, self,
 		}
 	}
 
+	rc, err := kind.LoadRepoConfig(top)
+	if err != nil {
+		return false, "", "", err
+	}
+	// A command kind runs against the repo's installs; a model kind reads
+	// diffs and needs none.
+	if !k.IsModel() {
+		if err := a.runSetup(ctx, top, rc.Setup); err != nil {
+			return false, "", "", err
+		}
+	}
 	var inst instance.Instance = instance.NewCommand(k)
 	if k.IsModel() {
 		claude := os.Getenv("BMESH_CLAUDE_COMMAND")
@@ -701,10 +713,6 @@ func (a *app) runInline(ctx context.Context, k kind.Kind, top, head, tree, self,
 			claude = a.cfg.Runner.Claude
 		}
 		inst = instance.NewModel(k, model, claude)
-	}
-	rc, err := kind.LoadRepoConfig(top)
-	if err != nil {
-		return false, "", "", err
 	}
 	capacity := func(slot string) (int, error) { return max(rc.Slots[slot], 1), nil }
 	j := instance.Job{ID: newID(), Kind: name, Commit: head, Tree: tree, From: self, Reply: self,
@@ -733,6 +741,31 @@ func (a *app) runInline(ctx context.Context, k kind.Kind, top, head, tree, self,
 		return false, "", "", err
 	}
 	return reply.OK, reply.Output, "recorded", nil
+}
+
+// runSetup brings the worktree top's installs current (setup.Ensure, the
+// tree required clean after) before a command kind runs there and records.
+// A failed setup is refused (exit 3) with the tail of its output: an
+// infrastructure error, never a recorded result.
+func (a *app) runSetup(ctx context.Context, top string, s kind.Setup) error {
+	start := time.Now()
+	// The setup's own timeout bounds it, not the caller's deadline.
+	ran, out, err := wsetup.Ensure(context.WithoutCancel(ctx), top, s, wsetup.Options{Clean: true})
+	var se *wsetup.Error
+	if errors.As(err, &se) {
+		msg := se.Msg + "; nothing recorded"
+		if tail := wsetup.Tail(out, redTail); tail != "" {
+			msg += "\n" + tail
+		}
+		return fail(exitRefused, "%s", msg)
+	}
+	if err != nil {
+		return err
+	}
+	if ran {
+		fmt.Fprintf(a.stderr, "bmesh: setup ran (%s) in %s\n", s.Command, time.Since(start).Round(100*time.Millisecond))
+	}
+	return nil
 }
 
 // checkJobEffort refuses an effort the runner can't start a session at, and

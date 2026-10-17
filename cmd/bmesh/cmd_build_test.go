@@ -491,6 +491,61 @@ func TestBuildVerifiesMainsCodeHead(t *testing.T) {
 	}
 }
 
+// A repo with [setup] verifies main in a worktree that installs first;
+// a record answers without setup, and a failing setup refuses and records
+// nothing.
+func TestBuildRunsSetupBeforeVerifyingMain(t *testing.T) {
+	c, repo, _ := buildSetup(t)
+	ctx := t.Context()
+	t.Setenv("VERIFY_LOG", filepath.Join(t.TempDir(), "verify.log"))
+	slog := filepath.Join(t.TempDir(), "setup.log")
+	t.Setenv("SETUP_LOG", slog)
+	setups := func() int {
+		b, _ := os.ReadFile(slog)
+		return strings.Count(string(b), "setup\n")
+	}
+	commitFile(t, repo, ".gitignore", "node_modules/\n", "Ignore installs")
+	commitFile(t, repo, ".bmesh/config.toml", "[setup]\ncommand = \"mkdir -p node_modules && touch node_modules/dep && echo setup >> \\\"$SETUP_LOG\\\"\"\n", "Name the setup")
+	// The verify passes only where the setup installed.
+	green := verifyKind(t, repo, "test -f node_modules/dep", "Add the verify kind")
+	tree := gitOut(t, "-C", repo, "rev-parse", "main^{tree}")
+	out, errs, code := runCLI(t, nil, "build", "demo", "002")
+	if code != 0 || !strings.Contains(errs, "verify main "+green[:8]+": ok t:"+tree[:8]+" (recorded)\n") || setups() != 1 {
+		t.Fatalf("green: %d %q %q setups %d", code, out, errs, setups())
+	}
+	var got buildStarted
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("%q: %v", out, err)
+	}
+	_, errs, code = runCLI(t, nil, "build", "demo", "004", "--family", got.Family)
+	if code != 0 || !strings.Contains(errs, "(answered from the record)") || setups() != 1 {
+		t.Fatalf("answered: %d %q setups %d", code, errs, setups())
+	}
+
+	broken := commitFileSHA(t, repo, ".bmesh/config.toml", "[setup]\ncommand = \"echo registry down; exit 1\"\n", "Break the setup")
+	brokenTree := gitOut(t, "-C", repo, "rev-parse", "main^{tree}")
+	_, errs, code = runCLI(t, nil, "build", "demo", "009", "--family", got.Family)
+	if code != 3 || !strings.Contains(errs, "bmesh: verify main "+broken[:8]+": setup failed: exit status 1; nothing recorded\nregistry down\n") {
+		t.Fatalf("failing setup: %d %q", code, errs)
+	}
+	if _, ok, err := mesh.GetResult(ctx, c, mesh.ResultKey("verify", brokenTree, nil, "")); err != nil || ok {
+		t.Fatalf("a failed setup recorded a result: %v %v", ok, err)
+	}
+	if gitOut(t, "-C", repo, "rev-parse", "main") != broken {
+		t.Fatal("a refused build recorded on main")
+	}
+	if wts := gitOut(t, "-C", repo, "worktree", "list"); strings.Count(wts, "\n") != 0 {
+		t.Fatalf("worktrees left: %s", wts)
+	}
+}
+
+// commitFileSHA is commitFile, returning main's new head.
+func commitFileSHA(t *testing.T, repo, rel, body, msg string) string {
+	t.Helper()
+	commitFile(t, repo, rel, body, msg)
+	return gitOut(t, "-C", repo, "rev-parse", "main")
+}
+
 // With the row's code set, a README commit on main is not its code head:
 // build answers from the record of the commit under it.
 func TestBuildAnswersAReadmeHeadFromTheCodeHead(t *testing.T) {

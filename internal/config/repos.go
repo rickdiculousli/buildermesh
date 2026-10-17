@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -44,7 +45,18 @@ type Repo struct {
 	Pin      string   `json:"pin" toml:"pin"`
 	Routines []string `json:"routines" toml:"routines"`
 	Code     []string `json:"code" toml:"code"`
+	// Setup is the command that installs what the repo gitignores (its
+	// dependencies) in a fresh worktree; SetupInputs are the git pathspecs
+	// whose files decide when it is stale; SetupTimeout caps a run (a Go
+	// duration, "" for DefaultSetupTimeout). Scaffold writes them into the
+	// repo's .bmesh/config.toml, which is what bmesh runs.
+	Setup        string   `json:"setup" toml:"setup"`
+	SetupInputs  []string `json:"setup_inputs" toml:"setup_inputs"`
+	SetupTimeout string   `json:"setup_timeout" toml:"setup_timeout"`
 }
+
+// DefaultSetupTimeout is a setup run's cap when the row names none.
+const DefaultSetupTimeout = "10m"
 
 type reposFile struct {
 	Repos map[string]Repo `toml:"repos"`
@@ -187,7 +199,8 @@ func DiffRepos(old, new map[string]Repo) []string {
 func repoFields(r Repo) [][2]string {
 	return [][2]string{{"path", r.Path}, {"mode", r.Mode}, {"remote", r.Remote}, {"host", r.Host},
 		{"ux_host", r.UXHost}, {"verify", listText(r.Verify)}, {"surfaces", listText(r.Surfaces)}, {"pin", r.Pin},
-		{"routines", listText(r.Routines)}, {"code", listText(r.Code)}}
+		{"routines", listText(r.Routines)}, {"code", listText(r.Code)}, {"setup", r.Setup},
+		{"setup_inputs", listText(r.SetupInputs)}, {"setup_timeout", r.SetupTimeout}}
 }
 
 func listText(l []string) string {
@@ -237,6 +250,22 @@ func (r *Repo) check() error {
 	for _, p := range r.Code {
 		if strings.TrimSpace(p) == "" {
 			return errors.New("code: an empty pathspec")
+		}
+	}
+	if r.SetupInputs == nil {
+		r.SetupInputs = []string{}
+	}
+	for _, p := range r.SetupInputs {
+		if strings.TrimSpace(p) == "" {
+			return errors.New("setup_inputs: an empty pathspec")
+		}
+	}
+	if r.Setup == "" && (len(r.SetupInputs) > 0 || r.SetupTimeout != "") {
+		return errors.New("setup_inputs and setup_timeout need setup")
+	}
+	if r.SetupTimeout != "" {
+		if d, err := time.ParseDuration(r.SetupTimeout); err != nil || d <= 0 {
+			return fmt.Errorf("setup_timeout %q: want a positive duration such as 10m", r.SetupTimeout)
 		}
 	}
 	return nil
@@ -346,6 +375,15 @@ func renderRepos(repos map[string]Repo) string {
 		}
 		if len(r.Code) > 0 {
 			fmt.Fprintf(&b, "code = %s\n", tomlList(r.Code))
+		}
+		if r.Setup != "" {
+			fmt.Fprintf(&b, "setup = %s\n", tomlString(r.Setup))
+		}
+		if len(r.SetupInputs) > 0 {
+			fmt.Fprintf(&b, "setup_inputs = %s\n", tomlList(r.SetupInputs))
+		}
+		if r.SetupTimeout != "" {
+			fmt.Fprintf(&b, "setup_timeout = %s\n", tomlString(r.SetupTimeout))
 		}
 	}
 	return b.String()
