@@ -4,7 +4,7 @@ title: An idea's spec is classified by Haiku, and a load-bearing, security or cr
 kind: feature
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-17
