@@ -226,12 +226,12 @@ func (s Step) Line() string {
 		}
 		line = fmt.Sprintf("ask %s: %s (%s)", where, strings.TrimSpace(s.Changed+" "+s.Question), choices)
 	case Run:
-		line = fmt.Sprintf("%s: `%s`", s.Why, s.Command)
+		line = fmt.Sprintf("%s: %s", s.Why, s.shown())
 		if s.Confirm {
 			line += " (asks first)"
 		}
 	case Check:
-		line = fmt.Sprintf("check `%s`", s.Command)
+		line = "check " + s.shown()
 		if s.Expect != "" {
 			line += fmt.Sprintf(" shows %q", s.Expect)
 		}
@@ -247,3 +247,15 @@ func (s Step) Line() string {
 	}
 	return line
 }
+
+// shown is the command for a line: `cmd`, or for a script of several
+// lines `a 5-line script` (Script prints it whole).
+func (s Step) shown() string {
+	if n := len(s.Script()); n > 1 {
+		return fmt.Sprintf("a %d-line script", n)
+	}
+	return "`" + strings.TrimSpace(s.Command) + "`"
+}
+
+// Script is the command's lines, blank ends trimmed.
+func (s Step) Script() []string { return strings.Split(strings.Trim(s.Command, "\n"), "\n") }
