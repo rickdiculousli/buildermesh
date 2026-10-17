@@ -566,6 +566,11 @@ func (a *app) walkStep(p plannedStep, st *upgrade.State, w walkFlags, r walkRang
 		return true, st.Save(sd)
 	}
 	fmt.Fprintf(a.stdout, "%s %s\n", p.ID, p.Line())
+	if script := p.Script(); len(script) > 1 {
+		for _, l := range script {
+			fmt.Fprintf(a.stdout, "    %s\n", l)
+		}
+	}
 	term := interactive(a.stdin)
 	switch {
 	case !w.apply && !term:
