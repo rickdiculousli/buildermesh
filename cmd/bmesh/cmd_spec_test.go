@@ -322,6 +322,22 @@ func TestLandCopiesOperatorSteps(t *testing.T) {
 	}
 }
 
+// A spec landed again whose Needs section is now empty drops its steps.
+func TestLandDropsStepsTheNeedsNoLongerList(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	writeFile(t, filepath.Join(r.wt, "docs", "proposals", "012-thing.md"), "---\nid: 12\nstatus: building\nbranch: lead\n"+
+		`operator_steps: [{"n":1,"box":"","text":"old","done":""}]`+"\n---\n\n## Needs from the operator\nNone.\n")
+	meshtest.Git(t, r.wt, "commit", "-qam", "needs")
+	if out, errs, code := runCLI(t, as("app-012"), "land"); code != 0 || strings.Contains(out, "operator steps:") {
+		t.Fatalf("land: %d %q %q", code, out, errs)
+	}
+	if got := r.specOnOrigin(t); !strings.Contains(got, "operator_steps: []\n") {
+		t.Fatalf("spec on origin:\n%s", got)
+	}
+}
+
 func TestSpecStepsListAndTick(t *testing.T) {
 	_, _, repo := stepsRepo(t)
 	out, errs, code := runCLI(t, nil, "spec", "steps", "015", "--repo", "demo")
@@ -410,5 +426,26 @@ func TestSpecStepsCheck(t *testing.T) {
 	meshtest.Git(t, repo, "fetch", "-q", "origin")
 	if now := gitOut(t, "-C", repo, "rev-parse", "origin/main"); now != head {
 		t.Fatalf("landed again: %s -> %s", head, now)
+	}
+}
+
+// With hosts on and this box never joined, asking the other boxes fails;
+// the pass here lands all the same, and the failure is still reported.
+func TestSpecStepsCheckLandsHereWhenOtherBoxesFail(t *testing.T) {
+	_, _, repo := stepsRepo(t)
+	cfg := os.Getenv("BMESH_CONFIG")
+	b, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg, append(b, "[hosts]\nenabled = true\n"...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, errs, code := runCLI(t, nil, "spec", "steps", "015", "--repo", "demo", "--check")
+	if code != 3 || !strings.Contains(errs, "no host key") || !strings.Contains(out, " on main: Steps: 015 1 done; 3 of 4 open\n") {
+		t.Fatalf("check: %d %q %q", code, out, errs)
+	}
+	if steps := stepsOnOrigin(t, repo); steps[0].Note != "check passed" || steps[2].Done != "" {
+		t.Fatalf("%+v", steps)
 	}
 }

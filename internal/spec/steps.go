@@ -157,8 +157,11 @@ func DecodeSteps(v string) ([]Step, error) {
 }
 
 // EncodeSteps is steps as an operator_steps value: JSON on one line, with
-// `<`, `>` and `&` kept as written.
+// `<`, `>` and `&` kept as written; no steps is `[]`.
 func EncodeSteps(steps []Step) (string, error) {
+	if steps == nil {
+		steps = []Step{}
+	}
 	var b bytes.Buffer
 	enc := json.NewEncoder(&b)
 	enc.SetEscapeHTML(false)
@@ -200,14 +203,33 @@ func (s Step) String() string {
 }
 
 // CarryTicks is steps with the ticks of the same steps (same box and
-// words) in old kept, so a spec landed again keeps what was done.
+// words) in old kept, each old step's tick at most once, so a spec landed
+// again keeps what was done.
 func CarryTicks(old, steps []Step) []Step {
+	used := make([]bool, len(old))
 	for i := range steps {
-		for _, o := range old {
-			if o.Done != "" && o.Box == steps[i].Box && o.Text == steps[i].Text {
+		for k, o := range old {
+			if !used[k] && o.Done != "" && o.Box == steps[i].Box && o.Text == steps[i].Text {
 				steps[i].Done, steps[i].Note = o.Done, o.Note
+				used[k] = true
 				break
 			}
+		}
+	}
+	return steps
+}
+
+// KeepBoxes puts a bracketed word that names no box (isBox says) back in
+// front of its step's words, so `[optional] ...` is words, not a box; a
+// nil isBox keeps every box.
+func KeepBoxes(steps []Step, isBox func(string) bool) []Step {
+	if isBox == nil {
+		return steps
+	}
+	for i := range steps {
+		if b := steps[i].Box; b != "" && !isBox(b) {
+			steps[i].Text = strings.TrimSpace("[" + b + "] " + steps[i].Text)
+			steps[i].Box = ""
 		}
 	}
 	return steps

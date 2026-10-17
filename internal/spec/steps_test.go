@@ -101,9 +101,16 @@ func TestStepsRoundTrip(t *testing.T) {
 		got[0].String() != "1. [k16] a <b> & c (check: test -f x)" {
 		t.Fatalf("%d %q %q", Open(got), got[0], got[1])
 	}
-	again := CarryTicks(got, ParseSteps("- two\n- three"))
-	if again[0].Done == "" || again[1].Done != "" {
+	again := CarryTicks(got, ParseSteps("- two\n- three\n- two"))
+	if again[0].Done == "" || again[1].Done != "" || again[2].Done != "" { // one tick carries once
 		t.Fatalf("carried %+v", again)
+	}
+	kept := KeepBoxes(ParseSteps("- [k16] a\n- [optional] b\n- c"), func(b string) bool { return b == "k16" })
+	if kept[0].Box != "k16" || kept[1].Box != "" || kept[1].Text != "[optional] b" || kept[2].Text != "c" {
+		t.Fatalf("kept %+v", kept)
+	}
+	if v, err := EncodeSteps(nil); err != nil || v != "[]" {
+		t.Fatalf("no steps: %q %v", v, err)
 	}
 	if _, err := DecodeSteps("[{"); err == nil {
 		t.Fatal("bad json read")

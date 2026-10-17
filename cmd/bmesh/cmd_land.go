@@ -486,9 +486,9 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 	}
 	restore := func() { _, _ = cleanup("checkout", "HEAD", "--", rel) }
 	done := []spec.Field{{Key: "merged", Value: merged}, {Key: "branch", Value: l.branch}}
-	steps := s.NeedsSteps()
-	if len(steps) > 0 {
-		old, _ := s.Steps() // a spec landed again keeps its ticks
+	steps := spec.KeepBoxes(s.NeedsSteps(), l.a.rosterBoxes())
+	old, _ := s.Steps()
+	if len(steps) > 0 || len(old) > 0 { // a spec landed again keeps its ticks, or drops its steps
 		v, err := spec.EncodeSteps(spec.CarryTicks(old, steps))
 		if err != nil {
 			return false, err

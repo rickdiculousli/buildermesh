@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/hosts"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
@@ -156,6 +157,24 @@ func (a *app) cmdSpecSteps(args []string) error {
 	return nil
 }
 
+// rosterBoxes reports whether a name is a box, from this box's copy of
+// the roster (and this box's own name); nil, every name a box, when
+// [hosts] is off or the roster can't be read.
+func (a *app) rosterBoxes() func(string) bool {
+	if !a.cfg.Hosts.Enabled {
+		return nil
+	}
+	local, ok, err := hosts.LoadLocal(config.StateDir())
+	if err != nil || !ok || len(local.Roster.Hosts) == 0 {
+		return nil
+	}
+	here := a.cfg.HostName()
+	return func(name string) bool {
+		_, in := local.Roster.Host(name)
+		return in || name == here
+	}
+}
+
 // mainSpec reads spec id from the repo's main (origin/main after a fetch).
 func mainSpec(repoPath, glob, id string) (*spec.Spec, error) {
 	p, text, err := spec.FindOnMain(repoPath, glob, id)
@@ -231,7 +250,8 @@ func (a *app) tickSteps(ctx context.Context, name, repoPath string, id int, ns [
 // checkSteps runs the check of each open step of spec id that has one: on
 // this box when the step names no box or this one, else as a check-step
 // job to its box, waiting up to wait. Each step whose check exits 0 is
-// ticked, `<time> <the box that ran it>`, one landing per box.
+// ticked, `<time> <the box that ran it>`, one landing per box; a failure
+// to ask the other boxes is returned after this box's passes land.
 func (a *app) checkSteps(ctx context.Context, name, repoPath, id string, wait time.Duration) error {
 	s, err := mainSpec(repoPath, a.cfg.Spec.Glob, id)
 	if err != nil {
@@ -264,10 +284,9 @@ func (a *app) checkSteps(ctx context.Context, name, repoPath, id string, wait ti
 		fmt.Fprintf(a.stdout, "%s %s: no open step has a check\n", id, s.Title())
 		return nil
 	}
+	var remoteErr error // the passes here land all the same
 	if len(remote) > 0 {
-		if err := a.checkRemote(ctx, name, id, remote, wait, passed); err != nil {
-			return err
-		}
+		remoteErr = a.checkRemote(ctx, name, id, remote, wait, passed)
 	}
 	boxes := make([]string, 0, len(passed))
 	for box := range passed {
@@ -279,7 +298,7 @@ func (a *app) checkSteps(ctx context.Context, name, repoPath, id string, wait ti
 			return err
 		}
 	}
-	return nil
+	return remoteErr
 }
 
 // checkRemote sends a check-step job for each step to its box and waits up
