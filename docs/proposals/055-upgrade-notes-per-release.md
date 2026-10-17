@@ -1,6 +1,6 @@
 ---
 id: 055
-title: A repo can require upgrade notes per release, distilled by the coordinator; bmesh update walks a box through bmesh's own, agent or human
+title: bmesh's own releases carry upgrade notes the coordinator distils, and bmesh update walks a box through them, agent or human
 kind: feature
 size: L
 judge: opus
@@ -22,14 +22,14 @@ Specs also overlap: 039 drops the `t3_dispatch` key that 041 then retires along 
 
 ## Proposal
 In:
-- **Opt-in per repo, outside git.** The registry row gains `ensure_upgrade_path = false` (the admin's `repos.toml`, not the repo). Everything in the next three bullets applies only to a repo whose row sets it true; every other repo builds and releases exactly as today. This ceremony is how bmesh dogfoods its own releases, not a rule for the repos it builds. buildermesh's row sets it (Needs from the operator).
-- **Each spec says what an existing install must do.** For such a repo, `bmesh spec template` and the build brief add `## Upgrading`: the steps an install from the previous release needs, written for any fleet, or `nothing`. The lead fills it as built, never with this fleet's paths. A new config key is written as an **ask**: one line saying what changed, the question, the choices and the default.
+- **Only for bmesh's own repo, with no key.** bmesh knows when it is building itself: the repo's `go.mod` declares the binary's own module, the same test land's scaffold check already makes (`A tree whose go.mod declares this binary's own module`). Everything in the next three bullets applies only there. Every other repo builds and releases exactly as today, with no config, because this ceremony is how bmesh dogfoods its own releases, not a rule for the repos it builds.
+- **Each spec says what an existing install must do.** In bmesh's own repo, `bmesh spec template` and the build brief add `## Upgrading`: the steps an install from the previous release needs, written for any fleet, or `nothing`. The lead fills it as built, never with this fleet's paths. A new config key is written as an **ask**: one line saying what changed, the question, the choices and the default.
 - **The coordinator distils the notes per release.** Before `bmesh release`, the coordinator (the `build` skill, step 7) reads the `Upgrading` sections of every spec landed since the last tag. It collapses them into the fewest true steps: a key one spec adds and another drops never appears, two moves of the same file become one, and an ask whose default keeps today's behaviour stays an ask. It writes `docs/upgrading/vX.Y.Z.toml`. The coordinator has the final say over what goes in, and the spec sections are its input, not the notes. Each step is one of:
   - `ask`: `key`, `file` (config or registry), `changed` (one line), `question`, `choices`, `default`, and `when` (a config condition, e.g. `[hub] role != ""`);
   - `run`: `command`, `why`, `os` and `when`, and `confirm = true` for anything destructive;
   - `check`: `command` and what its output must show.
 
-  For a repo with `ensure_upgrade_path`, `bmesh release` refuses (exit 3) when a spec landed since the last tag has a non-empty `Upgrading` section but `docs/upgrading/<the new tag>.toml` is missing. It refuses as well when that file doesn't parse or names a key the new binary doesn't know. The tag message carries the notes rendered as text.
+  In bmesh's own repo, `bmesh release` refuses (exit 3) when a spec landed since the last tag has a non-empty `Upgrading` section but `docs/upgrading/<the new tag>.toml` is missing. It refuses as well when that file doesn't parse or names a key the new binary doesn't know. The tag message carries the notes rendered as text.
 - **v0.1.0's notes, written after the fact: start over.** v0.1.0 was tagged before this spec, so it shipped with no notes. This spec's lead writes `docs/upgrading/v0.1.0.toml` retroactively, and it is the one exception to incremental steps. An install from before v0.1.0 is uninstalled and initialized again, nats included. Its steps:
   1. Check that no lead or executor is live (`bmesh mesh-status`), and finish or forget any that are.
   2. Stop and remove the `bmesh` and `bmesh-hub` services and any `nats-server` service, hub or leaf (systemd user units, launchd agents, the Windows logon task).
@@ -59,7 +59,7 @@ Judge: opus, because it changes the spec template, `release` and `update`, which
 
 ## Verification
 - The repo's verify, plus:
-  - `cmd_release_test.go`: for a row with `ensure_upgrade_path`, release refuses when a landed spec has `Upgrading` steps and the notes file is missing, and when the file names an unknown key; for a row without it, release and `spec template` behave as today;
+  - `cmd_release_test.go`: in bmesh's own repo, release refuses when a landed spec has `Upgrading` steps and the notes file is missing, and when the file names an unknown key; in any other repo, release and `spec template` behave as today;
   - `cmd_update_test.go` over a bare origin with two tags and notes: `--plan --json` lists the asks and steps between the versions; `--defaults` writes the defaults and keeps `config.toml.prev`; `--answer` overrides one; a failing `run` stops, and the next run resumes after the last step done; a config the new binary rejects keeps the old binary;
   - the hub version line, with a fake hub process.
 - **Live, by the lead:** the v0.1.0 notes walked end to end on a sandboxed HOME on k16 (a pre-0.1.0 install from commit 9a5e181a, nats-server included, uninstalled and initialized again by following `docs/upgrading/v0.1.0.toml` with `--plan --json` then `--apply`), recorded in the closing commit.
@@ -70,7 +70,6 @@ Judge: opus, because it changes the spec template, `release` and `update`, which
 - **Alternative: concatenate the specs' sections.** That is mechanical and nobody has to judge it, but it hands an install every intermediate step: keys added then dropped, files moved twice. The operator ruled that out: the coordinator teases out the minimal steps.
 
 ## Upgrading
-Nothing for an install at v0.1.0 beyond what the notes walk does itself. A repo's row is unchanged unless the admin sets `ensure_upgrade_path`, and the template's new section appears only for such a repo.
+Nothing for an install at v0.1.0 beyond what the notes walk does itself. The template's new section appears only in bmesh's own repo.
 
 ## Needs from the operator
-Set `ensure_upgrade_path = true` in buildermesh's row in the admin's `repos.toml`, then `bmesh repos publish`, once this lands.
