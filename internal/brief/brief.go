@@ -185,3 +185,53 @@ func RowValues(r config.Repo, repoPath string) map[string]string {
 		"done_rule":        DoneRule(r),
 	}
 }
+
+// UpgradingRule is what an `## Upgrading` section holds, shared by the
+// half-pager's section and the build brief's bullet in bmesh's own repo:
+// the steps an install from the previous release needs, for any fleet.
+const UpgradingRule = "The steps an install from the previous release needs to run this change, written for any fleet (never one fleet's paths or box names), or `nothing`. " +
+	"A new config key is written as an ask: one line saying what changed, the question, the choices and the default. " +
+	"A section that is empty or whose first word is `nothing` has no steps; any other text is input to the release's upgrade notes."
+
+// UpgradingSection is the half-pager's `## Upgrading` section, which
+// `bmesh spec template` adds in bmesh's own repo.
+const UpgradingSection = "## Upgrading\n" + UpgradingRule + "\n"
+
+// UpgradingBullet is the build brief's `{{upgrading}}` in bmesh's own
+// repo: a bullet that follows the Build line.
+const UpgradingBullet = "\n- This is bmesh's own repo: fill the spec's `## Upgrading` section as built (add it before `## Needs from the operator` when the spec has none). " + UpgradingRule
+
+// WithUpgrading is a half-pager with UpgradingSection before its
+// `## Needs from the operator`, or at its end when it has none; a text
+// that already has an `## Upgrading` section is returned as is.
+func WithUpgrading(text string) string {
+	if HasSection(text, "Upgrading") {
+		return text
+	}
+	const needs = "## Needs from the operator"
+	for i := 0; ; {
+		j := strings.Index(text[i:], needs)
+		if j < 0 {
+			break
+		}
+		at := i + j
+		if at == 0 || text[at-1] == '\n' {
+			return text[:at] + UpgradingSection + "\n" + text[at:]
+		}
+		i = at + len(needs)
+	}
+	if text != "" && !strings.HasSuffix(text, "\n") {
+		text += "\n"
+	}
+	return text + "\n" + UpgradingSection
+}
+
+// HasSection reports whether text has a `## <name>` heading line.
+func HasSection(text, name string) bool {
+	for _, l := range strings.Split(text, "\n") {
+		if strings.TrimSpace(l) == "## "+name {
+			return true
+		}
+	}
+	return false
+}

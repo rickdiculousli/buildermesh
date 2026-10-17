@@ -538,6 +538,13 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 // landDriftLines is how much of the scaffold drift a refusal prints.
 const landDriftLines = 20
 
+// ownModuleRepo reports whether the checkout at repoPath is bmesh's own
+// repo: its go.mod declares the module this binary was built from.
+func ownModuleRepo(repoPath string) bool {
+	bi, ok := readBuildInfo()
+	return ok && bi != nil && bi.Main.Path != "" && modulePath(filepath.Join(repoPath, "go.mod")) == bi.Main.Path
+}
+
 // scaffolded refuses a rebased tree whose scaffolded text the branch changed
 // to read otherwise than scaffold writes it from the repo's ship row (see
 // scaffold.Drift): the row's verify is the source of the verify kind's
@@ -549,8 +556,7 @@ func (l *lander) scaffolded(ctx context.Context, baseSHA string) error {
 	if !ok || row.Mode != "ship" {
 		return nil
 	}
-	bi, ok := readBuildInfo()
-	own := ok && bi.Main.Path != "" && modulePath(filepath.Join(l.top, "go.mod")) == bi.Main.Path
+	own := ownModuleRepo(l.top)
 	at := func(rel string) (string, bool, error) {
 		obj := baseSHA + ":" + rel
 		if exec.CommandContext(ctx, "git", "-C", l.top, "cat-file", "-e", obj).Run() != nil {

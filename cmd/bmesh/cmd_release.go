@@ -11,6 +11,7 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
+	"github.com/rickdiculousli/buildermesh/internal/upgrade"
 )
 
 const releaseUsage = "usage: bmesh release <repo> [--minor|--patch] [--dry-run]"
@@ -70,7 +71,10 @@ type released struct {
 // head is reported and left; it refuses (exit 3) when only specs changed
 // since a release on another commit, while a lead of the repo is still working or a family of
 // the repo has feedback pending (heldBy, with no family of its own), and
-// while verify at the code head isn't ok (verifyMain). --dry-run prints
+// while verify at the code head isn't ok (verifyMain). In bmesh's own repo
+// it refuses as well when the release's upgrade notes are missing, don't
+// parse or name keys this binary doesn't know (releaseNotes), and the tag
+// message carries them. --dry-run prints
 // the tag and its message and tags nothing.
 func (a *app) cmdRelease(args []string) error {
 	fs := a.flags("release")
@@ -162,6 +166,10 @@ func (a *app) cmdRelease(args []string) error {
 		feature := slices.ContainsFunc(landed, func(s *spec.Spec) bool { return s.Fields["kind"] == "feature" })
 		tag = r.next(*minor || (feature && !*patch)).String()
 	}
+	notes, err := a.releaseNotes(ctx, repoPath, ref, tag, landed)
+	if err != nil {
+		return err
+	}
 	if err := a.connect(ctx, "release"); err != nil {
 		return err
 	}
@@ -176,6 +184,9 @@ func (a *app) cmdRelease(args []string) error {
 		return err
 	}
 	msg := releaseMessage(row.Name, tag, last, landed)
+	if notes != nil {
+		msg += "\n\n" + notes.Text()
+	}
 	out := released{Repo: row.Name, Tag: tag, Commit: head, Specs: ids, DryRun: *dry}
 	if out.Specs == nil {
 		out.Specs = []string{}
@@ -208,6 +219,47 @@ func (a *app) cmdRelease(args []string) error {
 	}
 	fmt.Fprintf(a.stdout, "released %s %s at %s (%s)%s\n", row.Name, tag, head[:8], specList(ids), pushed)
 	return nil
+}
+
+// releaseNotes checks the upgrade notes of release tag in bmesh's own
+// repo (ownModuleRepo; nil for every other repo): upgrade.Path(tag) on
+// ref, which must exist when a spec landed since the last tag names
+// Upgrading steps, must parse and must name only keys this binary knows.
+// It returns the notes, nil when the file is absent.
+func (a *app) releaseNotes(ctx context.Context, repoPath, ref, tag string, landed []*spec.Spec) (*upgrade.Notes, error) {
+	if !ownModuleRepo(repoPath) {
+		return nil, nil
+	}
+	p := upgrade.Path(tag)
+	if _, err := gitIn(ctx, repoPath, "cat-file", "-e", ref+":"+p); err != nil {
+		var ids []string
+		for _, s := range landed {
+			if s.UpgradingSteps() != "" {
+				ids = append(ids, s.IDString())
+			}
+		}
+		if len(ids) == 0 {
+			return nil, nil
+		}
+		have := "has Upgrading steps"
+		if len(ids) > 1 {
+			have = "have Upgrading steps"
+		}
+		return nil, fail(exitRefused, "refused: %s %s and %s is missing: distil them into it (the build skill's step 7), commit it to main and release again",
+			strings.Join(ids, ", "), have, p)
+	}
+	text, err := gitIn(ctx, repoPath, "show", ref+":"+p)
+	if err != nil {
+		return nil, err
+	}
+	n, err := upgrade.Parse(tag, text)
+	if err != nil {
+		return nil, fail(exitRefused, "refused: %v", err)
+	}
+	if unknown := n.Unknown(); len(unknown) > 0 {
+		return nil, fail(exitRefused, "refused: %s names keys this binary doesn't know: %s", p, strings.Join(unknown, ", "))
+	}
+	return n, nil
 }
 
 // releaseMessage is the tag's message: `<repo> <tag>`, then one line per
