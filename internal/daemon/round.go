@@ -46,6 +46,17 @@ func SettleRound(eng, ux mesh.State) (state, text string, ok bool) {
 	return "done", Pitch(eng.Text, ux.Text), true
 }
 
+// RoundStates are the children's states SettleRound weighs for round n. A
+// child the round never started (an idea round has only eng) reads as done
+// with nothing to pitch.
+func RoundStates(n mesh.Node, states map[string]mesh.State) (eng, ux mesh.State) {
+	eng, ux = states[n.Path+".eng"], states[n.Path+".ux"]
+	if n.Idea {
+		ux = mesh.State{State: "done"}
+	}
+	return eng, ux
+}
+
 // Pitch merges the two children's ranked lists: the engineer's lines, then
 // the UI/UX engineer's, each as reported.
 func Pitch(eng, ux string) string {
@@ -83,7 +94,7 @@ func roundsOnce(ctx context.Context, d Deps) {
 		if cur.State != "working" && cur.State != "silent" && cur.State != "blocked" {
 			continue
 		}
-		state, text, ok := SettleRound(states[n.Path+".eng"], states[n.Path+".ux"])
+		state, text, ok := SettleRound(RoundStates(n, states))
 		if !ok || (cur.State == "blocked" && state == "blocked" && text == cur.Text) {
 			continue
 		}

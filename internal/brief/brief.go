@@ -146,6 +146,16 @@ func OperatorContext(text string) string {
 		text + "\n\n"
 }
 
+// OperatorIdea is the section an idea round's engineer gets instead of
+// OperatorContext: the round is the operator's one idea, so the engineer
+// writes that idea's spec, not a ranked list of its own.
+func OperatorIdea(text string) string {
+	return "## The operator's idea\n\nThis round is one idea, the operator's own, in their words below; there is no UI/UX thread. " +
+		"It replaces the three to five specs of your own: read the repo and its ledger, measure, widen and attack this idea, " +
+		"then write its spec, one half-pager, or two or three in build order when it is too big for one lead, each naming the one before. " +
+		"Propose nothing else. Your ranked list is those specs.\n\n" + strings.TrimSpace(text) + "\n\n"
+}
+
 // RowValues are the placeholders every brief gets from a registry row.
 func RowValues(r config.Repo, repoPath string) map[string]string {
 	return map[string]string{

@@ -84,6 +84,26 @@ func TestRoundsOnceSettlesWhenBothChildrenAreDone(t *testing.T) {
 	}
 }
 
+func TestRoundsOnceSettlesAnIdeaRoundOnItsEngineer(t *testing.T) {
+	f := setup(t)
+	if err := mesh.PutNode(f.ctx, f.c, mesh.Node{Path: "demo-round-1", Role: "round", Repo: "demo", Host: testHost, Idea: true}); err != nil {
+		t.Fatal(err)
+	}
+	f.setState(t, "demo-round-1", "working")
+	f.setState(t, "demo-round-1.eng", "working")
+	roundsOnce(f.ctx, f.d)
+	if st, _, _ := mesh.ReadState(f.ctx, f.c, "demo-round-1"); st.State != "working" {
+		t.Fatalf("settled early: %+v", st)
+	}
+	if _, err := mesh.WriteState(f.ctx, f.c, "demo-round-1.eng", mesh.State{State: "done", Text: "013 A (feature, M, opus): why", By: "node"}); err != nil {
+		t.Fatal(err)
+	}
+	roundsOnce(f.ctx, f.d)
+	if st, _, _ := mesh.ReadState(f.ctx, f.c, "demo-round-1"); st.State != "done" || st.Text != "013 A (feature, M, opus): why" {
+		t.Fatalf("%+v", st)
+	}
+}
+
 func TestRoundsOnceBlocksWhenAChildBlocks(t *testing.T) {
 	f := setup(t)
 	f.round(t, "demo-round-2")

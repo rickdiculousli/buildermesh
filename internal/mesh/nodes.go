@@ -36,6 +36,7 @@ type Node struct {
 	Model     string     `json:"model"`
 	Effort    string     `json:"effort,omitempty"`
 	Family    string     `json:"family,omitempty"` // a lead's build family
+	Idea      bool       `json:"idea,omitempty"`   // a round of the operator's one idea: only its eng thread
 	StartedAt string     `json:"started_at"`
 }
 

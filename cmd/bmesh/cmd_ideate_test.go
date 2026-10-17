@@ -202,6 +202,43 @@ func TestIdeateCarriesTheOperatorsContext(t *testing.T) {
 	}
 }
 
+func TestIdeateIdeaStartsOnlyTheEngineer(t *testing.T) {
+	c, _, fake := proposeSetup(t, "ux_host = \"other\"\n")
+	ctx := t.Context()
+	if _, errs, code := runCLI(t, nil, "ideate", "demo", "--idea"); code != exitUsage || !strings.Contains(errs, "--context") {
+		t.Fatalf("an idea with no words: %d %q", code, errs)
+	}
+	out, errs, code := runCLI(t, nil, "ideate", "demo", "--idea", "--context", "an automated fix lead")
+	if code != 0 {
+		t.Fatalf("code %d out %q err %q", code, out, errs)
+	}
+	if !strings.Contains(out, `"eng":{"path":"demo-round-1.eng"`) || strings.Contains(out, `"ux"`) {
+		t.Fatalf("%s", out)
+	}
+	// The ux host is never asked, and only one thread is launched.
+	if l, _ := os.ReadFile(os.Getenv("FAKE_SSH_LOG")); len(l) != 0 {
+		t.Fatalf("ssh log:\n%s", l)
+	}
+	if l := launches(fake); len(l) != 1 {
+		t.Fatalf("launches %s", jsonOf(l))
+	}
+	round, ok, err := mesh.GetNode(ctx, c, "demo-round-1")
+	if err != nil || !ok || !round.Idea {
+		t.Fatalf("round %+v %v %v", round, ok, err)
+	}
+	if _, ok, _ := mesh.GetNode(ctx, c, "demo-round-1.ux"); ok {
+		t.Fatal("an idea round registered a ux node")
+	}
+	b, err := os.ReadFile(filepath.Join(os.Getenv("BMESH_CACHE_DIR"), "bmesh", "briefs", "demo-round-1-eng.md"))
+	if err != nil || !strings.Contains(string(b), "## The operator's idea\n") || !strings.Contains(string(b), "an automated fix lead") ||
+		strings.Contains(string(b), "## The operator's focus") {
+		t.Fatalf("%v %q", err, b)
+	}
+	if _, errs, code := runCLI(t, nil, "ideate", "demo", "--idea", "--child", "ux", "--round", "2", "--next-id", "20", "--thread-id", "x"); code != exitUsage {
+		t.Fatalf("an idea's ux child: %d %q", code, errs)
+	}
+}
+
 func TestIdeateEffortFlag(t *testing.T) {
 	_, _, fake := proposeSetup(t, "")
 	if _, errs, code := runCLI(t, nil, "ideate", "demo", "--effort", "huge"); code != 2 || !strings.Contains(errs, `effort "huge"`) {

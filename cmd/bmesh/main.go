@@ -103,10 +103,11 @@ commands:
                                            follow nodes until all are done, blocked or silent
   lead start --repo R --spec NNN --brief FILE [--model M] [--effort E] [--title T] [--path P]
                                            start a lead through the runner and register it
-  ideate <repo> [--model M] [--effort E] [--context <text|->] [--force]
+  ideate <repo> [--idea] [--model M] [--effort E] [--context <text|->] [--force]
                                            run a proposal round: an engineer and a UI/UX engineer thread, each in a
                                            bmesh worktree from main, as nodes <repo>-round-<N>.eng|ux; --context
-                                           puts the operator's words in both briefs
+                                           puts the operator's words in both briefs; --idea starts only the
+                                           engineer, to write the one idea --context gives as its spec
   choose-ideas <repo> "<reply>"            apply the operator's review to the proposed specs and land it on main
   build <repo> <NNN> [--model M] [--effort E] [--path P] [--family F] [--hold land|now]
                                            dispatch an accepted spec: record building on main, render the build
