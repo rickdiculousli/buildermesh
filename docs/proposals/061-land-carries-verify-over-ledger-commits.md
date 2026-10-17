@@ -1,8 +1,8 @@
 ---
 id: 061
-title: bmesh land carries a verify across a rebase that moved only the ledger, so a coordinator's spec commits don't cost a lead a re-verify
+title: A repo names its code paths, and a change outside them (specs, docs, art, the README) never costs a verify, in land, build, release or update
 kind: time-cost
-size: S
+size: M
 judge: opus
 status: accepted
 lens: eng
@@ -12,36 +12,57 @@ from_feedback: buildermesh-build-8 (buildermesh-055)
 ---
 
 ## Opportunity
-Landing the upgrade-notes spec (055) took `bmesh land` three runs. Each run fetched, rebased and re-ran `verify` (about 2 minutes), and both times the coordinator's ledger-only pushes (`Review`, `Propose` and `Dispatch` commits, which touch only `docs/proposals/`) moved `main` while the verify ran. The push was refused, `main moved; again from the fetch`, and the second move refused the landing outright. The code under test was the same every time. Only the tree hash differed, because the spec directory is part of the tree, and results are recorded by tree.
+Landing the upgrade-notes spec (055) took `bmesh land` three runs. Each run fetched, rebased and re-ran `verify` (about 2 minutes), and both times the coordinator's ledger-only pushes (`Review`, `Propose` and `Dispatch` commits, which touch only `docs/proposals/`) moved `main` while the verify ran. The push was refused, `main moved; again from the fetch`, and the second move refused the landing outright. The code under test was the same every time. Only the tree hash differed, because results are recorded by tree, and the tree holds everything.
 
-`build` and `release` already treat the ledger this way: both check main's code head, the newest commit that changes anything outside the spec directory, "so the `Dispatch`, `Review` and `done` ledger commits never ask for a verify of their own" (README, build). `land` is the one place that still pays for them, and it pays most when a coordinator is busiest.
+`build`, `release` and `update` already step around the ledger. They read main's code head, the newest commit that changes anything outside the spec directory (`selfupdate.CodeHead`, `rev-list -- . :(exclude)<spec dir>`). That rule is an exclusion, and it is wrong both ways:
+- **Too narrow.** The operator is about to add SVGs and other resources and rework the README. Each such commit is a new code head to `build`, `release` and `update`, and a new tree to `land`, so each costs a verify, a held build or a rebuilt binary, while no test reads those files.
+- **Too wide.** The spec directory isn't all ledger. In bmesh's own repo `docs/proposals/README.md` is compiled into the binary (`assets.go` embeds it, along with `docs/agents-snippet.md` and `examples/routines/*.toml`). A rule that skips the spec directory would let a change to it land, release and update on a stale verify.
+
+The operator's ruling is that the rule names what is code, not what isn't.
 
 ## Proposal
 In:
-- **Land step 4 carries a deterministic kind across a ledger-only move.** When a required deterministic kind (`verify`) has no result for the rebased tree, `land` looks for an ok result for the tree it last verified in this run (or the branch's tree before the rebase). It carries that result when the only difference between the two trees is in the spec directory (`[spec] glob`'s directory, as `codeHead` reads it) and the changed spec files parse as the ledger. It stores the result again for the new tree, so `done` and `spec verified` match it as they match any recorded result. The line reads `verify ok t:<new8> (carried from t:<old8>: the rebase moved only the ledger)`.
-- **The push retry uses it.** When `main moved; again from the fetch` finds only ledger commits since the last fetch, the second pass carries verify and doesn't re-run it, so a landing that raced a coordinator goes through on the retry instead of being refused.
-- A difference anywhere else, or a ledger file that doesn't parse, re-runs the kind as today.
-- The README's land step 4 and step 7 say it.
+- **A registry row names its code: `code = ["<pathspec>", ...]`,** git pathspecs relative to the repo root (`cmd/**`, `*.go`, `go.mod`). A change is code when it touches a path one of them matches.
+  - A row without `code` keeps today's rule: everything but the spec files themselves. "The spec files" are the paths `[spec] glob` matches (`NNN-*.md`), not the whole directory, so a `README.md` beside them is code. That is a narrowing of today's rule, and it fixes the embedded-file case for every repo.
+  - `bmesh repos show` prints the key. `scaffold` doesn't write it, and the README's registry section documents it.
+  - bmesh's own row is set by `bmesh repos propose`, under "Needs from the operator" below.
+- **One function decides it.** `CodeHead` becomes "the newest commit of ref that touches the row's code", with `git rev-list -1 <ref> -- <pathspecs>`. A new `CodeSame(a, b)` says whether two trees differ only outside the code (`git diff --quiet <a> <b> -- <pathspecs>`). `build`'s main-verify gate, `release`'s verify check and code head, and `update`'s and the daemon's target all go through the row's `code`, so all four agree on what code is.
+- **Land carries a deterministic kind across a change outside the code.** In step 4, when a required deterministic kind (`verify`) has no result for the rebased tree, `land` takes an ok result for a tree that is `CodeSame` as the rebased one. That is the branch's tree before the rebase, or the last tree verified in this run. `land` stores the result again for the new tree, so `done` and `spec verified` match it like any recorded result. The line reads `verify ok t:<new8> (carried from t:<old8>: nothing under code changed)`.
+  - The push retry (step 7, `main moved; again from the fetch`) uses the same rule, so a landing that raced a coordinator's ledger commit, or a README commit, goes through on the retry.
+  - A change to the code re-runs the kind as today.
+- **The verify kind's own file is always code.** A change to `.bmesh/routines/*.toml` re-runs whatever `code` says, because it changes what verify is.
+- The README's Builds (the gate), Releases, Updates, land steps 4 and 7, and The registry say it.
 
-Out: carrying a review (it already carries by patch-id); carrying over any change outside the spec directory; a lock that keeps a coordinator from pushing during a landing.
+Out:
+- carrying a review, which already carries by patch-id;
+- per-kind code paths (one list per repo);
+- what `release` tags: it still tags the code head, now by `code`.
 
-Judge: opus, because a wrong carry lands untested code with a green `verified` line.
+Judge: opus, because a wrong `code` list or carry lands, releases or deploys code that no verify saw.
 
 ## What you'll see
-A lead whose landing races a coordinator's `Review` commit prints `main moved; again from the fetch`, then `verify ok t:<new8> (carried from t:<old8>: the rebase moved only the ledger)`, and lands in seconds instead of re-running verify or being refused.
+- A README rework, an SVG or a spec commit lands with `verify ok t:<new8> (carried from t:<old8>: nothing under code changed)` in seconds.
+- `build` answers `verify main <sha8>: ok ... (answered from the record)` without a new run.
+- Neither the daemon nor `update` rebuilds the binary for any of them.
+- A change to `docs/proposals/README.md` in bmesh's repo re-runs verify.
 
 ## Verification
-The repo's verify, plus `cmd_land_test.go` over a bare origin:
-- a ledger-only commit pushed to `main` between the fetch and the push is carried, and the push lands on the retry, with the stored result for the new tree;
-- a commit that also touches a code file re-runs verify;
-- a ledger file that doesn't parse re-runs verify (and fails it where the repo's tests read the ledger);
-- `done` accepts the carried entry.
+The repo's verify, plus, over a bare origin with a row that sets `code`:
+- **`cmd_land_test.go`:**
+  - a commit outside `code` pushed between the fetch and the push is carried, and the retry lands with the stored result;
+  - a commit inside `code`, or to `.bmesh/routines/verify.toml`, re-runs verify;
+  - with no `code`, a spec file carries and a `README.md` in the spec directory doesn't;
+  - `done` accepts the carried entry.
+- **`internal/selfupdate`:** `CodeHead` with and without `code`.
+- **`cmd_build_test.go` and `cmd_release_test.go`:** a README-only head is answered from the code head's record.
 
 ## Risks and the alternative considered
-- **A repo whose verify reads the ledger.** bmesh's own tests could parse `docs/proposals/`. The parse check covers the ledger's own format. A repo whose tests assert more about its specs than that they parse would land on a carried verify: README says carrying is by spec directory only, and such a repo moves its checks out of verify into a kind of its own.
-- **Alternative: hold coordinator pushes while a land lease is held.** That serializes every ledger write behind a 2-minute verify and makes `choose-ideas` wait on landings. The code-head rule `build` and `release` already use is the consistent one.
+- **A `code` list that misses a file the tests or the binary read** carries a stale verify. bmesh's own list is written from its `go:embed` lines and its tests' reads. A repo without the key keeps a rule that only ever skips spec files.
+- **Alternative: exclusion globs (`ignore = ["docs/**", "*.svg"]`).** That was the operator's first thought, and they ruled it out. A new kind of file is code until someone remembers to exclude it, which is safe but slow; with inclusion, it isn't code until it's listed, which is fast but needs the list kept. The embedded `docs/` files show exclusion is the one that goes wrong silently.
 
 ## Upgrading
-nothing
+nothing: a row without `code` keeps today's rule, narrowed to the spec files.
 
 ## Needs from the operator
+Set bmesh's own row, with the admin's `bmesh repos propose buildermesh` (or edit and publish):
+`code = ["*.go", "go.mod", "go.sum", "cmd/**", "internal/**", "testdata/**", "examples/**", "docs/agents-snippet.md", "docs/proposals/README.md", ".bmesh/**", "scripts/**", "hooks/**"]`. The lead checks this list against the `go:embed` lines and the tests' reads before landing, and names any change to it.
