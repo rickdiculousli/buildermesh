@@ -3,8 +3,9 @@
 # gain a guard against a restart loop on a config bmesh refuses (exit 78).
 # The guard is added to the units in place rather than by taking init's
 # <unit>.new, so a unit tuned by hand keeps its tuning. 041, 048 and 053, and
-# ideate --idea, need nothing of an install. The hub runs the binary it
-# started with, so it is restarted last.
+# ideate --idea, need nothing of an install. On Windows the guard is in the
+# serve --restart supervisor, so the logon task is restarted instead. The hub
+# runs the binary it started with, so it is restarted last.
 
 summary = "Add the restart-loop guard to bmesh's units, then restart the hub."
 
@@ -65,3 +66,18 @@ else
 fi
 '''
 
+
+[[step]]
+kind = "run"
+why = "on Windows the guard is in the serve --restart supervisor, which the running one predates: end it and its serve (not this update) and start the buildermesh logon task again, so it runs this release; that kills the daemon's running jobs"
+os = ["windows"]
+confirm = true
+command = '''powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='bmesh.exe'\" | Where-Object { $_.CommandLine -match ' serve' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }" & schtasks /Run /TN buildermesh'''
+
+[[step]]
+kind = "run"
+why = "bmesh hub runs the binary it started with, and init sets up no hub service on Windows: end the bmesh hub you run and start it again, so it runs this release"
+os = ["windows"]
+when = '[hub] role != ""'
+confirm = true
+command = '''echo end bmesh hub and start it again (bmesh hub)'''
