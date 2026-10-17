@@ -4,13 +4,16 @@ title: The two tests the first Mac soak failed pass there: one stops reading the
 kind: maintenance
 size: M
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: buildermesh-fix-1
 proposed_on: 2026-10-17
 ruled: [root, failing-first, smallest]
 fix_of: 062
 from_feedback: buildermesh-fix-1 (buildermesh-062) #2037
+built_by: 80faf68d-037b-4ea5-9092-2082241e5d90
+host: k16
+family: buildermesh-fix-1
 ---
 
 ## Opportunity
