@@ -275,6 +275,14 @@ A reply is an inbox message (`kind: "reply"`) to the requester carrying `{"job",
 
 `wait` reads the reply from this node's inbox subject in the stream, not its consumer, so acked messages are found too for the stream's 30 days. It scans that history, then follows the subject until the reply arrives. A reply still unread is acked once found (one no-wait batch from the consumer that acks it and returns every other message unread), so no wake follows and `inbox` doesn't print it again; one further back than 100 unread messages stays unread and wakes the node once. The kind of a job id is looked up in the kinds' inboxes for the `--timeout` default.
 
+### Setup
+
+[Manual: Setup](manual.md#setup)
+
+**The marker** is `<git dir>/bmesh-setup` (`git rev-parse --path-format=absolute --git-dir`: a linked worktree's own `.git/worktrees/<name>`, so every worktree keeps its own), one line of hex: the sha256 of `command <command>\0`, then for each path `git ls-files -z -- <inputs>` lists, in byte order, `file <path> <sha256 of its working-tree content, or missing>\0`. No inputs, no `ls-files`. A run removes the marker first and writes it after it succeeds (and, where the tree must stay clean, after `git status --porcelain -z --untracked-files=all` came back empty), hashing the inputs as they stand after the run.
+
+**The run** goes through the platform shell in the worktree's root, its own process group killed at `timeout` and again after it exits, with the caller's environment and `BMESH_SETUP=1`. Its output is captured whole; a failure carries the last 30 lines. An inline run's setup is bounded by its own timeout, not the command's one-minute deadline. The daemon runs a job's setup under its loop's context, so a stopping daemon kills it and hands the job back.
+
 ### Leases
 
 [Manual: Leases](manual.md#leases)

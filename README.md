@@ -290,6 +290,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 | [`bmesh lock-lease renew <key>`](docs/manual.md#bmesh-lock-lease) | `[--ttl D]` |
 | [`bmesh lock-lease release <key>`](docs/manual.md#bmesh-lock-lease) |  |
 | [`bmesh lock-lease run <slot>`](docs/manual.md#bmesh-lock-lease) | `[--ttl D] -- <cmd...>` |
+| [`bmesh setup`](docs/manual.md#bmesh-setup) | `[--check] [--force]` |
 | [`bmesh land`](docs/manual.md#bmesh-land) | `[--spec NNN] [--ttl D] [--wait D]` |
 
 **Boxes**

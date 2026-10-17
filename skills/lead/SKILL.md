@@ -43,6 +43,8 @@ When an executor reports done: `git merge <its branch>` into your branch in your
 
 ## 6. Verify
 
+When the repo names a setup command (`.bmesh/config.toml`'s `[setup]`; your brief opens with it), run `bmesh setup` first, before anything else, and again after you change dependencies; read its output when it fails. A verify runs it too when your installs are stale, and refuses, recording nothing, when it fails or leaves files the repo doesn't ignore.
+
 On committed work, in this order, once the code is final:
 
 1. Commit, then `bmesh routine run verify`: that run is the verify, so don't run the verify commands by hand first (they would run twice, and a hand run records nothing). An inline kind runs in your worktree, records the result for HEAD's tree and ends with its verdict, `verify ok|fail t:<tree8> (recorded)`. In a repo without a `verify` kind, run its verify commands yourself and record the outcome: `bmesh result record verify --ok` or `--fail`.
@@ -53,7 +55,7 @@ On committed work, in this order, once the code is final:
 
 Results are keyed by tree, so re-run what the final rebase changed; `bmesh land` runs the inline kinds again on the rebased tree itself.
 
-The verify commands are the repo's registry row's, and `bmesh scaffold` writes them into the verify kind and `AGENTS.md`; never edit those by hand. A spec that changes the verify commands changes the row: `bmesh repos propose` with the new `verify`, named in the spec's "Needs from the operator", since only the admin publishes the registry; once it is published, `bmesh scaffold <your worktree>` writes the files on your branch and you commit them. `bmesh land` refuses a branch whose scaffolded files differ from what the row writes.
+The verify commands are the repo's registry row's, and `bmesh scaffold` writes them into the verify kind and `AGENTS.md` (and the row's setup into `.bmesh/config.toml`'s `[setup]`); never edit those by hand. A spec that changes the verify commands changes the row: `bmesh repos propose` with the new `verify`, named in the spec's "Needs from the operator", since only the admin publishes the registry; once it is published, `bmesh scaffold <your worktree>` writes the files on your branch and you commit them. `bmesh land` refuses a branch whose scaffolded files differ from what the row writes.
 
 ## 7. Land
 
@@ -63,7 +65,7 @@ Before landing, if `pstack:blast-radius` is in this session's skill list, run it
 - unread messages from the operator: run `bmesh inbox`, act on them, then `bmesh land` again (other unread mail doesn't stop it: land names it on one `unread:` line and goes on);
 - a conflict: the rebase is aborted. Rebase onto `origin/main` yourself and resolve it: read your spec and every spec that landed since you branched, rework the change so every intent holds (widen your spec when a landed one changes what yours must look like), commit, re-validate, and run `bmesh land` again. Land recovers a hand rebase: when HEAD is the commit your rebase made, it reads the branch's reflog for the head the rebase rewrote and requires what that head had, as if it had rebased itself, so a review carries when your resolution left the diff unchanged and is refused, to be queued `--again`, when it changed it. Its first line, `required: ...`, names each kind and where it came from; resolve inside the rebase (`git rebase --continue`), since a commit made on top of the rebase makes land read the branch as it stands;
 - a review (or another non-inline kind) with no result on the rebased tree when the rebase changed your diff: queue it again with `--again` at the same `--effort`, wait for it, then `bmesh land` again; when the rebase left the diff unchanged, the review carries: it reviewed the job text's `base:` to its commit, and that diff's patch-id is HEAD's, so land puts it on the `verified` line as `review ok t:<landed tree8> m:<model> c:<reviewed tree8>` and goes on;
-- scaffold drift (the diff it prints, then `the row's verify is the source`): the branch changed the verify kind or `AGENTS.md`'s marked blocks by hand. Restore them from `origin/main`, or, when the spec changes the verify commands, `bmesh repos propose` the new `verify`, `ask` the operator to publish it, then `bmesh scaffold <your worktree>`, commit and `bmesh land` again;
+- scaffold drift (the diff it prints, then `the row's verify and setup are the source`): the branch changed the verify kind, `AGENTS.md`'s marked blocks or `.bmesh/config.toml`'s `[setup]` by hand. Restore them from `origin/main`, or, when the spec changes the verify or setup commands, `bmesh repos propose` the new `verify` or `setup`, `ask` the operator to publish it, then `bmesh scaffold <your worktree>`, commit and `bmesh land` again;
 - a failing result: fix it, commit, `bmesh land` again;
 - `main` moving twice: run it again.
 

@@ -8,9 +8,9 @@ Every `bmesh` command with its flags, output and refusals, then the model behind
 - [Setup and updates](#setup-and-updates): [`bmesh init`](#bmesh-init) · [`bmesh serve`](#bmesh-serve) · [`bmesh hub`](#bmesh-hub) · [`bmesh config check`](#bmesh-config-check) · [`bmesh t3 login`](#bmesh-t3-login) · [`bmesh version`](#bmesh-version) · [`bmesh update`](#bmesh-update)
 - [Proposals and builds](#proposals-and-builds): [`bmesh ideate`](#bmesh-ideate) · [`bmesh choose-ideas`](#bmesh-choose-ideas) · [`bmesh spec`](#bmesh-spec) · [`bmesh build`](#bmesh-build) · [`bmesh lead start`](#bmesh-lead-start) · [`bmesh hold`, `unhold`, `held`](#bmesh-hold-unhold-held) · [`bmesh feedback`](#bmesh-feedback) · [`bmesh fix`](#bmesh-fix) · [`bmesh release`](#bmesh-release) · [`bmesh scaffold`](#bmesh-scaffold)
 - [Nodes](#nodes): [`bmesh whoami`](#bmesh-whoami) · [`bmesh started`, `progress`, `blocked`, `ask`, `done`](#bmesh-started-progress-blocked-ask-done) · [`bmesh send`](#bmesh-send) · [`bmesh inbox`](#bmesh-inbox) · [`bmesh thread-status`](#bmesh-thread-status) · [`bmesh mesh-status`](#bmesh-mesh-status) · [`bmesh watch`](#bmesh-watch) · [`bmesh executor`](#bmesh-executor) · [`bmesh node`](#bmesh-node)
-- [Checks and landing](#checks-and-landing): [`bmesh routine`](#bmesh-routine) · [`bmesh result`](#bmesh-result) · [`bmesh lock-lease`](#bmesh-lock-lease) · [`bmesh land`](#bmesh-land)
+- [Checks and landing](#checks-and-landing): [`bmesh routine`](#bmesh-routine) · [`bmesh result`](#bmesh-result) · [`bmesh lock-lease`](#bmesh-lock-lease) · [`bmesh setup`](#bmesh-setup) · [`bmesh land`](#bmesh-land)
 - [Boxes](#boxes): [`bmesh hosts`](#bmesh-hosts) · [`bmesh sync`](#bmesh-sync) · [`bmesh prune`](#bmesh-prune) · [`bmesh repos`](#bmesh-repos)
-- [Concepts](#concepts): [Several boxes](#several-boxes) · [Updates](#updates) · [Upgrading](#upgrading) · [Runners](#runners) · [Build families](#build-families) · [Holds](#holds) · [Briefs](#briefs) · [The fixer](#the-fixer) · [The ledger](#the-ledger) · [Routines](#routines) · [Hosts](#hosts) · [The plugin](#the-plugin) · [Names](#names)
+- [Concepts](#concepts): [Several boxes](#several-boxes) · [Updates](#updates) · [Upgrading](#upgrading) · [Runners](#runners) · [Build families](#build-families) · [Holds](#holds) · [Briefs](#briefs) · [The fixer](#the-fixer) · [The ledger](#the-ledger) · [Routines](#routines) ([Setup](#setup)) · [Hosts](#hosts) · [The plugin](#the-plugin) · [Names](#names)
 - [Config](#config): [config.toml](#configtoml) · [repos.toml](#repostoml) · [Pushes](#pushes) · [Quota reminders](#quota-reminders) · [Map](#map) · [Upgrade notes](#upgrade-notes)
 - [Exit codes](#exit-codes)
 - [Build and test](#build-and-test): [Testing](#testing)
@@ -803,12 +803,12 @@ Dispatches an accepted spec to a lead: it records `building` on `main`, writes t
 5. **Verify `main`.**
    1. The commit checked is main's code head (see [Updates](#updates)): a `Dispatch`, `Review` or `done` ledger commit, or with `code` set a README, document or art commit, gets no verify of its own.
    2. A `verify` result recorded for its tree answers: `verify main <sha8>: ok t:<tree8> (answered from the record)`.
-   3. Otherwise the repo's `verify` kind, as that commit defines it, runs inline in a bmesh worktree at that commit (`<[runner] worktrees>/<repo>/<repo>-verify-<hex8>`, removed after), as `land` runs it, and records the result: `verify main <sha8>: running at t:<tree8>`, then `... (recorded)`.
+   3. Otherwise the repo's `verify` kind, as that commit defines it, runs inline in a bmesh worktree at that commit (`<[runner] worktrees>/<repo>/<repo>-verify-<hex8>`, removed after), as `land` runs it, and records the result: `verify main <sha8>: running at t:<tree8>`, then `... (recorded)`. When that commit names a `[setup]` (see [Setup](#setup)), it runs in the fresh worktree first; a setup that fails refuses the build (exit 3) with the tail of its output and records nothing, so a flaky registry never turns `main` red.
    4. A failing verify refuses the build (exit 3, nothing dispatched; see **Refusals**). A `main` with no verify kind prints `verify: <repo> defines none` and the build goes on.
 6. **Model.** The model is `--model`, else the spec's `judge`; with neither, the build is refused.
 7. **Node.** The path is `--path`, else `<repo>-<NNN>`. A node there that is neither `done` nor `blocked` (live, from here on) is refused (exit 3, `use --path <repo>-<NNN>-2`). A box at `[runner] max_leads` is refused too.
 8. **Building.** `building` lands on `main` with `built_by` (the lead's thread id), `host`, `family`, and `branch` when the runner names branches ahead (`claude` and `tmux` do). The commit is `Dispatch NNN: building on <host>`, made in a bmesh worktree, fast-forwarded and pushed as `choose-ideas` lands (see [The ledger](#the-ledger)).
-9. **Brief.** The brief (the spec file, the row's done rule and verify commands, the node path, the standard closing) is written to `<user cache dir>/bmesh/briefs/<path>.md` (see [Briefs](#briefs)).
+9. **Brief.** The brief (the spec file, the row's done rule and verify commands, the node path, the standard closing) is written to `<user cache dir>/bmesh/briefs/<path>.md` (see [Briefs](#briefs)). When `main` names a `[setup]`, its first section is `bmesh setup`.
 10. **Start.** The lead starts through the runner with that thread id, titled `[build] <repo> <NNN>: <title>`, as `lead start` would.
 
 A runner that names the branch itself (`t3`) gets a second commit, `Dispatch NNN: branch <b>`. A failed start puts the spec back to `accepted` (`Dispatch NNN: did not start`), exit 1.
@@ -831,6 +831,7 @@ A runner that names the branch itself (`t3`) gets a second commit, `Dispatch NNN
 | `fix_of` chain three deep | 3 | the `fix 3` message below |
 | Held | 3 | one of the `held:` messages below |
 | `main` red | 3 | the `main is red` message below, then the last 30 lines of output |
+| The setup before verifying `main` failed | 3 | `verify main <sha8>: setup failed: <why>; nothing recorded`, then the last 30 lines of its output (`<why>` is `exit status <n>`, `timed out after <d>`, or for a setup that dirtied the tree, `verify main <sha8>: setup dirtied the tree: <paths>; nothing recorded`) |
 | No `--model` and no usable `judge` | 3 | `` refused: <err>; pass --model, or `NNN on <judge>` to bmesh choose-ideas `` |
 | Live node at the path | 3 | `refused: path <p> is taken (state <s>); use --path <p>-2` |
 | Box at `[runner] max_leads` | 3 | `<N> leads already working on this host` |
@@ -1102,6 +1103,7 @@ Writes into a ship repo what a build expects, from the row and the binary, and n
 1. **`AGENTS.md`**: three blocks between `<!-- bmesh:done -->`, `<!-- bmesh:proposals -->` and `<!-- bmesh:mesh -->` markers, in that order: the definition of done from the row's verify commands and remote; the proposals convention; the Buildermesh paragraph of `docs/agents-snippet.md` (its verify placeholder filled from the row). Only the text between the markers is rewritten. A missing block is appended at the end, and a missing `AGENTS.md` is created. A block between `command-center:` markers (an earlier scaffold's) is rewritten in place under `bmesh:` markers.
 2. `docs/proposals/README.md` (this repo's, embedded) and `docs/proposals/assets/.gitkeep`, when missing.
 3. A kind file for each of the row's `routines` the repo lacks, seeded from `examples/routines/` (`verify` inline and deterministic, its `command` the row's verify commands joined with ` && `). A row with no verify commands gets no verify kind and a line on stderr, `bmesh: the row lists no verify commands, so the verify kind was not written`.
+4. `.bmesh/config.toml`'s `[setup]`, when the row has a `setup`: `command`, then `inputs` and `timeout` when the row names them (see [Setup](#setup)). It is merged in: a `[setup]` that already reads the same (as the loader reads it, defaults included) is left as written; another is replaced in place, from its header to the next table's (the comment lines right above that table kept); none is appended. `[slots]`, `[routines]` and the rest of the file are kept, and the file is created when missing. A row with no `setup` leaves the file alone.
 
 An existing kind is never touched, except the verify kind's `command` when the row has verify commands. A `command` that (as the kind loader reads it) is not those commands joined with ` && ` gets its one `command = ...` line rewritten and the rest kept, whether or not the row's `routines` name it. A verify kind that runs a model is left alone. To change the verify commands, change them in the row (see [Hosts: The registry](#the-registry)) and run `scaffold` again.
 
@@ -1116,6 +1118,7 @@ An existing kind is never touched, except the verify kind's `command` when the r
 | A row not `ship` | 2 | `<name> is <mode>; only ship repos are scaffolded` |
 | A routine with no example | 1 | `no example for kind <k>; write .bmesh/routines/<k>.toml yourself` |
 | A verify kind whose command spans lines | 1 | `<file>: its command is not on one line scaffold can rewrite; set it to the row's verify (<cmd>) by hand` |
+| A `[setup]` written as other than one table (dotted keys, say) | 1 | `.bmesh/config.toml: its [setup] is not a table scaffold can rewrite; set it to the row's setup by hand` |
 
 **Details.** A second run changes nothing. Run it again after the row or the snippet changes, and commit what it wrote.
 
@@ -1395,7 +1398,7 @@ Makes a worktree, branch and node for one executor. The lead runs it (or an exec
 
 1. makes `<[runner] worktrees>/<repo>/<parent path>.<name>` with `git worktree add -b <parent's branch>-<name>` from the parent's HEAD (`--base` picks another commit; the parent's branch is its worktree's current one, renamed or not);
 2. registers node `<parent path>.<name>` with an inbox and state `idle`;
-3. prints `{"path","branch","worktree"}` and, unless `--json`, the executor header to paste at the top of the subagent's prompt: the path, worktree and branch. The header says to start every shell command with `cd <worktree> &&`, pass `--node <path>` on every `bmesh` command, run `bmesh started` first, report with `bmesh done --commit <sha> --text "<one line>"` alone, and invoke the `buildermesh:executor` skill.
+3. prints `{"path","branch","worktree"}` and, unless `--json`, the executor header to paste at the top of the subagent's prompt: the path, worktree and branch. The header says to start every shell command with `cd <worktree> &&`, pass `--node <path>` on every `bmesh` command, run `bmesh started` first (after `cd <worktree> && bmesh setup` when the commit it starts from names a `[setup]`, see [Setup](#setup)), report with `bmesh done --commit <sha> --text "<one line>"` alone, and invoke the `buildermesh:executor` skill.
 
 When `git worktree add` fails (a hook, an unwritable root), nothing is registered and the worktree and branch are removed.
 
@@ -1696,7 +1699,7 @@ Waits for a job's reply and prints its output. It finds the reply whether or not
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--timeout D` | 20m of queueing plus the kind's `timeout` plus the daemon's 1m when the cwd repo defines the kind (41m for a 20m kind), else 20m | give up after this long |
+| `--timeout D` | 20m of queueing plus the kind's `timeout` plus the daemon's 1m when the cwd repo defines the kind (41m for a 20m kind), plus the setup's `timeout` for a command kind when the repo names a `[setup]`, else 20m | give up after this long |
 
 **Output.** The job's output. It exits 0 when the job is ok, and 1 when it failed. A failed job's output is the daemon's reason when the daemon answered it `ok=false`.
 
@@ -1739,10 +1742,12 @@ Runs a kind inline, in the requester's process, on the cwd worktree's HEAD, and 
 | a fresh or pooled kind without `--here` | 3 | `kind <kind> is <mode>; queue it, or pass --here to run it in this worktree` |
 | a dirty tree, since every inline run records a result for HEAD's tree | 3 | `bmesh: worktree is dirty; commit first` |
 | a `--commit` other than HEAD | 3 | `inline runs run HEAD; check out <commit> or queue the job` |
+| a command kind's setup failed (see Details) | 3 | `setup failed: <why>; nothing recorded`, then the last 30 lines of its output |
+| a command kind's setup left the tree dirty | 3 | `setup dirtied the tree: <paths>; nothing recorded` |
 
 It also refuses (exit 2) a `--model` with spaces or `;`, a `--model` the kind lacks, an `--effort` outside the five values, and any effort for a command kind, with the messages of [`bmesh routine queue`](#bmesh-routine-queue).
 
-**Details.** An inline run leases the kind's `slots` for `timeout` + 1m, as the daemon does (see [Leases](#leases)).
+**Details.** An inline run leases the kind's `slots` for `timeout` + 1m, as the daemon does (see [Leases](#leases)). Before it (and after a record has answered nothing), a command kind runs the worktree's `[setup]` when its installs aren't current (see [Setup](#setup)), printing `bmesh: setup ran (<command>) in <duration>` on stderr. A setup that fails, or leaves tracked changes or untracked, unignored files, refuses the run: nothing runs or is recorded. A model kind runs no setup. `land` and the build's verify of `main` run inline kinds the same way.
 
 See also: [Checkouts](#checkouts), [Results](#results), [Modes](#modes).
 
@@ -1842,6 +1847,33 @@ See also: [Leases](#leases).
 
 Internals: [internals](internals.md#leases)
 
+### `bmesh setup`
+
+```
+bmesh setup [--check] [--force]
+```
+
+Runs the cwd worktree's `[setup]` (its `.bmesh/config.toml`) when its installs aren't current, and marks them current (see [Setup](#setup)). A lead, executor or proposal thread runs it first in a repo that names a setup (its brief says so), and again after changing dependencies. It needs no mesh.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--check` | off | Run nothing: say whether the installs are current, and exit 1 when they are stale or missing. |
+| `--force` | off | Run even when the installs are current. |
+
+**Output.** The setup command's output as it runs, then `setup: ran (<command>) in <duration>`. `setup: current (<command>)` when there was nothing to run. `--check` prints `setup: current (<command>)`, or `setup: stale (<command>); run bmesh setup` (an input or the command changed since the last run) or `setup: missing (<command>); run bmesh setup` (never run here, or the last run failed) and exits 1. A worktree whose repo names no setup prints `setup: none (.bmesh/config.toml names no [setup])` and exits 0, `--check` too.
+
+**Refusals.** Each message prints after `bmesh: `.
+
+| When | Exit | Message |
+|---|---|---|
+| A positional argument, or `--check` with `--force` | 2 | `usage: bmesh setup [--check] [--force]` |
+| Not in a git worktree | 2 | `bmesh setup runs in a worktree: <git error>` |
+| The setup command failed or timed out | 1 | `setup failed: exit status <n>` or `setup failed: timed out after <d>` |
+
+**Details.** Unlike a verify's setup, this one doesn't require the tree clean after it: the agent's own edits are its own. The hash is read from the working tree, so an uncommitted lockfile change makes the installs stale.
+
+See also: [Setup](#setup), [`bmesh routine run`](#bmesh-routine-run).
+
 ### `bmesh land`
 
 ```
@@ -1870,13 +1902,13 @@ The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander b
 
 1. `fetch origin/main <sha8>`: `git fetch origin main`. It is refused (exit 3) while the main checkout's `main` has commits `origin/main` doesn't (unpushed work, which `land` never pushes). Without an origin the base is the local `main`.
 2. `rebase onto <sha8>: N commits` (or `rebase: on <sha8> already`). A failed rebase is aborted and refused (exit 3). A branch with nothing beyond the base is refused (`nothing to land`), as are a spec the worktree doesn't have and a spec not reading `building` in the worktree.
-3. `scaffold: follows the row`, for a repo with a `ship` row whose `AGENTS.md` (in the rebased tree) has a `<!-- bmesh:` marker. Each marked block of `AGENTS.md` that differs from the base's (`origin/main`'s), and the verify kind's command when it differs from the base's, is compared with what `scaffold` writes from the row and the binary. A file the branch didn't change isn't compared, so a row published mid-build, a newer snippet or another box's older binary never refuse a landing. A file `scaffold` would create isn't drift.
-    - Drift prints the first 20 lines of its unified diff (`...` after them) and is refused (exit 3). Once the row is published with the new verify, `bmesh scaffold <worktree>` writes the files on the branch.
+3. `scaffold: follows the row`, for a repo with a `ship` row whose `AGENTS.md` (in the rebased tree) has a `<!-- bmesh:` marker. Each marked block of `AGENTS.md` that differs from the base's (`origin/main`'s), the verify kind's command when it differs from the base's, and, when the row has a `setup`, `.bmesh/config.toml`'s `[setup]` when it reads otherwise than the base's (a `[slots]` edit is the repo's own), is compared with what `scaffold` writes from the row and the binary. A file the branch didn't change isn't compared, so a row published mid-build, a newer snippet or another box's older binary never refuse a landing. A file `scaffold` would create isn't drift.
+    - Drift prints the first 20 lines of its unified diff (`...` after them) and is refused (exit 3). Once the row is published with the new verify or setup, `bmesh scaffold <worktree>` writes the files on the branch.
     - A repo never scaffolded prints `scaffold: not scaffolded, not checked`; one with no `ship` row prints nothing.
     - A tree whose `go.mod` declares this binary's own module renders its own blocks, which this binary may predate, so only the verify kind is compared: `scaffold: the verify kind follows the row (AGENTS.md is rendered by this tree's own bmesh, not checked)`.
 4. The results for the rebased tree. The required kinds are those with a result at the branch's tree before the rebase, and `verify` when the repo defines it.
     - **A branch rebased by hand** is read as it was before the rebase (see Details).
-    - **An inline kind** runs as `routine run` does (a deterministic one is answered from its record) and prints its verdict line. A failing one prints its output and exits 1.
+    - **An inline kind** runs as `routine run` does (a deterministic one is answered from its record; a command kind runs the worktree's `[setup]` first when its installs aren't current, and a failing setup refuses, exit 3, recording nothing) and prints its verdict line. A failing one prints its output and exits 1.
     - **A deterministic kind** (`verify`) with no result for the rebased tree first looks for an ok result at a tree that differs only outside the repo's code (its row's `code`, see [repos.toml](#repostoml); `git diff --quiet <old> <new> -- <code>`). It looks in this order: the last tree it was ok at in this run, the branch's tree before this pass's rebase, the tree its `required` line named. The first found is carried: stored again for the rebased tree and HEAD, with its output led by `carried from t:<old8>: nothing under code changed`, so `done` and `spec verified` match it as any record. It prints `verify ok t:<new8> (carried from t:<old8>: nothing under code changed)`, in seconds. A change under the code, or to `.bmesh/`, runs it.
     - **Another kind** (a review) prints the first that applies:
         1. its result for the rebased tree, `<entry> (recorded)`;
@@ -1912,6 +1944,7 @@ The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander b
 | the spec doesn't read `building` | 3 | `refused: spec NNN reads <status>, not building` |
 | scaffold drift | 3 | see below |
 | a failing inline kind | 1 | `<kind> failed at t:<tree8>; fix it, commit and run bmesh land again` |
+| an inline command kind's setup failed | 3 | as [`bmesh routine run`](#bmesh-routine-run) says |
 | a failing result or a changed diff; a failing entry for the tree | 3 | names the kind and how to re-run it; see below |
 | `main` moved a second time | 3 | `refused: main moved again before the push; nothing is pushed, run bmesh land again` |
 | any other push failure | 1 | `push main: <git error>` |
@@ -1923,7 +1956,7 @@ The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander b
 - A changed diff: `refused: <kind> has a result for t:<old8> but none for t:<new8>, and the rebase changed the diff: run it again on this tree (for review: bmesh routine queue review --again --go --text "base: <sha>", then routine wait), then run bmesh land again`
 - No results at all: `refused: no results for HEAD's tree; run the routines first`
 - A failing entry: `refused: <kind> fails at t:<tree8>; fix it, commit and run bmesh land again` (for a carried entry, `t:<c tree8>, the same diff`)
-- Scaffold drift: `bmesh: refused: the branch's scaffolded files differ from what bmesh scaffold writes from <repo>'s row; the row's verify is the source: bmesh repos propose with the new verify, or restore the scaffolded files`
+- Scaffold drift: `bmesh: refused: the branch's scaffolded files differ from what bmesh scaffold writes from <repo>'s row; the row's verify and setup are the source: bmesh repos propose with the new verify or setup, or restore the scaffolded files`
 
 **Details.** A branch rebased by hand is read as it was before, by walking its reflog (`git reflog show refs/heads/<branch>`). When HEAD is the commit a rebase made (a `rebase (finish)` entry at HEAD; `rebase -i` and `pull --rebase` count), the entry before it, the head the rebase rewrote, counts as land's own head before the rebase. The walk goes on back while that head was itself made by a rebase. A commit made after the rebase ends the walk, and HEAD is read as it stands. HEAD is also read as it stands for a branch whose reflog has no rebase or has expired (`gc.reflogExpire`, 90 days), or that was rebased on another box. A kind with no result at HEAD's tree is required when that earlier head's tree has one, judged against that head and its fork point from main, as if land had done the rebase. So a review lost to a conflict the lead resolved by hand carries when the resolution left the diff unchanged, and is refused otherwise, as in step 4. A review's findings fixed in a commit and then rebased land on verify alone, because the fix's tree has no review.
 
@@ -2276,7 +2309,7 @@ Prints one row as `key: value` lines.
 |---|---|---|
 | `--json` | off | print one object, in the shape `bmesh repos --json` uses |
 
-**Output.** A row without `code` prints `code: (everything but the spec files)`.
+**Output.** A row without `code` prints `code: (everything but the spec files)`, and one without `setup` prints `setup: (none)`. A row with `setup` adds `setup_inputs:` (`(none: once per worktree)` when it names none) and `setup_timeout:` (`10m` when it names none).
 
 **Refusals.**
 
@@ -2606,6 +2639,8 @@ Each kind of brief also gets its own values:
 | The fix brief | `node`, `date` and `plain_words` (the plain-words rule every closing ends with) |
 | A build brief | `spec`, `spec_path`, `spec_id`, `node`, `date` and `upgrading` (empty, except in bmesh's own repo: a bullet asking the lead to fill the spec's `## Upgrading` section as built, with the template's rule) |
 
+**Setup first.** When the repo names a `[setup]` (see [Setup](#setup)), a build, fix or round brief gets a section `## First: bmesh setup` before its first `## ` heading (at its end when it has none), a repo's own template included: run `bmesh setup` before anything else (`cd <worktree> && bmesh setup` in a round's brief, whose shell doesn't start there), read its output if it fails, and run it again after changing dependencies. A build or fix brief reads `[setup]` from `main`, which the lead's worktree is made from; a round's, from its worktree. The executor header has the same first step (see [`bmesh executor new`](#bmesh-executor-new)). The runner makes a T3 lead's worktree after the brief is written, so bmesh can't run the setup there itself; a T3 project setup that already runs `bmesh setup` makes the step a no-op.
+
 The proposal briefs carry the repo's facts and point at the `ideate-engineer` and `ideate-ux` skills for the method. The build brief carries the spec, points at the `lead` skill, and says: the review is sized as `done_rule` says and queued with `--effort`; its findings are fixed and then landed, with a second pass only after a rebase changed the code; a taste finding is noted in the final message, not re-reviewed.
 
 See also: [`bmesh build`](#bmesh-build), [`bmesh spec template`](#bmesh-spec-template).
@@ -2770,6 +2805,7 @@ Internals: [internals](internals.md#queueing)
 **Running.** The daemon runs a job with the kind as defined at its commit (`git show <commit>:.bmesh/routines/<kind>.toml`), falling back to main's only when the file is absent there.
 
 - A deterministic kind's job is answered from its recorded result, ok or failed, without a run, unless `--rerun`.
+- A command kind's job runs the checkout's `[setup]`, as the job's commit defines it, after the move and before its slots are leased, when its installs aren't current; with no `inputs`, on every job, since the move changed the commit under them (see [Setup](#setup)). A model kind's job runs none.
 - A job whose slot is busy goes back to the inbox for 30 s.
 
 The daemon answers `ok=false` with the reason (`routine wait` prints it and exits 1, as for any failed job) for:
@@ -2778,6 +2814,7 @@ The daemon answers `ok=false` with the reason (`routine wait` prints it and exit
 - an inline kind;
 - an unknown model;
 - a commit whose kind runs on another OS (see Another OS below);
+- a setup that failed, timed out or dirtied the tree, `setup failed: <why>; nothing recorded` (or `setup dirtied the tree: <paths>; nothing recorded`) and the last 30 lines of its output;
 - a lost lease.
 
 **Deferred.** A daemon leaves a job it can't judge for a box that can, with no reply. It defers a job for a repo
@@ -2799,7 +2836,32 @@ Internals: [internals](internals.md#replies)
 
 #### Checkouts
 
-Fresh and pooled runs never touch a requester's worktree. Each instance has a detached worktree of the registered repo at `<[runner] checkouts>/<repo directory name>/<instance path>`, moved before each job with `git checkout --detach <commit> && git clean -fd`. The daemon reads the repo's main in a sibling checkout named `main`. An inline run uses the cwd worktree's HEAD (see [`bmesh routine run`](#bmesh-routine-run)).
+Fresh and pooled runs never touch a requester's worktree. Each instance has a detached worktree of the registered repo at `<[runner] checkouts>/<repo directory name>/<instance path>`, moved before each job with `git checkout --detach <commit> && git clean -fd`, which keeps ignored files: a pooled instance's installs (`node_modules`) stay from job to job, and [Setup](#setup) says when they are brought current. The daemon reads the repo's main in a sibling checkout named `main`. An inline run uses the cwd worktree's HEAD (see [`bmesh routine run`](#bmesh-routine-run)).
+
+#### Setup
+
+A fresh `git worktree add` has none of what a repo gitignores, its installed dependencies among them, so a verify there fails for want of them (`vitest: not found`). A repo names the one command that installs them in its `.bmesh/config.toml`, which [`bmesh scaffold`](#bmesh-scaffold) writes from the registry row's `setup`, `setup_inputs` and `setup_timeout` (see [repos.toml](#repostoml)):
+
+```toml
+[setup]
+command = "npm ci"                          # run by the platform shell at the worktree's root
+inputs = [":(glob)**/package-lock.json"]    # git pathspecs; their tracked files decide staleness
+timeout = "10m"                             # the default; the run's process group is killed after it
+```
+
+bmesh reads `[setup]` from the commit being worked on (the worktree's file, or the commit's for a job), never from the row. A repo with no `[setup]` runs nothing.
+
+**Current.** A run that succeeds writes `bmesh-setup` into the worktree's own git dir (`git rev-parse --git-dir`, outside the tree): a sha256 of the command and of every tracked file the inputs match, path and content, read from the working tree after the run. The installs are current while that hash matches. Without `inputs`, the hash is the command's alone, so a worktree is current once setup has run in it. A failed run leaves no marker.
+
+**Where it runs.**
+
+- **Verify of `main`** ([`bmesh build`](#bmesh-build), [`bmesh release`](#bmesh-release)): in the fresh worktree, right before the verify kind runs; never when a record answers or under `--force`.
+- **Inline kinds** ([`bmesh routine run`](#bmesh-routine-run), [`bmesh land`](#bmesh-land)): before a command kind runs, when not current. The tree must be clean after it (`git status --porcelain`): a setup that leaves tracked changes or untracked, unignored files fails with `setup dirtied the tree: <paths>`.
+- **Routine jobs** ([Jobs](#jobs)): a command kind's, after the checkout moves to the job's commit and before its slots are leased; with no `inputs`, on every job. The tree must be clean after it, as inline.
+- **Agent worktrees** (leads, executors, proposal threads, on every runner): the brief's first step is [`bmesh setup`](#bmesh-setup), and the agent reads its own failure (see [Briefs](#briefs)).
+- **Never** in a model kind's run (a review reads diffs under its `allow` list), a ledger edit's worktree (`choose-ideas`, `spec set`, a dispatch's record), the daemon's `main` read checkout or an update's checkouts.
+
+**Failure.** A setup that fails, times out or dirties the tree records nothing: the build of `main` is refused with the tail of its output (so a registry flake costs a retry, never a red `main`), an inline run is refused (exit 3), and a job is answered `ok=false` with the reason. Concurrent setups in two worktrees share the package manager's cache (npm's, pnpm's, uv's and Go's are built for that); bmesh keeps no store of its own.
 
 #### Leases
 
@@ -2810,6 +2872,10 @@ A slot is a resource only so many runs may use at once. Its capacity is in the r
 browser = 1
 [routines]
 dir = ".bmesh/routines"
+[setup]                       # see Setup
+command = "npm ci"
+inputs = [":(glob)**/package-lock.json"]
+timeout = "10m"
 ```
 
 - An expired lease is free.
@@ -2822,7 +2888,7 @@ The command is [`bmesh lock-lease`](#bmesh-lock-lease).
 
 A result is kept per kind, tree, args and model, with its verdict, output (cut at 64 KiB), time and who ran it. A model's result also records the patch-id of the diff it was asked to read, from the commit the job text's `base: <sha>` names to the job's commit. This lets a review carry across a rebase (see [The verified line](#the-verified-line)). A base that isn't a commit records none (the daemon logs it).
 
-Every run naming a commit records, inline or daemon, deterministic or not. A kind's newest run at a tree replaces the last. Answered-from-record jobs, refused jobs, lost leases and runs cut off by a stopping daemon record nothing.
+Every run naming a commit records, inline or daemon, deterministic or not. A kind's newest run at a tree replaces the last. Answered-from-record jobs, refused jobs, failed setups, lost leases and runs cut off by a stopping daemon record nothing.
 
 A result older than `[routines] keep_results` (default `30d`; `0` keeps them forever) is gone. A deterministic kind then runs again, and `bmesh done` for a spec landed longer ago needs its routines rerun on the merged tree (it names the missing result). The spec's `verified` line stays.
 
@@ -3323,9 +3389,14 @@ surfaces = []                           # UI screens a UI/UX thread screenshots,
 pin = ""                                # release tag every checkout stays on
 routines = ["verify", "review"]         # routine kinds a build runs
 code = []                               # git pathspecs of the code ("cmd/**", "*.go"); none = all but the spec files
+setup = ""                              # shell command that installs what a fresh worktree lacks ("npm ci"); none = no setup
+setup_inputs = []                       # git pathspecs whose files make an install stale (":(glob)**/package-lock.json")
+setup_timeout = ""                      # a setup run's cap; "" = 10m
 ```
 
 **Code.** `code` lists git pathspecs from the repo's root, read as `git log -- <pathspec>` reads them (`*` crosses `/`: `*.go` is every Go file, `cmd/**` everything under `cmd/`). A change is code when it touches a matching path. `.bmesh/` (the routine kinds, which define verify) is always code. When `code` is unset or empty, code is everything but the spec files `[spec] glob` matches (`docs/proposals/NNN-*.md`), so a `README.md` beside them is code. The code head (see [Updates](#updates)) is what `build` verifies, `release` tags and `[update]` follows, and `land` carries a `verify` across a rebase that changed nothing under code. So list every file the build or tests read (`go:embed` sources, fixtures, documents a test checks); else a change to that file alone is never verified.
+
+**Setup.** `setup` is the one shell command that installs what the repo gitignores and a fresh `git worktree add` lacks (its dependencies: `npm ci`, `pnpm install --frozen-lockfile`, `uv sync`). [`bmesh scaffold`](#bmesh-scaffold) writes it, with `setup_inputs` and `setup_timeout`, into the repo's `.bmesh/config.toml` as `[setup] command / inputs / timeout`, and bmesh runs the `[setup]` of the commit it works on, never the row, so a box with another registry version runs the commit's (see [Setup](#setup)). `setup_inputs` are git pathspecs, read as `code`'s are: `**/package-lock.json` matches only nested lockfiles (`*` crosses `/`, but the `/` must be there), and `:(glob)**/package-lock.json` matches the root's too. They are code beside `code` (a commit that only bumps a lockfile is verified, never carried). `setup_inputs` and `setup_timeout` need `setup`; `setup_timeout` is a Go duration. A row with no `setup` behaves as before it existed.
 
 **Errors.** One loader serves every command, so an unknown key, a row without `path` or a mode outside the five fails them all. `[repos]` in `config.toml`, the registry's old place, is refused with a message naming `repos.toml`. `bmesh lead start --repo`, `routine queue` and the daemon resolve repo names here.
 

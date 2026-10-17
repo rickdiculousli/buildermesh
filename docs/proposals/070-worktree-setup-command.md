@@ -91,7 +91,8 @@ The repo's verify, plus tests over a bare origin whose `[setup]` command appends
 - **Alternative: a content-addressed dependency store in bmesh.** Dropped while grilling the idea: every key and link rule was specific to one language, and pnpm, bun and uv already do it.
 
 ## Upgrading
-- Ask: which repos get a setup command? The registry row gains `setup`, `setup_inputs` and `setup_timeout`. The choices are none or a command per repo (e.g. `npm ci` with `setup_inputs = ["**/package-lock.json"]`, then `bmesh scaffold <repo>`). The default is none, today's behaviour.
-- A box on an older bmesh refuses a registry that carries these keys (`registry vN needs a newer bmesh`) and keeps its previous `repos.toml`. Its daemon ignores `[setup]` and runs routine jobs without setup. Upgrade the boxes that run a repo's routines or leads before relying on its setup.
+- Ask: the registry row gains `setup`, `setup_inputs` and `setup_timeout`, which `bmesh scaffold <repo>` writes into the repo's `.bmesh/config.toml` as `[setup]`; which repos get a setup command? The choices are none, or a command per repo (e.g. `setup = "npm ci"` with `setup_inputs = [":(glob)**/package-lock.json"]`, which matches the root lockfile too, then `bmesh scaffold <repo>` and commit what it writes). The default is none, today's behaviour.
+- A box on an older bmesh refuses a registry that carries these keys (`registry vN needs a newer bmesh`) and keeps its previous `repos.toml`; its daemon and CLI ignore `[setup]` and run verifies and routine jobs without it. Upgrade every box that runs a repo's routines or leads before giving that repo a setup.
 
 ## Needs from the operator
+- Give each repo whose verify needs installed dependencies (the one whose build was refused with `vitest: not found` first) a `setup` and its `setup_inputs` in its registry row, publish the registry once every box running its routines or leads runs this bmesh, then `bmesh scaffold <repo>` and commit and push what it writes. check: `bmesh repos show <repo>`

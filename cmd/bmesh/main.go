@@ -196,6 +196,9 @@ commands:
                                            the new binary; --before-swap: config check and asks only)
   update --notice                          print the daemon's behind-main notice (<state dir>/update.txt), and
                                            upgrade notes pending, if any
+  setup [--check] [--force]                run this worktree's [setup] (.bmesh/config.toml) when its installs aren't
+                                           current, and mark them current; --check runs nothing and exits 1 when
+                                           stale or missing; --force runs it anyway
   land [--spec NNN] [--ttl D] [--wait D]   land this worktree's branch on main under the lease land.<repo> (waits
                                            while another lead holds it): print the kinds it requires (a branch
                                            rebased by hand requires what the head before the rebase had), fetch,
