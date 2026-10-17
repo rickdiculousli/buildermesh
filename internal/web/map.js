@@ -14,7 +14,7 @@ const LABEL_PX = 7.5, SUB_PX = 6; // average glyph widths of .label and .sub
 const CHIP = { h: 32, pad: 8, gap: 8, inset: 10, checkW: 16, maxLabel: 28, font: "500 12px", headFont: "700 14px" };
 // NEED orders the map's leads: what needs a hand, then what runs, what has
 // no state yet, what is finished.
-const NEED = { blocked: 0, asking: 1, silent: 2, working: 3, idle: 4, done: 5 };
+const NEED = { blocked: 0, asking: 1, silent: 2, working: 3, held: 4, idle: 5, done: 6 };
 const PHONE = "(max-width: 699px)";
 const FETCH_MS = 10000; // a /api/tree read taking longer is abandoned
 const RECENT = 30;
@@ -22,7 +22,7 @@ const EDGE_MS = 1200;
 const REFETCH_MS = 500;
 const REFETCH_MAX_MS = 2000; // a steady stream of events still refetches this often
 const POLL_MS = 30000; // unread counts and runners change without an event
-const EVENT_STATE = { started: "working", progress: "working", ask: "asking", blocked: "blocked", done: "done" };
+const EVENT_STATE = { started: "working", progress: "working", ask: "asking", blocked: "blocked", held: "held", done: "done" };
 const MSG_KINDS = new Set(["message", "wake", "job", "reply"]);
 
 const $ = (id) => document.getElementById(id);
@@ -281,11 +281,11 @@ function classOf(kind, state) {
   return "node " + kind + link + (state ? " st-" + state : "");
 }
 
-// subText is a box's second line, cut to n characters: for an asking or
-// blocked node the state and its words (the ask or the block), else the
+// subText is a box's second line, cut to n characters: for an asking,
+// blocked or held node the state and its words (the ask, the block or the hold), else the
 // state and the extras.
 function subText(state, text, extra, n) {
-  const parts = state === "asking" || state === "blocked" ? [state, text] : [state, ...extra];
+  const parts = state === "asking" || state === "blocked" || state === "held" ? [state, text] : [state, ...extra];
   return fit(parts.filter(Boolean).join(" · "), n);
 }
 
@@ -1208,7 +1208,7 @@ function pct(x) {
 }
 
 // COUNTED are the states the summary row counts, in the order it names them.
-const COUNTED = ["working", "asking", "blocked", "silent", "done"];
+const COUNTED = ["working", "asking", "blocked", "silent", "held", "done"];
 
 // stateCounts counts the loaded tree's leads, rounds and their children by
 // state (routines are not nodes of it); a live event's state wins over the
@@ -1380,7 +1380,7 @@ function checkSoon() {
 
 // selfCheck writes, under ?check=1, whether the page scrolls sideways, the
 // smallest tap target, the page offset of the first working box's top (none
-// without one) and the connection history into document.title.
+// without one), the held boxes and held band rows, and the connection history into document.title.
 function selfCheck() {
   const sw = document.documentElement.scrollWidth, iw = window.innerWidth;
   let tap = Infinity;
@@ -1390,6 +1390,8 @@ function selfCheck() {
   }
   const live = document.querySelector("#map .node.st-working:not(.group) .box");
   const workingTop = live ? Math.round(live.getBoundingClientRect().top + window.scrollY) : "none";
+  const held = document.querySelectorAll("#map .node.st-held:not(.group)").length;
+  const bandHeld = document.querySelectorAll("#needs .need.st-held").length;
   const c = check;
   document.title = `bmesh ${sw <= iw ? "ok" : "SCROLLS"} view=${pages.view} scrollWidth=${sw} innerWidth=${iw} minTap=${Math.round(tap)}` +
     ` workingTop=${workingTop}` +
@@ -1397,7 +1399,8 @@ function selfCheck() {
     ` svgWidth=${mesh.width} mapWidth=${$("map").clientWidth}` +
     ` vertical=${mesh.vertical} leads=${c.leads} trees=${c.trees} conn=${c.conn.join(">")}` +
     ` replay=${c.replay} live=${c.live} flashes=${c.flashes} strip=${$("strip").hidden ? "hidden" : $("strip").children.length}` +
-    ` band=${$("needs").hidden ? "hidden" : $("needs").children.length}`;
+    ` band=${$("needs").hidden ? "hidden" : $("needs").children.length}` +
+    ` held=${held} bandHeld=${bandHeld}`;
 }
 
 // firstCard names the lead page's card drawn highest (leftmost on a tie),
