@@ -38,9 +38,10 @@ In:
   - Nearly every resolution changes the diff's patch-id, which covers three lines of context. A changed diff needs a new review: spec 079 re-queues it itself, and without 079 today's refusal applies.
 - **When any region is left,** land aborts the rebase as today, and the refusal says which files a rule resolves and which need the lead.
 - **Where:** a new `internal/merge` package (text in, resolved text or a conflict out, no git), plus land's rebase step in `cmd/bmesh/cmd_land.go`.
+- **No burden on anyone else.** The rules are land's own code, so every box and repo gets them with the release. Nothing is installed or configured, and nothing is written into a repo: no merge tool, no merge driver, no `.gitattributes`, no git config. No one changes how they write docs or code.
 - **Docs:** the manual's land step 2 and Refusals. The lead skill's conflict line says that land resolves what a rule can, and that a failing verify right after `rebase: resolved` is land's merge, to be fixed forward.
 
-Out: a region both sides rewrote, carrying a review across a resolution, a merge by Go syntax, generating the README index, and holding specs at dispatch.
+Out: any merge tool or driver, a region both sides rewrote, carrying a review across a resolution, a merge by Go syntax, generating the README index, and holding specs at dispatch.
 
 The options weighed, by how many of the 12 refusals each removes:
 - **Generate the README index from the manual, and have land regenerate it: 0.**
