@@ -4,7 +4,7 @@ title: Agent threads start with only the plugins and settings the box names for 
 kind: token-cost
 size: M
 judge: opus
-status: proposed
+status: rejected
 lens: eng
 proposed_by: a234110b-dade-4827-b449-632e5de4650b
 proposed_on: 2026-10-18

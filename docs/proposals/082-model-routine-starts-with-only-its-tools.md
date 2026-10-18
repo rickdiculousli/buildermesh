@@ -4,7 +4,7 @@ title: A model routine starts claude with only the tools its kind allows, and no
 kind: token-cost
 size: S
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: a234110b-dade-4827-b449-632e5de4650b
 proposed_on: 2026-10-18
