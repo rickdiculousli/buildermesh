@@ -4,7 +4,7 @@ title: bmesh land queues the review the spec's size calls for, waits for it and 
 kind: token-cost
 size: L
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: c3029b53-10b6-4fab-83cb-465887cb0b73
 proposed_on: 2026-10-18
