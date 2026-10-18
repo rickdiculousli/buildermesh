@@ -8,6 +8,7 @@ status: rejected
 lens: eng
 proposed_by: a234110b-dade-4827-b449-632e5de4650b
 proposed_on: 2026-10-18
+reason: config hell: a per-box, per-repo thread profile plus moving T3 lead worktrees outweighs ~5% of a lead's cost; trim the box's own Claude Code settings instead
 ---
 
 ## Opportunity
