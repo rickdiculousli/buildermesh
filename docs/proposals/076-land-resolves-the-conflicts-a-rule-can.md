@@ -4,7 +4,7 @@ title: bmesh land resolves the rebase conflicts a rule can, and leaves the lead 
 kind: token-cost
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: acc7c4cb-5a7b-4a96-bc3b-bf2508d0beac
 proposed_on: 2026-10-18
