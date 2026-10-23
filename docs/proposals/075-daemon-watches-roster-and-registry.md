@@ -4,7 +4,7 @@ title: The daemon watches the roster and registry keys, so a publish reaches eve
 kind: time-cost
 size: S
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: 9079c88e-3b4d-4243-afcb-44802f8c604a
 proposed_on: 2026-10-17
@@ -12,6 +12,8 @@ built_by: 9d85417d-8810-4457-9aee-8b57245307fb
 host: k16
 family: buildermesh-build-18
 branch: bmesh/9d85417d-8810-4457-9aee-8b57245307fb
+merged: 40661574fc399d0c7f59d3235571f64e89740a4b
+verified: verify ok t:8bc9c26d
 ---
 
 ## Opportunity
