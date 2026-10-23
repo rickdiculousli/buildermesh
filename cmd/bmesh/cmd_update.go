@@ -8,9 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
@@ -175,7 +173,18 @@ func (a *app) cmdUpdate(args []string) error {
 // keeps this one when it fails; after the swap the new binary walks the
 // rest. A current binary resumes a walk left unfinished, or walks the notes
 // still pending since this box's record. --plan prints the walk instead.
+// It holds <state dir>/update.lock throughout, so the daemon never
+// restarts onto the binary mid-walk.
 func (a *app) updateTo(exe, dir, from string, t selfupdate.Target, plugin bool, w walkFlags, install func(selfupdate.Gate) error) error {
+	if !w.plan {
+		// Held from before the swap to the end of the walk, so the daemon
+		// restarts onto the new binary only once its walk is done.
+		unlock, err := selfupdate.LockUpdate(config.StateDir())
+		if err != nil {
+			return err
+		}
+		defer unlock()
+	}
 	tagged := buildVersion().Own()
 	own := selfupdate.OwnCommit(dir, tagged)
 	label := selfupdate.Label(dir, own)
@@ -207,8 +216,8 @@ func (a *app) updateTo(exe, dir, from string, t selfupdate.Target, plugin bool, 
 		} else if _, have := upgrade.ReadInstalled(config.StateDir()); !have {
 			a.recordInstalled(dir, own)
 		}
-		a.restartLine(own)
-		a.hubLine(dir, own)
+		a.restartLine(dir, own)
+		a.hubLine()
 		return clearNotice()
 	}
 	r := walkRange{dir: dir, from: own, to: t.Commit}
@@ -232,26 +241,19 @@ func (a *app) updateTo(exe, dir, from string, t selfupdate.Target, plugin bool, 
 	if err := a.childWalk(exe, r, w, false); err != nil {
 		return err
 	}
-	a.restartLine(t.Commit)
-	a.hubLine(dir, t.Commit)
+	a.restartLine(dir, t.Commit)
+	a.hubLine()
 	return clearNotice()
 }
 
-// hubLine prints, last, the line naming this box's bmesh hub when it runs
-// an older binary than rev, the one serve runs once restarted
-// (selfupdate.HubLine).
-func (a *app) hubLine(dir, rev string) {
-	if rev == "" {
-		return
-	}
-	v := selfupdate.Version{Revision: rev, Release: selfupdate.Describe(dir, rev)}
-	if ct, err := exec.Command("git", "-C", dir, "show", "-s", "--format=%ct", "--end-of-options", rev).Output(); err == nil {
-		if sec, err := strconv.ParseInt(strings.TrimSpace(string(ct)), 10, 64); err == nil {
-			v.Time = time.Unix(sec, 0).UTC().Format(time.RFC3339)
+// hubLine prints the line naming this box's bmesh hub when it runs an
+// older binary than the serve running beside it, as each records itself
+// (selfupdate.HubLine); none while either isn't running.
+func (a *app) hubLine() {
+	if serve, ok := selfupdate.ReadProc(config.StateDir(), "serve"); ok {
+		if line := selfupdate.HubLine(config.StateDir(), serve); line != "" {
+			fmt.Fprintln(a.stdout, line)
 		}
-	}
-	if line := selfupdate.HubLine(config.StateDir(), selfupdate.RecordOf(v)); line != "" {
-		fmt.Fprintln(a.stdout, line)
 	}
 }
 

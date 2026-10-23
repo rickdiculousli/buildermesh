@@ -418,7 +418,7 @@ Builds the target (see [Updates](#updates)) over this binary and swaps it in, on
    - Answers go into `config.toml` (the old file kept as `config.toml.prev`, and put back when the new binary then refuses it). A registry ask's answer goes into every row of `repos.toml` (kept as `repos.toml.prev`), which the admin publishes ([`bmesh repos publish`](#bmesh-repos-publish)) or another box proposes.
 5. Moves this binary to `bmesh.prev` beside it, puts the build at its path, and prints `<old> -> <new>`.
 6. Runs the notes' steps for this box (see Output). A run on the new binary, now `up to date`, resumes after the last step done.
-7. Prints the restart line (below), then the stale-hub line when the hub runs older (see [`bmesh hub`](#bmesh-hub)).
+7. Prints the restart line (below), then the stale-hub line when the hub runs an older binary than the serve running beside it (see [`bmesh hub`](#bmesh-hub)). Once the daemon restarts onto a new release the hub follows it, so a swap alone prints no hub line.
 8. Once the binary is current (`up to date`, `ahead of …`, or after a swap from either source), removes the notice file.
 
 **No repo row** (no `--repo`, `[update] repo` or own-module row, as after a first install): `update` installs from the module's `main` with `go install` instead, keeping `bmesh.prev` as above. After that swap it prints `<old> -> <new>`, then `update the buildermesh plugin too: claude plugin marketplace update buildermesh && claude plugin update buildermesh@buildermesh (then restart Claude Code)`, since the skills name commands only a matching binary has.
@@ -435,7 +435,7 @@ Builds the target (see [Updates](#updates)) over this binary and swaps it in, on
   - A `confirm` step asks `Run it? [y/N]` at a terminal and needs `--yes` without one.
   - A check step's output must show its `expect`.
 - A finished walk ends `at v0.2.0`.
-- **The restart line.** When this box's daemon runs another revision than the binary now at the path, `update` prints `this box's daemon still runs <old8>; restart it so it runs <new8>: <command>`. `<command>` restarts the unit `init --service` writes:
+- **The restart line.** When this box's daemon runs another revision than the binary now at the path, `update` prints what happens next. A daemon that restarts itself onto a binary `update` swapped in (its newest `started` says so: a release with this rule, on Linux or macOS, or Windows under `serve --restart`, with a repo to read history from; see [Updates](#updates)) gets `this box's daemon restarts onto <new8> within a minute`, once the walk is done. Otherwise (an unfinished walk, a daemon from an older release, one that can't restart itself) `update` prints `this box's daemon still runs <old8>; restart it so it runs <new8>: <command>`. `update` never restarts the daemon itself: a restart from outside kills its running jobs, and only the daemon's own drain hands them back. `<command>` restarts the unit `init --service` writes:
   - Linux: `systemctl --user restart bmesh`;
   - macOS: `launchctl kickstart -k gui/$(id -u)/com.buildermesh.bmesh`;
   - Windows, whose supervisor runs detached from the logon task: `taskkill /F /IM bmesh.exe & schtasks /Run /TN buildermesh` (for `cmd`; it stops every `bmesh.exe`, supervisor included, then starts the task again);
@@ -2677,9 +2677,17 @@ A box on `release` restarts once per release, on `latest` once per code landing.
 **The hint.** When this box's daemon (another box's, if this box runs none) runs a revision other than this binary's, every command that connects to the hub ends with one stderr line, after its output and error. The exit code is unchanged.
 
 - `bmesh: k16 runs 1a2b3c4d, this is 9e8f7a6b; run bmesh update`;
-- or, when this box's own daemon is the older of the two: `bmesh: this box's daemon runs 1a2b3c4d, this binary is 9e8f7a6b; restart the daemon: <command>`, with `<command>` as in [`bmesh update`](#bmesh-update)'s restart line.
+- or, when this box's own daemon is the older of the two: `bmesh: this box's daemon runs 1a2b3c4d, this binary is 9e8f7a6b; restart the daemon: <command>`, with `<command>` as in [`bmesh update`](#bmesh-update)'s restart line. After a `bmesh update` the hint lasts until the daemon restarts onto the new binary, by itself within a minute where it can (below).
 
 There is no hint for a binary or daemon of unknown revision, for commands that reach no hub (`help`, `version`, `init`, `repos`, `spec list|set|template`, `scaffold`), or for `update`, which prints its restart line instead.
+
+**A binary `bmesh update` swapped in.** Every daemon (with `[update] repo`, `upstream`, the notice only, or none) checks the binary at its path on its minute rescan (it needs `[runner] checkouts`). It runs that binary's `version` only when the file's modification time or size changed, so an unchanged binary costs a `stat`. When the binary names a newer commit than the daemon's (one whose history contains it), the daemon restarts onto it as the self-update does: it drains (step 4 above) and starts the new binary (step 5), logging `update: v0.3.2 -> v0.3.3 (swapped in by bmesh update); restarting`. It publishes no `update` event, since it built nothing; its `started` follows as after any restart.
+
+- History is read where `bmesh update` reads it: `[update] repo`'s main checkout, else the row of the daemon's own module, else the module's `main` fetched into `<user cache dir>/bmesh/update/upstream` (once per binary whose commit it lacks).
+- It waits while `bmesh update` holds `<state dir>/update.lock`, from before its swap to the end of its walk, and tries again at the next rescan. On Windows the lock does nothing, so a Windows daemon may restart while the steps run.
+- It refuses a binary whose walk isn't finished (notes pending for its release; see [Upgrading](#upgrading)) or whose `config check` fails against this box's config: `update: v0.3.3 is at <path> but its walk is unfinished (upgrade notes pending since v0.3.2: run bmesh update); not restarting onto it`, or `... but its config check failed: <why>; ...`. That is logged, written as the notice and pushed through `[notify]` once per binary and walk record, and checked again when either changes.
+- A binary with no revision (`go install` from a worktree), an older one (a rollback by hand) or one on another line is left alone, as is every binary on a daemon with no history to read, no state dir, or (on Windows) no `serve --restart`. The restart line and the hint then still name the command.
+- A daemon from before this rule doesn't restart itself, so the update that brings it in still needs the restart command once.
 
 **The notice.** A daemon not self-updating from `[update] repo` checks the target every `[update] check_every` (default `6h`; `0` is off; it needs `[runner] checkouts`). When the target is ahead of the binary at its path, it writes one line to `<state dir>/update.txt`:
 

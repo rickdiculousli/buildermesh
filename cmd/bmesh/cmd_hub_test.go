@@ -483,3 +483,24 @@ func TestHubStaysWithoutAReleaseToGoTo(t *testing.T) {
 		})
 	}
 }
+
+// update's hub line compares the hub with the serve running beside it, not
+// with the binary update just swapped in: none while serve still runs the
+// hub's binary, since the hub follows serve once the daemon restarts.
+func TestUpdateHubLineReadsTheRunningServe(t *testing.T) {
+	_, shas := updateBox(t)
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	state := config.StateDir()
+	fakeHubRecords(t, state)
+	hub, _ := selfupdate.ReadProc(state, "hub")
+	writeProcRecord(t, state, "serve", selfupdate.ProcRecord{Pid: os.Getpid(), Revision: hub.Revision, Release: hub.Release, Time: hub.Time})
+	withRevision(t, shas[0])
+	if out, errOut, code := runCLI(t, nil, "update"); code != 0 || out != shas[0][:8]+" -> "+shas[1][:8]+"\n" {
+		t.Fatalf("serve on the hub's binary: code %d out %q err %q", code, out, errOut)
+	}
+	fakeHubRecords(t, state) // serve now runs v0.2.0, the hub v0.1.0
+	withRevision(t, shas[1])
+	if out, errOut, code := runCLI(t, nil, "update"); code != 0 || out != "up to date\n"+hubLine {
+		t.Fatalf("hub behind serve: code %d out %q err %q", code, out, errOut)
+	}
+}

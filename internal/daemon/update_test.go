@@ -349,13 +349,12 @@ func TestNoticeWrittenWhenBehindAndRemovedWhenCurrent(t *testing.T) {
 	waitFor(t, 20*time.Second, "the stale notice removed", func() bool { return u.notice() == "" })
 	next := u.landSpec(t)
 	waitFor(t, 20*time.Second, "the notice", func() bool { return u.notice() == behindOne })
-	// A `bmesh update` swapped in a binary at main: the next check reads it
-	// as current, though this daemon still runs the old one.
+	// A `bmesh update` swapped in a binary at main: this daemon restarts
+	// onto it, installing nothing.
 	if err := os.WriteFile(u.exe, []byte("#!/bin/sh\necho bmesh "+next[:8]+" 2026-10-16T00:00:00Z\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, 20*time.Second, "the notice removed", func() bool { return u.notice() == "" })
-	u.noRestart(t, 500*time.Millisecond)
+	u.restarted(t, 20*time.Second)
 	if l := lines(t, u.goLog); len(l) != 0 {
 		t.Fatalf("installed without upstream: %v", l)
 	}
@@ -651,8 +650,8 @@ func TestNoticeNamesTheRelease(t *testing.T) {
 	waitFor(t, 20*time.Second, "the release notice", func() bool { return u.notice() == want })
 }
 
-// A binary `bmesh update --latest` swapped in past the release, before
-// this daemon restarted into it, is not built over with the older release.
+// A binary `bmesh update --latest` swapped in past the release is not
+// built over with the older release: the daemon restarts onto it.
 func TestUpdateKeepsANewerBinaryOnDisk(t *testing.T) {
 	u := updateSetup(t, map[string]string{})
 	u.d.Cfg.Update.Track = "release"
@@ -662,8 +661,12 @@ func TestUpdateKeepsANewerBinaryOnDisk(t *testing.T) {
 	if err := os.WriteFile(u.exe, []byte("#!/bin/sh\necho bmesh "+head[:8]+" 2026-10-16T00:00:00Z\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	u.d.StateDir = t.TempDir()
+	if err := upgrade.WriteInstalled(u.d.StateDir, upgrade.Record{Version: "v0.2.0+1", Revision: head}); err != nil { // update's walk recorded it
+		t.Fatal(err)
+	}
 	u.start(t) // this daemon still runs the revision before the release
-	u.noRestart(t, 1500*time.Millisecond)
+	u.restarted(t, 20*time.Second)
 	if l := lines(t, u.goLog); len(l) != 0 {
 		t.Fatalf("built: %v", l)
 	}

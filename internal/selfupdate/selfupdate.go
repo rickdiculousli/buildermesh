@@ -245,6 +245,10 @@ func cloneMain(repoPath, clones, dir string) error {
 	return checkout.MoveTo(dir, "origin/main")
 }
 
+// UpdateLockPath is the lock `bmesh update` holds from before its swap to
+// the end of its walk: <state dir>/update.lock.
+func UpdateLockPath(stateDir string) string { return filepath.Join(stateDir, "update.lock") }
+
 // Prev is where Install keeps the binary it replaces: bmesh.prev beside it.
 func Prev(exe string) string {
 	return filepath.Join(filepath.Dir(exe), strings.TrimSuffix(filepath.Base(exe), ".exe")+".prev")
