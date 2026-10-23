@@ -13,7 +13,7 @@ host: k16
 family: buildermesh-build-17
 branch: bmesh/251205bf-8416-4916-ab37-4b57152ae1ea
 merged: f9271ad28b0a7830d0e22cb0d2278bfdf4f671da
-operator_steps: [{"n":1,"box":"ricks-macbook","text":"Once the release after the one that brings this in is out, run `bmesh update` there: it ends `this box's daemon restarts onto <rev8> within a minute`, and a minute later the daemon's log shows `update: <old> -> <new> (swapped in by bmesh update); restarting`.","check":"bmesh hosts","done":""}]
+operator_steps: [{"n":1,"box":"ricks-macbook","text":"Once the release after the one that brings this in is out, run `bmesh update` there: it ends `this box's daemon restarts onto <rev8> within a minute`, and a minute later the daemon's log shows `update: <old> -> <new> (swapped in by bmesh update); restarting`.","check":"bmesh hosts","done":"2026-10-23T07:31:49Z ricks-macbook","note":"v0.4.4 -> v0.4.5 on the Mac: update printed 'restarts onto 40661574 within a minute'; daemon and leaf hub on v0.4.5 with nothing typed"}]
 verified: verify ok t:d5613e22
 ---
 
