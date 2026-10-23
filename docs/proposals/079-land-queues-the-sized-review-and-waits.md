@@ -4,7 +4,7 @@ title: bmesh land queues the review the spec's size calls for, waits for it and 
 kind: token-cost
 size: L
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: c3029b53-10b6-4fab-83cb-465887cb0b73
 proposed_on: 2026-10-18
@@ -12,6 +12,8 @@ built_by: ad0476f3-d146-42fc-8288-f1044d1c4304
 host: k16
 family: buildermesh-build-14
 branch: bmesh/ad0476f3-d146-42fc-8288-f1044d1c4304
+merged: 59097e8f0a389609c628377b3a07b75e9634eb84
+verified: verify ok t:e0c62486
 ---
 
 ## Opportunity
