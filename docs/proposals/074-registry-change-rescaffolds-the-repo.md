@@ -4,10 +4,13 @@ title: A published row change reaches the repo by itself: the row's host rescaff
 kind: refinement
 size: M
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: 9079c88e-3b4d-4243-afcb-44802f8c604a
 proposed_on: 2026-10-17
+built_by: 23b05757-c92b-4dfc-8d47-13b5a9160b16
+host: k16
+family: buildermesh-build-19
 ---
 
 ## Opportunity
