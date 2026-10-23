@@ -49,7 +49,7 @@ In:
     - Plain words: "use", not "leverage". "Is", not "serves as".
     - A comment says why, when the code can't show it. Delete comments that narrate what the code does.
     - Cut filler, hedges and closing summaries that repeat the text above them.
-- **A fourth `AGENTS.md` block, `rules`, appended after `mesh`.** Its opening marker carries the pick and a hash: `<!-- bmesh:rules core design tests a1b2c3d4 -->`, the hash the first 8 hex of the sha256 of the body scaffold wrote. The body is a `## Engineering rules` heading, one line ("From bmesh's rule sets `core`, `design`, `tests`. Edit them freely: `bmesh scaffold` keeps an edited block and marks it customized."), then each set's lines under its name, in the marker's order.
+- **A fourth `AGENTS.md` block, `rules`, appended after `mesh`.** Its opening marker carries the pick and a hash: `<!-- bmesh:rules core design tests a1b2c3d4 -->`, the hash the first 8 hex of the sha256 of the body scaffold wrote. The body is a `## Engineering rules` heading, one line ("From bmesh's rule sets `core`, `design`, `tests`. Where the rest of this file says otherwise, the rest wins. Edit them freely: `bmesh scaffold` keeps an edited block and marks it customized."), then each set's lines under its name, in the marker's order.
   - **The pick is the marker.** A marker with set names and no hash is a fresh pick, and scaffold renders it. A missing block is added as `core`. An empty list (`<!-- bmesh:rules -->`) writes no block body and stays off. A name scaffold doesn't know is refused (exit 1, `AGENTS.md: unknown rule set <name>; bmesh has core, design, tests, tdd, prose`).
   - **An edit is kept.** When the body's hash differs from the marker's, scaffold keeps the body, rewrites the marker to `<!-- bmesh:rules customized -->` and prints `AGENTS.md: rules are customized; kept as written`. A `customized` block is never rewritten. Putting set names back on the marker, or deleting the block, returns it to bmesh's text on the next run.
   - **Only this block.** `done`, `proposals` and `mesh` say what the binary enforces and are rewritten as today.
@@ -58,7 +58,10 @@ In:
   - it shows each set's lines, from the manual's Rule sets section, and asks which to pick (several may be chosen, or none). It recommends `core`, plus `tests` when the repo has tests and `design` when it holds stateful or concurrent code, each with the one clause of evidence it saw;
   - it writes the pick as an empty block, `<!-- bmesh:rules <sets> -->` and its closing marker, at the end of `AGENTS.md`, or rewrites the existing opening marker, and `bmesh scaffold` fills it;
   - on a `customized` block it says so and asks whether to keep it as written or go back to bmesh's sets, keeping it by default;
-  - it says the text can be edited afterwards and scaffold will keep the edit.
+  - it says the text can be edited afterwards and scaffold will keep the edit;
+  - **then it clears conflicts out of the repo's own prose.** It reads the repo's instruction text outside bmesh's markers (`AGENTS.md`, `CLAUDE.md`, and any file `AGENTS.md` says to read at the start) for lines that restate a picked rule or contradict one, and shows each beside the rule line it meets. A restatement is deleted, since the block now carries it. A contradiction asks which wins: keep the repo's line and cut or reword the rule in the block (which marks it customized), or delete the repo's line. It also flags lines that rest on a set the operator didn't pick (a "write the failing test first" with no `tdd`) and asks the same. It changes only what the operator answers, and stages those files with the ones `bmesh scaffold` wrote, in the same commit.
+
+  The "the rest wins" line in the block settles anything the interview missed: a repo's own words always beat bmesh's defaults.
 
   The binary's default stays `core`, for scaffolds no one is asked about (a lead's own branch, a rescaffold by the row's host).
 - **bmesh's own `AGENTS.md`** gets `<!-- bmesh:rules core design tests ... -->` (the operator's pick: no `tdd`).
@@ -67,6 +70,7 @@ In:
   - lead:19, ideate-engineer:30, ideate-ux:29: the by-hand widen-and-attack text, unconditional.
   - lead:52: the `control-ui` clause goes. lead:62: the by-hand caller list, unconditional. lead:76, executor:36, ideate-engineer:58, ideate-ux:59: the `figure-it-out` clause goes, its by-hand text kept where there is one.
   - `method:writing-plans` (lead:18) stays: it is listed, and leads ran it 5 times in 083's sample.
+  - **No skill or brief restates a rule.** bmesh's own text carries the mesh's process, and the sets carry engineering principle. A grep of `skills/`, `internal/brief/templates/` and `docs/agents-snippet.md` for the sets' subjects finds two restatements, both cut above: lead:17's "read before you change, keep each step small enough to verify, state what you learned" (`core` 1-2) and executor:14's test-first cycle (`tdd`). The round skills' widen-and-attack step is how a round proposes, not a rule for a repo's code, and stays. The fix rulings overlap `core` by design and stay (Out). The build repeats the grep and lists in its report what it found and did.
 - **Docs.** Manual: scaffold's step 1 and refusals, and the `scaffold` skill's interview in the Skills section; a "Rule sets" section with each set's exact text and the pstack credit; land's scaffold check; the plugin section's optional-skills table and pstack link replaced by one line on `method`; the plugin-refresh example (`docs/manual.md:3061`) without `pstack@pstack-claude`. Internals: the marker's hash. README's scaffold line.
 
 Out: named sets in a repo (`.bmesh/rules/`) or per box (`~/.config/bmesh/rules/`), so a repo's own rules are free text in `AGENTS.md`; a registry or config key; a `bmesh rules` command; the fix rulings (069), which judge fixes to bmesh itself and stay separate; rendering rules into briefs.
@@ -74,14 +78,14 @@ Out: named sets in a repo (`.bmesh/rules/`) or per box (`~/.config/bmesh/rules/`
 Judge: opus, because the block's hash and the land exemption decide whether an operator's edit survives, and the skill edits touch every lead and executor.
 
 ## What you'll see
-"Scaffold party-buzzer" shows the five sets and asks which to pick, recommending `core` and `tests` because the repo has tests. With that pick, `bmesh scaffold` prints `wrote AGENTS.md`, and the file ends with a `bmesh:rules core tests` block. Change the marker to `core tests tdd`, rerun, and the tdd set appears. Reword a line, rerun: `AGENTS.md: rules are customized; kept as written`, and the marker reads `customized`. A lead's skill no longer mentions pstack; its first turns read the rules from `AGENTS.md`. bmesh's own `AGENTS.md` grows by about 1.8 KB.
+"Scaffold party-buzzer" shows the five sets and asks which to pick, recommending `core` and `tests` because the repo has tests. With that pick, `bmesh scaffold` prints `wrote AGENTS.md`, and the file ends with a `bmesh:rules core tests` block. The skill then shows that the repo's `CLAUDE.md` says "keep diffs minimal" (`core` 1 restates it: delete?) and "mock the database in every test" (`tests` 2 says test through the real entry point: which wins?), and commits what the operator settles. Change the marker to `core tests tdd`, rerun, and the tdd set appears. Reword a line, rerun: `AGENTS.md: rules are customized; kept as written`, and the marker reads `customized`. A lead's skill no longer mentions pstack; its first turns read the rules from `AGENTS.md`. bmesh's own `AGENTS.md` grows by about 1.8 KB.
 
 ## Verification
 The repo's verify, plus:
 - `internal/scaffold`: a missing block appends as `core`; a marker's sets render in order with the right hash; a second run changes nothing; an edited body is kept and its marker becomes `customized`; a `customized` block is never rewritten; an empty marker writes nothing; an unknown name refuses; `Drift` ignores a changed rules block and still catches a changed `done` block.
 - `cmd/bmesh`: `land` on a branch whose rules block was edited passes its scaffold check.
 - A docs test: `docs/manual.md` contains each embedded set's text.
-- A skills test: no file under `skills/` names `pstack`, and the `scaffold` skill names the rules interview and the manual's Rule sets section.
+- A skills test: no file under `skills/` names `pstack`; the `scaffold` skill names the rules interview, the conflict pass over the repo's own prose, and the manual's Rule sets section; no file under `skills/` or `internal/brief/templates/` holds "test that fails" or "small enough to verify".
 - Whether an executor sees the block can't be tested with the runner fakes: the build records, from one real lead's executor transcript, whether its first turn shows the rules block (Risks).
 
 ## Risks and the alternative considered
