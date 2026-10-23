@@ -52,7 +52,7 @@ Agents write half-page specs; you accept or reject them in plain words. A *lead*
 </p>
 
 - **One hub.** `bmesh hub` runs NATS, a message server, inside the binary on an always-on box, over a tailnet such as Tailscale. Boxes share one token; nothing else is installed. A single box needs no hub: `bmesh serve` embeds one.
-- **bmesh on every box.** Only `bmesh` talks to the hub: `bmesh serve`, the daemon, always on, which wakes quiet leads, runs routines, sends phone notifications and draws the map; and the `bmesh` commands sessions run. A box set to update itself installs each bmesh release; on others, each session opens with a line to run `bmesh update`.
+- **bmesh on every box.** Only `bmesh` talks to the hub: `bmesh serve`, the daemon, always on, which wakes quiet leads, lands what its leads finished, runs routines, sends phone notifications and draws the map; and the `bmesh` commands sessions run. A box set to update itself installs each bmesh release; on others, each session opens with a line to run `bmesh update`.
 - **Signed jobs.** Boxes joined with `bmesh init --hosts` share a signed roster, and every job between them is signed and checked. The signing and approval keys sit where no agent can read them (on macOS, behind the Keychain password dialog). A secure box holds an update of its plugins, or of the repo bmesh updates itself from, until you approve it there.
 
 Each picture below plays one of the demo's steps on its own, on a loop. <img src="docs/assets/dot-grey.svg" width="10" height="10" alt="">&nbsp;**Grey** lights a command, <img src="docs/assets/dot-teal.svg" width="10" height="10" alt="">&nbsp;**teal** a message.
@@ -145,7 +145,7 @@ verified: review ok t:3f2a9c1e m:claude-opus-5-5 c:81d0b7a4; verify ok t:3f2a9c1
 2. **Choose.** Reply in plain words: `bmesh choose-ideas app "1 and 3 yes, 2 smaller, 4 no, 5 later"`. The verdicts land on `main`; a word that isn't a verdict, like `smaller`, marks the spec `adjusting`, with your words kept for the rework.
 3. **Build.** `bmesh build app 012` checks that `main` passes its verify commands, marks the spec `building` and starts a lead.
 4. **Verify.** Routines run `verify` (the repo's tests) and, for larger changes, `review` (Opus, in a session that never saw the change).
-5. **Land.** `bmesh land` verifies, queues the review the spec's size calls for and waits for it, then rebases onto `origin/main` (resolving the conflicts a rule can), requires a result for the tree it lands, writes the `verified` line, marks the spec `done` and fast-forwards `main`. It waits out what clears by itself (a review running, `main` moving, someone's unpushed `main`, another lead landing) and stops only for what needs the lead.
+5. **Land.** `bmesh land` verifies, queues the review the spec's size calls for and waits for it, then rebases onto `origin/main` (resolving the conflicts a rule can), requires a result for the tree it lands, writes the `verified` line, marks the spec `done` and fast-forwards `main`. It waits out what clears by itself (a review running, `main` moving, someone's unpushed `main`, another lead landing) and stops only for what needs the lead. A lead usually hands this to its box's daemon instead: it runs `bmesh ready --text "<done line>"` and ends its turn, its state reads `landing`, and the daemon runs `land` and `done` for it. The daemon wakes the lead only when land refuses (a conflict, a failing check or review), and once at the end for its closing line. A hold waits for the release without waking it, and a message withdraws the request and wakes it.
 
 A lead reports problems outside its spec as feedback. When a batch started from a chat is done, the plugin's `build` skill starts builds for the quick fixes without asking you, writes the rest up as proposed specs for your review and tags the next version with `bmesh release`. In a chat, say "proposals for app", "1 and 3 yes", "build what's accepted in app" or "what's building".
 
@@ -207,7 +207,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
   </picture>
 </p>
 
-`bmesh serve` draws the mesh live at `http://127.0.0.1:3774/`: leads with their executors, rounds with their engineers, each check with its queue, and at the top what needs you: a session that is blocked, asking or silent.
+`bmesh serve` draws the mesh live at `http://127.0.0.1:3774/`: leads with their executors, rounds with their engineers, each check with its queue, and at the top what needs you: a session that is blocked, asking or silent. A lead its daemon is landing, or one held at a gate, is drawn calm and never in that band, and a quiet `working` lead is the only kind called silent.
 
 ## All commands and flags
 
@@ -294,6 +294,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 | [`bmesh lock-lease run <slot>`](docs/manual.md#bmesh-lock-lease) | `[--ttl D] -- <cmd...>` |
 | [`bmesh setup`](docs/manual.md#bmesh-setup) | `[--check] [--force]` |
 | [`bmesh land`](docs/manual.md#bmesh-land) | `[--spec NNN] [--size XS\|S\|M\|L] [--ttl D] [--wait D]` |
+| [`bmesh ready`](docs/manual.md#bmesh-ready) | `--text "<done line>" [--size XS\|S\|M\|L] \| --cancel` |
 
 **Boxes**
 

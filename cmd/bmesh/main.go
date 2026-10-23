@@ -205,6 +205,12 @@ commands:
                                            rebase, run or require the results, write verified, set done with merged
                                            and branch, commit, push; a push main refuses starts again from the fetch
                                            once; prints landed <sha8>
+  ready --text "<done line>" [--size S]     a lead hands its landing to its box's daemon: state landing, bm-ready
+                                           <path>; the daemon runs land and done and wakes the lead only when land
+                                           refuses, and once at the end; refused off this box, without a thread,
+                                           dirty, with operator mail, a second time, or when the daemon is older
+  ready --cancel                           withdraw the request: the daemon cancels a running step; a step that
+                                           had pushed still gets done and the final wake
   result find <kind> [--commit C] [--model M] [--json] [-- args...]
                                            print the result of kind at the commit's tree, without --model every
                                            model's (exit 3 when none)

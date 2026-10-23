@@ -8,7 +8,7 @@ Every `bmesh` command with its flags, output and refusals, then the model behind
 - [Setup and updates](#setup-and-updates): [`bmesh init`](#bmesh-init) · [`bmesh serve`](#bmesh-serve) · [`bmesh hub`](#bmesh-hub) · [`bmesh config check`](#bmesh-config-check) · [`bmesh t3 login`](#bmesh-t3-login) · [`bmesh version`](#bmesh-version) · [`bmesh update`](#bmesh-update)
 - [Proposals and builds](#proposals-and-builds): [`bmesh ideate`](#bmesh-ideate) · [`bmesh choose-ideas`](#bmesh-choose-ideas) · [`bmesh spec`](#bmesh-spec) · [`bmesh build`](#bmesh-build) · [`bmesh lead start`](#bmesh-lead-start) · [`bmesh hold`, `unhold`, `held`](#bmesh-hold-unhold-held) · [`bmesh feedback`](#bmesh-feedback) · [`bmesh fix`](#bmesh-fix) · [`bmesh release`](#bmesh-release) · [`bmesh scaffold`](#bmesh-scaffold)
 - [Nodes](#nodes): [`bmesh whoami`](#bmesh-whoami) · [`bmesh started`, `progress`, `blocked`, `ask`, `done`](#bmesh-started-progress-blocked-ask-done) · [`bmesh send`](#bmesh-send) · [`bmesh inbox`](#bmesh-inbox) · [`bmesh thread-status`](#bmesh-thread-status) · [`bmesh mesh-status`](#bmesh-mesh-status) · [`bmesh watch`](#bmesh-watch) · [`bmesh executor`](#bmesh-executor) · [`bmesh node`](#bmesh-node)
-- [Checks and landing](#checks-and-landing): [`bmesh routine`](#bmesh-routine) · [`bmesh result`](#bmesh-result) · [`bmesh lock-lease`](#bmesh-lock-lease) · [`bmesh setup`](#bmesh-setup) · [`bmesh land`](#bmesh-land)
+- [Checks and landing](#checks-and-landing): [`bmesh routine`](#bmesh-routine) · [`bmesh result`](#bmesh-result) · [`bmesh lock-lease`](#bmesh-lock-lease) · [`bmesh setup`](#bmesh-setup) · [`bmesh land`](#bmesh-land) · [`bmesh ready`](#bmesh-ready)
 - [Boxes](#boxes): [`bmesh hosts`](#bmesh-hosts) · [`bmesh sync`](#bmesh-sync) · [`bmesh prune`](#bmesh-prune) · [`bmesh repos`](#bmesh-repos)
 - [Concepts](#concepts): [Several boxes](#several-boxes) · [Updates](#updates) · [Upgrading](#upgrading) · [Runners](#runners) · [Build families](#build-families) · [Holds](#holds) · [Briefs](#briefs) · [The fixer](#the-fixer) · [The ledger](#the-ledger) · [Routines](#routines) ([Setup](#setup)) · [Hosts](#hosts) · [The plugin](#the-plugin) · [Names](#names)
 - [Config](#config): [config.toml](#configtoml) · [repos.toml](#repostoml) · [Pushes](#pushes) · [Quota reminders](#quota-reminders) · [Add-ons](#add-ons) ([t3-done](#t3-done)) · [Map](#map) · [Upgrade notes](#upgrade-notes)
@@ -940,7 +940,7 @@ bmesh held
 
 **`unhold`** removes the hold, sends the lead a message of kind `release`, `released by <by>` (`: <words>` with `--text`), which wakes it, and prints `released <path>`. A lead not held prints `<path>: not held`, sends nothing and exits 0. `--family F` with nothing held prints `<F>: nothing held`. `--json` prints `[{"path","released"}]` instead of the lines. (`bmesh release` cuts a release tag, see [`bmesh release`](#bmesh-release).)
 
-**`held`**, run by the lead at its gate, reads the lead's hold, publishes `held` with the text `before land by <by>: <why>` (`now by ...`), moves the node to state `held` and prints `held <path> <text>; end your turn: the release wakes you`.
+**`held`**, run by the lead at its gate, reads the lead's hold, publishes `held` with the text `before land by <by>: <why>` (`now by ...`), moves the node to state `held` and prints `held <path> <text>; end your turn: the release wakes you`. For a lead with a ready request, its daemon runs `held` for it (see [`bmesh ready`](#bmesh-ready)).
 
 **Refusals.** Each message prints after `bmesh: `.
 
@@ -1244,12 +1244,14 @@ Each event sets a state. The move must be legal from the node's current state:
 
 | Event | Sets | Legal from |
 |---|---|---|
-| `started`, `progress` | `working` | `idle`, `working`, `blocked`, `asking`, `silent`, `held` |
+| `started`, `progress` | `working` | `idle`, `working`, `blocked`, `asking`, `silent`, `held`, `landing` |
 | `ask` | `asking` | `working`, `asking`, `silent`, `held` |
-| `blocked` | `blocked` | `working`, `asking`, `silent`, `held` |
-| `done` | `done` | `working`, `blocked`, `asking`, `silent`, `held` |
+| `blocked` | `blocked` | `working`, `asking`, `silent`, `held`, `landing` |
+| `done` | `done` | `working`, `blocked`, `asking`, `silent`, `held`, `landing` |
+| `held` ([`bmesh held`](#bmesh-hold-unhold-held)) | `held` | `working`, `asking`, `silent`, `held`, `landing` |
+| `ready` ([`bmesh ready`](#bmesh-ready)) | `landing` | `working`, `held` |
 
-A node never registered reads as `idle`. Nothing leaves `done`.
+A node never registered reads as `idle`. Nothing leaves `done`. A `landing` lead (one that ran `bmesh ready`) is moved on by its box's daemon: to `held` at a hold, back to `landing` from `held` at the release, to `done`, to `working` after land refused, and to `blocked` when the wake carrying a refusal fails for an hour. It moves to `working` on its own `started` or `progress`, which withdraws the request. The daemon rewrites its text, `landing` to `landing`, as land goes. It is never called silent, never pushed (`[notify] push` takes only `ask`, `blocked` and `done`), and never in the map's needs-you band.
 
 **What it does**, in order:
 
@@ -1389,14 +1391,15 @@ The table leaves out a node `done` for longer than `[status] keep_done` (default
 Then, in order:
 
 1. `<path> held before land by <by> <age> ago: <why>` per hold (see [Holds](#holds));
-2. `fixes: N pending for <repo> (<fixer> <state>)`, the open issues naming bmesh's own repo (see [The fixer](#the-fixer)): the parentheses read `(<fixer> <state>)` while a fixer has them (`fixes: N pending for <repo> (<fixer> working)`), `(starts within a minute)` when the daemon starts one on its next pass, `(<fixer> blocked)` while the newest fixer's block waits on the operator, and `(<fixer> done; they wait on you)` when the fixer had them and left them;
-3. `feedback: N pending in <family>` per family with other feedback pending (see [`bmesh feedback`](#bmesh-feedback));
-4. `t3 sign-in on <host>: expires in N days (bmesh t3 login)` with the `t3` runner and this box's T3 sign-in under 7 days from expiry (`expires in 1 day` in the singular, and `t3 sign-in on <host>: expired (bmesh t3 login)` once it has expired; see [`bmesh t3 login`](#bmesh-t3-login));
-5. the behind-main notice (see [Updates](#updates));
-6. the hub line when this box's `bmesh hub` runs an older binary than its `bmesh serve` (see [Several boxes](#several-boxes));
-7. the `operator: ...` lines `bmesh spec steps` prints with no id (see [`bmesh spec steps`](#bmesh-spec-steps) and [The ledger](#the-ledger)).
+2. `<path> landing <age>: <text>` per ready request, its age since `bmesh ready` and the lead's `landing` text (`: held, waiting for the release` while held; `landed <sha8> (ready <age> ago); the final wake is pending` or `land refused (ready <age> ago): <refusal>; the wake carrying it is pending` while the daemon owes the lead its wake; see [`bmesh ready`](#bmesh-ready));
+3. `fixes: N pending for <repo> (<fixer> <state>)`, the open issues naming bmesh's own repo (see [The fixer](#the-fixer)): the parentheses read `(<fixer> <state>)` while a fixer has them (`fixes: N pending for <repo> (<fixer> working)`), `(starts within a minute)` when the daemon starts one on its next pass, `(<fixer> blocked)` while the newest fixer's block waits on the operator, and `(<fixer> done; they wait on you)` when the fixer had them and left them;
+4. `feedback: N pending in <family>` per family with other feedback pending (see [`bmesh feedback`](#bmesh-feedback));
+5. `t3 sign-in on <host>: expires in N days (bmesh t3 login)` with the `t3` runner and this box's T3 sign-in under 7 days from expiry (`expires in 1 day` in the singular, and `t3 sign-in on <host>: expired (bmesh t3 login)` once it has expired; see [`bmesh t3 login`](#bmesh-t3-login));
+6. the behind-main notice (see [Updates](#updates));
+7. the hub line when this box's `bmesh hub` runs an older binary than its `bmesh serve` (see [Several boxes](#several-boxes));
+8. the `operator: ...` lines `bmesh spec steps` prints with no id (see [`bmesh spec steps`](#bmesh-spec-steps) and [The ledger](#the-ledger)).
 
-`--all` lists every node; `--json` carries every node whatever the flag, as the map's `/api/nodes` does: an array of `{"node","state","runner","unread"}`, a held node's with `hold`. `--json` prints only the array, none of the lines after the table.
+`--all` lists every node; `--json` carries every node whatever the flag, as the map's `/api/nodes` does: an array of `{"node","state","runner","unread"}`, a held node's with `hold`, a node with a ready request with `ready` (`{"phase","head","at"}`). `--json` prints only the array, none of the lines after the table.
 
 **Refusals.**
 
@@ -1539,7 +1542,7 @@ Removes a finished node from the mesh, or stops a running one. [`bmesh mesh-stat
 bmesh node forget <path> [--worktree | --wipe [--dry-run]] [--wait 30s]
 ```
 
-Removes a node from the mesh: its state and inbox. Its events stay, and nodes under it are not forgotten with it, unless `--wipe` removes it and every node under it as if they never ran.
+Removes a node from the mesh: its state, inbox, hold and ready request. Its events stay, and nodes under it are not forgotten with it, unless `--wipe` removes it and every node under it as if they never ran.
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -1619,7 +1622,7 @@ bmesh node stop <path> [--text "<why>"] [--wait 30s]
 
 **What it does.** It stops the nodes under it first, deepest first (a round's children, a lead's executors; those already `done` or `blocked` are left alone), then the node itself. For each:
 
-1. It writes the node `blocked` with `stopped by <who>: <why>` (`stopped by <who>` without `--text`) and publishes `blocked` as the node's own would be (a lead's pushes).
+1. It writes the node `blocked` with `stopped by <who>: <why>` (`stopped by <who>` without `--text`) and publishes `blocked` as the node's own would be (a lead's pushes). It deletes a lead's ready request, so its daemon cancels a running land step and the stopped thread stays stopped (see [`bmesh ready`](#bmesh-ready)).
 2. It stops the thread through its runner (`stop`: T3's `t3_thread_interrupt`, claude's turn and queue, tmux's Escape; a thread the runner no longer has counts as stopped), printing `stopped <path>`.
 
 `<who>` is `--node`, else this node, else the host name. A node with no thread (an executor) is only written.
@@ -1984,7 +1987,7 @@ Lands a lead's branch on `main` from its worktree in one command. It verifies, q
 | `--ttl D` | 10m | how long the lease lasts unrenewed; at least 3 s |
 | `--wait D` | 30m | how long `land` waits in all: for jobs, for the main checkout, for the lease and for `main` to stop moving (exit 5 after) |
 
-The holder is the node, else the host name. A lead runs `land` in the background with a timeout 15 minutes above `--wait`, since a killed `land` can leave a rebase half done.
+The holder is the node, else the host name. A lead runs `land` in the background with a timeout 15 minutes above `--wait`, since a killed `land` can leave a rebase half done. A lead can instead hand its landing to its box's daemon with [`bmesh ready`](#bmesh-ready), which runs `land` for it.
 
 **What it does.** Before the lease, `land`:
 
@@ -2068,6 +2071,7 @@ The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander b
 | an inline command kind's setup failed | 3 | as [`bmesh routine run`](#bmesh-routine-run) says |
 | a failing result or a changed diff; a failing entry for the tree | 3 | names the kind and how to re-run it; see below |
 | any other push failure | 1 | `push main: <git error>` |
+| an interrupt (SIGINT or SIGTERM: Ctrl-C, or the daemon cancelling a [`bmesh ready`](#bmesh-ready) step) before the push | 1 | `interrupted; nothing is pushed`; under the lease, the rebase is aborted and the lease released first |
 
 - Rebase conflict: `bmesh: refused: rebase onto origin/main conflicts in <files>; it is aborted and nothing is pushed. Rebase yourself, resolve it, re-validate, then run bmesh land again`, `<files>` those no rule resolves. When a rule resolved other files, at this stop or an earlier one, `<files>` is followed by `, which no rule resolves (a rule resolves <files>)`. When no file conflicts, it reads `rebase onto <base> fails` in place of `rebase onto origin/main conflicts in <files>`.
 - A failing inline kind after a resolution: `<kind> failed at t:<tree8>, after the rebase resolved <files> by rule: that is land's merge, and the branch is left rebased; fix it forward, commit, then run bmesh land again, which queues the review the new diff needs` (exit 1). Run again from a node, `land` finds no review on the branch (the reviewed commits are not under the fix) and queues one, as step 6 before the lease says.
@@ -2091,6 +2095,60 @@ Any other region stays a conflict, and so does every region in a markdown file's
 See also: [Holds](#holds), [`bmesh spec verified`](#bmesh-spec-verified), [The verified line](#the-verified-line), [`bmesh scaffold`](#bmesh-scaffold), [`bmesh done`](#bmesh-started-progress-blocked-ask-done).
 
 Internals: [internals](internals.md#landing)
+
+### `bmesh ready`
+
+```
+bmesh ready --text "<done line>" [--size XS|S|M|L]
+bmesh ready --cancel
+```
+
+Hands a lead's landing to its box's daemon. The lead runs it once its work is committed and its last checks are done, then ends its turn. The daemon runs [`bmesh land`](#bmesh-land) and [`bmesh done`](#bmesh-started-progress-blocked-ask-done) for it, and wakes the lead only when land needs it, and once at the end for its closing line. While the request stands the lead's state is `landing`. A lead that would rather land in its own turn runs `bmesh land`, as it does where `ready` refuses.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--text "<done line>"` | required | the lead's done line; `done` carries it, followed by `; landed <sha8>, origin/main at <sha8> contains it` |
+| `--size XS\|S\|M\|L` | the spec's `size` | passed to `land` as its `--size` |
+| `--cancel` | off | withdraw the request (below) |
+
+**What it does.** It checks the node, the worktree, the spec, the mail and the daemon, as the refusals below say. Then it writes the lead `landing` (`ready to land <sha8>`), writes `bm-ready` `<path>` with HEAD as the request's head, and publishes `ready`. It prints `ready: <host>'s daemon lands <sha8>; it wakes you only if land needs you`. A lead with a hold at either gate may run it: the daemon waits for the release.
+
+**What the daemon does.** The daemon of the box the lead runs on acts on the `ready` event, on every message to an inbox and on each poll tick. It holds the claim `ready.<path>` in `bm-leases` while it works a request, so a second daemon, or one restarted beside a step still running, leaves it alone. A dead daemon's claim expires within 2 minutes. Each pass reads, in order:
+
+1. **Landed.** The spec on `origin/main` reads `done` and its `merged` commit is an ancestor of the worktree's HEAD (a daemon that died after the push finds it here). The daemon fetches and runs `bmesh --node <path> done --commit <HEAD> --text "<done line>; landed <sha8>, origin/main at <sha8> contains it"`. `done` is idempotent, so a repeat records nothing twice. Then it sends the final wake, `bmesh: landed <sha8>, spec NNN done; origin/main at <sha8> contains it. Write your closing line; nothing else to run.` The request ends once the wake is delivered. A wake that still fails after an hour is logged and dropped, since `done` is the record. A `done` that refuses is handled as a refusal (step 5).
+2. **Withdrawn.** The request ends, with nothing run, when it was cancelled, the node was stopped, or the lead's state is neither `landing` nor `held` (the lead acted itself). A message (`bmesh send`) sent after the request also ends it, and the daemon then wakes the lead for its mail, as the wake pass would.
+3. **Held.** The lead has a hold: a `landing` lead is moved to `held` by running `bmesh --node <path> held`, which `watch` shows as the lead reaching its gate. Nothing else runs and nobody is woken. Once the release deletes the hold, the daemon writes the lead `landing` again and goes on.
+4. **Land.** It runs `bmesh --node <path> land --wait 10m [--size S]` in the node's registered worktree, which must exist, and only while HEAD is the request's head or land's own rebase of it (read from the branch's reflog, as land reads a hand rebase). Exit 0: the next pass finds it landed. Exit 5 (timed out): the next pass runs it again, and land waits for the review job already out rather than queueing a second. A refusal because of a hold: step 3.
+5. **Refused.** Any other refusal (a conflict, a failing verify or review, an operator message, scaffold drift, a HEAD that moved) keeps land's refusal and its last 40 lines, which carry a failing review's findings. The daemon wakes the lead at once, without waiting out `wake_every`: `bmesh: land refused and needs you: <refusal>`, then `land's last lines:` and the lines, then ``Fix it, commit, then run `bmesh ready` again.`` Once the wake is delivered, the request ends and the lead is written `working`, `land refused: <refusal>`, so silence applies as to any working lead. A thread that is running is tried again each pass. A send that fails for another reason for an hour writes the lead `blocked` and publishes it.
+
+While land runs, the daemon reads the request, the lead's state and its mail every 2 s. It cancels the step when the request is cancelled or gone, the node is stopped, the lead reports an event of its own, or a message comes. It also writes the text of land's newest `land` event as the lead's `landing` text, for example `waiting for job <id> (review, running on <host>)`. A cancelled step is sent an interrupt. Land cleans up on its own context (a rebase in progress is aborted, the lease released) and is killed after 2 minutes. An update's restart cancels running steps the same way before the daemon re-execs. Every state the daemon writes for a lead is written only at the revision it read, so it never overwrites an event the lead reported meanwhile. Each write publishes a daemon event (`landing`, `land-refused`), so the map follows.
+
+**`--cancel`** marks the request cancelled and waits, up to 3 minutes, until the daemon has cancelled any running step and ended it. With no daemon holding the claim it ends the request itself. It prints `cancelled: nothing is pushed; land in your own turn with bmesh land, or bmesh ready again`, and moves a `landing` or `held` lead to `working` (`progress`, `ready cancelled: ...`). A request land already refused is ended at once (`cancelled: land had refused: <refusal>; ...`). A step that had already pushed still gets `done` and the final wake: `too late: landed <sha8>; the daemon has recorded done and wakes you for your closing line` (exit 0).
+
+**Refusals.**
+
+| When | Exit | Message |
+|---|---|---|
+| no `--text`, or `--cancel` with `--text` or `--size` | 2 | `usage: bmesh ready --text "<done line>" [--size XS\|S\|M\|L] \| bmesh ready --cancel` |
+| `--size` is none of XS, S, M, L | 2 | `ready: --size "<size>": want XS, S, M or L` |
+| the node isn't a lead (a fixer, an executor, an engineer) | 3 | `refused: <path> is a <role>; only a lead's daemon lands it` |
+| the node runs on another box | 3 | `refused: <path> runs on <host>, not this box (<this>); its daemon is there` |
+| the node has no thread | 3 | `refused: <path> has no thread for the daemon to wake; run bmesh land` |
+| the node's registered worktree isn't this checkout | 3 | `refused: <path>'s worktree is <worktree>, not this checkout <top>` |
+| a dirty worktree | 3 | `refused: the worktree has changes not committed; commit them, then run bmesh ready again` |
+| the spec doesn't read `building` | 3 | `refused: spec NNN reads <status>, not building` (or `refused: no spec NNN in <top>`) |
+| an unread message from the operator | 3 | `refused: <n> unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh ready again` |
+| a request already stands | 3 | `already ready; bmesh ready --cancel first` |
+| this box's daemon doesn't land for leads: its newest `started` event has no `can` naming `land` (an older release, or no daemon ever started) | 3 | `this box's daemon doesn't land for leads; run bmesh land` |
+| a state that can't move to `landing` | 3 | `refused: illegal state transition <from> -> landing` |
+| `--cancel` with no request | 3 | `refused: <path> has no ready request` |
+| `--cancel` and the daemon holds the claim for 3 minutes | 5 | `timed out waiting for the daemon to cancel the step; the request reads cancelled, and the daemon ends it` |
+
+**Where a request shows.** `mesh-status` prints the state and, after the table, one line per request: `<path> landing 6m: <the landing text>` (or the wake still owed, `landed <sha8> ...` or `land refused ...`); `--json` carries the row's `ready`, `{"phase","head","at"}`. The map draws a `landing` lead with a calm badge, counts it on the strip (`1 landing`), and never puts it in the needs-you band (see [Map](#map)).
+
+See also: [`bmesh land`](#bmesh-land), [Holds](#holds), [Wakes](#wakes).
+
+Internals: [internals](internals.md#ready)
 
 ## Boxes
 
@@ -2733,7 +2791,9 @@ Executors, rounds and routines are never held. A hold stays until someone releas
 
 Ages are to the minute, whole days as `1d3h`.
 
-**The held state.** A node reaches `held` from `working`, `asking` or `silent`, and leaves it on its own next event: the release wakes the lead, and its next `started` or `progress` makes it `working`. The daemon never marks a `held` node silent (only `working` goes silent) and never pushes it (`held` can't be in `[notify] push`). The map's needs-you band has no row for it (see [Map](#map)).
+**The held state.** A node reaches `held` from `working`, `asking`, `silent` or `landing`, and leaves it on its own next event: the release wakes the lead, and its next `started` or `progress` makes it `working`.
+
+**A landing lead.** A lead that ran [`bmesh ready`](#bmesh-ready) isn't woken by a hold, a release or a routine reply: only a message wakes it. Its daemon reads the hold itself, runs `held` for it, and on the release writes it `landing` again and lands it, so for a landing lead the release resumes the daemon rather than waking the lead. The daemon never marks a `held` node silent (only `working` goes silent) and never pushes it (`held` can't be in `[notify] push`). The map's needs-you band has no row for it (see [Map](#map)).
 
 **Where holds show.**
 
@@ -3478,10 +3538,11 @@ At most once per `wake_every`, the daemon sends a wake to the thread of a lead o
 - A `done` or `blocked` node is woken only for a message sent with `bmesh send`. So a question from you reaches a finished lead; a late report or reply doesn't wake it.
 - A stopped node is woken only for a message from outside its own tree sent after the stop (see [`bmesh node stop`](#bmesh-node-stop)).
 - A thread its runner reports stopped by the user is never woken.
+- A lead with a ready request ([`bmesh ready`](#bmesh-ready)), `landing` or `held`, is left to its daemon's lander: only a message wakes it, once the lander has cancelled any running step and ended the request. The lander sends its own two wakes at once, without waiting out `wake_every`: the refusal when land refuses, and the final wake once the change has landed.
 
 #### Silence
 
-The daemon marks a `working` node `silent` (`quiet for <age>`) when nothing at or under its path was published within `[liveness] grace`. It never marks a `blocked` node silent, a stopped one included.
+The daemon marks a `working` node `silent` (`quiet for <age>`) when nothing at or under its path was published within `[liveness] grace`. It never marks a `blocked` node silent, a stopped one included, nor a `held` or `landing` one.
 
 #### Wake text
 
@@ -3493,7 +3554,7 @@ A wake starts `bmesh: ` (`bmesh: resumed by <sender>; ` for a stopped node), the
 | reply | `reply to job <id> (<kind> ok\|fail)` |
 | other | `<kind> from <from>` |
 
-A wake lists up to five items, oldest first, then `and N more`. It prints the count alone (`bmesh: 3 unread. Run ...`) when there is nothing to list or the read fails.
+A wake lists up to five items, oldest first, then `and N more`. It prints the count alone (`bmesh: 3 unread. Run ...`) when there is nothing to list or the read fails. A landing lead's two wakes read otherwise: `bmesh: land refused and needs you: <refusal>`, land's last lines, then ``Fix it, commit, then run `bmesh ready` again.``; and `bmesh: landed <sha8>, spec NNN done; origin/main at <sha8> contains it. Write your closing line; nothing else to run.` (see [`bmesh ready`](#bmesh-ready)).
 
 Internals: [internals](internals.md#configtoml)
 

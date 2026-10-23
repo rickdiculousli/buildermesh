@@ -90,6 +90,9 @@ func TestReadyThenTheDaemonLands(t *testing.T) {
 	if req, _, ok, err := mesh.GetReady(ctx, c, "app-012"); err != nil || !ok || req.Head != head || req.Text != "built the thing" || req.Phase != mesh.PhaseReady {
 		t.Fatalf("request %+v %v %v", req, ok, err)
 	}
+	if out, _, _ := runCLI(t, nil, "mesh-status"); !strings.Contains(out, "\napp-012 landing 0m: ready to land "+head[:8]+"\n") {
+		t.Fatalf("mesh-status:\n%s", out)
+	}
 	rn := &sendRunner{}
 	daemon.LandPass(ctx, cliDaemon(t, c, rn), daemon.NewActivity())
 	rec := gitOut(t, "rev-parse", "HEAD")

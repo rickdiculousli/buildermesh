@@ -530,3 +530,28 @@ func assertNoClaims(t *testing.T, f *landFix) {
 		t.Fatalf("leases %+v %v", ls, err)
 	}
 }
+
+// ready --cancel mid-step: the step is cancelled and the request ends,
+// with no wake.
+func TestLandCancelEndsTheStep(t *testing.T) {
+	f := newLandFix(t)
+	started := make(chan struct{})
+	f.land = func(ctx context.Context) (string, int) {
+		close(started)
+		<-ctx.Done()
+		return "bmesh: interrupted; nothing is pushed", 1
+	}
+	done := make(chan struct{})
+	go func() { defer close(done); f.pass() }()
+	<-started
+	r, rev, _, _ := mesh.GetReady(f.ctx, f.c, "app-080")
+	r.Phase = mesh.PhaseCancelled
+	if _, err := mesh.UpdateReady(f.ctx, f.c, r, rev); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	if _, ok := f.ready(t); ok || len(f.sends(t)) != 0 || len(f.steps()) != 1 {
+		t.Fatalf("request %v sends %q steps %q", ok, f.sends(t), f.steps())
+	}
+	assertNoClaims(t, f)
+}

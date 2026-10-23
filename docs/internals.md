@@ -28,7 +28,7 @@ How the mesh works inside: the NATS subjects, consumers and buckets bmesh uses, 
 
 `(devel)` names no commit. The release a self-update stamps is `git describe --tags --long --match 'v[0-9]*.[0-9]*.[0-9]*' --exclude '*-*' --exclude '*+*'` of the built commit (its nearest `vX.Y.Z` tag, pre-releases passed over) and goes with that commit only: a vcs revision that is another commit prints no release.
 
-**The `started` event.** `serve` publishes `bm.daemon.<host>.started` on every start, `text` the full revision (`unknown`), `body` its commit time (RFC 3339; empty when unknown). The restart line and the hint read it:
+**The `started` event.** `serve` publishes `bm.daemon.<host>.started` on every start, `text` the full revision (`unknown`), `body` its commit time (RFC 3339; empty when unknown), and `can` what it does beyond the basics: `["land"]` when it lands for its box's leads (it has a binary to run; see Ready), which `bmesh ready` requires of this box's daemon's newest `started`. The restart line and the hint read it:
 
 - `bmesh update` prints its restart line when it reaches the hub and this box's daemon's newest `started` names another revision than the binary now at the path; with no `started` for this box, no line.
 - Every command that connects to the hub reads this box's daemon's newest `started` once, and the hub's newest `bm.daemon.*.started` only when this box has none (it runs no daemon, so a Mac daemon that doesn't self-update never tells another box's leads to update). The restart variant of the hint comes when the daemon's commit is older than the binary's by the commit time `started` carries against the one the binary is stamped with. Another box's daemon, a newer one, or a commit time missing on either side (a `started` from a daemon older than this rule has none) keeps `run bmesh update`.
@@ -37,7 +37,7 @@ How the mesh works inside: the NATS subjects, consumers and buckets bmesh uses, 
 
 1. It builds `./cmd/bmesh` at the target, the checkout moved there and back after, with `go build -ldflags "-X <module>/internal/selfupdate.stampRevision=<commit> -X <module>/internal/selfupdate.stampTime=<commit time, RFC 3339 UTC> [-X <module>/internal/selfupdate.stampRelease=<vX.Y.Z[+N]>]" -o <temporary file beside the binary>`, since go writes no VCS stamp in a git worktree; the release stamp only when a tag is in the commit's history. Under a systemd unit the build runs in a transient `systemd-run --user --scope`, so it doesn't share the unit's `MemoryMax`; inline otherwise.
 2. After the swap it publishes `bm.daemon.<host>.update`, `text` `<old> -> <new>` (`v0.1.0 -> v0.2.0`; `commit` the new revision).
-3. The drain: every kind's feed stops taking jobs, every running job's process group is killed, and every job it held or ran goes back to the inbox (a NAK) for the restarted daemon.
+3. The drain: every kind's feed stops taking jobs, every running job's process group is killed, and every job it held or ran goes back to the inbox (a NAK) for the restarted daemon. The restart then cancels the lander's running steps: each `land` step is sent an interrupt and waited for, and its claim released (see Ready).
 4. It stops serve as on SIGTERM (map, daemon, client, embedded hub) and re-execs the binary with the same arguments: `exec` on Unix, so the service manager sees the same process; on Windows, which has no exec, it exits 0 and `serve --restart` starts the new binary 5 seconds later.
 
 A crashed update is found at start: a daemon whose newest `update` has no `started` after it and named another revision than its own pushes `bmesh update failed on <host>` before publishing `started`.
@@ -329,7 +329,21 @@ The land lease is `bm-leases` key `land.<repo>.0`, one place per repo.
 
 **Under the lease.** A review whose diff `land`'s own rebase changed returns `errReviewAgain` out of the lease's body, so the lease is released before the review is queued again. The worktree stays rebased, and the rebase's `rebase (finish)` reflog entry is what the next pass's `rebasedFrom` reads, so the review from before the rebase is required from there and `priorReview` sees the branch reviewed. HEAD under the lease must be the commit the passes read (or `land`'s own rebase of it).
 
+**Interrupts.** `land` takes SIGINT and SIGTERM for its whole run (`signal.NotifyContext`): before the lease the waits end and the inline kinds running are killed with their context; under it `holdLeases` cancels the body, the rebase is aborted and the record commit taken back on their own context, and the lease is released. Either way it exits 1, `interrupted; nothing is pushed`, unless the push already happened.
+
 **The `land` event.** From a node, `land` publishes `{"from":"<node>","event":"land","text":"<what it is doing>"}` on `bm.<node>.land` when it starts and then every minute until it exits. `land` is not in the event-to-state map, so it changes no state, but as any event under the node's path it is the node's activity for the silence check.
+
+### Ready
+
+[Manual: `bmesh ready`](manual.md#bmesh-ready)
+
+`bmesh ready` writes the lead's state `landing` (`by` `node`), then KV `bm-ready` `<path>` to `{"spec","head","size","text","at","phase","seq"}` with `phase` `ready` and `seq` the lead's inbox sequence (`mesh.InboxSeq`), with `Create`, so a second request is refused, then publishes `{"from":"<path>","event":"ready","text":"<done line>","commit":"<head>"}` on `bm.<path>.ready`. The state goes first so a lander pass that finds the request never finds a `working` lead it would withdraw. `bm-ready` is made by the first request, like `bm-holds` (and provisioned with the others on a new hub).
+
+The lander (`internal/daemon/land.go`) runs in every daemon that has a binary to run (`Deps.Exe`, or the `RunStep` hook in tests). It passes over `mesh.ListReady` on each `bm.*.ready` event and each message on `bm.inbox.>` (followed live on `bm.>`), and on each `[liveness] poll_every` tick. A request whose node is gone is deleted, and one whose node runs on another box or has no thread is left to that box. For the rest it starts a goroutine per request, one at a time per path in a daemon. The goroutine takes `bm-leases` key `ready.<path>.0` (holder `daemon.<host>`, 2 minutes, renewed every 40 s; `ErrBusy` leaves the request alone), derives and acts until a step leaves the request for a later pass, and releases the claim on its own context. The derivation reads, in order: the request's `phase` (`landed` or `refused` owe only their wake), then `spec.CheckDone` on the node's `repo_path` plus `merge-base --is-ancestor <merged> HEAD` in the worktree, then the state and `bm.inbox.<path>` after `seq` (`mesh.InboxAfter`, any `message`), then `bm-holds`. Every step runs `<binary> --config <the daemon's config> --node <path> <command>` in the worktree (`land --wait 10m [--size S]`, `done --commit <HEAD> --text ...`, `held`) with output combined; `exec.Cmd.Cancel` sends `os.Interrupt` (a kill where that can't be sent) and `WaitDelay` is 2 minutes.
+
+`phase` moves `ready` → `cancelled` (`ready --cancel`), `ready` → `landed` (with `commit` and `main`, after `done`), `ready` → `refused` (with `refusal`, land's last `bmesh: ` line, and `output`, its last 40 lines). Every phase write is an `Update` at the revision read (`ErrReadyMoved` re-derives), except that a landed step overwrites a `cancelled` one, since the change is on main. A wake that fails for a reason other than `runner.ErrRunning` records `failing_since`; after an hour the final wake is dropped and the refused wake writes the lead `blocked` and publishes `blocked` from its path. The request is deleted once its wake is delivered, on withdrawal, by `node stop` (`markBlocked`) and by `node forget` (`ForgetNode`); `--wipe` purges the key with the others.
+
+The daemon's state writes for a lead go through `mesh.WriteStateAt(path, rev, to)`: it checks the state is still at `rev` (the one the lander read) and the move is legal, then `Update`s at `rev`, and returns `ErrStateMoved` otherwise. They are `landing` (held → landing at the release; landing → landing with land's newest `bm.<path>.land` text since the step began, read every 2 s), `working` (`land refused: <refusal>`) and `blocked`. Each is published as a daemon event addressed to the lead: `landing` (`to` the lead, `text` the landing text) and `land-refused` (`to` the lead, `text` the refusal); the map sets the lead's state from them as it does from `silent`. The wakes go through `deliverWake`, as the wake pass's do, so each is recorded as a `wake` event; the wake pass skips every lead with a request.
 
 A rebase that stops on a conflict is resolved in place by `internal/merge`, which takes text in and returns resolved text or a conflict, and runs no git. For each path `git ls-files -u` lists, `land` reads the three stage blobs and writes them to a temporary directory under `$TMPDIR`. It runs `git merge-file -p --diff3 --marker-size=<n> -L ours -L base -L theirs` on them, `<n>` one more than the longest run of `<`, `|`, `=` or `>` that starts a line of any side (at least 7), so no line of the file reads as a marker. In a rebase, `ours` is `origin/main` with the commits already replayed and `theirs` is the branch commit being replayed. `merge.File` resolves the regions. A side's changes to the base are matched as difflib's matching blocks: the longest common run first, earliest on ties, then each side of it. A path with no stage 1, 2 or 3, a mode other than `100644` or `100755`, a NUL byte, or a merge `merge-file` finds clean is left to the lead. When every path resolves, `land` writes each one over the worktree's file, runs `git add`, then `git rebase --continue` with `GIT_EDITOR=true`, at most once per commit being rebased. Anything left runs `git rebase --abort`. Nothing is written to the repo's config, attributes or hooks.
 
@@ -396,7 +410,7 @@ The stream, subjects and buckets built on node paths:
 | stream | `bm-mesh` | `bm.>` (30 days, file store, 2m duplicate window) |
 | event subject | | `bm.<path>.<event>` |
 | inbox subject | | `bm.inbox.<path>` |
-| daemon subject | | `bm.daemon.<host>.<event>` (`started`, `update`, `wake`, `silent`, `digest`, `push`, `push-failed`, `refused`, `held`, `level`, `registry`, `fixer`, `wiped`) |
+| daemon subject | | `bm.daemon.<host>.<event>` (`started`, `update`, `wake`, `silent`, `landing`, `land-refused`, `digest`, `push`, `push-failed`, `refused`, `held`, `level`, `registry`, `fixer`, `wiped`) |
 | consumer per inbox | `inbox-<path, "." as "--">` | filter `bm.inbox.<path>` |
 | kind inbox subject | | `bm.inbox.routine.<kind>` (jobs and gos) |
 | consumer per kind | `inbox-routine--<kind>` | filter `bm.inbox.routine.<kind>`, shared by every box that runs the kind; MaxAckPending -1 (each box fetches up to its own instance count), AckWait = timeout + 1m (the last writer's) |
@@ -416,6 +430,7 @@ The stream, subjects and buckets built on node paths:
 | KV | `bm-claims` | `quota.<provider>.<reset unix>` to the claiming daemon (`daemon.<host>`); age limit 8 days |
 | KV | `bm-jobs` | `<kind>.<host>` to `{"kind","host","at","jobs":[{"seq","job","from","holder","state","since"}]}` (that daemon's held and running jobs of the kind) |
 | KV | `bm-holds` | `<path>` to `{"gate","text","by","at"}` (a coordinator's hold on a lead, until `unhold`; see Holds) |
+| KV | `bm-ready` | `<path>` to `{"spec","head","size","text","at","phase","seq","commit","main","refusal","output","failing_since"}` (a lead's request that its daemon land it, until its wake is delivered; created on demand; see Ready) |
 | KV | `bm-specids` | `<repo token>` to the highest spec id claimed in that repo, in decimal (see Spec ids); no age limit |
 
 The map, `watch`, status, the push loop and the activity reader skip subjects whose first token is one of the five reserved words (`mesh.IsMeshInternal`), each keeping the inbox and daemon events it reads; host traffic (`bm.inbox.host.*`, `bm.hostreply.*`) never reaches the map or `watch`. JetStream is addressed in `[mesh] domain` (default `hub`).
@@ -426,7 +441,7 @@ The map, `watch`, status, the push loop and the activity reader skip subjects wh
 
 [Manual: config.toml](manual.md#configtoml)
 
-**Daemon events.** Each digest is also published as a `digest` event on `bm.daemon.<host>.digest` (title as `text`, body as `body`). A wake's text is published as a `wake` event on `bm.daemon.<host>.wake`; a node marked silent is published as `silent` on `bm.daemon.<host>.silent`.
+**Daemon events.** Each digest is also published as a `digest` event on `bm.daemon.<host>.digest` (title as `text`, body as `body`). A wake's text is published as a `wake` event on `bm.daemon.<host>.wake`; a node marked silent is published as `silent` on `bm.daemon.<host>.silent`; the lander's state writes as `landing` and `land-refused` (see Ready).
 
 **Reading the wake text.** The daemon reads the items only when the wake is due, from the inbox subject in the stream above the consumer's ack floor, never by fetching, so it holds or acks none of the lead's messages. The count is the consumer's; a reply `routine wait` already acked (see Jobs) can sit above the floor, so the list can be longer than the count.
 
@@ -481,7 +496,7 @@ Ties in need order keep `started_at` order, so a running lead keeps its place. O
 
 #### The strip
 
-The summary row is computed on every render from the loaded tree, in the order `working`, `asking`, `blocked`, `silent`, `held`, `done`, zero counts dropped, each word coloured as its badge, `all idle` when none of the six has a node; a live event that restyles a node updates it at once. The strip shows whenever the tree has nodes, quota or digest or not. The digest fold is worded as the hourly digest was, not as the present. Under `?check=1` the title's `strip=` counts the strip's rows (summary included), `held=` the `held` boxes on the map and `bandHeld=` the `held` rows in the needs-you band (always 0); `node scripts/check.mjs` exits 1 when `bandHeld=` is non-zero.
+The summary row is computed on every render from the loaded tree, in the order `working`, `landing`, `asking`, `blocked`, `silent`, `held`, `done`, zero counts dropped, each word coloured as its badge, `all idle` when none of the seven has a node; a live event that restyles a node updates it at once. The strip shows whenever the tree has nodes, quota or digest or not. The digest fold is worded as the hourly digest was, not as the present. Under `?check=1` the title's `strip=` counts the strip's rows (summary included), `held=` the `held` boxes on the map and `bandHeld=` the `held` rows in the needs-you band (always 0), `landing=` and `bandLanding=` the same for `landing`; `node scripts/check.mjs` exits 1 when `bandHeld=` or `bandLanding=` is non-zero, or `landing=` is 0 (the seed always has a landing lead).
 
 #### The recent-events drawer
 
@@ -489,7 +504,7 @@ A chip's hue is a hash of the path's top segment over eight hues; an executor's 
 
 #### The needs-you band
 
-A band row leaves live or on the next tree read. The operator rows read each repo's ledger as the lead page reads a spec (local `origin/main`, cached a minute, fetched in the background); `/api/tree` carries them as `operator`, `[{"repo","id","title","open","total"}]`, omitted when none. An `asking` or `blocked` box's second line replaces its unread count with as much of the words as fits; a `silent` box draws at full opacity with a dashed stroke in the blocked colour; a `held` box has a solid stroke. The band's words, the drawer's rows and the lead page's inbox and timeline rows clamp to three lines and open on a tap. The timeline names a child by its last segment (`eng`, not `buildermesh-round-1.eng`), the full path in the tooltip.
+A band row leaves live or on the next tree read. The operator rows read each repo's ledger as the lead page reads a spec (local `origin/main`, cached a minute, fetched in the background); `/api/tree` carries them as `operator`, `[{"repo","id","title","open","total"}]`, omitted when none. An `asking` or `blocked` box's second line replaces its unread count with as much of the words as fits; a `silent` box draws at full opacity with a dashed stroke in the blocked colour; a `held` or `landing` box has a solid stroke. The daemon events `silent`, `landing` and `land-refused` set the state of the node they are addressed to (`to`): `silent`, `landing` with the event's text, and `working`. The band's words, the drawer's rows and the lead page's inbox and timeline rows clamp to three lines and open on a tap. The timeline names a child by its last segment (`eng`, not `buildermesh-round-1.eng`), the full path in the tooltip.
 
 #### The lead page
 
