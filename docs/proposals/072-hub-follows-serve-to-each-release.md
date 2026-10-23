@@ -4,7 +4,7 @@ title: bmesh hub restarts itself onto a new release once serve runs it, so no bo
 kind: time-cost
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-17
@@ -12,6 +12,8 @@ built_by: 5619efb3-36f6-411c-841a-1eade42b3b95
 host: k16
 family: buildermesh-build-13
 branch: bmesh/5619efb3-36f6-411c-841a-1eade42b3b95
+merged: a7c12f64bacef552fd79412faf76aa93d4688111
+verified: verify ok t:2abdd8b0
 ---
 
 ## Opportunity
