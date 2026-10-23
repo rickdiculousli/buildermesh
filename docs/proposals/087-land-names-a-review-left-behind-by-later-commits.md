@@ -4,13 +4,16 @@ title: Land names a review the branch's later commits left behind, instead of dr
 kind: refinement
 size: S
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: buildermesh-fix-3
 proposed_on: 2026-10-23
 ruled: [root, failing-first, smallest, structure, no-new-surface]
 fix_of: 072
 from_feedback: buildermesh-build-13 (buildermesh-072) #2376
+built_by: ca7e018d-762c-46c1-870b-33e77bca53ca
+host: k16
+family: buildermesh-fix-3
 ---
 
 ## Opportunity
