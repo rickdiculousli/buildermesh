@@ -683,3 +683,33 @@ func TestBuildStartedLineRepeatsCommandClashes(t *testing.T) {
 		t.Fatalf("%q", out)
 	}
 }
+
+// After a landing that ended in a docs commit, main's code head is a
+// commit no verify ran on: build answers from the carry of the docs
+// commit's verify above it, and runs nothing.
+func TestBuildAnswersADocsLastLandingFromTheCarry(t *testing.T) {
+	c, repo, _ := buildSetup(t)
+	ctx := t.Context()
+	writeRepos(t, "[repos.demo]\npath = \""+repo+"\"\nremote = \"example/demo\"\ncode = [\"check.sh\"]\n")
+	vlog := filepath.Join(t.TempDir(), "verify.log")
+	t.Setenv("VERIFY_LOG", vlog)
+	verifyKind(t, repo, "echo all good", "Add the verify kind")
+	head := commitFileSHA(t, repo, "check.sh", "echo ran >> \"$VERIFY_LOG\"\necho better\n", "The landed code")
+	headTree := gitOut(t, "-C", repo, "rev-parse", "main^{tree}")
+	commitFile(t, repo, "README.md", "# demo\n", "The landed docs")
+	docs := gitOut(t, "-C", repo, "rev-parse", "main^{tree}")
+	if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "verify", Tree: docs, Commit: gitOut(t, "-C", repo, "rev-parse", "main"),
+		OK: true, By: "demo-001"}); err != nil {
+		t.Fatal(err)
+	}
+	commitFile(t, repo, "docs/proposals/099-ledger.md", "---\nid: 99\nstatus: done\n---\n", "Done 099")
+	_, errs, code := runCLI(t, nil, "build", "demo", "002")
+	if b, _ := os.ReadFile(vlog); code != 0 ||
+		!strings.Contains(errs, "verify main "+head[:8]+": ok t:"+headTree[:8]+" (carried from t:"+docs[:8]+": nothing under code changed)\n") ||
+		len(b) != 0 {
+		t.Fatalf("build: %d %q runs %q", code, errs, b)
+	}
+	if r, ok, err := mesh.GetResult(ctx, c, mesh.ResultKey("verify", headTree, nil, "")); err != nil || !ok || !r.OK || r.Commit != head {
+		t.Fatalf("stored %+v %v %v", r, ok, err)
+	}
+}

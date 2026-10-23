@@ -180,7 +180,7 @@ func (a *app) cmdRelease(args []string) error {
 	if hold != nil {
 		return fail(exitRefused, "%s", hold.line())
 	}
-	if err := a.verifyMain(ctx, row, repoPath, head, a.stderr, false, "release once main is green"); err != nil {
+	if err := a.verifyMain(ctx, row, repoPath, ref, head, a.stderr, false, "release once main is green"); err != nil {
 		return err
 	}
 	msg := releaseMessage(row.Name, tag, last, landed)

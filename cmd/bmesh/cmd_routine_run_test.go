@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
+	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 )
 
 // marker points $MARK at a file outside the repo, so a command can show it
@@ -390,5 +392,182 @@ func TestInlineRunsSetupWhenStale(t *testing.T) {
 	}
 	if _, ok, err := mesh.GetResult(ctx, c, mesh.ResultKey("verify", tree, nil, "")); err != nil || ok {
 		t.Fatalf("a dirtying setup recorded: %v %v", ok, err)
+	}
+}
+
+// commitDoc commits file with body in the cwd's worktree and returns the
+// new tree.
+func commitDoc(t *testing.T, file, body string) string {
+	t.Helper()
+	writeFile(t, file, body)
+	meshtest.Git(t, ".", "add", "-A")
+	meshtest.Git(t, ".", "commit", "-qm", "write "+file)
+	return gitOut(t, "rev-parse", "HEAD^{tree}")
+}
+
+// runVerify runs verify in the cwd and returns its output, failing on
+// anything but a pass.
+func runVerify(t *testing.T, args ...string) string {
+	t.Helper()
+	out, errs, code := runCLI(t, nil, append([]string{"routine", "run", "verify"}, args...)...)
+	if code != 0 || errs != "" {
+		t.Fatalf("run: %d %q %q", code, out, errs)
+	}
+	return out
+}
+
+// A verify run over commits outside the row's code answers from the last
+// tree it ran at, stored for the new tree as carried, and passes over a
+// carried record for its source; a commit inside the code, the routine
+// kinds whatever code lists, and --rerun each run.
+func TestRunVerifyCarriesAcrossDocsCommits(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	codeRow(t, r, `"*.txt"`)
+	runs := countRuns(t, r, "true")
+	ran := gitOut(t, "rev-parse", "HEAD^{tree}")
+	if out := runVerify(t); runs() != 1 || out != "verify ok t:"+ran[:8]+" (recorded)\n" {
+		t.Fatalf("first: runs %d %q", runs(), out)
+	}
+	carried := func(tree, from string) string {
+		return "verify ok t:" + tree[:8] + " (carried from t:" + from[:8] + ": nothing under code changed)\n"
+	}
+	readme := commitDoc(t, "README.md", "# app\n")
+	if out := runVerify(t); runs() != 1 || out != carried(readme, ran) {
+		t.Fatalf("readme: runs %d %q", runs(), out)
+	}
+	got, ok, err := mesh.GetResult(ctx, c, mesh.ResultKey("verify", readme, nil, ""))
+	if err != nil || !ok || !got.OK || got.Commit != gitOut(t, "rev-parse", "HEAD") || got.By != testHost ||
+		!strings.HasPrefix(got.Output, "carried from t:"+ran[:8]+": nothing under code changed\n") {
+		t.Fatalf("stored %+v %v %v", got, ok, err)
+	}
+	again := commitDoc(t, "README.md", "# app, again\n")
+	if out := runVerify(t); runs() != 1 || out != carried(again, ran) {
+		t.Fatalf("a carried record is not a source: runs %d %q", runs(), out)
+	}
+	if out := runVerify(t); runs() != 1 || out != "carried from t:"+ran[:8]+": nothing under code changed\nverify ok t:"+again[:8]+" (answered from the record)\n" {
+		t.Fatalf("repeat: runs %d %q", runs(), out)
+	}
+
+	code := commitDoc(t, "c.txt", "c\n")
+	if out := runVerify(t); runs() != 2 || out != "verify ok t:"+code[:8]+" (recorded)\n" {
+		t.Fatalf("code: runs %d %q", runs(), out)
+	}
+	kindFile := commitDoc(t, ".bmesh/routines/verify.toml", "mode = \"inline\"\ndeterministic = true\ncommand = \"sh \\\"$HOOK\\\"\"\n# again\n")
+	if out := runVerify(t); runs() != 3 || out != "verify ok t:"+kindFile[:8]+" (recorded)\n" {
+		t.Fatalf("the verify kind: runs %d %q", runs(), out)
+	}
+	notes := commitDoc(t, "NOTES.md", "notes\n")
+	if out := runVerify(t, "--rerun"); runs() != 4 || out != "verify ok t:"+notes[:8]+" (recorded)\n" {
+		t.Fatalf("--rerun: runs %d %q", runs(), out)
+	}
+}
+
+// A branch with only docs since main carries from main's verified tip.
+func TestRunVerifyCarriesFromMainOnADocsBranch(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	codeRow(t, r, `"*.txt"`)
+	runs := countRuns(t, r, "true")
+	base := gitOut(t, "rev-parse", "main^{tree}")
+	if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "verify", Tree: base, Commit: gitOut(t, "rev-parse", "main"), OK: true, By: "k16"}); err != nil {
+		t.Fatal(err)
+	}
+	meshtest.Git(t, ".", "checkout", "-qb", "docs", "main")
+	commitDoc(t, "README.md", "# app\n")
+	tree := commitDoc(t, "docs/guide.md", "guide\n")
+	if out := runVerify(t); runs() != 0 || out != "verify ok t:"+tree[:8]+" (carried from t:"+base[:8]+": nothing under code changed)\n" {
+		t.Fatalf("runs %d %q", runs(), out)
+	}
+	// spec verified composes the carried record as any other.
+	out, errs, code := runCLI(t, nil, "spec", "verified", "--write", "--spec", "012")
+	if code != 0 || !strings.HasPrefix(out, "verified: verify ok t:"+tree[:8]+"\nwrote ") {
+		t.Fatalf("spec verified: %d %q %q", code, out, errs)
+	}
+}
+
+// The nearest record decides: a fail there runs verify, whatever ok is
+// older.
+func TestRunVerifyRunsOverANearerFail(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	codeRow(t, r, `"*.txt"`)
+	runs := countRuns(t, r, "true")
+	runVerify(t)
+	failed := commitDoc(t, "README.md", "# app\n")
+	if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "verify", Tree: failed, OK: false, Output: "flaked\n", By: "k16"}); err != nil {
+		t.Fatal(err)
+	}
+	tree := commitDoc(t, "NOTES.md", "notes\n")
+	if out := runVerify(t); runs() != 2 || out != "verify ok t:"+tree[:8]+" (recorded)\n" {
+		t.Fatalf("runs %d %q", runs(), out)
+	}
+}
+
+// The run follows first parents: a merge that brings no code is in it, one
+// that brings code ends it.
+func TestRunVerifyThroughAMerge(t *testing.T) {
+	setup(t)
+	r := newLandRepo(t)
+	codeRow(t, r, `"*.txt"`)
+	runs := countRuns(t, r, "true")
+	ran := gitOut(t, "rev-parse", "HEAD^{tree}")
+	runVerify(t)
+	merge := func(file string) string {
+		t.Helper()
+		meshtest.Git(t, ".", "checkout", "-qb", "side-"+file, "main")
+		commitDoc(t, file, file+"\n")
+		meshtest.Git(t, ".", "checkout", "-q", "lead")
+		meshtest.Git(t, ".", "merge", "-q", "--no-ff", "-m", "merge "+file, "side-"+file)
+		return gitOut(t, "rev-parse", "HEAD^{tree}")
+	}
+	docs := merge("guide.md")
+	if out := runVerify(t); runs() != 1 || out != "verify ok t:"+docs[:8]+" (carried from t:"+ran[:8]+": nothing under code changed)\n" {
+		t.Fatalf("docs merge: runs %d %q", runs(), out)
+	}
+	code := merge("c.txt")
+	if out := runVerify(t); runs() != 2 || out != "verify ok t:"+code[:8]+" (recorded)\n" {
+		t.Fatalf("code merge: runs %d %q", runs(), out)
+	}
+}
+
+// The run is at most selfupdate.CodeRunMax commits: a verified tree that
+// many commits down is reached, one more is not.
+func TestRunVerifyWalksAtMostTheCap(t *testing.T) {
+	setup(t)
+	r := newLandRepo(t)
+	codeRow(t, r, `"*.txt"`)
+	runs := countRuns(t, r, "true")
+	ran := gitOut(t, "rev-parse", "HEAD^{tree}")
+	runVerify(t)
+	var tree string
+	for i := range selfupdate.CodeRunMax - 1 {
+		tree = commitDoc(t, "README.md", fmt.Sprintf("# app %d\n", i))
+	}
+	if out := runVerify(t); runs() != 1 || out != "verify ok t:"+tree[:8]+" (carried from t:"+ran[:8]+": nothing under code changed)\n" {
+		t.Fatalf("at the cap: runs %d %q", runs(), out)
+	}
+	commitDoc(t, "README.md", "# app, one more\n")
+	commitDoc(t, "README.md", "# app, past the cap\n")
+	if runVerify(t); runs() != 2 {
+		t.Fatalf("past the cap: runs %d", runs())
+	}
+}
+
+// Without code in the row, a spec file is outside the code and the specs'
+// README is not.
+func TestRunVerifyWithoutCode(t *testing.T) {
+	setup(t)
+	r := newLandRepo(t)
+	codeRow(t, r, "")
+	runs := countRuns(t, r, "true")
+	runVerify(t)
+	commitDoc(t, "docs/proposals/013-other.md", "---\nid: 13\nstatus: accepted\n---\n")
+	if out := runVerify(t); runs() != 1 || !strings.Contains(out, "(carried from t:") {
+		t.Fatalf("a spec file: runs %d %q", runs(), out)
+	}
+	commitDoc(t, "docs/proposals/README.md", "# specs\n")
+	if out := runVerify(t); runs() != 2 || !strings.HasSuffix(out, "(recorded)\n") {
+		t.Fatalf("the specs' README: runs %d %q", runs(), out)
 	}
 }

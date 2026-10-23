@@ -46,6 +46,7 @@ type lander struct {
 	origin   bool
 	base     string // origin/main, or main without an origin
 
+	heads    []string           // the branch's heads before land touched it: HEAD and the heads a rebase by hand rewrote
 	before   map[string]*source // per kind with a result before land touched the branch: where it is
 	required []string           // the kinds the landed tree must carry
 	ran      map[string]string  // per inline kind, the last tree it was ok at in this run
@@ -229,6 +230,7 @@ func (l *lander) prepare(ctx context.Context) error {
 	}
 	l.before = map[string]*source{}
 	for _, h := range heads {
+		l.heads = append(l.heads, h.head)
 		if h.tree, err = gitIn(ctx, l.top, "rev-parse", h.head+"^{tree}"); err != nil {
 			return err
 		}
@@ -627,7 +629,9 @@ func (l *lander) mainMoved(ctx context.Context, baseSHA string) bool {
 // results makes sure the rebased tree carries every required kind: an
 // inline kind runs (a deterministic one is answered from its record, or
 // carried to tree by carryCode from preTree, the branch's tree before the
-// rebase, or the last tree it was ok at in this run);
+// rebase, or the last tree it was ok at in this run, and verify then by
+// carryVerify from the code run of the rebased head and of each head
+// before the rebase);
 // another must have its own result there or one carried to it by patch-id
 // (spec.ComposeVerified), unless the branch had an ok one before the rebase
 // (land's, or the one by hand its source names) that recorded no patch-id
@@ -659,11 +663,14 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA, preTree str
 				from = append(from, src.tree)
 			}
 			old, err := l.carryCode(ctx, k, model, merged, tree, from)
+			if err == nil && old == "" {
+				old, err = l.a.carryVerify(ctx, name, l.top, l.repo, merged, tree, l.holder, model, nil, append([]string{merged}, l.heads...)...)
+			}
 			if err != nil {
 				return nil, err
 			}
 			if old != "" {
-				fmt.Fprintf(out, "%s (carried from t:%s: nothing under code changed)\n", line, old[:8])
+				fmt.Fprintf(out, "%s (%s)\n", line, carriedHow(old))
 				l.ran[name] = tree
 				continue
 			}
@@ -790,14 +797,74 @@ func (l *lander) carryCode(ctx context.Context, k kind.Kind, model, merged, tree
 		if !same {
 			continue
 		}
-		r.Tree, r.Commit, r.By, r.At = tree, merged, l.holder, ""
-		r.Output = mesh.Truncate(fmt.Sprintf("carried from t:%s: nothing under code changed\n%s", old[:8], r.Output))
-		if err := mesh.PutResult(ctx, l.a.client, r); err != nil {
+		if stored, err := l.a.storeCarried(ctx, r, tree, merged, l.holder); err != nil || !stored {
 			return "", err
 		}
 		return old, nil
 	}
 	return "", nil
+}
+
+// storeCarried stores r, run at another tree whose code is tree's, for tree
+// (commit's) by by, its output led by `carried from t:<old8>: nothing under
+// code changed`, only when tree has no result yet; false when it has one.
+func (a *app) storeCarried(ctx context.Context, r mesh.Result, tree, commit, by string) (bool, error) {
+	old := r.Tree
+	r.Tree, r.Commit, r.By, r.At = tree, commit, by, ""
+	r.Output = mesh.Truncate(fmt.Sprintf("%s%s: nothing under code changed\n%s", mesh.CarriedPrefix, old[:8], r.Output))
+	return mesh.CreateResult(ctx, a.client, r)
+}
+
+// carryVerify answers kind name, when it is verify, for tree (commit's in
+// dir), which has no result of its own under args and model, from the code
+// run (selfupdate.CodeRun) of each of tips in turn: the nearest result run
+// in it (mesh.NearestResult) carries when it is ok and its tree differs
+// from tree only outside repo's code, and is stored for tree
+// (storeCarried). A fail there carries nothing, from any tip: a fail over
+// the same code is a flake or a file code misses, and an older ok must not
+// hide it. It returns the tree the result came from, "" when none carries
+// (or tree has a result, stored meanwhile included).
+func (a *app) carryVerify(ctx context.Context, name, dir, repo, commit, tree, by, model string, args []string, tips ...string) (string, error) {
+	if name != "verify" {
+		return "", nil
+	}
+	if _, ok, err := mesh.GetResult(ctx, a.client, mesh.ResultKey(name, tree, args, model)); err != nil || ok {
+		return "", err
+	}
+	code := a.codePaths(repo)
+	for _, tip := range tips {
+		run, err := selfupdate.CodeRun(dir, tip, code)
+		if err != nil {
+			return "", err
+		}
+		r, ok, err := mesh.NearestResult(ctx, a.client, name, run, args, model)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			continue
+		}
+		same, err := selfupdate.CodeSame(dir, r.Tree, tree, code)
+		if err != nil {
+			return "", err
+		}
+		if !same {
+			continue
+		}
+		if !r.OK {
+			return "", nil
+		}
+		if stored, err := a.storeCarried(ctx, r, tree, commit, by); err != nil || !stored {
+			return "", err
+		}
+		return r.Tree, nil
+	}
+	return "", nil
+}
+
+// carriedHow is how a carried result came to be, after its verdict line.
+func carriedHow(from string) string {
+	return "carried from t:" + from[:8] + ": nothing under code changed"
 }
 
 // carry puts a kind's model results at its source's tree, which read the

@@ -1024,3 +1024,52 @@ func TestLandCarriesVerifyOnlyOutsideTheCode(t *testing.T) {
 		})
 	}
 }
+
+// A branch whose last commit is outside the code, rebased over a ledger
+// commit, lands on a carry from its verified parent; a branch with only
+// docs since main lands on main's verify. Neither runs it, and done
+// accepts the carried entry.
+func TestLandCarriesVerifyFromTheBranchRun(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		docsOnly bool
+	}{
+		{"docs after the verified work", false},
+		{"a docs-only branch", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, ctx := setup(t)
+			r := newLandRepo(t)
+			codeRow(t, r, `"*.txt"`)
+			putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+			if _, errs, code := runCLI(t, as("app-012"), "started"); code != 0 {
+				t.Fatal(code, errs)
+			}
+			runs := countRuns(t, r, "true")
+			if tc.docsOnly {
+				meshtest.Git(t, r.wt, "reset", "-q", "--hard", "main")
+			}
+			verified := gitOut(t, "rev-parse", "HEAD^{tree}")
+			if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "verify", Tree: verified, Commit: gitOut(t, "rev-parse", "HEAD"),
+				OK: true, By: "app-012"}); err != nil {
+				t.Fatal(err)
+			}
+			commitDoc(t, "README.md", "# app\n")
+			r.pushOther(t, "docs/proposals/013-other.md", "---\nid: 13\nstatus: accepted\n---\n")
+
+			out, errs, code := runCLI(t, as("app-012"), "land")
+			rec := gitOut(t, "rev-parse", "HEAD")
+			tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+			if code != 0 || runs() != 0 ||
+				!strings.Contains(out, "verify ok t:"+tree[:8]+" (carried from t:"+verified[:8]+": nothing under code changed)\n") {
+				t.Fatalf("land: %d runs %d\n%s\nerr %q", code, runs(), out, errs)
+			}
+			if front := r.specOnOrigin(t); !strings.Contains(front, "verified: verify ok t:"+tree[:8]+"\n") {
+				t.Fatalf("spec on origin:\n%s", front)
+			}
+			if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", rec); code != 0 || out != "done app-012 "+rec[:8]+"\n" {
+				t.Fatalf("done: %d %q %q", code, out, errs)
+			}
+		})
+	}
+}

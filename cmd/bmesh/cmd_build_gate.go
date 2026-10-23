@@ -133,9 +133,10 @@ func (a *app) codePaths(repo string) []string {
 	return selfupdate.CodePaths(a.cfg.Repos[repo].Code, a.cfg.Repos[repo].SetupInputs, a.cfg.Spec.Glob)
 }
 
-// verifyMain checks sha, main's code head (codeHead), before a lead
+// verifyMain checks sha, main's code head (codeHead of tip), before a lead
 // branches from it or a release tags it. A verify result recorded for its
-// tree answers; else the repo's verify kind, as that commit defines it,
+// tree answers, or one carried to it from the code run of tip down to sha
+// (carryVerify); else the repo's verify kind, as that commit defines it,
 // runs inline in a bmesh worktree there and records, as land runs it,
 // after the commit's [setup] installs what it needs (a failing setup
 // refuses with its output's tail and records nothing). A
@@ -143,7 +144,7 @@ func (a *app) codePaths(repo string) []string {
 // (exit 3) with fix and the tail of its output. With force, a fail or a
 // missing result is said and passed, and nothing runs. Each line goes to
 // note.
-func (a *app) verifyMain(ctx context.Context, row config.Repo, repoPath, sha string, note io.Writer, force bool, fix string) error {
+func (a *app) verifyMain(ctx context.Context, row config.Repo, repoPath, tip, sha string, note io.Writer, force bool, fix string) error {
 	tree, err := gitIn(ctx, repoPath, "rev-parse", sha+"^{tree}")
 	if err != nil {
 		return err
@@ -160,6 +161,15 @@ func (a *app) verifyMain(ctx context.Context, row config.Repo, repoPath, sha str
 		return err
 	}
 	ok, output, how := r.OK, r.Output, "answered from the record"
+	if !recorded {
+		from, err := a.carryVerify(ctx, "verify", repoPath, row.Name, sha, tree, a.cfg.HostName(), model, nil, tip)
+		if err != nil {
+			return err
+		}
+		if from != "" {
+			recorded, ok, output, how = true, true, "", carriedHow(from)
+		}
+	}
 	if !recorded {
 		tag, err := shortHex()
 		if err != nil {

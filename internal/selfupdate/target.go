@@ -85,6 +85,37 @@ func CodeHead(dir, ref string, code []string) (string, error) {
 	return git(dir, "rev-parse", "--verify", ref+"^{commit}")
 }
 
+// CodeRunMax is the most commits a code run (CodeRun) holds.
+const CodeRunMax = 100
+
+// CodeRun is the trees of the commits from tip down its first parents to
+// its first-parent code head (the newest that changes code against its
+// first parent, pathspecs as CodePaths gives them), newest first and at
+// most CodeRunMax: no commit of the run after the code head changes code,
+// so every tree in it has the same code.
+func CodeRun(dir, tip string, code []string) ([]string, error) {
+	head, err := git(dir, append([]string{"rev-list", "--first-parent", "-1", tip, "--"}, code...)...)
+	if err != nil {
+		return nil, err
+	}
+	out, err := git(dir, "log", "--no-show-signature", "--first-parent", "-n", strconv.Itoa(CodeRunMax), "--format=%H %T", tip, "--")
+	if err != nil {
+		return nil, err
+	}
+	var trees []string
+	for _, line := range strings.Split(out, "\n") {
+		commit, tree, ok := strings.Cut(line, " ")
+		if !ok {
+			continue
+		}
+		trees = append(trees, tree)
+		if commit == head {
+			break
+		}
+	}
+	return trees, nil
+}
+
 // CodeSame reports whether trees (or commits) a and b differ only outside
 // code, pathspecs as CodePaths gives them.
 func CodeSame(dir, a, b string, code []string) (bool, error) {
