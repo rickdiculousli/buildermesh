@@ -2,15 +2,23 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 )
 
@@ -296,5 +304,180 @@ func TestMeshStatusNamesAnOlderHub(t *testing.T) {
 	out, _, code := runCLI(t, nil, "mesh-status")
 	if code != 0 || !strings.HasSuffix(out, "\n"+hubLine) {
 		t.Fatalf("code %d out %q", code, out)
+	}
+}
+
+// hubBox is a box running bmesh hub in this process on loopback ports, with
+// the re-exec stubbed: each call reports whether the hub's client port was
+// already shut, and returns as an exec that failed to replace us would not.
+type hubBox struct {
+	t       *testing.T
+	addr    string
+	exe     string
+	reexecs chan bool
+}
+
+func newHubBox(t *testing.T) *hubBox {
+	if runtime.GOOS == "windows" {
+		t.Skip("the hub restarts itself only where reexec replaces the process")
+	}
+	root := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", filepath.Join(root, "state"))
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.Addr().String()
+	l.Close()
+	tok := filepath.Join(root, "nats.token")
+	os.WriteFile(tok, []byte("tok\n"), 0o600)
+	cfg := filepath.Join(root, "config.toml")
+	os.WriteFile(cfg, []byte("[host]\nname = \"box\"\n[mesh]\ndomain = \"hub\"\ntoken_file = \""+tok+"\"\n"+
+		"[hub]\nrole = \"hub\"\nlisten = \""+addr+"\"\n"), 0o600)
+	t.Setenv("BMESH_CONFIG", cfg)
+	t.Setenv("BMESH_NODE", "")
+	b := &hubBox{t: t, addr: addr, exe: filepath.Join(root, "bin", "bmesh"), reexecs: make(chan bool, 4)}
+	b.install("old")
+	savedExe, savedEvery, savedReexec, savedSignals := executable, hubCheckEvery, hubReexec, hubSignals
+	t.Cleanup(func() { executable, hubCheckEvery, hubReexec, hubSignals = savedExe, savedEvery, savedReexec, savedSignals })
+	executable = func() (string, error) { return b.exe, nil }
+	hubCheckEvery = 20 * time.Millisecond
+	hubReexec = func(exe string) error {
+		if exe != b.exe {
+			t.Errorf("re-exec %q, want %q", exe, b.exe)
+		}
+		c, err := net.Dial("tcp", addr)
+		if err == nil {
+			c.Close()
+		}
+		b.reexecs <- err != nil
+		return nil
+	}
+	return b
+}
+
+// install puts a new file at the box's binary path, as an update's swap does.
+func (b *hubBox) install(body string) {
+	os.MkdirAll(filepath.Dir(b.exe), 0o755)
+	if err := os.WriteFile(b.exe+".new", []byte(body), 0o755); err != nil {
+		b.t.Fatal(err)
+	}
+	if err := os.Rename(b.exe+".new", b.exe); err != nil {
+		b.t.Fatal(err)
+	}
+}
+
+// start runs bmesh hub until stop is called or it returns; it waits until
+// the hub has written hub.json.
+func (b *hubBox) start() (stderr *meshtest.SyncBuffer, exit <-chan int, stop func()) {
+	ctx, cancel := context.WithCancel(context.Background())
+	hubSignals = func() (context.Context, context.CancelFunc) { return context.WithCancel(ctx) }
+	stderr = &meshtest.SyncBuffer{}
+	codes, done := make(chan int, 1), make(chan struct{})
+	go func() {
+		defer close(done)
+		codes <- run([]string{"hub"}, strings.NewReader(""), io.Discard, stderr)
+	}()
+	b.t.Cleanup(func() { cancel(); <-done })
+	meshtest.Until(b.t, "hub.json", func() bool {
+		_, ok := selfupdate.ReadProc(config.StateDir(), "hub")
+		return ok || len(codes) > 0
+	})
+	return stderr, codes, cancel
+}
+
+func (b *hubBox) connect() (*mesh.Client, context.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	b.t.Cleanup(cancel)
+	c, err := mesh.Connect(ctx, "nats://"+b.addr, "tok", "hub", "test", false)
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	b.t.Cleanup(c.Close)
+	return c, ctx
+}
+
+const (
+	hubOldRev = "1a2b3c4d5e6f7a8b9c0d1a2b3c4d5e6f7a8b9c0d" // withRevision's time, 2026-10-15
+	hubNewRev = "2b3c4d5e6f7a8b9c0d1a2b3c4d5e6f7a8b9c0d1a"
+)
+
+// Once serve runs a newer release and the binary at the hub's path is
+// another file, the hub logs it, shuts down and re-execs that path within
+// a check; a hub started again on the same store reads back a key written
+// before.
+func TestHubRestartsOntoServesRelease(t *testing.T) {
+	b := newHubBox(t)
+	withRevision(t, hubOldRev)
+	stderr, exit, _ := b.start()
+	c, ctx := b.connect()
+	kv, err := c.JS.CreateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: "before"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kv.PutString(ctx, "k", "kept"); err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+	b.install("new")
+	writeProcRecord(t, config.StateDir(), "serve", selfupdate.ProcRecord{Pid: os.Getpid(), Revision: hubNewRev, Release: "v0.3.3", Time: "2026-10-20T00:00:00Z"})
+	select {
+	case down := <-b.reexecs:
+		if !down {
+			t.Fatal("re-exec'd with the hub still serving")
+		}
+	case <-time.After(meshtest.Within(t)):
+		t.Fatal("no re-exec")
+	}
+	if code := <-exit; code != 0 || !strings.Contains(stderr.String(), "bmesh hub: serve runs v0.3.3, restarting as "+b.exe+"\n") {
+		t.Fatalf("%d %q", code, stderr.String())
+	}
+	// The new binary: serve's own, so it stays.
+	withRevision(t, hubNewRev)
+	b.start()
+	if hub, ok := selfupdate.ReadProc(config.StateDir(), "hub"); !ok || hub.Revision != hubNewRev {
+		t.Fatalf("hub.json %+v %v", hub, ok)
+	}
+	c, ctx = b.connect()
+	kv, err = c.JS.KeyValue(ctx, "before")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e, err := kv.Get(ctx, "k"); err != nil || string(e.Value()) != "kept" {
+		t.Fatalf("%v %v", e, err)
+	}
+	time.Sleep(10 * hubCheckEvery)
+	if len(b.reexecs) != 0 {
+		t.Fatal("a hub on serve's binary re-exec'd")
+	}
+}
+
+// Only a release moves the hub, and only onto another file: serve on a
+// revision with no release, on a commit past a release (track = "latest"),
+// or on a release whose binary isn't at the hub's path, gets no re-exec.
+func TestHubStaysWithoutAReleaseToGoTo(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		release string
+		install bool
+	}{
+		{"no release", "", true},
+		{"past a release", "v0.3.2+3", true},
+		{"same file", "v0.3.3", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := newHubBox(t)
+			withRevision(t, hubOldRev)
+			stderr, exit, stop := b.start()
+			if tc.install {
+				b.install("new")
+			}
+			writeProcRecord(t, config.StateDir(), "serve", selfupdate.ProcRecord{Pid: os.Getpid(), Revision: hubNewRev, Release: tc.release, Time: "2026-10-20T00:00:00Z"})
+			time.Sleep(10 * hubCheckEvery)
+			stop()
+			if code := <-exit; code != 0 || len(b.reexecs) != 0 || !strings.HasSuffix(stderr.String(), "bmesh hub: stopping\n") {
+				t.Fatalf("%d re-execs %d %q", code, len(b.reexecs), stderr.String())
+			}
+		})
 	}
 }

@@ -272,6 +272,7 @@ Runs this box's NATS hub or leaf from `[hub]` until stopped. It is nats-server v
 - **Role hub:** it serves clients on `listen` with the token, and leaves on `leaf_listen` (user `leaf`, the token as password). It stores JetStream in `[hub] store` within `max_file_store` and `max_memory_store` (defaults in [Config](#config)).
 - **Role leaf:** it serves this box's clients on `listen` and dials the hub at `remote` forever.
 - It is named `[host] name`, logs on stderr (the journal under systemd) and stops on SIGTERM or Ctrl-C.
+- **It follows serve to each release** (not on Windows). Once a minute it reads this box's `bmesh serve` record. When serve runs a release (`v0.3.3`, not a commit past one such as `v0.3.2+3`) newer than the hub's binary, and the file at the hub's executable path is no longer the one it started from, it logs `bmesh hub: serve runs v0.3.3, restarting as /home/me/.local/bin/bmesh`, stops the server as on SIGTERM (JetStream flushes its store) and re-execs that path with the same arguments. Every client and leaf reconnects by itself within about a second; a JetStream request in flight at that moment fails once.
 
 **Refusals.** `bmesh hub` refuses to start (exit 3), naming the key, with:
 
@@ -284,7 +285,7 @@ A config the config check refuses exits 78.
 
 **Details.**
 
-- **Stale hub.** `bmesh hub` keeps its starting binary until its service is restarted. When it runs an older binary than `bmesh serve`, [`bmesh update`](#bmesh-update) (after its other lines), [`bmesh hosts --here`](#bmesh-hosts---here) and [`bmesh mesh-status`](#bmesh-mesh-status) print `hub runs v0.1.0, serve v0.2.0: restart bmesh-hub` (a release when stamped, else eight characters of revision). A release's notes can restart it with a `run` step (see [Upgrade notes](#upgrade-notes)).
+- **Stale hub.** Off a release, `bmesh hub` keeps its starting binary until its service is restarted: a box on `[update] track = "latest"`, after `bmesh update --latest`, or on Windows, where it never restarts itself. When it runs an older binary than `bmesh serve`, [`bmesh update`](#bmesh-update) (after its other lines), [`bmesh hosts --here`](#bmesh-hosts---here) and [`bmesh mesh-status`](#bmesh-mesh-status) print `hub runs v0.1.0, serve v0.2.0: restart bmesh-hub` (a release when stamped, else eight characters of revision). On Linux and macOS the line lasts until the hub's next check once serve runs a release; on Windows a release's notes can restart it with a `run` step (see [Upgrade notes](#upgrade-notes)).
 - [`bmesh init`](#bmesh-init) `--service` writes its unit on Linux and macOS. On Windows you run `bmesh hub` yourself.
 
 See also: [Several boxes](#several-boxes), [`bmesh serve`](#bmesh-serve).
@@ -2477,7 +2478,7 @@ A mesh spans boxes through one NATS hub.
 - **A single box** embeds the hub in `bmesh serve` (`[mesh] nats = ""`).
 - **Several boxes:** [`bmesh hub`](#bmesh-hub) runs the hub on one box, and a leaf on any other box that wants one. Every box still runs its own `bmesh serve`.
 
-`bmesh hub` is a separate process because the daemon restarts on every update (see [Updates](#updates)) and would drop every box each time. The hub restarts only when you restart its service.
+`bmesh hub` is a separate process because the daemon restarts on every update (see [Updates](#updates)) and would drop every box each time. The hub restarts itself only once serve runs a new release, so on `[update] track = "latest"` it restarts only when you restart its service (see [`bmesh hub`](#bmesh-hub)).
 
 **A box's part.** [`bmesh init`](#bmesh-init) sets it, with `--role`:
 
@@ -2601,7 +2602,7 @@ That `update`, finding the binary current, walks the pending notes from the reco
 - A walk with only plain steps is swapped in and left pending for the new binary to report.
 - One with nothing to do records the new binary's release.
 
-**The hub keeps up.** `bmesh hub` keeps its starting binary until its service is restarted (see [`bmesh hub`](#bmesh-hub), Stale hub).
+**The hub keeps up.** Within a minute of serve restarting onto a new release, `bmesh hub` re-execs onto it; off a release it keeps its starting binary until its service is restarted (see [`bmesh hub`](#bmesh-hub), Stale hub).
 
 Internals: [internals](internals.md#upgrading)
 
