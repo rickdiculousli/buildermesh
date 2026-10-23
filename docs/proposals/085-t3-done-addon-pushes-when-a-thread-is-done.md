@@ -4,7 +4,7 @@ title: An optional t3-done add-on pushes to ntfy when a T3 thread a person start
 kind: feature
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-22
