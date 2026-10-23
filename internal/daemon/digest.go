@@ -1,21 +1,16 @@
 package daemon
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"github.com/rickdiculousli/buildermesh/internal/shell"
-	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/notify"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 )
-
-const deliverTimeout = 10 * time.Second
 
 // Digest summarises the mesh for a notification. It takes host and now in
 // addition to the plan's (states, nodes, since): the title names the host
@@ -204,7 +199,7 @@ func digestOnce(ctx context.Context, d Deps, since *time.Time) {
 	if !changed {
 		return
 	}
-	if err := deliver(ctx, d, Headers{Title: title}, body); err != nil {
+	if err := deliver(ctx, d, notify.Headers{Title: title}, body); err != nil {
 		d.Log.Warn("digest: deliver", "err", err)
 		return
 	}
@@ -215,41 +210,7 @@ func digestOnce(ctx context.Context, d Deps, since *time.Time) {
 	*since = now
 }
 
-// deliver pipes body to Notify.Command when set, the headers in its
-// environment ($BMESH_TITLE and $NTFY_TITLE, $NTFY_PRIORITY, $NTFY_TAGS,
-// $NTFY_CLICK, $NTFY_ACTIONS, empty when unset), else POSTs it to
-// Notify.Ntfy with the non-empty headers.
-func deliver(ctx context.Context, d Deps, h Headers, body string) error {
-	ctx, cancel := context.WithTimeout(ctx, deliverTimeout)
-	defer cancel()
-	if cmd := d.Cfg.Notify.Command; cmd != "" {
-		c := shell.Command(ctx, cmd)
-		c.Stdin = strings.NewReader(body)
-		c.WaitDelay = 2 * time.Second // a child holding the pipes can't block Wait past the timeout
-		c.Env = append(os.Environ(), "BMESH_TITLE="+h.Title, "NTFY_TITLE="+h.Title, "NTFY_PRIORITY="+h.Priority,
-			"NTFY_TAGS="+h.Tags, "NTFY_CLICK="+h.Click, "NTFY_ACTIONS="+h.Actions)
-		if out, err := c.CombinedOutput(); err != nil {
-			return fmt.Errorf("notify command: %w: %s", err, strings.TrimSpace(string(out)))
-		}
-		return nil
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.Cfg.Notify.Ntfy, bytes.NewReader([]byte(body)))
-	if err != nil {
-		return err
-	}
-	for k, v := range map[string]string{"Title": h.Title, "Priority": h.Priority, "Tags": h.Tags,
-		"Click": h.Click, "Actions": h.Actions} {
-		if v != "" {
-			req.Header.Set(k, v)
-		}
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("ntfy: %s", resp.Status)
-	}
-	return nil
+// deliver posts to [notify] (notify.Target.Post).
+func deliver(ctx context.Context, d Deps, h notify.Headers, body string) error {
+	return notify.Target{Ntfy: d.Cfg.Notify.Ntfy, Command: d.Cfg.Notify.Command}.Post(ctx, h, body)
 }

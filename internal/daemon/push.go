@@ -11,6 +11,7 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/notify"
 	"github.com/rickdiculousli/buildermesh/internal/web"
 )
 
@@ -23,14 +24,9 @@ var defaultPushRetry = []time.Duration{5 * time.Second, 30 * time.Second}
 // defaultPushGrace is how long the push in flight may finish at shutdown.
 const defaultPushGrace = 10 * time.Second
 
-// Headers are a notification's ntfy headers; empty ones are not sent.
-type Headers struct {
-	Title, Priority, Tags, Click, Actions string
-}
-
 // PushRequest is one push: its headers and body.
 type PushRequest struct {
-	Headers
+	notify.Headers
 	Body string
 }
 
@@ -354,7 +350,7 @@ func pushRefused(ctx context.Context, d Deps, s mesh.Stored, path string, jobs c
 	}
 	host := strings.TrimPrefix(path, "daemon.")
 	who, check, _ := strings.Cut(ev.Body, " ")
-	req := PushRequest{Headers: Headers{Title: fmt.Sprintf("%s refused %s: %s", host, who, check), Priority: "high",
+	req := PushRequest{Headers: notify.Headers{Title: fmt.Sprintf("%s refused %s: %s", host, who, check), Priority: "high",
 		Tags: "warning", Click: d.Cfg.Notify.MapURL}, Body: cutUTF8(ev.Text, pushBodyMax)}
 	claim := mesh.Event{From: d.from(), Event: "push", Text: req.Title, Seq: s.Seq, Body: key,
 		At: d.Now().UTC().Format(time.RFC3339)}
@@ -383,7 +379,7 @@ func pushHostsEvent(ctx context.Context, d Deps, s mesh.Stored, path, event stri
 	if err != nil || ev.Text == "" {
 		return
 	}
-	h := Headers{Title: cutUTF8(ev.Text, 200), Priority: "default", Tags: "hourglass", Click: d.Cfg.Notify.MapURL}
+	h := notify.Headers{Title: cutUTF8(ev.Text, 200), Priority: "default", Tags: "hourglass", Click: d.Cfg.Notify.MapURL}
 	if event == "level" || event == "registry" {
 		h.Priority, h.Tags = "high", "warning"
 	}

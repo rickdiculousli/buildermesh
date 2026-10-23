@@ -11,7 +11,7 @@ Every `bmesh` command with its flags, output and refusals, then the model behind
 - [Checks and landing](#checks-and-landing): [`bmesh routine`](#bmesh-routine) · [`bmesh result`](#bmesh-result) · [`bmesh lock-lease`](#bmesh-lock-lease) · [`bmesh setup`](#bmesh-setup) · [`bmesh land`](#bmesh-land)
 - [Boxes](#boxes): [`bmesh hosts`](#bmesh-hosts) · [`bmesh sync`](#bmesh-sync) · [`bmesh prune`](#bmesh-prune) · [`bmesh repos`](#bmesh-repos)
 - [Concepts](#concepts): [Several boxes](#several-boxes) · [Updates](#updates) · [Upgrading](#upgrading) · [Runners](#runners) · [Build families](#build-families) · [Holds](#holds) · [Briefs](#briefs) · [The fixer](#the-fixer) · [The ledger](#the-ledger) · [Routines](#routines) ([Setup](#setup)) · [Hosts](#hosts) · [The plugin](#the-plugin) · [Names](#names)
-- [Config](#config): [config.toml](#configtoml) · [repos.toml](#repostoml) · [Pushes](#pushes) · [Quota reminders](#quota-reminders) · [Map](#map) · [Upgrade notes](#upgrade-notes)
+- [Config](#config): [config.toml](#configtoml) · [repos.toml](#repostoml) · [Pushes](#pushes) · [Quota reminders](#quota-reminders) · [Add-ons](#add-ons) ([t3-done](#t3-done)) · [Map](#map) · [Upgrade notes](#upgrade-notes)
 - [Exit codes](#exit-codes)
 - [Build and test](#build-and-test): [Testing](#testing)
 
@@ -3374,6 +3374,11 @@ admin = false                               # this box is the roster's admin
 secure = false                              # what others ask of this box waits for the operator
 key_store = ""                              # keychain | file: where the admin or approve key lives; "" = keychain on macOS, file elsewhere
 push_modes = ["ship", "fork"]               # registry modes whose rows a level pushes when this box is ahead (see Hosts)
+[addons]                                    # optional parts compiled into bmesh (see Add-ons)
+enable = []                                 # the add-ons serve runs here: t3-done; [] = none; another name is a config error
+[addons.t3-done]
+ntfy = ""                                   # the ntfy URL with its topic it posts to ("http://k16:2586/t3"); required when enabled; never [notify]'s
+every = "5s"                                # how often it looks at T3's database
 ```
 
 #### State dir
@@ -3485,6 +3490,40 @@ A provider gets a reminder when it has usage in its 5-hour window (`five_hour` a
 The daemon logs a failed post and retries it at the next reading.
 
 Internals: [internals](internals.md#quota-reminders)
+
+### Add-ons
+
+Add-ons are optional parts compiled into `bmesh`. `bmesh serve` runs one only when `[addons] enable` lists it; the default `[]` runs none. An unknown name is a config error (exit 3 from `bmesh config check`, 78 from `serve`), and each add-on's settings live in `[addons.<name>]`. One add-on exists, `t3-done`.
+
+#### t3-done
+
+`t3-done` posts to its own ntfy address when a T3 thread a person started on this box is done, failed or asking. T3's desktop notifications reach only the box running the app; this reaches the phone.
+
+```toml
+[addons]
+enable = ["t3-done"]
+[addons.t3-done]
+ntfy = "http://k16:2586/t3"                 # required: enabling t3-done without it is a config error
+every = "5s"
+```
+
+Turning it on never starts the `[notify]` digest or pushes. It reads this box's T3 database, `~/.t3/userdata/statev2.sqlite`, read-only. Each tick (`every`) it compares the database file's and its `-wal` file's modification time and size with the last read, and reads only when either changed, so an idle T3 costs one file check per tick.
+
+| What happens | Posts | Tag |
+|---|---|---|
+| A run ends `completed` and the thread has no background task pending | done | `white_check_mark` |
+| A run ends `failed` | failed | `x` |
+| A runtime request (a question to you) turns `pending` | asking for input | `raising_hand` |
+
+- **Not posted:** a run that ends `interrupted`, `cancelled` or `rolled_back`, and a run that ends `completed` while a background task (a monitor, a background command) is still pending. That run is a wake-up, not the end: a coordinator waiting on `bmesh watch` posts nothing until its watch ends and it reports. A thread whose background task ends without a new run stays silent until its next turn.
+- **Which threads:** top-level threads a person started. Threads with a parent (a delegated child) and threads an agent created (bmesh's leads and rounds, which push on their own) never post.
+- **Title:** the thread's title.
+- **Body:** `done in <project> on <box>: <the start of the last assistant reply>`, likewise `failed in …` and `asking for input in …`. The reply is put on one line and cut to 140 characters with `…`. There's no `in <project>` without a project and no `: …` without a reply.
+- **Tap (`Click`):** the thread, through `[console] thread_url`, when that is set; else none.
+- **Once each:** a mark per kind (the run's end, the request's creation) lives in `<state dir>/addons/t3-done/` (`runs`, `requests`). Every row read moves it, posted or not, so a wake-up skipped never posts later when its task ends. A fresh start begins at the current time. A post that fails isn't marked, so the next tick posts it again.
+- **Idle on a mismatch:** before each read it checks that the tables and columns it reads exist, and that the newest rows carry the payload fields it reads. When one is missing (a T3 update changed it), it logs one line naming it, `t3-done: idle: T3's database has no column orchestration_v2_projection_runs.completed_at (a T3 update changed it); nothing is posted until it does`, posts nothing, and checks again when the database next changes. Without a database it logs `t3-done: no T3 database at <path>` once. When a read works again it logs `t3-done: reading again`.
+
+Internals: [internals](internals.md#t3-done)
 
 ### Map
 

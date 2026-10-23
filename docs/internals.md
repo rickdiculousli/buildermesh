@@ -428,6 +428,31 @@ The map, `watch`, status, the push loop and the activity reader skip subjects wh
 
 The reset is rounded to the minute because readings jitter by fractions of a second. Once per window, across daemons and restarts: before posting, a daemon creates `quota.<provider>.<rounded reset unix>` in `bm-claims`; a key already there means another daemon (or this one, an hour ago) has it. A failed post deletes its claim, so the next reading retries.
 
+### Add-ons
+
+The add-ons are `addons.Registry`, one package each under `addons/` (`addons/t3done`), by the names `config.AddonNames` lists; a test keeps the two equal. The daemon starts each name `[addons] enable` lists in a goroutine of its own, with the config, the host and its own state dir, `<state dir>/addons/<name>`.
+
+#### t3-done
+
+[Manual: t3-done](manual.md#t3-done)
+
+It opens T3's database through `modernc.org/sqlite` (pure Go, so every OS builds it) as `file:///<path>?mode=ro` with a 2 s busy timeout, once per read, and closes it, so a database T3 replaces is read anew.
+
+| Table | Columns | Payload fields (`payload_json`) |
+|---|---|---|
+| `orchestration_v2_projection_threads` | `thread_id`, `project_id`, `title`, `deleted_at` | `createdBy`, `lineage.parentThreadId` |
+| `orchestration_v2_projection_runs` | `thread_id`, `provider_thread_id`, `status`, `completed_at` | |
+| `orchestration_v2_projection_provider_threads` | `provider_thread_id` | `pendingBackgroundTasks` |
+| `orchestration_v2_projection_runtime_requests` | `thread_id`, `status`, `created_at` | |
+| `orchestration_v2_projection_messages` | `thread_id`, `role`, `created_at` | `text` |
+| `projection_projects` | `project_id`, `title` | |
+
+The start-of-read check runs `pragma_table_info` on each table and `json_type` of each field on its table's newest row (by rowid; for messages, the newest `assistant` one). An empty table passes.
+
+**The rule for done.** Every turn end is a run row whose `completed_at` is set, a wake-up included: a message whose `notification.source.kind` is `background_task` starts a new run. What tells them apart is the run's provider thread (`provider_thread_id`): its `pendingBackgroundTasks` still lists the task while it runs, and T3 clears it as soon as the task ends. T3's API (`t3_thread_read`, `t3_thread_list`) doesn't return that field, so the add-on reads the database. A run posts done when `status` is `completed` and `json_array_length(pendingBackgroundTasks)` is 0 (no provider thread counts as 0); failed when `status` is `failed`, whatever is pending. The list is read when the run is read, within a tick of its end.
+
+**Rows read.** Runs with `completed_at` after the `runs` mark, and requests with `status = 'pending'` and `created_at` after the `requests` mark, oldest first, each joined to its thread where `deleted_at` is null, `lineage.parentThreadId` is null and `createdBy` isn't `agent`. The reply is the thread's newest `assistant` message created at or before the row's time. A mark is T3's own timestamp (`2006-01-02T15:04:05.000Z`, compared as text), written after each row through a temp file and a rename.
+
 ### Map
 
 [Manual: Map](manual.md#map)

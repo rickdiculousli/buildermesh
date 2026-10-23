@@ -387,3 +387,31 @@ func TestHubURLIsTheEmbeddedHubWhenNATSIsEmpty(t *testing.T) {
 		}
 	}
 }
+
+func TestAddons(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	c, err := Load(p)
+	if err != nil || len(c.Addons.Enable) != 0 || c.Addons.T3Done.Every != 5*time.Second {
+		t.Fatalf("defaults: %v %+v", err, c.Addons)
+	}
+	os.WriteFile(p, []byte("[addons]\nenable = [\"t3-done\"]\n[addons.t3-done]\nntfy = \"http://n:2586/t3\"\nevery = \"2s\"\n"), 0o644)
+	c, err = Load(p)
+	if err != nil || fmt.Sprint(c.Addons.Enable) != "[t3-done]" || c.Addons.T3Done != (T3DoneConfig{Ntfy: "http://n:2586/t3", Every: 2 * time.Second}) {
+		t.Fatalf("t3-done: %v %+v", err, c.Addons)
+	}
+	// The settings alone run nothing, and need no ntfy.
+	os.WriteFile(p, []byte("[addons.t3-done]\nevery = \"1m\"\n"), 0o644)
+	if c, err = Load(p); err != nil || len(c.Addons.Enable) != 0 {
+		t.Fatalf("settings only: %v %+v", err, c.Addons)
+	}
+	for body, want := range map[string]string{
+		"[addons]\nenable = [\"t3-dnoe\"]\n": `[addons] enable: unknown add-on "t3-dnoe" (want one of t3-done)`,
+		"[addons]\nenable = [\"t3-done\"]\n": "[addons.t3-done] ntfy is empty: t3-done needs the ntfy URL with its topic it posts to",
+		"[addons]\nenable = [\"t3-done\"]\n[addons.t3-done]\nntfy = \"http://n/t\"\nevery = \"0s\"\n": "[addons.t3-done] every: want a positive duration",
+	} {
+		os.WriteFile(p, []byte(body), 0o644)
+		if _, err := Load(p); err == nil || err.Error() != "config "+p+": "+want {
+			t.Errorf("%q: %v, want %s", body, err, want)
+		}
+	}
+}

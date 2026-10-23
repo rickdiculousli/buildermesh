@@ -10,11 +10,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/addons"
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/runner"
@@ -148,7 +150,8 @@ func decodeEvent(data []byte) (mesh.Event, error) {
 // digest and push loops when [notify] has somewhere to send, the quota
 // reset reminders when [quota] remind_topic is set, and, when
 // [repos] names any repo, the routine loop and (with this binary's module
-// known) the fixer loop, and with [hosts] enabled the hosts loop; it
+// known) the fixer loop, with [hosts] enabled the hosts loop, and each
+// add-on [addons] enable names; it
 // returns once ctx ends and every loop has stopped.
 func Run(ctx context.Context, d Deps) error {
 	if d.Client == nil || d.Cfg == nil || d.Runner == nil || d.Host == "" {
@@ -210,6 +213,11 @@ func Run(ctx context.Context, d Deps) error {
 	}
 	if d.Cfg.Hosts.Enabled {
 		start(func() { hostsRun(ctx, d) })
+	}
+	for _, name := range d.Cfg.Addons.Enable {
+		run, env := addons.Registry[name], addons.Env{Cfg: d.Cfg, Host: d.Host,
+			StateDir: filepath.Join(d.StateDir, "addons", name), Log: d.Log.With("addon", name)}
+		start(func() { run(ctx, env) })
 	}
 	<-ctx.Done()
 	wg.Wait()

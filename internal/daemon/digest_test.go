@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/notify"
 )
 
 func TestDigestTextAndChanged(t *testing.T) {
@@ -186,7 +187,7 @@ func TestDigestFailedDeliveryKeepsSince(t *testing.T) {
 	if gotTitle != "bmesh "+testHost+": 0 working, 1 asking, 0 silent" || !strings.HasPrefix(gotBody, "a: asking since") {
 		t.Errorf("request: title %q body %q", gotTitle, gotBody)
 	}
-	if err := deliver(f.ctx, f.d, Headers{Title: "t"}, "b"); err == nil {
+	if err := deliver(f.ctx, f.d, notify.Headers{Title: "t"}, "b"); err == nil {
 		t.Error("deliver: non-2xx returned nil")
 	}
 
