@@ -2727,11 +2727,11 @@ A fresh start loses the old JetStream store's results and events, and the roster
 
 That `update`, finding the binary current, walks the pending notes from the recorded release, else from the revision the swap replaced, else from v0.1.0. A box from before v0.1.0 that updated with its own old code is walked from v0.1.0, never through the start-over, since nothing recorded where it started. That is why a box from before v0.1.0 starts over, and why `serve` checks the config at start (exit 78, see [Config](#config)).
 
-**The daemon's self-update** (`[update] repo`, or `upstream`) never walks. Before the swap it runs the new binary's config check and plans the walk.
+**The daemon's self-update** (`[update] repo`, or `upstream`) never walks. Before the swap it runs the new binary's config check and plans the walk, from where this box last walked to: the running binary, or, while notes are still pending, the recorded release (else the revision a swap replaced), so a second release swapped in before `bmesh update` keeps the first one's steps.
 
 - The daemon logs and pushes a refused config (`update to v0.2.0: config check failed: ...; keeping this binary`) and a walk with an ask or `confirm` step (`update to v0.2.0 waits on bmesh update (2 asks)`). The daemon answers no ask itself. Either keeps the running binary, is written as the notice (`bmesh update --notice`), and is acted on once per target until `bmesh update` takes it.
 - A walk with only plain steps is swapped in and left pending for the new binary to report.
-- One with nothing to do records the new binary's release.
+- One with nothing to do records the new binary's release. While notes are pending, neither the record nor the revision a swap replaced moves, and an ask or `confirm` step still owed holds the next swap.
 
 **The hub keeps up.** Within a minute of serve restarting onto a new release, `bmesh hub` re-execs onto it; off a release it keeps its starting binary until its service is restarted (see [`bmesh hub`](#bmesh-hub), Stale hub).
 

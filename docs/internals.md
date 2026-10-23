@@ -72,7 +72,7 @@ An upstream install (`[update] upstream = true`) publishes `update`, drains and 
 
 **The record.** `bmesh init` and every finished walk write `<state dir>/installed`, `<version> <revision> <time>` (the version this binary's release or `<rev8>`): a record, not the source of truth. A binary swapped in without a walk finds notes pending when its release is past the record's. The line pushed for pending notes is kept in `<state dir>/pending-pushed`. The `update` that walks them starts from the record's revision, else from `<state dir>/previous` (the revision of the binary a swap replaced, written by `update` and the daemon), else from v0.1.0; finding the binary current with nothing pending and no record, it writes one.
 
-**The daemon's check before a swap** is the new binary's `config check` and `update --plan --json --from <running> --to <target> --dir <main's checkout>`. A walk with nothing to do writes `installed` for the new binary.
+**The daemon's check before a swap** is the new binary's `config check` and `update --plan --json --from <walked> --to <target> --dir <main's checkout>`, `<walked>` the running revision unless notes are pending for it, then the record's revision, else `previous`'s (either only when it is in the running revision's history). A walk with nothing to do writes `installed` for the new binary; while notes are pending the swap leaves `previous` as it is.
 
 ## Several boxes
 

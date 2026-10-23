@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -31,13 +32,37 @@ type gatePlan struct {
 	Confirm int `json:"confirm"`
 }
 
+// walkedTo is the revision this box last walked the notes to, which a
+// swap from own plans from: own, unless notes are pending since this box's
+// record (upgrade.Pending), then the recorded revision, else the binary a
+// swap replaced (<state dir>/previous), as bmesh update's pending walk
+// reads them; own again when that one isn't in own's history.
+func (r *routineSet) walkedTo(dir, own string) string {
+	sd := r.d.StateDir
+	if sd == "" || own == "" || upgrade.Pending(sd, selfupdate.Describe(dir, own)) == "" {
+		return own
+	}
+	from := ""
+	if rec, ok := upgrade.ReadInstalled(sd); ok {
+		from = rec.Revision
+	} else if p := upgrade.ReadPrevious(sd); p != "" {
+		from = selfupdate.OwnCommit(dir, p)
+	}
+	if from == "" || selfupdate.Stand(dir, from, own) != selfupdate.Behind {
+		return own
+	}
+	return from
+}
+
 // gate is the self-update's check of the binary built for t, before the
 // swap: the new binary loads this box's config (`config check`), and plans
-// the walk from own (`update --plan --json`) with main read from dir. A
+// the walk from where this box last walked to (walkedTo, own unless notes
+// are still pending) with main read from dir (`update --plan --json`). A
 // rejected config, or a walk with an ask or a step that asks first, holds
 // the update (held); steps reports whether the walk has anything at all,
 // which the new binary's first start then names as pending.
 func (r *routineSet) gate(dir, own string, t selfupdate.Target, steps *bool) selfupdate.Gate {
+	from := r.walkedTo(dir, own)
 	return func(built string) error {
 		next := selfupdate.Label(dir, t.Commit)
 		pre := []string{}
@@ -48,7 +73,7 @@ func (r *routineSet) gate(dir, own string, t selfupdate.Target, steps *bool) sel
 		if err != nil {
 			return &held{fmt.Sprintf("update to %s: config check failed: %s; keeping this binary", next, lastLine(out, err))}
 		}
-		out, err = r.runBuilt(built, append(pre, "--json", "update", "--plan", "--from", own, "--to", t.Commit, "--dir", dir)...)
+		out, err = r.runBuilt(built, append(pre, "--json", "update", "--plan", "--from", from, "--to", t.Commit, "--dir", dir)...)
 		var p gatePlan
 		if err != nil || strings.TrimSpace(out) == "" || json.Unmarshal([]byte(out), &p) != nil {
 			// A build that can't plan (none can't, since this one) walks
@@ -111,21 +136,17 @@ func (r *routineSet) hold(h *held) {
 }
 
 // swapped records a swap the daemon made: the revision it replaced as
-// <state dir>/previous, for the walk the new binary asks for; and, when
-// the walk had nothing to do, the new binary as installed.
+// <state dir>/previous, for the walk the new binary asks for, unless notes
+// from before it are still pending (walkedTo), whose walk starts earlier;
+// and, when the walk the gate planned had nothing to do, the new binary as
+// installed.
 func (r *routineSet) swapped(dir, own string, t selfupdate.Target, steps bool) {
 	d := r.d
 	if d.StateDir == "" {
 		return
 	}
-	prev := d.Revision
-	if prev == "" {
-		prev = d.Tag
-	}
-	if prev == "" {
-		prev = own
-	}
-	if prev != "" {
+	prev := cmp.Or(d.Revision, d.Tag, own)
+	if prev != "" && r.walkedTo(dir, own) == own {
 		if err := upgrade.WritePrevious(d.StateDir, prev); err != nil {
 			d.Log.Warn("update: write previous", "err", err)
 		}

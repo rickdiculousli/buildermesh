@@ -734,3 +734,59 @@ func TestUpdateSwapRecordsInstalledAndPrevious(t *testing.T) {
 		t.Fatalf("installed %+v %v", rec, ok)
 	}
 }
+
+// A swap while this box still owes an earlier release's notes plans from
+// where it last walked to (the record, else previous), so a release with
+// no steps of its own neither records itself installed nor moves previous,
+// and the pending line still names the release the box lags at.
+func TestUpdateKeepsNotesStillPending(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		record bool
+	}{{"record", true}, {"previous", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := updateSetup(t, map[string]string{})
+			u.d.StateDir = t.TempDir()
+			u.d.Cfg.Update.Track = "release"
+			lag := u.d.Revision
+			u.tag(t, "v0.1.0", lag)
+			own := u.land(t, "a.txt")
+			u.tag(t, "v0.2.0", own)
+			u.d.Revision = own
+			if tc.record {
+				if err := upgrade.WriteInstalled(u.d.StateDir, upgrade.Record{Version: "v0.1.0", Revision: lag, At: "2026-10-23T05:00:00Z"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := upgrade.WritePrevious(u.d.StateDir, lag); err != nil {
+				t.Fatal(err)
+			}
+			// v0.2.0's notes have a step; v0.3.0's have none.
+			script := filepath.Join(t.TempDir(), "new.sh")
+			body := "#!/bin/sh\ncase \"$*\" in\n*--from\\ " + lag + "*) echo '{\"steps\":1}' ;;\n*update\\ --plan*) echo '{}' ;;\nesac\nexit 0\n"
+			if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("FAKE_GO_BMESH", "sh "+script)
+			u.start(t)
+			next := u.land(t, "b.txt")
+			u.tag(t, "v0.3.0", next)
+			u.restarted(t, 20*time.Second)
+			u.runs(t, next)
+			rec, ok := upgrade.ReadInstalled(u.d.StateDir)
+			if ok != tc.record || (ok && rec.Revision != lag) {
+				t.Fatalf("installed %+v %v, want %s", rec, ok, lag[:8])
+			}
+			if got := upgrade.ReadPrevious(u.d.StateDir); got != lag {
+				t.Fatalf("previous %q, want %s", got, lag)
+			}
+			want := "upgrade notes pending since v0.1.0: run bmesh update"
+			if !tc.record {
+				want = "upgrade notes pending since " + upgrade.First + ": run bmesh update"
+			}
+			if got := upgrade.Pending(u.d.StateDir, "v0.3.0"); got != want {
+				t.Fatalf("pending %q, want %q", got, want)
+			}
+		})
+	}
+}
