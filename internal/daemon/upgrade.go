@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/notify"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 	"github.com/rickdiculousli/buildermesh/internal/upgrade"
 )
@@ -103,7 +104,7 @@ func (r *routineSet) hold(h *held) {
 	if d.Cfg.Notify.Ntfy != "" || d.Cfg.Notify.Command != "" {
 		ctx, cancel := r.settleCtx()
 		defer cancel()
-		if err := deliver(ctx, d, Headers{Title: "bmesh update waits on " + d.Host, Tags: "warning"}, h.line); err != nil {
+		if err := deliver(ctx, d, notify.Headers{Title: "bmesh update waits on " + d.Host, Tags: "warning"}, h.line); err != nil {
 			d.Log.Warn("update: push held update", "err", err)
 		}
 	}
@@ -157,7 +158,7 @@ func pending(ctx context.Context, d Deps) {
 	if d.Cfg.Notify.Ntfy == "" && d.Cfg.Notify.Command == "" {
 		return
 	}
-	if err := deliver(ctx, d, Headers{Title: "bmesh on " + d.Host + ": upgrade notes pending", Tags: "warning"}, line); err != nil {
+	if err := deliver(ctx, d, notify.Headers{Title: "bmesh on " + d.Host + ": upgrade notes pending", Tags: "warning"}, line); err != nil {
 		d.Log.Warn("update: push pending notes", "err", err)
 		return
 	}

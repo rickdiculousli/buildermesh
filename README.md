@@ -318,6 +318,12 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 | [`bmesh repos propose`](docs/manual.md#bmesh-repos-propose) | `[--wait 30s]` |
 | [`bmesh repos remove <name>`](docs/manual.md#bmesh-repos-remove) | `[--checkouts [--ignored-ok]] [--apply] [--wait 1m]` |
 
+**Add-ons** (off unless `config.toml`'s `[addons] enable` lists them; `bmesh serve` runs them)
+
+| Add-on | Config |
+|---|---|
+| [`t3-done`](docs/manual.md#t3-done): pushes when a T3 thread you started here is done, failed or asking | `[addons] enable = ["t3-done"]` · `[addons.t3-done] ntfy = URL [every = 5s]` |
+
 ## What's inside
 
 - **`bmesh`**: the CLI, daemon, map server and NATS hub in one binary.

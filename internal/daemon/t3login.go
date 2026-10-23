@@ -10,6 +10,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/notify"
 	"github.com/rickdiculousli/buildermesh/internal/runner/t3mcp"
 )
 
@@ -68,7 +69,7 @@ func t3LoginOnce(ctx context.Context, d Deps) {
 	title := fmt.Sprintf("T3 sign-in on %s expires in %d %s: bmesh t3 login", d.Host, n, unit)
 	body := fmt.Sprintf("The T3 sign-in for %s expires at %s. Run bmesh t3 login on %s.",
 		tok.Server, tok.ExpiresAt.UTC().Format(time.RFC3339), d.Host)
-	if err := deliver(ctx, d, Headers{Title: title, Tags: "key"}, body); err != nil {
+	if err := deliver(ctx, d, notify.Headers{Title: title, Tags: "key"}, body); err != nil {
 		d.Log.Warn("t3 login: push failed", "err", err)
 		return
 	}

@@ -2,8 +2,10 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -156,6 +158,12 @@ type ConsoleConfig struct {
 	Hosts     map[string]string
 }
 
+// ThreadLink is a thread link template with {thread} replaced by thread,
+// path-escaped (a T3 V2 id's colon too: mcp:x is mcp%3Ax).
+func ThreadLink(tmpl, thread string) string {
+	return strings.ReplaceAll(tmpl, "{thread}", strings.ReplaceAll(url.PathEscape(thread), ":", "%3A"))
+}
+
 // UpdateConfig is the daemon's self-update: Repo names the registry row
 // whose main it builds itself from ("" = off). Without it, the daemon reads
 // the module's main every CheckEvery (0 = never) and writes the notice when
@@ -203,6 +211,25 @@ func (h HostsConfig) KeyStoreKind() string {
 	return "file"
 }
 
+// AddonsConfig is the optional parts compiled into bmesh that serve runs
+// on this box: Enable names them (empty = none), one of AddonNames each,
+// and each add-on's settings are its [addons.<name>] table.
+type AddonsConfig struct {
+	Enable []string
+	T3Done T3DoneConfig `toml:"t3-done"`
+}
+
+// AddonNames are the add-ons [addons] enable may name.
+var AddonNames = []string{"t3-done"}
+
+// T3DoneConfig is [addons.t3-done]: Ntfy is the ntfy URL with its topic it
+// posts to (required when enabled), Every how often it looks at T3's
+// database.
+type T3DoneConfig struct {
+	Ntfy  string
+	Every time.Duration
+}
+
 // Config is the parsed config.toml plus the registry read from repos.toml
 // beside it. Path-valued fields are stored as written; callers pass them
 // through Expand.
@@ -223,6 +250,7 @@ type Config struct {
 	Routines RoutinesConfig
 	Update   UpdateConfig
 	Hosts    HostsConfig
+	Addons   AddonsConfig
 
 	dir     string   // directory of the config file; "" when none was read
 	path    string   // the config file's path as given to Load
@@ -308,7 +336,14 @@ type file struct {
 		Upstream   bool
 		Track      string
 	}
-	Hosts HostsConfig
+	Hosts  HostsConfig
+	Addons struct {
+		Enable []string
+		T3Done struct {
+			Ntfy  string
+			Every duration
+		} `toml:"t3-done"`
+	}
 }
 
 func defaults() *Config {
@@ -328,6 +363,7 @@ func defaults() *Config {
 		Status:   StatusConfig{KeepDone: 24 * time.Hour},
 		Routines: RoutinesConfig{KeepResults: 30 * 24 * time.Hour},
 		Update:   UpdateConfig{CheckEvery: 6 * time.Hour, Track: "release"},
+		Addons:   AddonsConfig{T3Done: T3DoneConfig{Every: 5 * time.Second}},
 	}
 }
 
@@ -346,6 +382,8 @@ func (c *Config) file() file {
 	f.Liveness.WakeEvery = duration(c.Liveness.WakeEvery)
 	f.Status.KeepDone = duration(c.Status.KeepDone)
 	f.Routines.KeepResults = duration(c.Routines.KeepResults)
+	f.Addons.Enable = c.Addons.Enable
+	f.Addons.T3Done.Ntfy, f.Addons.T3Done.Every = c.Addons.T3Done.Ntfy, duration(c.Addons.T3Done.Every)
 	return f
 }
 
@@ -512,11 +550,35 @@ func Load(path string) (*Config, error) {
 			return nil, fmt.Errorf("config %s: %s: negative duration", path, key)
 		}
 	}
+	c.Addons = AddonsConfig{Enable: f.Addons.Enable,
+		T3Done: T3DoneConfig{Ntfy: f.Addons.T3Done.Ntfy, Every: time.Duration(f.Addons.T3Done.Every)}}
+	if err := c.Addons.check(); err != nil {
+		return nil, fmt.Errorf("config %s: %w", path, err)
+	}
 	if f.Repos != nil {
 		return nil, fmt.Errorf("config %s: [repos] has moved to %s: one [repos.<name>] table per repo with path, mode, remote, host, ux_host, verify, surfaces, pin and routines (see docs/manual.md, Config)",
 			path, ReposPath(path))
 	}
 	return c, nil
+}
+
+// check refuses an add-on Enable names that bmesh doesn't have, and an
+// enabled add-on's settings it can't run with.
+func (a AddonsConfig) check() error {
+	for _, n := range a.Enable {
+		if !slices.Contains(AddonNames, n) {
+			return fmt.Errorf("[addons] enable: unknown add-on %q (want one of %s)", n, strings.Join(AddonNames, ", "))
+		}
+	}
+	if slices.Contains(a.Enable, "t3-done") {
+		switch {
+		case a.T3Done.Ntfy == "":
+			return errors.New("[addons.t3-done] ntfy is empty: t3-done needs the ntfy URL with its topic it posts to")
+		case a.T3Done.Every <= 0:
+			return errors.New("[addons.t3-done] every: want a positive duration")
+		}
+	}
+	return nil
 }
 
 // Ignored is one line per key the config file sets that bmesh no longer

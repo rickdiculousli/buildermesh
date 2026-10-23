@@ -120,6 +120,9 @@ func remindOnce(ctx context.Context, d Deps, q *web.Quota) {
 	}
 }
 
+// deliverTimeout is a reminder post's cap.
+const deliverTimeout = 10 * time.Second
+
 // postReminder posts r, scheduled for r.At unless that is under minAt from
 // now.
 func postReminder(ctx context.Context, target string, r Reminder, now time.Time) error {
