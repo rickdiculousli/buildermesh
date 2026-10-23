@@ -18,7 +18,6 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/hosts"
-	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 )
 
 const hostsUsage = "usage: bmesh hosts [--json] | hosts --here | hosts --notes | hosts invite <name> [--secure] [--accept a,b] [--replace] | " +
@@ -145,11 +144,7 @@ func (a *app) hostsHere() error {
 	if err := a.hereLine(); err != nil {
 		return err
 	}
-	if serve, ok := selfupdate.ReadProc(config.StateDir(), "serve"); ok {
-		if line := selfupdate.HubLine(config.StateDir(), serve); line != "" {
-			fmt.Fprintln(a.stdout, line)
-		}
-	}
+	a.hubLine()
 	return nil
 }
 

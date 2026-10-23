@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/daemon"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
+	"github.com/rickdiculousli/buildermesh/internal/upgrade"
 )
 
 // readBuildInfo is debug.ReadBuildInfo; tests give the binary a revision.
@@ -135,12 +139,16 @@ func restartCommand(goos string) string {
 	return "stop bmesh serve and start it again"
 }
 
-// restartLine prints, after update's own output, the restart this host's
-// daemon needs when its newest started names another revision than rev, the
-// binary now at the path. update never restarts it: a restart kills the
-// daemon's running jobs, and only its own drain hands them back. No hub, no
-// started for this host or a daemon of unknown revision: nothing.
-func (a *app) restartLine(rev string) {
+// restartLine prints, after update's own output, what this host's daemon
+// does about rev, the binary now at the path, when its newest started names
+// another revision: `this box's daemon restarts onto <rev8> within a
+// minute` when that daemon says it restarts itself (can "restarts") and
+// rev's walk, with main read from dir, is done (no notes pending), else
+// the restart it needs. update never restarts it: a restart from outside
+// kills the daemon's running jobs, and only its own drain hands them back.
+// No hub, no started for this host or a daemon of unknown revision:
+// nothing.
+func (a *app) restartLine(dir, rev string) {
 	ctx, cancel := context.WithTimeout(context.Background(), hintWait)
 	defer cancel()
 	if err := a.connect(ctx, "update"); err != nil {
@@ -149,6 +157,11 @@ func (a *app) restartLine(rev string) {
 	a.hint = "" // it compares this process's own revision, which the swap left behind
 	ev, ok, err := a.ownStarted(ctx)
 	if err != nil || !ok || ev.Text == "" || ev.Text == selfupdate.Unknown || selfupdate.Same(ev.Text, rev) {
+		return
+	}
+	if rev != "" && slices.Contains(ev.Can, daemon.CanRestart) &&
+		upgrade.Pending(config.StateDir(), selfupdate.Describe(dir, rev)) == "" {
+		fmt.Fprintf(a.stdout, "this box's daemon restarts onto %s within a minute\n", selfupdate.Short(rev))
 		return
 	}
 	fmt.Fprintf(a.stdout, "this box's daemon still runs %s; restart it so it runs %s: %s\n",

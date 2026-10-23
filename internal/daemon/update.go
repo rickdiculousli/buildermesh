@@ -26,8 +26,9 @@ func (d *Deps) revision() string {
 // announce runs once on start: when this host's newest update has no
 // started after it and named another revision than this one, that update
 // never came up, which it logs and pushes; then it publishes started with
-// the revision, its commit time as the body and, when it lands for its
-// box's leads, can ["land"].
+// the revision, its commit time as the body and in can "land" when it
+// lands for its box's leads and "restarts" when it restarts itself onto a
+// binary `bmesh update` swapped in (restartsItself).
 func announce(ctx context.Context, d Deps) {
 	upd, okU, err := mesh.Last(ctx, d.Client, mesh.DaemonSubject(d.Host, "update"))
 	if err != nil {
@@ -51,7 +52,10 @@ func announce(ctx context.Context, d Deps) {
 	}
 	ev := mesh.Event{From: d.from(), Event: "started", Text: d.revision(), Body: d.RevTime, At: d.Now().UTC().Format(time.RFC3339)}
 	if d.lands() {
-		ev.Can = []string{CanLand}
+		ev.Can = append(ev.Can, CanLand)
+	}
+	if restartsItself(d) {
+		ev.Can = append(ev.Can, CanRestart)
 	}
 	if err := mesh.PublishEvent(ctx, d.Client, ev); err != nil {
 		d.Log.Warn("started: publish", "err", err)

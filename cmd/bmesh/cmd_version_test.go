@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/daemon"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
@@ -559,5 +560,59 @@ func TestUpdateTaggedModuleInstall(t *testing.T) {
 	withTaggedInstall(t, "example.com/up", "v0.2.0")
 	if out, _, c := runCLI(t, nil, "update"); c != 0 || out != "up to date\n" {
 		t.Fatalf("current: code %d out %q", c, out)
+	}
+}
+
+// update says the daemon restarts itself onto the binary now at the path
+// only when that daemon's started says it can (can "restarts") and the
+// walk is done; an unfinished walk, or an older daemon, gets the restart
+// command.
+func TestUpdateSaysTheDaemonRestartsItself(t *testing.T) {
+	c, ctx := setup(t)
+	hub, err := os.ReadFile(os.Getenv("BMESH_CONFIG"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, shas, tags := notesBox(t)
+	f, err := os.OpenFile(os.Getenv("BMESH_CONFIG"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write(hub); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	asNewBinary(t)
+	withGOOS(t, "darwin")
+	started := func(can ...string) {
+		t.Helper()
+		if err := mesh.PublishEvent(ctx, c, mesh.Event{From: "daemon." + testHost, Event: "started", Text: shas[1], Body: "2026-10-14T09:00:00Z", Can: can}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	next := tags["v0.3.0"][:8]
+	restartBy := "this box's daemon still runs " + shas[1][:8] + "; restart it so it runs " + next + ": " + restartCommand("darwin") + "\n"
+	itself := "this box's daemon restarts onto " + next + " within a minute\n"
+
+	// The swap leaves the steps waiting: the daemon won't restart onto it.
+	started(daemon.CanLand, daemon.CanRestart)
+	withRevision(t, shas[1])
+	out, errOut, code := runCLI(t, nil, "update", "--defaults")
+	if code != 0 || !strings.Contains(out, "wait: run bmesh update --apply") || !strings.HasSuffix(out, restartBy) {
+		t.Fatalf("walk unfinished: code %d out %q err %q", code, out, errOut)
+	}
+	// The binary now at the path finishes the walk: the daemon will.
+	if err := os.WriteFile(filepath.Join(os.Getenv("XDG_STATE_HOME"), "bmesh", "ok"), []byte("ok\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withRevision(t, tags["v0.3.0"])
+	out, errOut, code = runCLI(t, nil, "update", "--apply")
+	if code != 0 || !strings.HasSuffix(out, "at v0.3.0\n"+itself) {
+		t.Fatalf("walk done: code %d out %q err %q", code, out, errOut)
+	}
+	// A daemon from before this change says nothing of restarting itself.
+	started(daemon.CanLand)
+	if out, errOut, code := runCLI(t, nil, "update"); code != 0 || out != "up to date\n"+restartBy {
+		t.Fatalf("older daemon: code %d out %q err %q", code, out, errOut)
 	}
 }
