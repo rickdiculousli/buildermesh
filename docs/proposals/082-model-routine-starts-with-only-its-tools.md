@@ -4,7 +4,7 @@ title: A model routine starts claude with only the tools its kind allows, and no
 kind: token-cost
 size: S
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: a234110b-dade-4827-b449-632e5de4650b
 proposed_on: 2026-10-18
@@ -12,6 +12,8 @@ built_by: ebc8e6f2-ef9f-48eb-8a65-d513339357c3
 host: k16
 family: buildermesh-build-13
 branch: bmesh/ebc8e6f2-ef9f-48eb-8a65-d513339357c3
+merged: 6064dfb3a7848f8aec4d830a3c5f0fc559eec056
+verified: verify ok t:beb11a61
 ---
 
 ## Opportunity
