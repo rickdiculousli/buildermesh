@@ -76,11 +76,6 @@ func landedIn(ctx context.Context, repo, rev string, into []string) (bool, error
 	return false, nil
 }
 
-// RemoveNodeWorktree removes n's worktree and the branch checked out there
-// (else the node's) on this box, self, and returns what it did, a line
-// each. It is refused (a *Refusal, nothing touched) when they are on
-// another host, the worktree is dirty or the branch has not landed in
-// main (an executor's: or in its parent's branch). A worktree already gone
 // NodeWorktreeLeft reports whether n's worktree is still on disk here and
 // its branch (the one checked out there, else the node's) still in its
 // repo, as RemoveNodeWorktree finds them.
@@ -101,6 +96,11 @@ func NodeWorktreeLeft(ctx context.Context, n mesh.Node) (worktree, branch bool) 
 	return worktree, repo != "" && b != "" && hasBranch(ctx, repo, b)
 }
 
+// RemoveNodeWorktree removes n's worktree and the branch checked out there
+// (else the node's) on this box, self, and returns what it did, a line
+// each. It is refused (a *Refusal, nothing touched) when they are on
+// another host, the worktree is dirty or the branch has not landed in
+// main (an executor's: or in its parent's branch). A worktree already gone
 // from disk is pruned.
 func RemoveNodeWorktree(ctx context.Context, n mesh.Node, nodes []mesh.Node, self string) ([]string, error) {
 	if n.Worktree == "" {
