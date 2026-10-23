@@ -441,15 +441,17 @@ It opens T3's database through `modernc.org/sqlite` (pure Go, so every OS builds
 | Table | Columns | Payload fields (`payload_json`) |
 |---|---|---|
 | `orchestration_v2_projection_threads` | `thread_id`, `project_id`, `title`, `deleted_at` | `createdBy`, `lineage.parentThreadId` |
-| `orchestration_v2_projection_runs` | `thread_id`, `provider_thread_id`, `status`, `completed_at` | |
+| `orchestration_v2_projection_runs` | `thread_id`, `ordinal`, `provider_thread_id`, `status`, `requested_at`, `completed_at` | `userMessageId` |
 | `orchestration_v2_projection_provider_threads` | `provider_thread_id` | `pendingBackgroundTasks` |
 | `orchestration_v2_projection_runtime_requests` | `thread_id`, `status`, `created_at` | |
-| `orchestration_v2_projection_messages` | `thread_id`, `role`, `created_at` | `text` |
+| `orchestration_v2_projection_messages` | `message_id`, `thread_id`, `role`, `created_at` | `text`, `notification` |
 | `projection_projects` | `project_id`, `title` | |
 
-The start-of-read check runs `pragma_table_info` on each table and `json_type` of each field on its table's newest row (by rowid; for messages, the newest `assistant` one). An empty table passes.
+The start-of-read check runs `pragma_table_info` on each table and `json_type` of each field on its table's newest row (by rowid; for messages, the newest `assistant` one, and not `notification`, which only a wake-up's message carries). An empty table passes.
 
 **The rule for done.** Every turn end is a run row whose `completed_at` is set, a wake-up included: a message whose `notification.source.kind` is `background_task` starts a new run. What tells them apart is the run's provider thread (`provider_thread_id`): its `pendingBackgroundTasks` still lists the task while it runs, and T3 clears it as soon as the task ends. T3's API (`t3_thread_read`, `t3_thread_list`) doesn't return that field, so the add-on reads the database. A run posts done when `status` is `completed` and `json_array_length(pendingBackgroundTasks)` is 0 (no provider thread counts as 0); failed when `status` is `failed`, whatever is pending. The list is read when the run is read, within a tick of its end.
+
+**Busy.** A done posts only when `completed_at` minus the stretch's start is at least `min_busy`. The stretch starts at the `requested_at` of the newest run of the thread, at or before this one by `ordinal`, whose `userMessageId` message has no `notification` (a person's message, not a background task's; a message not found counts as a person's).
 
 **Rows read.** Runs with `completed_at` after the `runs` mark, and requests with `status = 'pending'` and `created_at` after the `requests` mark, oldest first, each joined to its thread where `deleted_at` is null, `lineage.parentThreadId` is null and `createdBy` isn't `agent`. The reply is the thread's newest `assistant` message created at or before the row's time. A mark is T3's own timestamp (`2006-01-02T15:04:05.000Z`, compared as text), written after each row through a temp file and a rename.
 

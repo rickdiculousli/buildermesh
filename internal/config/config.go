@@ -224,10 +224,12 @@ var AddonNames = []string{"t3-done"}
 
 // T3DoneConfig is [addons.t3-done]: Ntfy is the ntfy URL with its topic it
 // posts to (required when enabled), Every how often it looks at T3's
-// database.
+// database, MinBusy how long a thread must have been busy for its done to
+// post (0 = every done).
 type T3DoneConfig struct {
-	Ntfy  string
-	Every time.Duration
+	Ntfy    string
+	Every   time.Duration
+	MinBusy time.Duration
 }
 
 // Config is the parsed config.toml plus the registry read from repos.toml
@@ -340,8 +342,9 @@ type file struct {
 	Addons struct {
 		Enable []string
 		T3Done struct {
-			Ntfy  string
-			Every duration
+			Ntfy    string
+			Every   duration
+			MinBusy duration `toml:"min_busy"`
 		} `toml:"t3-done"`
 	}
 }
@@ -363,7 +366,7 @@ func defaults() *Config {
 		Status:   StatusConfig{KeepDone: 24 * time.Hour},
 		Routines: RoutinesConfig{KeepResults: 30 * 24 * time.Hour},
 		Update:   UpdateConfig{CheckEvery: 6 * time.Hour, Track: "release"},
-		Addons:   AddonsConfig{T3Done: T3DoneConfig{Every: 5 * time.Second}},
+		Addons:   AddonsConfig{T3Done: T3DoneConfig{Every: 5 * time.Second, MinBusy: 5 * time.Minute}},
 	}
 }
 
@@ -383,7 +386,7 @@ func (c *Config) file() file {
 	f.Status.KeepDone = duration(c.Status.KeepDone)
 	f.Routines.KeepResults = duration(c.Routines.KeepResults)
 	f.Addons.Enable = c.Addons.Enable
-	f.Addons.T3Done.Ntfy, f.Addons.T3Done.Every = c.Addons.T3Done.Ntfy, duration(c.Addons.T3Done.Every)
+	f.Addons.T3Done.Ntfy, f.Addons.T3Done.Every, f.Addons.T3Done.MinBusy = c.Addons.T3Done.Ntfy, duration(c.Addons.T3Done.Every), duration(c.Addons.T3Done.MinBusy)
 	return f
 }
 
@@ -551,7 +554,7 @@ func Load(path string) (*Config, error) {
 		}
 	}
 	c.Addons = AddonsConfig{Enable: f.Addons.Enable,
-		T3Done: T3DoneConfig{Ntfy: f.Addons.T3Done.Ntfy, Every: time.Duration(f.Addons.T3Done.Every)}}
+		T3Done: T3DoneConfig{Ntfy: f.Addons.T3Done.Ntfy, Every: time.Duration(f.Addons.T3Done.Every), MinBusy: time.Duration(f.Addons.T3Done.MinBusy)}}
 	if err := c.Addons.check(); err != nil {
 		return nil, fmt.Errorf("config %s: %w", path, err)
 	}
@@ -580,6 +583,8 @@ func (a AddonsConfig) check() error {
 			return errors.New("[addons.t3-done] ntfy is empty: t3-done needs the ntfy URL with its topic it posts to")
 		case a.T3Done.Every <= 0:
 			return errors.New("[addons.t3-done] every: want a positive duration")
+		case a.T3Done.MinBusy < 0:
+			return errors.New("[addons.t3-done] min_busy: want a duration of 0 or more")
 		}
 	}
 	return nil

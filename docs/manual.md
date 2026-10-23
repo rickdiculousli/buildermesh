@@ -3379,6 +3379,7 @@ enable = []                                 # the add-ons serve runs here: t3-do
 [addons.t3-done]
 ntfy = ""                                   # the ntfy URL with its topic it posts to ("http://k16:2586/t3"); required when enabled; never [notify]'s
 every = "5s"                                # how often it looks at T3's database
+min_busy = "5m"                             # a done posts only when the thread was busy at least this long; "0s" = every done
 ```
 
 #### State dir
@@ -3505,17 +3506,19 @@ enable = ["t3-done"]
 [addons.t3-done]
 ntfy = "http://k16:2586/t3"                 # required: enabling t3-done without it is a config error
 every = "5s"
+min_busy = "5m"                             # the default; "0s" posts every done
 ```
 
 Turning it on never starts the `[notify]` digest or pushes. It reads this box's T3 database, `~/.t3/userdata/statev2.sqlite`, read-only. Each tick (`every`) it compares the database file's and its `-wal` file's modification time and size with the last read, and reads only when either changed, so an idle T3 costs one file check per tick.
 
 | What happens | Posts | Tag |
 |---|---|---|
-| A run ends `completed` and the thread has no background task pending | done | `white_check_mark` |
+| A run ends `completed`, the thread has no background task pending, and it was busy at least `min_busy` | done | `white_check_mark` |
 | A run ends `failed` | failed | `x` |
 | A runtime request (a question to you) turns `pending` | asking for input | `raising_hand` |
 
 - **Not posted:** a run that ends `interrupted`, `cancelled` or `rolled_back`, and a run that ends `completed` while a background task (a monitor, a background command) is still pending. That run is a wake-up, not the end: a coordinator waiting on `bmesh watch` posts nothing until its watch ends and it reports. A thread whose background task ends without a new run stays silent until its next turn.
+- **Busy long enough:** a done posts only when the thread was busy at least `min_busy` (default `5m`), so a quick back-and-forth you're watching never pushes. Busy runs from your last message to the end of the run, so a turn a background task woke counts from the ask that armed the task, wait included. A negative `min_busy` is a config error. Failed and asking post however short.
 - **Which threads:** top-level threads a person started. Threads with a parent (a delegated child) and threads an agent created (bmesh's leads and rounds, which push on their own) never post.
 - **Title:** the thread's title.
 - **Body:** `done in <project> on <box>: <the start of the last assistant reply>`, likewise `failed in …` and `asking for input in …`. The reply is put on one line and cut to 140 characters with `…`. There's no `in <project>` without a project and no `: …` without a reply.

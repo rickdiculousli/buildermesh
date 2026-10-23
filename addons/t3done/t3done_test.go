@@ -94,17 +94,31 @@ func (f *fixture) pending(thread, tasks string) {
 		`{"id":"pt-`+thread+`","status":"idle","pendingBackgroundTasks":`+tasks+`}`, "pt-"+thread)
 }
 
-// run adds thread's run n, ended status at s seconds, its assistant reply
-// just before.
+// run adds thread's run n, started by a person 5 s before it ended status
+// at s seconds, its assistant reply just before the end.
 func (f *fixture) run(thread string, n int, status string, s int, reply string) {
 	f.t.Helper()
+	f.turn(thread, n, status, s-5, s, reply, false)
+}
+
+// turn adds thread's run n, requested at from seconds and ended status at
+// to, with the user message that started it (a background task's
+// notification when wake) and its assistant reply just before the end.
+func (f *fixture) turn(thread string, n int, status string, from, to int, reply string, wake bool) {
+	f.t.Helper()
 	id := "run:thread:" + thread + ":ordinal:" + string(rune('0'+n))
+	user := `{"role":"user","text":"go"}`
+	if wake {
+		user = `{"role":"user","text":"Background task completed.","notification":{"source":{"kind":"background_task"}}}`
+	}
+	f.exec(`insert into orchestration_v2_projection_messages (message_id, thread_id, run_id, role, streaming, created_at,
+  updated_at, payload_json) values (?, ?, ?, 'user', 0, ?, ?, ?)`, "u-"+id, thread, id, f.at(from), f.at(from), user)
 	f.exec(`insert into orchestration_v2_projection_messages (message_id, thread_id, run_id, role, streaming, created_at,
   updated_at, payload_json) values (?, ?, ?, 'assistant', 0, ?, ?, json_object('role', 'assistant', 'text', ?))`,
-		"m-"+id, thread, id, f.at(s), f.at(s), reply)
+		"m-"+id, thread, id, f.at(to), f.at(to), reply)
 	f.exec(`insert into orchestration_v2_projection_runs (run_id, thread_id, ordinal, provider, provider_thread_id, status,
-  requested_at, completed_at, payload_json) values (?, ?, ?, 'claudeAgent', ?, ?, ?, ?, json_object('status', ?))`,
-		id, thread, n, "pt-"+thread, status, f.at(s-5), f.at(s), status)
+  requested_at, completed_at, payload_json) values (?, ?, ?, 'claudeAgent', ?, ?, ?, ?, json_object('status', ?, 'userMessageId', ?))`,
+		id, thread, n, "pt-"+thread, status, f.at(from), f.at(to), status, "u-"+id)
 }
 
 // request adds a runtime request of thread with status at s seconds.
@@ -177,6 +191,37 @@ func TestRunWithAPendingMonitorIsAWakeUp(t *testing.T) {
 	if p := f.wantPosts(1)[0]; !strings.HasPrefix(p, "Build 085\ndone in party-buzzer on k16: 085 landed.\n") {
 		t.Fatalf("post %q", p)
 	}
+}
+
+func TestADoneUnderMinBusyIsQuiet(t *testing.T) {
+	f := newFixture(t)
+	f.w.d.MinBusy = 5 * time.Minute
+	f.thread("t1", "One", "user", "")
+	f.tick()
+	f.run("t1", 1, "completed", 10, "quick")
+	f.tick()
+	f.wantPosts(0)
+	f.turn("t1", 2, "completed", 20, 320, "long", false)
+	f.tick()
+	if p := f.wantPosts(1)[0]; !strings.HasPrefix(p, "One\ndone in party-buzzer on k16: long\n") {
+		t.Fatalf("post %q", p)
+	}
+	// A person's ask that armed a monitor, then a quick wake-up: busy from
+	// the ask, so it posts.
+	f.pending("t1", `[{"taskId":"m","kind":"command"}]`)
+	f.turn("t1", 3, "completed", 400, 410, "watching", false)
+	f.tick()
+	f.pending("t1", `[]`)
+	f.turn("t1", 4, "completed", 700, 710, "landed", true)
+	f.tick()
+	if p := f.wantPosts(2)[1]; !strings.HasPrefix(p, "One\ndone in party-buzzer on k16: landed\n") {
+		t.Fatalf("post %q", p)
+	}
+	// Failures and questions post however short.
+	f.run("t1", 5, "failed", 800, "")
+	f.request("t1", "q1", "pending", 801)
+	f.tick()
+	f.wantPosts(4)
 }
 
 func TestFailedPostsInterruptedDoesntRequestAsks(t *testing.T) {

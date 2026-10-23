@@ -29,8 +29,9 @@ type Deps struct {
 	State     string        // the directory the marks live in
 	Every     time.Duration // the tick
 	Post      func(ctx context.Context, h notify.Headers, body string) error
-	Host      string // the box, as the body names it
-	ThreadURL string // the thread link template ([console] thread_url); "" = no Click
+	Host      string        // the box, as the body names it
+	ThreadURL string        // the thread link template ([console] thread_url); "" = no Click
+	MinBusy   time.Duration // a done whose thread was busy less than this posts nothing
 	Log       *slog.Logger
 	Now       func() time.Time
 }
@@ -44,7 +45,7 @@ func DefaultDB() string {
 // Run is the add-on as serve starts it: Watch on this box's T3 database,
 // posting to [addons.t3-done] ntfy, its marks in stateDir.
 func Run(ctx context.Context, cfg *config.Config, host, stateDir string, log *slog.Logger) {
-	d := Deps{DB: DefaultDB(), State: stateDir, Every: cfg.Addons.T3Done.Every,
+	d := Deps{DB: DefaultDB(), State: stateDir, Every: cfg.Addons.T3Done.Every, MinBusy: cfg.Addons.T3Done.MinBusy,
 		Post: notify.Target{Ntfy: cfg.Addons.T3Done.Ntfy}.Post, Host: host, ThreadURL: cfg.Console.ThreadURL, Log: log, Now: time.Now}
 	log.Info("t3-done: watching", "db", d.DB, "ntfy", cfg.Addons.T3Done.Ntfy)
 	Watch(ctx, d)
@@ -149,10 +150,10 @@ var columns = []struct {
 	cols  []string
 }{
 	{threads, []string{"thread_id", "project_id", "title", "deleted_at", "payload_json"}},
-	{runs, []string{"thread_id", "provider_thread_id", "status", "completed_at"}},
+	{runs, []string{"thread_id", "ordinal", "provider_thread_id", "status", "requested_at", "completed_at", "payload_json"}},
 	{providers, []string{"provider_thread_id", "payload_json"}},
 	{requests, []string{"thread_id", "status", "created_at"}},
-	{messages, []string{"thread_id", "role", "created_at", "payload_json"}},
+	{messages, []string{"message_id", "thread_id", "role", "created_at", "payload_json"}},
 	{projects, []string{"project_id", "title"}},
 }
 
@@ -161,6 +162,7 @@ var columns = []struct {
 var fields = []struct{ table, where, path string }{
 	{threads, "1", "$.createdBy"},
 	{threads, "1", "$.lineage.parentThreadId"},
+	{runs, "1", "$.userMessageId"},
 	{providers, "1", "$.pendingBackgroundTasks"},
 	{messages, "role = 'assistant'", "$.text"},
 }
@@ -216,28 +218,35 @@ const own = `t.deleted_at is null
   and coalesce(json_extract(t.payload_json, '$.createdBy'), '') != 'agent'`
 
 // event is one row read: its time (the mark it moves to), what it posts
-// ("" = nothing) and the thread's.
+// ("" = nothing), the thread's, and when the thread's busy stretch began
+// (the row's own time for a request).
 type event struct {
-	at, kind, thread, title, project string
+	at, kind, thread, title, project, since string
 }
 
 // queries read each kind's rows after its mark, oldest first.
 var queries = []struct{ mark, sql string }{
 	// A run that ends completed while its provider thread still lists a
 	// pending background task (a monitor, a background command) is a
-	// wake-up, not the end: T3 shows the thread waiting.
+	// wake-up, not the end: T3 shows the thread waiting. The busy stretch
+	// begins at the newest run up to this one that a person's message
+	// started, not a background task's notification.
 	{"runs", `select r.completed_at,
     case when r.status = 'failed' then 'failed'
       when r.status = 'completed' and coalesce(json_array_length(pt.payload_json, '$.pendingBackgroundTasks'), 0) = 0 then 'done'
       else '' end,
-    t.thread_id, t.title, coalesce(p.title, '')
+    t.thread_id, t.title, coalesce(p.title, ''),
+    coalesce((select max(r2.requested_at) from ` + runs + ` r2
+      left join ` + messages + ` m on m.message_id = json_extract(r2.payload_json, '$.userMessageId')
+      where r2.thread_id = r.thread_id and r2.ordinal <= r.ordinal
+        and json_extract(m.payload_json, '$.notification') is null), r.requested_at)
   from ` + runs + ` r
   join ` + threads + ` t on t.thread_id = r.thread_id
   left join ` + projects + ` p on p.project_id = t.project_id
   left join ` + providers + ` pt on pt.provider_thread_id = r.provider_thread_id
   where r.completed_at > ? and ` + own + `
   order by r.completed_at`},
-	{"requests", `select q.created_at, 'asking', t.thread_id, t.title, coalesce(p.title, '')
+	{"requests", `select q.created_at, 'asking', t.thread_id, t.title, coalesce(p.title, ''), q.created_at
   from ` + requests + ` q
   join ` + threads + ` t on t.thread_id = q.thread_id
   left join ` + projects + ` p on p.project_id = t.project_id
@@ -271,6 +280,9 @@ func (w *watcher) readOnce(ctx context.Context) error {
 			return fmt.Errorf("read %s: %w", q.mark, err)
 		}
 		for _, ev := range evs {
+			if ev.kind == "done" && busy(ev) < w.d.MinBusy {
+				ev.kind = ""
+			}
 			if ev.kind != "" {
 				var reply string
 				err := db.QueryRowContext(ctx, `select coalesce(json_extract(payload_json, '$.text'), '') from `+messages+`
@@ -303,12 +315,23 @@ func scan(ctx context.Context, db *sql.DB, query, mark string) ([]event, error) 
 	var evs []event
 	for rows.Next() {
 		var ev event
-		if err := rows.Scan(&ev.at, &ev.kind, &ev.thread, &ev.title, &ev.project); err != nil {
+		if err := rows.Scan(&ev.at, &ev.kind, &ev.thread, &ev.title, &ev.project, &ev.since); err != nil {
 			return nil, err
 		}
 		evs = append(evs, ev)
 	}
 	return evs, rows.Err()
+}
+
+// busy is how long ev's thread was busy: from its stretch's start to the
+// row's time. A time that doesn't parse counts as busy for long.
+func busy(ev event) time.Duration {
+	from, err1 := time.Parse(time.RFC3339Nano, ev.since)
+	to, err2 := time.Parse(time.RFC3339Nano, ev.at)
+	if err1 != nil || err2 != nil {
+		return time.Duration(1<<63 - 1)
+	}
+	return to.Sub(from)
 }
 
 // dsn opens path read-only, waiting up to 2 s on T3's writes.

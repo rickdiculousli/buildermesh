@@ -322,7 +322,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 
 | Add-on | Config |
 |---|---|
-| [`t3-done`](docs/manual.md#t3-done): pushes when a T3 thread you started here is done, failed or asking | `[addons] enable = ["t3-done"]` · `[addons.t3-done] ntfy = URL [every = 5s]` |
+| [`t3-done`](docs/manual.md#t3-done): pushes when a T3 thread you started here is done, failed or asking | `[addons] enable = ["t3-done"]` · `[addons.t3-done] ntfy = URL [every = 5s] [min_busy = 5m]` |
 
 ## What's inside
 
