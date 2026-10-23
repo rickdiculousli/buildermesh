@@ -20,27 +20,27 @@ The binary takes only explicit ids and verdict flags, and applies them as given.
 
 **`bmesh choose-ideas <repo> [--accept IDS] [--later IDS] [--reject IDS[=reason]]... [--adjust NNN=instruction]... [--judge IDS=fable|opus|sonnet]...`**
 
-- `IDS` is a comma list of three-digit spec ids (`012,014`), or `all`, meaning every spec whose status on levelled `main` is `proposed`. `all` comes from the ledger alone, never from the mesh, so `--accept all` works with no round, no mesh and no pitch.
+- `IDS` is a comma list of three-digit spec ids (`012,014`) and nothing else: no `all`, no positions, no ranges. The binary never decides which specs a word covers.
 - `--reject` and `--adjust` repeat; the text after `=` is the reason or the instruction, kept as written. `--judge` repeats and sets `judge` with or without a move.
 - Every value is checked before anything is written. Nothing lands, with exit 2 and every problem listed on one line each, if: an id isn't in the ledger; a spec isn't `proposed`, `later` or `adjusting`; one spec gets two moves; a judge isn't one of the three; or no flag was given. There is no `unmatched:`, no "last clause wins" and no partial landing.
 - Everything else stays as it is: levelling `main`, the review worktree, the command-clash warnings, the `Review: ...` commit, the push and the per-spec output lines. The output loses only the `note: ... spec ids only` and `unmatched:` lines.
 
 Out: `ParseReply`, `PitchRanks`, `latestRanks`, the reply grammar, its tests and the manual's grammar section are deleted, not kept beside the new form. A positional reply argument is refused with usage (exit 2). `bmesh spec set` is unchanged.
 
-**The skills.** `choose-ideas` (and the reply paragraphs in `ideate-engineer` and `ideate-ux`) say that the agent maps the operator's words to flags itself. A position like `1 and 3` is the pitch line the operator is looking at, and pitch lines start with their ids. `all`, `everything` or `the lot` is `all`. `smaller` and other non-verdict words become an `--adjust` instruction. Then it runs the command without confirming. It asks one line only when the words can't be mapped to an id at all, for example when no pitch or list is in this conversation and the operator gave positions. "accept all" never produces a question.
+**The skills.** `choose-ideas` (and the reply paragraphs in `ideate-engineer` and `ideate-ux`) say that the agent maps the operator's words to flags itself. A position like `1 and 3` is that line of the pitch or list shown in this conversation, and pitch lines start with their ids. "all" or "everything" is every id of that pitch or list and nothing more. A `proposed` spec that never came up in the conversation is never swept in. `smaller` and other non-verdict words become an `--adjust` instruction. The agent then runs the command without confirming. It asks only when the words can't be tied to ids discussed here, for example "accept all" in a session that showed no pitch. It asks in one line, listing the open specs from `bmesh spec list --status proposed`, so the reply can be ids.
 
 Judge: opus, because the deletion crosses the spec package, the command, three skills and the manual, and the skills' mapping rules are what keep the agent from asking questions.
 
 ## What you'll see
-`accept all` → `bmesh choose-ideas buildermesh --accept all` → `090 ...: proposed -> accepted` and `landed <sha8> on main: Review: 090 accepted`, with no question asked and nothing depending on a round. `1 and 3 yes, 2 smaller` after a pitch of 091 to 093 becomes `--accept 091,093 --adjust "092=smaller"`. A typo'd id refuses the whole review, naming the id, and nothing lands.
+After a pitch of 091 to 095 in this session, `accept all` becomes `bmesh choose-ideas buildermesh --accept 091,092,093,094,095`, with no question asked, and 096, proposed elsewhere and never discussed, stays `proposed`. `1 and 3 yes, 2 smaller` after a pitch of 091 to 093 becomes `--accept 091,093 --adjust "092=smaller"`. A typo'd id refuses the whole review, naming the id, and nothing lands.
 
 ## Verification
-The repo's verify commands. Table tests through the command (`cmd/bmesh/cmd_spec_test.go`) for: `all` with no mesh; each refusal (unknown id, wrong status, two moves, bad judge, no flags, a positional reply) leaving `main` untouched; reject with and without a reason; adjust writing the `Adjust (<date>):` note; judge alone; and the clash warning still printed. `grep -rn "ParseReply\|PitchRanks\|latestRanks" .` returns nothing. The manual section, the README index row and `bmesh help` show the new synopsis.
+The repo's verify commands. Table tests through the command (`cmd/bmesh/cmd_spec_test.go`) for: ids accepted with no mesh; `all` refused as an unknown id; each refusal (unknown id, wrong status, two moves, bad judge, no flags, a positional reply) leaving `main` untouched; reject with and without a reason; adjust writing the `Adjust (<date>):` note; judge alone; and the clash warning still printed. `grep -rn "ParseReply\|PitchRanks\|latestRanks" .` returns nothing. The manual section, the README index row and `bmesh help` show the new synopsis.
 
 ## Risks and the alternative considered
 - **The agent maps a position wrongly.** Pitch lines start with ids, and the per-spec output names each spec's title, so a wrong mapping shows up in the report. Today's binary can make the same mistake with mesh state, and nobody can see it happening.
 - **Considered:** keeping the grammar and teaching it `all` without a pitch. That fixes the one refusal and keeps the 460-line parser and its long run of fixes going.
-- **Considered:** making `all` mean `proposed`, `later` and `adjusting`. Rejected: `later` was a deliberate deferral and `adjusting` is waiting on rework, so "accept all" right after a pitch means the proposed ones. To take the others, name their ids.
+- **Considered:** an `all` keyword meaning every `proposed` spec. Rejected: it would accept specs the operator never saw (another round's, one written in another session). "all" means what was discussed, which only the agent in the conversation knows.
 
 ## Upgrading
 Any script or saved prompt calling `bmesh choose-ideas <repo> "<reply>"` must switch to the flags. The old form is refused with usage (exit 2), and the plugin's skills change in the same release.
