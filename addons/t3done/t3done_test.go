@@ -59,7 +59,9 @@ func newFixture(t *testing.T) *fixture {
 }
 
 // at is a T3 time s seconds after the fixture's now.
-func (f *fixture) at(s int) string { return f.now.Add(time.Duration(s) * time.Second).Format(stampLayout) }
+func (f *fixture) at(s int) string {
+	return f.now.Add(time.Duration(s) * time.Second).Format(stampLayout)
+}
 
 func (f *fixture) exec(q string, args ...any) {
 	f.t.Helper()
@@ -82,7 +84,7 @@ func (f *fixture) thread(id, title, createdBy, parent string) {
   interaction_mode, created_at, updated_at, payload_json) values (?, 'p1', ?, 'claudeAgent', 'auto', 'default', ?, ?, ?)`,
 		id, title, f.at(-30), f.at(-30), payload)
 	f.exec(`insert into orchestration_v2_projection_provider_threads (provider_thread_id, thread_id, provider, status, updated_at,
-  payload_json) values (?, ?, 'claudeAgent', 'idle', ?, '{"id":"pt-` + id + `","status":"idle","pendingBackgroundTasks":[]}')`,
+  payload_json) values (?, ?, 'claudeAgent', 'idle', ?, '{"id":"pt-`+id+`","status":"idle","pendingBackgroundTasks":[]}')`,
 		"pt-"+id, id, f.at(-30))
 }
 
