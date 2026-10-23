@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/gitwork"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 	"github.com/rickdiculousli/buildermesh/internal/upgrade"
@@ -101,7 +102,7 @@ func (a *app) cmdRelease(args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
-	ref, origin := "main", hasOrigin(ctx, repoPath)
+	ref, origin := "main", gitwork.HasOrigin(ctx, repoPath)
 	if origin {
 		if _, err := gitIn(ctx, repoPath, "fetch", "--quiet", "--tags", "origin"); err != nil {
 			return err

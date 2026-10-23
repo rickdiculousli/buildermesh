@@ -66,6 +66,9 @@ type hostsNode struct {
 	cfg        *config.Config // the daemon's config with the newest registry's rows; nil = d.Cfg (under mu)
 	cfgVersion int64          // the registry version cfg's rows are from (under mu)
 	regRefused int64          // the last registry version refused and pushed
+
+	scaffoldMu    sync.Mutex  // scaffolded.json
+	rescaffolding atomic.Bool // a rescaffold is running
 }
 
 // hostsRun runs the hosts layer until ctx ends: it syncs the roster and

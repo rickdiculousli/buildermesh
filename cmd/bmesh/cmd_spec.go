@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -12,6 +11,8 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/brief"
+	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/gitwork"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
@@ -207,7 +208,7 @@ func (a *app) ledgerRepoNamed(ctx context.Context, repo string) (name, path stri
 // after a fetch when the repo has an origin, else the checkout's ledger.
 func (a *app) mainHighest(ctx context.Context, repoPath string) (int, error) {
 	read := func() ([]*spec.Spec, error) { return spec.Scan(repoPath, a.cfg.Spec.Glob) }
-	if hasOrigin(ctx, repoPath) {
+	if gitwork.HasOrigin(ctx, repoPath) {
 		if _, err := gitIn(ctx, repoPath, "fetch", "--quiet", "origin", "main"); err == nil {
 			read = func() ([]*spec.Spec, error) { return spec.ScanRef(repoPath, a.cfg.Spec.Glob, "origin/main") }
 		}
@@ -372,58 +373,24 @@ func (a *app) cmdChooseIdeas(args []string) error {
 	return nil
 }
 
-// editOnMain levels the repo's main, makes a bmesh worktree from it on a
-// one-off branch, `<repo token>-<what>-<hex>`, and runs edit there. When
-// edit returns a commit message, it commits the ledger's changes,
-// fast-forwards main and pushes, returning the commit; "" when edit had
-// nothing to land. The worktree always goes; the branch goes with it
-// unless it holds a commit that did not land, which is kept and named.
+// editOnMain lands a ledger edit on main with gitwork.EditOnMain: a bmesh
+// worktree from levelled main on a one-off branch, `<repo token>-<what>-
+// <hex>`, where edit runs. When edit returns a commit message, the spec
+// dir's changes are committed, checked, pushed and fast-forwarded onto
+// main, returning the commit; "" when edit had nothing to land. A refusal
+// keeps a commit that did not land on its branch and names it.
 func (a *app) editOnMain(ctx context.Context, name, repoPath, what string, edit func(wt string) (string, error)) (string, error) {
-	if err := levelMain(ctx, repoPath); err != nil {
-		return "", fail(exitRefused, "refused: %v", err)
-	}
-	tag, err := shortHex()
-	if err != nil {
-		return "", err
-	}
-	branch := mesh.RepoToken(name) + "-" + what + "-" + tag
-	wt := filepath.Join(a.cfg.Expand(a.cfg.Runner.Worktrees), name, branch)
-	if err := addWorktree(ctx, repoPath, wt, branch, "main"); err != nil {
-		return "", err
-	}
-	committed, landed := false, false
-	defer func() {
-		keep := committed && !landed
-		if err := removeWorktree(ctx, repoPath, wt, branch, keep); err != nil {
-			fmt.Fprintf(a.stderr, "bmesh: %v\n", err)
-		}
-	}()
-	msg, err := edit(wt)
-	if err != nil || msg == "" {
-		return "", err
-	}
-	if _, err := gitIn(ctx, wt, "add", "-A", "--", spec.Dir(a.cfg.Spec.Glob)); err != nil {
-		return "", err
-	}
-	if _, err := gitIn(ctx, wt, "-c", "user.name=bmesh", "-c", "user.email=bmesh@localhost", "commit", "-q", "-m", msg); err != nil {
-		return "", err
-	}
-	committed = true
-	sha, err := gitIn(ctx, wt, "rev-parse", "HEAD")
-	if err != nil {
-		return "", err
-	}
-	if err := a.checkLedger(wt); err != nil {
-		return "", err
-	}
-	if err := a.landOnMain(ctx, repoPath, branch); err != nil {
-		return "", fail(exitRefused, "refused: %v; the %s is committed on branch %s", err, what, branch)
-	}
-	landed = true
-	if err := pushMain(ctx, repoPath); err != nil {
-		return "", err
-	}
-	return sha, nil
+	dir := spec.Dir(a.cfg.Spec.Glob)
+	return gitwork.EditOnMain(ctx, gitwork.Edit{
+		Repo: name, RepoPath: repoPath, What: what,
+		Worktrees: a.cfg.Expand(a.cfg.Runner.Worktrees),
+		Lock:      gitwork.RepoLock(a.cfg, config.StateDir(), repoPath),
+		Check:     a.checkLedger,
+		Warn:      func(err error) { fmt.Fprintf(a.stderr, "bmesh: %v\n", err) },
+	}, func(wt string) (string, []string, error) {
+		msg, err := edit(wt)
+		return msg, []string{dir}, err
+	})
 }
 
 // applyReview parses reply against the ledger in wt and applies it; it
@@ -640,21 +607,4 @@ func (a *app) cmdSpecVerified(args []string) error {
 	}
 	fmt.Fprintf(a.stdout, "wrote %s\n", hits[0])
 	return nil
-}
-
-// removeWorktree drops a bmesh worktree, whatever its state, and its
-// branch unless keepBranch (the branch is the caller's to judge: a landed
-// one is merged into main, an abandoned one holds nothing).
-func removeWorktree(ctx context.Context, repoPath, wt, branch string, keepBranch bool) error {
-	if _, err := os.Stat(wt); err == nil {
-		if _, err := gitIn(ctx, repoPath, "worktree", "remove", "--force", wt); err != nil {
-			return err
-		}
-	}
-	_, _ = gitIn(ctx, repoPath, "worktree", "prune")
-	if keepBranch {
-		return nil
-	}
-	_, err := gitIn(ctx, repoPath, "branch", "-D", branch)
-	return err
 }

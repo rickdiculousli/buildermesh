@@ -42,6 +42,8 @@ In:
 - **A row whose host has no checkout** gets one push per version: `<host>: registry v<N> changes <repo>'s scaffold but <path> has no checkout; run bmesh scaffold <repo> where it has one`.
 - **Docs.** The manual's registry section (and internals: `scaffolded.json` in the state dir), after "Every daemon re-reads the hub's registry each minute", and `bmesh scaffold` (rescaffolding by hand after a publish is no longer needed). The `scaffold` and `build` skills. The procedure line in 043 and 070 ("then `bmesh scaffold <repo>` and commit and push") is removed from the template's guidance and the manual.
 
+As built: the move is `internal/gitwork` (`EditOnMain`, `LevelMain`, `AddWorktree`, `RemoveWorktree`, `LandOnMain`, `RepoLock`), and `bmesh build`'s `recordOnMain`, a copy of `editOnMain`, now goes through it. `EditOnMain` holds the repo lock from the level to the landing and pushes `HEAD:refs/heads/main` before it fast-forwards the checkout's `main`, as `land` does, so a refused push leaves local `main` level and the next minute's retry starts clean; the daemon drops the branch of a commit that didn't land. The rescaffold writes only the targets of the fields that changed (`scaffold.Follow`). A retried failure's event carries the body `failed v<N> again`, which the push claim skips.
+
 Out:
 - Rescaffolding lead branches in flight. `land` compares only what a branch changed (043), so a mid-build publish never refuses a landing, and the branch picks up the new files when it rebases onto `main`.
 - `AGENTS.md` (the done, mesh and proposals blocks), a repo's first scaffold, and `fork` or other non-`ship` rows.

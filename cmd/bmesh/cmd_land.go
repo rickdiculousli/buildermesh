@@ -23,6 +23,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/checkout"
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/daemon"
+	"github.com/rickdiculousli/buildermesh/internal/gitwork"
 	"github.com/rickdiculousli/buildermesh/internal/instance"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/merge"
@@ -395,7 +396,7 @@ func (l *lander) prepare(ctx context.Context) error {
 	if err := l.mail(ctx, l.waited == ""); err != nil {
 		return err
 	}
-	l.origin = hasOrigin(ctx, l.top)
+	l.origin = gitwork.HasOrigin(ctx, l.top)
 	l.base = "main"
 	if l.origin {
 		l.base = "origin/main"

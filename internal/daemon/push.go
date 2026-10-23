@@ -311,9 +311,9 @@ func pushable(d Deps, subject string) (path, event string, ok bool) {
 }
 
 // hostsEvents are the daemon events of the hosts layer the phone hears:
-// a refused job (019), a hold and a level's unanswered refusal (020), and
-// a registry this binary can't read (023).
-var hostsEvents = []string{"refused", "held", "level", "registry"}
+// a refused job (019), a hold and a level's unanswered refusal (020), a
+// registry this binary can't read (023) and a rescaffold's outcome (074).
+var hostsEvents = []string{"refused", "held", "level", "registry", "scaffold"}
 
 // hostsEvent splits a bm.daemon.<host>.<event> subject of hostsEvents.
 func hostsEvent(subject string) (host, event string, ok bool) {
@@ -370,17 +370,24 @@ func pushRefused(ctx context.Context, d Deps, s mesh.Stored, path string, jobs c
 	}
 }
 
-// pushHostsEvent claims a daemon's held, level or registry event s, once:
-// a hold (title its text, `ricks-macbook holds: pstack-claude +3 commits
-// (k16)`), a level's refusal or failure no caller waited for, or a
-// registry the box refused.
+// pushHostsEvent claims a daemon's held, level, registry or scaffold event
+// s, once: a hold (title its text, `ricks-macbook holds: pstack-claude +3
+// commits (k16)`), a level's refusal or failure no caller waited for, a
+// registry the box refused, or a rescaffold's outcome (a failure only the
+// first time for its registry version: a retry's body ends ` again`).
 func pushHostsEvent(ctx context.Context, d Deps, s mesh.Stored, path, event string, jobs chan<- pushJob) {
 	ev, err := decodeEvent(s.Data)
 	if err != nil || ev.Text == "" {
 		return
 	}
+	if event == "scaffold" && strings.HasSuffix(ev.Body, " again") {
+		return
+	}
 	h := notify.Headers{Title: cutUTF8(ev.Text, 200), Priority: "default", Tags: "hourglass", Click: d.Cfg.Notify.MapURL}
-	if event == "level" || event == "registry" {
+	switch {
+	case event == "scaffold" && strings.HasPrefix(ev.Body, "ok "):
+		h.Tags = "white_check_mark"
+	case event == "level" || event == "registry" || event == "scaffold":
 		h.Priority, h.Tags = "high", "warning"
 	}
 	req := PushRequest{Headers: h, Body: cutUTF8(ev.Text, pushBodyMax)}
@@ -463,7 +470,7 @@ func pushClaim(ctx context.Context, d Deps, s mesh.Stored, path, event string, j
 		switch event {
 		case "refused":
 			pushRefused(ctx, d, s, path, jobs)
-		case "held", "level", "registry":
+		case "held", "level", "registry", "scaffold":
 			pushHostsEvent(ctx, d, s, path, event, jobs)
 		}
 		return

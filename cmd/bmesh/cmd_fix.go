@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/brief"
+	"github.com/rickdiculousli/buildermesh/internal/gitwork"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
@@ -76,7 +77,7 @@ func (a *app) cmdFix(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := levelMain(ctx, repoPath); err != nil {
+	if err := gitwork.LevelMain(ctx, repoPath); err != nil {
 		return fail(exitRefused, "refused: %v", err)
 	}
 	if *model == "" {
