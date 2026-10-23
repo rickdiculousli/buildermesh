@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/gitfetch"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
@@ -49,7 +50,7 @@ func FetchUpstream(dir, module string) (head string, unlock func(), err error) {
 		}
 	}
 	if err == nil {
-		_, err = git(dir, "fetch", "--quiet", "--end-of-options", UpstreamURL(module), "+refs/heads/main:refs/heads/main", "+refs/tags/v*:refs/tags/v*")
+		_, err = git(dir, gitfetch.Args("--quiet", "--end-of-options", UpstreamURL(module), "+refs/heads/main:refs/heads/main", "+refs/tags/v*:refs/tags/v*")...)
 	}
 	if err == nil {
 		head, err = git(dir, "rev-parse", "--verify", "refs/heads/main^{commit}")

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/checkout"
+	"github.com/rickdiculousli/buildermesh/internal/gitfetch"
 )
 
 // Unknown stands for the revision of a binary built without VCS stamping.
@@ -239,7 +240,7 @@ func cloneMain(repoPath, clones, dir string) error {
 			return err
 		}
 	}
-	if _, err := git(dir, "fetch", "--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main", "+refs/tags/v*:refs/tags/v*"); err != nil {
+	if _, err := git(dir, gitfetch.Args("--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main", "+refs/tags/v*:refs/tags/v*")...); err != nil {
 		return err
 	}
 	return checkout.MoveTo(dir, "origin/main")

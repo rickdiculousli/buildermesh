@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/rickdiculousli/buildermesh/internal/gitfetch"
 )
 
 const gitTimeout = 60 * time.Second
@@ -120,6 +122,6 @@ func Fetch(repoPath string) error {
 	if _, err := git(repoPath, "remote", "get-url", "origin"); err != nil {
 		return nil
 	}
-	_, err := git(repoPath, "fetch", "--quiet", "origin")
+	_, err := git(repoPath, gitfetch.Args("--quiet", "origin")...)
 	return err
 }

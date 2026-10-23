@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/gitfetch"
 	"github.com/rickdiculousli/buildermesh/internal/level"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
@@ -58,22 +59,28 @@ func OnMain(ctx context.Context, repoPath string) bool {
 	return err == nil && b == "main"
 }
 
-// LevelMain brings the repo's main up to date with origin: `pull --ff-only
-// origin main` when the main checkout is on main, else `fetch origin
+// LevelMain brings the repo's main up to date with origin: when the main
+// checkout is on main, `fetch origin +main:refs/remotes/origin/main` then
+// `merge --ff-only refs/remotes/origin/main`, a ref no other fetch rewrites,
+// never FETCH_HEAD, which a fetch in the same checkout (the daemon's) can
+// rewrite between a pull's fetch and its merge (089); else `fetch origin
 // main:main`. A refusal (local main has commits origin does not, a dirty
-// checkout the pull would touch) is an error naming it; without an origin
+// checkout the merge would touch) is an error naming it; without an origin
 // nothing is done.
 func LevelMain(ctx context.Context, repoPath string) error {
 	if !HasOrigin(ctx, repoPath) {
 		return nil
 	}
 	if OnMain(ctx, repoPath) {
-		if _, err := git(ctx, repoPath, "pull", "--quiet", "--ff-only", "origin", "main"); err != nil {
+		if _, err := git(ctx, repoPath, gitfetch.Args("--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main")...); err != nil {
+			return fmt.Errorf("main in %s is not level with origin: %v", repoPath, err)
+		}
+		if _, err := git(ctx, repoPath, "merge", "--quiet", "--ff-only", "refs/remotes/origin/main"); err != nil {
 			return fmt.Errorf("main in %s is not level with origin: %v", repoPath, err)
 		}
 		return nil
 	}
-	if _, err := git(ctx, repoPath, "fetch", "--quiet", "origin", "main:main"); err != nil {
+	if _, err := git(ctx, repoPath, gitfetch.Args("--quiet", "origin", "main:main")...); err != nil {
 		return fmt.Errorf("main in %s is not level with origin: %v", repoPath, err)
 	}
 	return nil
@@ -163,7 +170,7 @@ func fastForward(ctx context.Context, repoPath, branch string) error {
 		}
 		return nil
 	}
-	if _, err := git(ctx, repoPath, "fetch", "--quiet", ".", branch+":main"); err != nil {
+	if _, err := git(ctx, repoPath, gitfetch.Args("--quiet", ".", branch+":main")...); err != nil {
 		return fmt.Errorf("main in %s did not fast-forward: %v", repoPath, err)
 	}
 	return nil

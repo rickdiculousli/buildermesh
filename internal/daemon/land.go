@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/checkout"
+	"github.com/rickdiculousli/buildermesh/internal/gitfetch"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/runner"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
@@ -367,7 +368,7 @@ func (l *landers) doneStep(ctx context.Context, n mesh.Node, r mesh.Ready, rev u
 	}
 	main, where := head, "on main"
 	if gitOK(ctx, n.Worktree, "remote", "get-url", "origin") {
-		if _, err := gitOut(ctx, n.Worktree, "fetch", "--quiet", "origin"); err != nil {
+		if _, err := gitOut(ctx, n.Worktree, gitfetch.Args("--quiet", "origin")...); err != nil {
 			d.Log.Warn("land: fetch", "path", n.Path, "err", err)
 			return false
 		}

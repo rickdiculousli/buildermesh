@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/rickdiculousli/buildermesh/internal/gitfetch"
 )
 
 // Frontmatter parses the `---` fenced block at the top of text.
@@ -88,7 +90,7 @@ func FetchMain(ctx context.Context, repoPath string) error {
 	if _, err := gitCtx(ctx, repoPath, "remote", "get-url", "origin"); err != nil {
 		return nil
 	}
-	_, err := gitCtx(ctx, repoPath, "fetch", "--quiet", "origin", "main")
+	_, err := gitCtx(ctx, repoPath, gitfetch.Args("--quiet", "origin", "main")...)
 	return err
 }
 
@@ -137,7 +139,7 @@ func mainRef(ctx context.Context, repoPath string, fetch bool) (string, error) {
 		return "main", nil
 	}
 	if fetch {
-		if _, err := gitCtx(ctx, repoPath, "fetch", "--quiet", "origin", "main"); err != nil {
+		if _, err := gitCtx(ctx, repoPath, gitfetch.Args("--quiet", "origin", "main")...); err != nil {
 			return "main", err
 		}
 	}

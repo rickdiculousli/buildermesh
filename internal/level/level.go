@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/gitfetch"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 )
 
@@ -212,14 +213,14 @@ func level(ctx context.Context, req Request) Outcome {
 	if _, err := git(ctx, dir, "remote", "get-url", "origin"); err != nil {
 		return refuse("no origin")
 	}
-	if _, err := git(ctx, dir, "fetch", "--quiet", "origin"); err != nil {
+	if _, err := git(ctx, dir, gitfetch.Args("--quiet", "origin")...); err != nil {
 		return failed(err)
 	}
 	if req.Pin != "" {
 		ref := "refs/tags/" + req.Pin
 		// The pin tag itself, never forced: a tag that moved on origin is
 		// a failure, not a silent move.
-		if _, err := git(ctx, dir, "fetch", "--quiet", "origin", ref+":"+ref); err != nil {
+		if _, err := git(ctx, dir, gitfetch.Args("--quiet", "origin", ref+":"+ref)...); err != nil {
 			if _, lerr := git(ctx, dir, "rev-parse", "--verify", "--quiet", ref+"^{commit}"); lerr != nil {
 				return refuse("no tag " + req.Pin)
 			}
@@ -405,7 +406,7 @@ func push(ctx context.Context, req Request, o Outcome) Outcome {
 	args := append([]string{"push", "--quiet", "origin", ref + ":" + ref}, tags...)
 	if _, err := git(ctx, dir, args...); err != nil {
 		// Another box pushed first: origin's branch is no longer under ours.
-		if _, ferr := git(ctx, dir, "fetch", "--quiet", "origin"); ferr == nil {
+		if _, ferr := git(ctx, dir, gitfetch.Args("--quiet", "origin")...); ferr == nil {
 			if t, terr := git(ctx, dir, "rev-parse", "--verify", "refs/remotes/origin/"+o.Branch); terr == nil && !ancestor(ctx, dir, t, "HEAD") {
 				o.Result, o.Why, o.Target = Refused, "diverged", t
 				return o

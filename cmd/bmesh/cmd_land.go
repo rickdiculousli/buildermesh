@@ -23,6 +23,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/checkout"
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/daemon"
+	"github.com/rickdiculousli/buildermesh/internal/gitfetch"
 	"github.com/rickdiculousli/buildermesh/internal/gitwork"
 	"github.com/rickdiculousli/buildermesh/internal/instance"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
@@ -925,7 +926,7 @@ func (l *lander) mainPushed(ctx context.Context) error {
 	said := ""
 	what := "main in " + l.repoPath + " to be pushed"
 	for {
-		if _, err := gitIn(ctx, l.top, "fetch", "--quiet", "origin", "main"); err != nil {
+		if _, err := gitIn(ctx, l.top, gitfetch.Args("--quiet", "origin", "main")...); err != nil {
 			if said == "" {
 				return err
 			}
@@ -1209,7 +1210,7 @@ func (l *lander) scaffolded(ctx context.Context, baseSHA string) error {
 // an origin) no longer points at baseSHA.
 func (l *lander) mainMoved(ctx context.Context, baseSHA string) bool {
 	if l.origin {
-		if _, err := gitIn(ctx, l.top, "fetch", "--quiet", "origin", "main"); err != nil {
+		if _, err := gitIn(ctx, l.top, gitfetch.Args("--quiet", "origin", "main")...); err != nil {
 			return false
 		}
 	}

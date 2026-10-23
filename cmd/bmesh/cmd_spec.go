@@ -12,6 +12,7 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/brief"
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/gitfetch"
 	"github.com/rickdiculousli/buildermesh/internal/gitwork"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
@@ -209,7 +210,7 @@ func (a *app) ledgerRepoNamed(ctx context.Context, repo string) (name, path stri
 func (a *app) mainHighest(ctx context.Context, repoPath string) (int, error) {
 	read := func() ([]*spec.Spec, error) { return spec.Scan(repoPath, a.cfg.Spec.Glob) }
 	if gitwork.HasOrigin(ctx, repoPath) {
-		if _, err := gitIn(ctx, repoPath, "fetch", "--quiet", "origin", "main"); err == nil {
+		if _, err := gitIn(ctx, repoPath, gitfetch.Args("--quiet", "origin", "main")...); err == nil {
 			read = func() ([]*spec.Spec, error) { return spec.ScanRef(repoPath, a.cfg.Spec.Glob, "origin/main") }
 		}
 	}
