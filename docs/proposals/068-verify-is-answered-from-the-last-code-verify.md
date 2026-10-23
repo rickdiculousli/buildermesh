@@ -60,7 +60,7 @@ The repo's verify, plus tests over a bare origin with a row that sets `code`:
 
 ## Risks and the alternative considered
 - **A `code` list that misses a file the tests read** now carries on every run, not only in `land`. The nearest-record rule surfaces a fail there instead of hiding it. Skipping carried records means a widened `code` reaches back.
-- **The walk costs** one `rev-list` and one list of the kind's results matched in memory, against a 2-minute run.
+- **The walk costs** one `rev-list`, one `log` and one KV get per commit down to the nearest record (a get per key, not a list of every `verify` result, which grows with `keep_results`), against a 2-minute run.
 - **Alternative: the lead skill says "commit the docs before you verify".** It is free, but a docs loop has no code to commit first, and review fixes come after the verify by design.
 
 ## Upgrading
