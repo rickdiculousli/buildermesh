@@ -11,8 +11,8 @@ proposed_on: 2026-10-23
 built_by: e3ea05bb-bff3-48f6-8b55-68bc6de48f87
 host: k16
 branch: main
-merged: d9a181665deb128d61d264acb3e43bd3dd57f9d2
-verified: verify ok t:a181b3d0
+merged: 6ef1a774c912dd6a6fe999f04a554acaf288ce82
+verified: verify ok t:c5631f90
 ---
 
 ## Opportunity
