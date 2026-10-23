@@ -4,7 +4,7 @@ title: A verify after a change outside the code is answered from the last verifi
 kind: time-cost
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-17
@@ -12,6 +12,8 @@ built_by: eecffa7f-6926-4b41-9f91-b1052843421b
 host: k16
 family: buildermesh-build-13
 branch: bmesh/eecffa7f-6926-4b41-9f91-b1052843421b
+merged: ea251f003dbf9807fb14d3ee896d052243f2ca36
+verified: review ok t:4741364b m:claude-opus-5-5 c:ad08624f; verify ok t:4741364b
 ---
 
 ## Opportunity
