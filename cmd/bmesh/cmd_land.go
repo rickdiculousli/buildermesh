@@ -914,21 +914,29 @@ func (l *lander) requeue(ctx context.Context, j waitJob) (waitJob, error) {
 
 // mainPushed waits while the main checkout's main has commits origin's
 // doesn't (someone's unpushed work, which land never pushes), fetching
-// again every landMainPoll; it says so once per count.
+// again every landMainPoll; it says so once per count. A fetch that fails
+// while it waits is tried again at the next poll: the push it waits for
+// moves origin/main in the same repo, and the two can race on the ref.
 func (l *lander) mainPushed(ctx context.Context) error {
 	if !l.origin {
 		return nil
 	}
 	said := ""
+	what := "main in " + l.repoPath + " to be pushed"
 	for {
 		if _, err := gitIn(ctx, l.top, "fetch", "--quiet", "origin", "main"); err != nil {
-			return err
+			if said == "" {
+				return err
+			}
+			if err := l.pause(ctx, landMainPoll, what); err != nil {
+				return err
+			}
+			continue
 		}
 		n, err := gitIn(ctx, l.top, "rev-list", "--count", "origin/main..refs/heads/main")
 		if err != nil || n == "0" {
 			return nil
 		}
-		what := "main in " + l.repoPath + " to be pushed"
 		if n != said {
 			fmt.Fprintf(l.a.stdout, "waiting for %s: it has %s commits origin/main doesn't (someone's unpushed work; land never pushes it)\n", what, n)
 			said = n
