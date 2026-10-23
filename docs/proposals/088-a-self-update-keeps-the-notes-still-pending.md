@@ -4,7 +4,7 @@ title: A daemon's self-update keeps the upgrade notes a box hasn't walked yet, s
 kind: refinement
 size: S
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: t3-e20b6274
 proposed_on: 2026-10-23
@@ -12,6 +12,8 @@ built_by: a0971197-bc1c-4a76-8f9a-9a20e3355e08
 host: k16
 family: buildermesh-build-16
 branch: bmesh/a0971197-bc1c-4a76-8f9a-9a20e3355e08
+merged: 9c835527ab7002a53a4a5e5fcba5b37b6914b996
+verified: verify ok t:07601eaf
 ---
 
 ## Opportunity
