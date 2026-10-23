@@ -4,7 +4,7 @@ title: An optional t3-done add-on pushes to ntfy when a T3 thread a person start
 kind: feature
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-22
@@ -12,6 +12,9 @@ built_by: 64928f53-eaec-4e2f-9447-e3eb03ce848f
 host: k16
 family: buildermesh-build-12
 branch: bmesh/64928f53-eaec-4e2f-9447-e3eb03ce848f
+merged: 090c6686b761a7f1bf18fb6dcabcdef035d408ec
+operator_steps: [{"n":1,"box":"k16","text":"In `~/.config/bmesh/config.toml`, set `[addons] enable = [\"t3-done\"]` and `[addons.t3-done] ntfy = \"http://127.0.0.1:2586/t3\"`, then stop the hand-written script: `systemctl --user disable --now t3-ntfy.service && rm ~/.config/systemd/user/t3-ntfy.service ~/.local/bin/t3-ntfy && rm -r ~/.local/state/t3-ntfy`.","check":"! systemctl --user is-enabled t3-ntfy.service","done":""},{"n":2,"box":"ricks-macbook","text":"In `~/.config/bmesh/config.toml`, set `[addons] enable = [\"t3-done\"]` and `[addons.t3-done] ntfy = \"http://k16:2586/t3\"`, then remove the script and its saved copies: `rm ~/.local/bin/t3-ntfy ~/.config/bmesh/notes/t3-ntfy ~/.config/bmesh/notes/sh.ntfy.t3-done.plist`.","done":""},{"n":3,"box":"k16","text":"Update the box notes: replace the `t3-ntfy.service` line with the add-on.","done":""},{"n":4,"box":"ricks-macbook","text":"Update the box notes: replace the T3 paragraph under Notifications with the add-on.","done":""}]
+verified: verify ok t:45c6346a
 ---
 
 ## Opportunity
