@@ -93,7 +93,7 @@ The repo's verify, plus:
 - Whether an executor sees the block can't be tested with the runner fakes: the build records, from one real lead's executor transcript, whether its first turn shows the rules block (Risks).
 
 ## Risks and the alternative considered
-- **Executors may not read `AGENTS.md`.** An executor is an Agent-tool subagent of its lead; whether Claude Code gives a subagent the project's instruction files is unverified. If it doesn't, the lead skill tells the lead to quote the rules block in each executor brief, and the build says which it found.
+- **Executors may not read `AGENTS.md`.** An executor is an Agent-tool subagent of its lead; whether Claude Code gives a subagent the project's instruction files is unverified. If it doesn't, the lead skill tells the lead to quote the rules block in each executor brief, and the build says which it found. Found in the build: it does. A subagent this build's lead spawned listed the worktree's `AGENTS.md` among its project instructions, as the lead's session had loaded it at start (a rules block added mid-session wasn't in it), so an executor works by the rules its lead started with, which come from `main`; the lead skill needs no quoting step.
 - **A rule set grows every session's context.** `core` is 777 B in every session of every ship repo; bmesh's pick about 1.6 KB plus the heading. 083 measured instructions at 9.1 KB of a lead's first 101 KB request.
 - **Executors stop test-driving in repos without `tdd`.** That is the operator's call above: today they test first only because pstack never loads.
 - **Alternative: render the sets into briefs.** It reaches only threads bmesh starts, not executors reliably or the operator's own chat.

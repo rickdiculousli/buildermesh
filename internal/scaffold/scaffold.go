@@ -1,6 +1,7 @@
 // Package scaffold gives a ship repo what a buildermesh build expects of it:
 // the "Definition of done", "Proposals" and "Buildermesh" sections of its
-// AGENTS.md between markers, docs/proposals/README.md and assets/.gitkeep,
+// AGENTS.md between markers, and its "Engineering rules" block (rules.go),
+// docs/proposals/README.md and assets/.gitkeep,
 // the routine kinds its registry row names, seeded from the embedded
 // examples, and the row's setup as .bmesh/config.toml's [setup]. Only the
 // text between the markers and the [setup] table are rewritten and an
@@ -37,7 +38,8 @@ const (
 	VerifyPlaceholder = "[the verify commands]"
 )
 
-// Blocks are the three sections, in the order they are appended.
+// Blocks are the three sections the binary enforces, in the order they are
+// appended; the rules block (RulesBlock) follows them and is the repo's own.
 var Blocks = []string{"done", "proposals", "mesh"}
 
 // ErrSnippet is a snippet with no quoted paragraph, or one that keeps a
@@ -157,13 +159,16 @@ type Target struct {
 	Want    string
 	Current string
 	Exists  bool
+	// Note is a line scaffold prints of the file besides writing it.
+	Note string
 }
 
 // Changed reports whether writing the target would change the repo.
 func (t Target) Changed() bool { return !t.Exists || t.Current != t.Want }
 
 // Targets is every file scaffold would write for the row in the repo at
-// repoPath: AGENTS.md (created when missing), the proposals README and
+// repoPath: AGENTS.md (created when missing; its rules block as ApplyRules
+// reads it, a customized one named in the target's Note), the proposals README and
 // .gitkeep when missing, a kind file for each of the row's routines that
 // the repo lacks, an existing verify kind whose command is not the
 // row's verify commands, and .bmesh/config.toml when its [setup] is not
@@ -180,7 +185,14 @@ func Targets(repoPath string, r config.Repo, snippet string) (targets []Target, 
 	if err != nil {
 		return nil, nil, err
 	}
-	agents.Want = Apply(agents.Current, Done(r), Proposals(), mesh)
+	want, customized, err := ApplyRules(Apply(agents.Current, Done(r), Proposals(), mesh))
+	if err != nil {
+		return nil, nil, err
+	}
+	agents.Want = want
+	if customized {
+		agents.Note = RulesNote
+	}
 	targets = append(targets, agents)
 	for rel, want := range map[string]string{Readme: buildermesh.ProposalsReadme, Gitkeep: ""} {
 		t, err := read(repoPath, rel)
@@ -400,7 +412,8 @@ func verifyCommand(text string) (string, error) {
 func trimCommand(s string) string { return strings.TrimRight(s, " \t\r\n;") }
 
 // Drift is the unified diff of the scaffolded text a branch changed that the
-// row doesn't write: AGENTS.md's marked blocks (when agents), the verify
+// row doesn't write: AGENTS.md's marked blocks (when agents; the rules block
+// is the repo's own, so an edited or re-picked one is never drift), the verify
 // kind's command and the repo config's [setup] (when the row names a
 // setup), each only when it differs from the base's (at reads a
 // repo-relative file there: its text and whether it exists). So a row or a

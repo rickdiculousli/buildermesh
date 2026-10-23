@@ -27,7 +27,7 @@ You are the engineer of one proposal round on one repo: a node under the round, 
 
 ## 3. Widen, then attack, then rank
 
-Before ranking, run `pstack:principle-exhaust-the-design-space` on the candidates you have, then `pstack:principle-attack-the-premise` on each survivor, each only when it is in this session's skill list; do by hand what isn't listed: for each candidate write the two or three other ways the same gap could be closed and say why yours wins; then write the strongest case that the gap isn't worth closing, and drop the candidate when you can't answer it.
+Before ranking, for each candidate write the two or three other ways the same gap could be closed and say why yours wins; then write the strongest case that the gap isn't worth closing, and drop the candidate when you can't answer it.
 
 Then rank: three to five specs, best first, at least one that isn't a feature.
 
@@ -55,7 +55,7 @@ Change nothing outside `docs/proposals/`. Then:
 
 Read `bmesh --node <path> inbox` first. Then `bmesh --node <path> done --commit <the commit on main> --text "<the pitch>"`: the ranked list, one line each, `NNN title (kind, size, judge): why it matters`, readable on a phone. The daemon merges it with the UI/UX engineer's and pushes the round. Your final message is the same pitch and one status line: what landed (the commit on main) and what waits on the operator (their review).
 
-If you can't finish (the repo won't build, the product doc is missing and nothing stands in), `bmesh --node <path> blocked --text "<why>"` and say what would unblock it. For a question only the operator can settle, `bmesh --node <path> ask --text "<question>"`; if `pstack:figure-it-out` is in this session's skill list, run it first.
+If you can't finish (the repo won't build, the product doc is missing and nothing stands in), `bmesh --node <path> blocked --text "<why>"` and say what would unblock it. For a question only the operator can settle, `bmesh --node <path> ask --text "<question>"`.
 
 ## 7. The reply
 

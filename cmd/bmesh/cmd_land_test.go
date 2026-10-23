@@ -841,6 +841,46 @@ func TestLandABranchThatFollowsTheRow(t *testing.T) {
 	}
 }
 
+// The rules block is the repo's own: a branch that edits or re-picks it
+// lands, and scaffold keeps the edit, marking it customized.
+func TestLandABranchThatEditedItsRules(t *testing.T) {
+	c, ctx := setup(t)
+	r := scaffoldLandRepo(t, c, ctx)
+	agents := filepath.Join(r.wt, "AGENTS.md")
+	b, err := os.ReadFile(agents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "<!-- bmesh:rules core ") {
+		t.Fatalf("scaffold wrote no core rules:\n%s", b)
+	}
+	writeFile(t, agents, strings.Replace(string(b), "Delete what's dead before adding.", "Keep diffs small.", 1))
+	out, errs, code := runCLI(t, nil, "scaffold", r.wt, "--check")
+	if code != 1 || !strings.HasPrefix(out, "AGENTS.md: rules are customized; kept as written\n") ||
+		!strings.Contains(out, "+<!-- bmesh:rules customized -->\n") || strings.Contains(out, "+- Make the smallest change") {
+		t.Fatalf("scaffold --check: %d %q %q", code, out, errs)
+	}
+	if out, errs, code := runCLI(t, nil, "scaffold", r.wt); code != 0 || out != "AGENTS.md: rules are customized; kept as written\nwrote AGENTS.md\n" {
+		t.Fatalf("scaffold: %d %q %q", code, out, errs)
+	}
+	meshtest.Git(t, r.wt, "commit", "-qam", "our rules")
+	out, errs, code = runCLI(t, as("app-012"), "land")
+	if code != 0 || !strings.Contains(out, "scaffold: follows the row\n") || !strings.Contains(out, "\nlanded ") {
+		t.Fatalf("land: %d\n%s\n%q", code, out, errs)
+	}
+}
+
+func TestScaffoldRefusesAnUnknownRuleSet(t *testing.T) {
+	setup(t)
+	r := newLandRepo(t)
+	writeLandRow(t, r, `"true"`)
+	writeFile(t, filepath.Join(r.repo, "AGENTS.md"), "# A\n\n<!-- bmesh:rules core style -->\n<!-- /bmesh:rules -->\n")
+	_, errs, code := runCLI(t, nil, "scaffold", "repo")
+	if code != 1 || errs != "bmesh: AGENTS.md: unknown rule set style; bmesh has core, design, tests, tdd, prose\n" {
+		t.Fatalf("scaffold: %d %q", code, errs)
+	}
+}
+
 func TestLandARowThatMovedUnderAnUntouchedBranch(t *testing.T) {
 	c, ctx := setup(t)
 	r := scaffoldLandRepo(t, c, ctx)

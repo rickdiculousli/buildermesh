@@ -1,0 +1,4 @@
+- Test what callers can observe, not how the code does it. A test that breaks on a rename is testing internals.
+- Test through the real entry point (the command, the package's public functions) where you can.
+- A piece isn't done while no test exercises its code.
+- A flaky test is a bug. Find the cause rather than retrying it away.

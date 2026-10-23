@@ -1,0 +1,6 @@
+- Name the data shape before writing logic.
+- Keep the domain in one structure (a type, a table, a state machine), not in conditionals spread across files.
+- Check input where it enters the system. Inside, trust your own types.
+- One writer per file, branch, key or record. Remove the sharing before reaching for a lock.
+- Make steps safe to run twice, so a retry after a crash ends in the same state.
+- When a new API replaces an old one, move every caller and delete the old one in the same change.

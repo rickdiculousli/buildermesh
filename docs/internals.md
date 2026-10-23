@@ -318,6 +318,14 @@ Results live in KV `bm-results`, key `<kind>.<tree>[.<args8>][.<model-short>]`: 
 
 The land lease is `bm-leases` key `land.<repo>.0`, one place per repo.
 
+## Scaffold
+
+### The rules block
+
+[Manual: `bmesh scaffold`](manual.md#bmesh-scaffold), [Rule sets](manual.md#rule-sets)
+
+The sets are embedded from `internal/scaffold/rules/<name>.md`. The opening marker is `<!-- bmesh:rules <name>... <hash> -->`, its words split on whitespace: a lone `customized` is a kept block; else a last word of 8 lowercase hex is the hash and the rest are set names. The hash is the first 8 hex of the sha256 of the body scaffold wrote (the text between the two markers), with `\r\n` read as `\n` and surrounding whitespace trimmed, so a CRLF checkout or an editor's final newline doesn't read as an edit. `scaffold.Drift`, which `land` runs, compares only the `done`, `proposals` and `mesh` blocks.
+
 ## Hosts
 
 [Manual: Hosts](manual.md#hosts)
