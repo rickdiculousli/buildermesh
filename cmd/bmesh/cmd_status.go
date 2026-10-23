@@ -81,13 +81,46 @@ type statusRow struct {
 	State  mesh.State         `json:"state"`
 	Runner *mesh.RunnerSample `json:"runner"`
 	Unread int                `json:"unread"`
-	Hold   *holdRow           `json:"hold,omitempty"` // its bm-holds entry
+	Hold   *holdRow           `json:"hold,omitempty"`  // its bm-holds entry
+	Ready  *readyRow          `json:"ready,omitempty"` // its bm-ready entry
+}
+
+// readyRow is a ready request as mesh-status --json prints it.
+type readyRow struct {
+	Phase string `json:"phase"`
+	Head  string `json:"head"`
+	At    string `json:"at"`
+}
+
+// readyLine says a ready request as mesh-status prints it, after its
+// path: landing 6m: <the lead's landing text>, or the wake still owed.
+func readyLine(r mesh.Ready, st mesh.State, now time.Time) string {
+	age := "?"
+	if at, err := time.Parse(time.RFC3339, r.At); err == nil {
+		age = mesh.HoldAge(now.Sub(at))
+	}
+	switch r.Phase {
+	case mesh.PhaseLanded:
+		return fmt.Sprintf("landed %s (ready %s ago); the final wake is pending", short8(r.Commit), age)
+	case mesh.PhaseRefused:
+		return fmt.Sprintf("land refused (ready %s ago): %s; the wake carrying it is pending", age, r.Refusal)
+	case mesh.PhaseCancelled:
+		return fmt.Sprintf("landing %s: cancelled, the daemon ends it", age)
+	}
+	s := "landing " + age
+	if st.State == "landing" && st.Text != "" {
+		s += ": " + st.Text
+	} else if st.State == "held" {
+		s += ": held, waiting for the release"
+	}
+	return s
 }
 
 // cmdMeshStatus prints the registered nodes with their state, runner and
 // unread count: every one with --all or --json, else all but those done for
 // longer than [status] keep_done, which a closing line counts; then a line
-// per hold, with its age, the feedback not yet drained (feedbackLines),
+// per hold, with its age, a line per ready request, with its age, the
+// feedback not yet drained (feedbackLines),
 // and last a line per landed spec with steps for the operator still open.
 func (a *app) cmdMeshStatus(args []string) error {
 	fs := a.flags("mesh-status")
@@ -120,11 +153,22 @@ func (a *app) cmdMeshStatus(args []string) error {
 	for _, r := range holdRows(holds) {
 		holdOf[r.Path] = r
 	}
+	readies, err := mesh.ListReady(ctx, a.client)
+	if err != nil {
+		return err
+	}
+	readyOf := map[string]readyRow{}
+	for _, r := range readies {
+		readyOf[r.Path] = readyRow{Phase: r.Phase, Head: r.Head, At: r.At}
+	}
 	rows := make([]statusRow, 0, len(nodes))
 	for _, n := range nodes {
 		r := statusRow{Node: n, State: mesh.State{State: "idle"}}
 		if h, ok := holdOf[n.Path]; ok {
 			r.Hold = &h
+		}
+		if rr, ok := readyOf[n.Path]; ok {
+			r.Ready = &rr
 		}
 		if s, ok := states[n.Path]; ok {
 			r.State = s
@@ -173,6 +217,9 @@ func (a *app) cmdMeshStatus(args []string) error {
 	now := time.Now()
 	for _, h := range holds {
 		fmt.Fprintf(a.stdout, "%s %s\n", h.Path, h.Line(now))
+	}
+	for _, r := range readies {
+		fmt.Fprintf(a.stdout, "%s %s\n", r.Path, readyLine(r, states[r.Path], now))
 	}
 	if err := a.feedbackLines(ctx, nodes, states); err != nil {
 		return err
