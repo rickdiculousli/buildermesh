@@ -9,6 +9,8 @@ require (
 	github.com/nats-io/nuid v1.0.1
 	golang.org/x/crypto v0.57.0
 	golang.org/x/term v0.46.0
+	gopkg.in/yaml.v3 v3.0.1
+	modernc.org/sqlite v1.61.0
 )
 
 require (
@@ -25,9 +27,7 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/libc v1.79.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
-	modernc.org/sqlite v1.61.0 // indirect
 )

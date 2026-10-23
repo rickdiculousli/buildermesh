@@ -3493,7 +3493,7 @@ Internals: [internals](internals.md#quota-reminders)
 
 ### Add-ons
 
-Add-ons are optional parts compiled into `bmesh`. `bmesh serve` runs one only when `[addons] enable` lists it; the default `[]` runs none. An unknown name is a config error (exit 3 from `bmesh config check`, 78 from `serve`), and each add-on's settings live in `[addons.<name>]`. One add-on exists, `t3-done`.
+Add-ons are optional parts compiled into `bmesh`. `bmesh serve` runs one only when `[addons] enable` lists it; the default `[]` runs none. An unknown name, or one listed twice, is a config error (exit 3 from `bmesh config check`, 78 from `serve`), and each add-on's settings live in `[addons.<name>]`. One add-on exists, `t3-done`.
 
 #### t3-done
 

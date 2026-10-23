@@ -562,12 +562,16 @@ func Load(path string) (*Config, error) {
 	return c, nil
 }
 
-// check refuses an add-on Enable names that bmesh doesn't have, and an
+// check refuses an add-on Enable names that bmesh doesn't have or names
+// twice, and an
 // enabled add-on's settings it can't run with.
 func (a AddonsConfig) check() error {
-	for _, n := range a.Enable {
+	for i, n := range a.Enable {
 		if !slices.Contains(AddonNames, n) {
 			return fmt.Errorf("[addons] enable: unknown add-on %q (want one of %s)", n, strings.Join(AddonNames, ", "))
+		}
+		if slices.Contains(a.Enable[:i], n) {
+			return fmt.Errorf("[addons] enable: %q is listed twice", n)
 		}
 	}
 	if slices.Contains(a.Enable, "t3-done") {

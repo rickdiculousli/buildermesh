@@ -406,6 +406,7 @@ func TestAddons(t *testing.T) {
 	}
 	for body, want := range map[string]string{
 		"[addons]\nenable = [\"t3-dnoe\"]\n": `[addons] enable: unknown add-on "t3-dnoe" (want one of t3-done)`,
+		"[addons]\nenable = [\"t3-done\", \"t3-done\"]\n[addons.t3-done]\nntfy = \"http://n/t\"\n": `[addons] enable: "t3-done" is listed twice`,
 		"[addons]\nenable = [\"t3-done\"]\n": "[addons.t3-done] ntfy is empty: t3-done needs the ntfy URL with its topic it posts to",
 		"[addons]\nenable = [\"t3-done\"]\n[addons.t3-done]\nntfy = \"http://n/t\"\nevery = \"0s\"\n": "[addons.t3-done] every: want a positive duration",
 	} {
