@@ -4,7 +4,7 @@ title: bmesh ships small engineering rule sets a repo picks on one marker line, 
 kind: feature
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-22
@@ -12,6 +12,8 @@ built_by: af32e96b-1ffc-46ef-bf07-666a2547f12b
 host: k16
 family: buildermesh-build-11
 branch: bmesh/af32e96b-1ffc-46ef-bf07-666a2547f12b
+merged: 970cf6aebc090da878e4c28dcf3de1492f2d34aa
+verified: verify ok t:7a63791d
 ---
 
 ## Opportunity
