@@ -4,7 +4,7 @@ title: A published row change reaches the repo by itself: the row's host rescaff
 kind: refinement
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: 9079c88e-3b4d-4243-afcb-44802f8c604a
 proposed_on: 2026-10-17
