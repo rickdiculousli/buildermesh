@@ -1,0 +1,5 @@
+- Say what a thing does, with the mechanism or a number, not how it feels.
+- Short sentences, one idea each, in the active voice.
+- Plain words: "use", not "leverage". "Is", not "serves as".
+- A comment says why, when the code can't show it. Delete comments that narrate what the code does.
+- Cut filler, hedges and closing summaries that repeat the text above them.

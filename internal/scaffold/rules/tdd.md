@@ -1,0 +1,3 @@
+- Write the failing test first, and watch it fail for the reason you expect.
+- Write the least code that makes it pass, then tidy with the test passing.
+- Give each behaviour the change names its own failing test.

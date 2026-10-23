@@ -1101,6 +1101,13 @@ Writes into a ship repo what a build expects, from the row and the binary, and n
 **What it does**, in order:
 
 1. **`AGENTS.md`**: three blocks between `<!-- bmesh:done -->`, `<!-- bmesh:proposals -->` and `<!-- bmesh:mesh -->` markers, in that order: the definition of done from the row's verify commands and remote; the proposals convention; the Buildermesh paragraph of `docs/agents-snippet.md` (its verify placeholder filled from the row). Only the text between the markers is rewritten. A missing block is appended at the end, and a missing `AGENTS.md` is created. A block between `command-center:` markers (an earlier scaffold's) is rewritten in place under `bmesh:` markers.
+
+   Then a fourth block, `rules`, after `mesh`: the engineering rules the repo picked, from bmesh's [rule sets](#rule-sets). Its opening marker carries the pick and a hash, `<!-- bmesh:rules core design tests a1b2c3d4 -->` (see [internals](internals.md#the-rules-block)); the body is a `## Engineering rules` heading, one line naming the sets and saying that where the rest of the file says otherwise the rest wins, then each set's lines under a `### <set>` heading, in the marker's order. Unlike the other three, this block is the repo's own:
+   - **The pick is the marker.** Set names with no hash are a fresh pick, rendered. A missing block is appended as `core`. An empty marker, `<!-- bmesh:rules -->`, keeps the block empty: no rules. Names are read in order and a repeated one once.
+   - **An edit is kept.** When the body's hash differs from the marker's, scaffold keeps the body, rewrites the marker to `<!-- bmesh:rules customized -->` and prints `AGENTS.md: rules are customized; kept as written`. A `customized` block is never rewritten, and the line is printed on every run (with `--check` too, above the diff). Putting set names back on the marker, or deleting the block, returns it to bmesh's text on the next run.
+   - **A marker with names and a matching hash** is rendered again, so a bmesh release that rewords a set reaches every repo that didn't edit it.
+
+   Only the first `rules` block is read. [`bmesh land`](#bmesh-land) never checks it. The `scaffold` skill asks the operator which sets a repo gets before it writes (see [The plugin](#the-plugin)); a plain `bmesh scaffold` gives a repo with no block `core`.
 2. `docs/proposals/README.md` (this repo's, embedded) and `docs/proposals/assets/.gitkeep`, when missing.
 3. A kind file for each of the row's `routines` the repo lacks, seeded from `examples/routines/` (`verify` inline and deterministic, its `command` the row's verify commands joined with ` && `). A row with no verify commands gets no verify kind and a line on stderr, `bmesh: the row lists no verify commands, so the verify kind was not written`.
 4. `.bmesh/config.toml`'s `[setup]`, when the row has a `setup`: `command`, then `inputs` and `timeout` when the row names them (see [Setup](#setup)). It is merged in: a `[setup]` that already reads the same (as the loader reads it, defaults included) is left as written; another is replaced in place, from its header to the next table's (the comment lines right above that table kept); none is appended. `[slots]`, `[routines]` and the rest of the file are kept, and the file is created when missing. A row with no `setup` leaves the file alone.
@@ -1119,10 +1126,56 @@ An existing kind is never touched, except the verify kind's `command` when the r
 | A routine with no example | 1 | `no example for kind <k>; write .bmesh/routines/<k>.toml yourself` |
 | A verify kind whose command spans lines | 1 | `<file>: its command is not on one line scaffold can rewrite; set it to the row's verify (<cmd>) by hand` |
 | A `[setup]` written as other than one table (dotted keys, say) | 1 | `.bmesh/config.toml: its [setup] is not a table scaffold can rewrite; set it to the row's setup by hand` |
+| The rules marker names a set bmesh doesn't ship | 1 | `AGENTS.md: unknown rule set <name>; bmesh has core, design, tests, tdd, prose` |
 
 **Details.** A second run changes nothing. Run it again after the row or the snippet changes, and commit what it wrote.
 
 See also: [`bmesh repos`](#bmesh-repos), [Routines](#routines), [The plugin](#the-plugin).
+
+### Rule sets
+
+The engineering rules `bmesh scaffold` can write into a repo's `AGENTS.md`, one set per name on the `rules` marker; pick any, combine them, or none. They are in bmesh's own words, loosely after the principles of [pstack](https://github.com/cursor/plugins/tree/main/pstack) by Lauren Tan (MIT). Once written, the text is the repo's to edit: scaffold keeps an edited block (see [`bmesh scaffold`](#bmesh-scaffold)), and where the rest of `AGENTS.md` says otherwise, the rest wins.
+
+**`core`**, for every repo (the default):
+
+- Make the smallest change that solves the problem. Delete what's dead before adding.
+- Read the code before you change it, and say what you learned before deciding.
+- Fix the first place it went wrong, not where it showed. A guard is a fix only when the state it handles is legitimate.
+- Prove it works on the real thing: run it the way a user would. Passing tests prove only what they reach.
+- When two fixes have failed on the same assumption, stop and test the assumption.
+- A rule you've had to state twice becomes a check or a script, not a third sentence.
+- Do reversible work, then report it. Ask only what no experiment or reading can settle.
+- Before trusting a number (a timing, a speedup, a count), find what limits it and rule out that it measured something else.
+
+**`design`**, for code that holds state or runs concurrently:
+
+- Name the data shape before writing logic.
+- Keep the domain in one structure (a type, a table, a state machine), not in conditionals spread across files.
+- Check input where it enters the system. Inside, trust your own types.
+- One writer per file, branch, key or record. Remove the sharing before reaching for a lock.
+- Make steps safe to run twice, so a retry after a crash ends in the same state.
+- When a new API replaces an old one, move every caller and delete the old one in the same change.
+
+**`tests`**, for a repo with tests:
+
+- Test what callers can observe, not how the code does it. A test that breaks on a rename is testing internals.
+- Test through the real entry point (the command, the package's public functions) where you can.
+- A piece isn't done while no test exercises its code.
+- A flaky test is a bug. Find the cause rather than retrying it away.
+
+**`tdd`**, an add-on to `tests`, apart from it because the cycle, not the text, is what costs tokens:
+
+- Write the failing test first, and watch it fail for the reason you expect.
+- Write the least code that makes it pass, then tidy with the test passing.
+- Give each behaviour the change names its own failing test.
+
+**`prose`**, for a repo whose product is text (docs, skills, briefs):
+
+- Say what a thing does, with the mechanism or a number, not how it feels.
+- Short sentences, one idea each, in the active voice.
+- Plain words: "use", not "leverage". "Is", not "serves as".
+- A comment says why, when the code can't show it. Delete comments that narrate what the code does.
+- Cut filler, hedges and closing summaries that repeat the text above them.
 
 ## Nodes
 
@@ -1903,7 +1956,7 @@ The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander b
 
 1. `fetch origin/main <sha8>`: `git fetch origin main`. It is refused (exit 3) while the main checkout's `main` has commits `origin/main` doesn't (unpushed work, which `land` never pushes). Without an origin the base is the local `main`.
 2. `rebase onto <sha8>: N commits` (or `rebase: on <sha8> already`). A failed rebase is aborted and refused (exit 3). A branch with nothing beyond the base is refused (`nothing to land`), as are a spec the worktree doesn't have and a spec not reading `building` in the worktree.
-3. `scaffold: follows the row`, for a repo with a `ship` row whose `AGENTS.md` (in the rebased tree) has a `<!-- bmesh:` marker. Each marked block of `AGENTS.md` that differs from the base's (`origin/main`'s), the verify kind's command when it differs from the base's, and, when the row has a `setup`, `.bmesh/config.toml`'s `[setup]` when it reads otherwise than the base's (a `[slots]` edit is the repo's own), is compared with what `scaffold` writes from the row and the binary. A file the branch didn't change isn't compared, so a row published mid-build, a newer snippet or another box's older binary never refuse a landing. A file `scaffold` would create isn't drift.
+3. `scaffold: follows the row`, for a repo with a `ship` row whose `AGENTS.md` (in the rebased tree) has a `<!-- bmesh:` marker. Each marked block of `AGENTS.md` that differs from the base's (`origin/main`'s), except the `rules` block, which is the repo's own (a branch that edits, re-picks or drops its rules lands), the verify kind's command when it differs from the base's, and, when the row has a `setup`, `.bmesh/config.toml`'s `[setup]` when it reads otherwise than the base's (a `[slots]` edit is the repo's own), is compared with what `scaffold` writes from the row and the binary. A file the branch didn't change isn't compared, so a row published mid-build, a newer snippet or another box's older binary never refuse a landing. A file `scaffold` would create isn't drift.
     - Drift prints the first 20 lines of its unified diff (`...` after them) and is refused (exit 3). Once the row is published with the new verify or setup, `bmesh scaffold <worktree>` writes the files on the branch.
     - A repo never scaffolded prints `scaffold: not scaffolded, not checked`; one with no `ship` row prints nothing.
     - A tree whose `go.mod` declares this binary's own module renders its own blocks, which this binary may predate, so only the verify kind is compared: `scaffold: the verify kind follows the row (AGENTS.md is rendered by this tree's own bmesh, not checked)`.
@@ -3058,7 +3111,7 @@ A level, the daemon's routine fetch, and the fast-forward of `main` in the main 
    - with `.claude-plugin/marketplace.json` in it: `claude plugin marketplace update <name>`, then `claude plugin update <id> --scope user` for each user-scope install from that marketplace whose version lags the checkout's;
    - with `codex` on `PATH`: `codex plugin add <id>` for each installed Codex plugin whose marketplace source is the checkout.
 
-   Each refresh adds a part to the answer (`fast-forwarded 3; claude pstack@pstack-claude 0.15.24 -> 0.15.25`). A failure is appended as `plugins: <error>`. A new session loads the change. bmesh runs no other command a job or the registry names.
+   Each refresh adds a part to the answer (`fast-forwarded 3; claude buildermesh@buildermesh 0.7.3 -> 0.7.4`). A failure is appended as `plugins: <error>`. A new session loads the change. bmesh runs no other command a job or the registry names.
 
 **The hold.** On a secure box (its `[hosts] secure`, or its roster row's), a level that would move a repo sessions load waits for the operator. This applies to a job, a self-level and `bmesh sync` alike. Such a repo is a plugin marketplace (`.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`, or the marketplace source of a Codex install) or the `[update] repo`. A push moves nothing here, so it isn't held.
 
@@ -3176,7 +3229,7 @@ The repo is a Claude Code plugin, `buildermesh`, with twelve skills. The binary 
 | `ideate` | the operator, from a chat | a proposal round ([`bmesh ideate`](#bmesh-ideate)) |
 | `choose-ideas` | the operator, from a chat | the verdicts on a pitch ([`bmesh choose-ideas`](#bmesh-choose-ideas)) |
 | `build` | the operator, from a chat | dispatch, watch, holds and stops ([`bmesh build`](#bmesh-build)) |
-| `scaffold` | the operator, from a chat | a ship repo's shared sections ([`bmesh scaffold`](#bmesh-scaffold)) |
+| `scaffold` | the operator, from a chat | a ship repo's shared sections and its rule sets ([`bmesh scaffold`](#bmesh-scaffold)) |
 | `mesh-status` | the operator, from a chat | what's building ([`bmesh mesh-status`](#bmesh-mesh-status)) |
 | `sync` | the operator, from a chat | levelling repos across boxes (below) |
 | `prune` | the operator, from a chat | removing finished worktrees across boxes (below) |
@@ -3195,7 +3248,7 @@ From a chat (a phone, or a session with the plugin and no command typed), the op
 - **`buildermesh:ideate`** ("proposals for X", "run a round on X") runs `ideate` on the row's `host` (locally, else over ssh), with what was asked beyond the repo's name as `--context`; watches with `bmesh watch --nodes <repo>-round-<N>`, relaying an engineer's `ask`; and reports the round proposed (its ranked pitch) or blocked. For one idea of the operator's own (by what was asked, not the words) it starts no two-thread round: `ideate --idea` (one engineer thread, on the row's `host`) when a thread, a model or an effort is asked for, or the idea needs the repo read and measured at length; otherwise it writes the spec itself (one half-pager, or two or three in build order for an idea too big for one lead, `proposed_by: operator`) and lands it on `main` as `proposed`.
 - **`buildermesh:choose-ideas`** (the reply to a pitch, in plain words) runs `choose-ideas`.
 - **`buildermesh:build`** ("build X 3", "build what's accepted in X") runs `build` on the row's `host`; after a `held` refusal it drains its own family, waits with `bmesh watch` on the named nodes and runs `build` again; a hold by another coordinator's family, or a red `main`, it reports. It watches the leads with `bmesh watch --nodes <paths>`, relays each `ask` and answers it with `bmesh --node operator send`, reports a lead reaching its gate as one line, holds and releases with `hold` and `unhold` ("hold X", "hold land on X", "release X"; see [Holds](#holds)) and stops with `node stop` ("stop X"; see [`bmesh node stop`](#bmesh-node-stop)), never with free text. Once the family's watch is done it names the fixer started for the issues naming bmesh's own repo (see [The fixer](#the-fixer)), and turns the rest into specs and drains them (see [`bmesh feedback`](#bmesh-feedback)).
-- **`buildermesh:scaffold`** ("scaffold X") runs `scaffold --check`, shows the diff, runs `scaffold` and the row's verify, commits `Scaffold the shared definition of done and proposals` and pushes.
+- **`buildermesh:scaffold`** ("scaffold X", "change X's rules") runs `scaffold --check` and shows the diff. When the repo's `AGENTS.md` has no `rules` block, or the operator asked to change its rules, it interviews the operator first: it shows each of the [rule sets](#rule-sets) and asks which to pick (several, or none), recommending `core`, plus `tests` when the repo has tests and `design` when it holds stateful or concurrent code, each with the evidence it saw; it writes the pick as an empty block (`<!-- bmesh:rules <sets> -->` and its closing marker) at the end of `AGENTS.md`, or rewrites the existing opening marker, for `scaffold` to fill; on a `customized` block it asks whether to keep it (the default) or go back to bmesh's sets. Then it clears conflicts out of the repo's own prose: it reads `AGENTS.md` outside bmesh's markers, `CLAUDE.md` and any file `AGENTS.md` says to read at the start for lines that restate a picked rule (deleted, since the block carries it), contradict one (the operator says which wins: the repo's line, with the rule cut or reworded in the block, which marks it customized, or the rule), or rest on a set not picked (asked the same), and changes only what the operator answers. Then it runs `scaffold` and the row's verify, commits `Scaffold the shared definition of done, proposals and rules` with those files, and pushes.
 - **`buildermesh:mesh-status`** ("what's building", "where is X") summarises `mesh-status` (and `spec list` for a named repo) as working, asking, silent, stopped and done since the last look.
 
 `ideate` and `mesh-status` also run "stop X" as `node stop`, never as a message, which would wake the node. `ideate` and `build` add the Fable fallback the binary lacks: a Fable model the runner rejects runs once more with `--model claude-opus-5-5`, and the skill reports what the runner said.
@@ -3208,22 +3261,7 @@ Each skill ends with one line: what is started or landed and what waits on the o
 
 Both stop, saying so, on a box with `[hosts]` off.
 
-**Optional pstack and method skills.** The [pstack](https://github.com/rickdiculousli/pstack-claude) and `method` Claude Code plugins are recommended, and optional. The node skills name their skills at fixed moments, each with a written default for a session without it:
-
-| Node skill | Optional skill | When |
-|---|---|---|
-| `lead` | `poteto-mode` | the whole build (its working style) |
-| `lead` | `method:writing-plans` | an L spec |
-| `lead` | `architect`, `attack-the-premise` | the shape |
-| `lead` | `control-ui` | a browser surface |
-| `lead` | `figure-it-out` | before an ask |
-| `lead` | `blast-radius` | before landing |
-| `executor` | `poteto-mode` | the whole piece (its working style) |
-| `executor` | `tdd` | building the piece |
-| `executor` | `figure-it-out` | before an ask |
-| the round's engineers | `exhaust-the-design-space`, `attack-the-premise` | before ranking |
-
-Each moment reads "if `pstack:<skill>` is in this session's skill list, run it; otherwise &lt;the written default&gt;" (`figure-it-out` comes before any `bmesh ask`). A plugin installed but not invocable in the session counts as absent. The binary reads neither plugin.
+**The optional `method` skill.** The lead skill runs `method:writing-plans` on an L or larger spec when it is in the session's skill list, and otherwise writes the plan itself; the binary doesn't read the `method` plugin. Engineering principles come from the repo's `AGENTS.md`, its [rule sets](#rule-sets) included, which every node works by.
 
 **Install** it from the repo:
 

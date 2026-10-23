@@ -1,0 +1,8 @@
+- Make the smallest change that solves the problem. Delete what's dead before adding.
+- Read the code before you change it, and say what you learned before deciding.
+- Fix the first place it went wrong, not where it showed. A guard is a fix only when the state it handles is legitimate.
+- Prove it works on the real thing: run it the way a user would. Passing tests prove only what they reach.
+- When two fixes have failed on the same assumption, stop and test the assumption.
+- A rule you've had to state twice becomes a check or a script, not a third sentence.
+- Do reversible work, then report it. Ask only what no experiment or reading can settle.
+- Before trusting a number (a timing, a speedup, a count), find what limits it and rule out that it measured something else.

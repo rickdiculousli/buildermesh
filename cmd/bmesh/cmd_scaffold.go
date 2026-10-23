@@ -50,6 +50,11 @@ func (a *app) cmdScaffold(args []string) error {
 	if err != nil {
 		return err
 	}
+	for _, t := range targets {
+		if t.Note != "" {
+			fmt.Fprintln(a.stdout, t.Note)
+		}
+	}
 	if *check {
 		diff := scaffold.Plan(targets)
 		fmt.Fprint(a.stdout, diff)

@@ -175,6 +175,8 @@ bmesh scaffold your-repo    # commit and push what it writes
 bmesh ideate your-repo      # your first proposal round
 ```
 
+`scaffold` writes AGENTS.md's shared sections and the `core` engineering rules; in a chat, "scaffold your-repo" asks which [rule sets](docs/manual.md#rule-sets) the repo gets first.
+
 ## Quickstart (mesh)
 
 One always-on box runs the hub; the other boxes reach it over a tailnet such as Tailscale. Install `bmesh` and the plugin on every box as above, then:

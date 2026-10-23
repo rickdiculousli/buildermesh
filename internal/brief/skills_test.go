@@ -66,3 +66,48 @@ func TestSkillFrontmatterRefusesAPlainColon(t *testing.T) {
 		t.Fatal("the old ideate line parsed")
 	}
 }
+
+// The skills name no pstack moment (none was ever listed), restate no
+// engineering rule (the repo's AGENTS.md carries those), and the scaffold
+// skill asks which rule sets a repo gets.
+func TestSkillsLeaveRulesToAgentsMD(t *testing.T) {
+	var files []string
+	for _, dir := range []string{filepath.Join("..", "..", "skills"), "templates"} {
+		err := filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+			if err == nil && !d.IsDir() {
+				files = append(files, p)
+			}
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(files) < 10 {
+		t.Fatalf("found only %v", files)
+	}
+	for _, p := range files {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(b)
+		if strings.Contains(text, "pstack") && strings.Contains(filepath.ToSlash(p), "skills/") {
+			t.Errorf("%s names pstack", p)
+		}
+		for _, rule := range []string{"test that fails", "small enough to verify"} {
+			if strings.Contains(text, rule) {
+				t.Errorf("%s restates a rule: %q", p, rule)
+			}
+		}
+	}
+	b, err := os.ReadFile(filepath.Join("..", "..", "skills", "scaffold", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []string{"The rules interview", "clear conflicts out of the repo's own prose", "Rule sets section of bmesh's manual"} {
+		if !strings.Contains(string(b), w) {
+			t.Errorf("the scaffold skill lacks %q", w)
+		}
+	}
+}
