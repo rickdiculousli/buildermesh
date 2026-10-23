@@ -339,7 +339,9 @@ func newHubBox(t *testing.T) *hubBox {
 	b := &hubBox{t: t, addr: addr, exe: filepath.Join(root, "bin", "bmesh"), reexecs: make(chan bool, 4)}
 	b.install("old")
 	savedExe, savedEvery, savedReexec, savedSignals := executable, hubCheckEvery, hubReexec, hubSignals
-	t.Cleanup(func() { executable, hubCheckEvery, hubReexec, hubSignals = savedExe, savedEvery, savedReexec, savedSignals })
+	t.Cleanup(func() {
+		executable, hubCheckEvery, hubReexec, hubSignals = savedExe, savedEvery, savedReexec, savedSignals
+	})
 	executable = func() (string, error) { return b.exe, nil }
 	hubCheckEvery = 20 * time.Millisecond
 	hubReexec = func(exe string) error {
