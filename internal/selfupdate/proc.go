@@ -87,22 +87,29 @@ func readProc(path string) (ProcRecord, bool) {
 
 // HubLine names a bmesh hub on this box running an older binary than
 // serve: `hub runs <hub>, serve <serve>: restart bmesh-hub`. It is "" when
-// no live hub is recorded, the two are the same commit, or the hub is the
-// newer by commit time; with no time on either side, any difference counts.
+// no live hub is recorded or it isn't older (HubBehind).
 func HubLine(stateDir string, serve ProcRecord) string {
 	hub, ok := ReadProc(stateDir, "hub")
-	if !ok || sameBinary(hub, serve) {
-		return ""
-	}
-	if hub.Revision == "" && hub.Release == "" && serve.Revision == "" && serve.Release == "" {
-		return ""
-	}
-	ht, herr := time.Parse(time.RFC3339, hub.Time)
-	st, serr := time.Parse(time.RFC3339, serve.Time)
-	if herr == nil && serr == nil && !ht.Before(st) {
+	if !ok || !HubBehind(hub, serve) {
 		return ""
 	}
 	return "hub runs " + hub.Label() + ", serve " + serve.Label() + ": restart bmesh-hub"
+}
+
+// HubBehind reports whether hub runs an older binary than serve: false when
+// the two are the same commit, neither says what it runs, or the hub is
+// the newer by commit time; with no time on either side, any difference
+// counts.
+func HubBehind(hub, serve ProcRecord) bool {
+	if sameBinary(hub, serve) {
+		return false
+	}
+	if hub.Revision == "" && hub.Release == "" && serve.Revision == "" && serve.Release == "" {
+		return false
+	}
+	ht, herr := time.Parse(time.RFC3339, hub.Time)
+	st, serr := time.Parse(time.RFC3339, serve.Time)
+	return herr != nil || serr != nil || ht.Before(st)
 }
 
 // sameBinary: one commit by revision when both are known, else one release.

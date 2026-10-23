@@ -78,7 +78,9 @@ An upstream install (`[update] upstream = true`) publishes `update`, drains and 
 
 [Manual: Several boxes](manual.md#several-boxes)
 
-**Stale hub detection.** `bmesh hub` and `bmesh serve` (the daemon, not the `--restart` supervisor) write `<state dir>/hub.json` and `<state dir>/serve.json` at start, `{"pid","revision","release","time"}` of their binary, removed on a clean stop. The hub is stale when its pid is alive and its binary is a different, older commit than serve's (by commit time when both have one, else any difference).
+**Stale hub detection.** `bmesh hub` and `bmesh serve` (the daemon, not the `--restart` supervisor) write `<state dir>/hub.json` and `<state dir>/serve.json` at start, `{"pid","revision","release","time"}` of their binary, removed on a clean stop. The hub is stale when its pid is alive and its binary is a different, older commit than serve's (by commit time when both have one, else any difference; `selfupdate.HubBehind`).
+
+**The hub follows serve.** Off Windows, `bmesh hub` reads its executable path (symlinks resolved) and stats that file at start, before an update's swap can rename it aside. Every minute it reads `serve.json`; when serve's pid is alive, its `release` is a release tag (`vX.Y.Z`, not Describe's `vX.Y.Z+N`), the hub's own binary is behind it by the rule above, and the file at the path is no longer the one it started from (`os.SameFile`, so a hub started from another path than serve's never re-execs into itself every minute), it stops the server (JetStream flushes) and `syscall.Exec`s the path with its own arguments and environment. The pid stays, and the new process writes `hub.json` again. Clients redial by nats.go's default and leaves redial forever.
 
 **The hub server.** JetStream runs in domain `[mesh] domain` (default `hub`), stored in `[hub] store` (default `<state dir>/hub/jetstream`). A leaf port takes a user and password, not a bare token, which is why leaves connect as user `leaf`. On SIGTERM or Ctrl-C the server stops after JetStream flushes.
 
