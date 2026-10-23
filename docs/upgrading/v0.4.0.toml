@@ -3,6 +3,9 @@
 # takes the pstack moments out of the skills. Re-scaffolding is per repo, done
 # once by the admin, not a step a box takes. The plugin refreshes when a box
 # levels its checkout; until a session reloads, the old skills name pstack
-# moments that never run.
+# moments that never run. 085's t3-done add-on is off by default, today's
+# behaviour; turning it on takes two keys (enable and its ntfy URL) that only
+# make sense together and only on a box running T3, so it is an option in the
+# summary, not an ask.
 
-summary = "Nothing to run on a box. Once: scaffold each ship repo through the scaffold skill (\"scaffold <repo>\"), which asks which rule sets it gets, and commit what it writes; a plain bmesh scaffold <repo> gives it core."
+summary = "Nothing to run on a box. Once: scaffold each ship repo through the scaffold skill (\"scaffold <repo>\"), which asks which rule sets it gets, and commit what it writes; a plain bmesh scaffold <repo> gives it core. Optional, on a box running T3: push when a thread you started is done, failed or asking with [addons] enable = [\"t3-done\"] and [addons.t3-done] ntfy = \"<ntfy URL with its topic>\" in config.toml."
