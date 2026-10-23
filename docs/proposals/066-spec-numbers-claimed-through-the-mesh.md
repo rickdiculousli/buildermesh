@@ -4,10 +4,13 @@ title: A spec's number is claimed through the mesh, per repo, so two writers nev
 kind: maintenance
 size: M
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: dfdc9673-27b2-4f3f-9f17-95a5b436de66
 proposed_on: 2026-10-17
+built_by: 65993341-acd7-4e53-b52a-10012202b6c0
+host: k16
+family: buildermesh-build-13
 ---
 
 ## Opportunity
