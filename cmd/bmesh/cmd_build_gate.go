@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/gitwork"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
@@ -171,17 +172,17 @@ func (a *app) verifyMain(ctx context.Context, row config.Repo, repoPath, tip, sh
 		}
 	}
 	if !recorded {
-		tag, err := shortHex()
+		tag, err := gitwork.ShortHex()
 		if err != nil {
 			return err
 		}
 		branch := mesh.RepoToken(row.Name) + "-verify-" + tag
 		wt := filepath.Join(a.cfg.Expand(a.cfg.Runner.Worktrees), row.Name, branch)
-		if err := addWorktree(ctx, repoPath, wt, branch, sha); err != nil {
+		if err := gitwork.AddWorktree(ctx, repoPath, wt, branch, sha); err != nil {
 			return err
 		}
 		defer func() {
-			if err := removeWorktree(context.WithoutCancel(ctx), repoPath, wt, branch, false); err != nil {
+			if err := gitwork.RemoveWorktree(context.WithoutCancel(ctx), repoPath, wt, branch, false); err != nil {
 				fmt.Fprintf(a.stderr, "bmesh: %v\n", err)
 			}
 		}()

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/checkout"
+	"github.com/rickdiculousli/buildermesh/internal/gitwork"
 	"github.com/rickdiculousli/buildermesh/internal/instance"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
@@ -427,7 +428,7 @@ func jobOS(ctx context.Context, top, name, commit string) (string, error) {
 		return "", err
 	}
 	ref := "main"
-	if hasOrigin(ctx, top) {
+	if gitwork.HasOrigin(ctx, top) {
 		ref = "origin/main"
 	}
 	onMain, mainErr := kind.LoadAt(top, ref, name)
@@ -862,7 +863,7 @@ func (a *app) priorReview(ctx context.Context, top string) (mesh.Result, bool, e
 	}
 	sort.Slice(results, func(i, j int) bool { return results[i].At > results[j].At })
 	mainRef := "main"
-	if hasOrigin(ctx, top) {
+	if gitwork.HasOrigin(ctx, top) {
 		mainRef = "origin/main"
 	}
 	head, err := gitIn(ctx, top, "rev-parse", "HEAD")

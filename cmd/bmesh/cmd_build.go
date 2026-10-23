@@ -13,6 +13,7 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/brief"
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/gitwork"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/runner"
@@ -102,7 +103,7 @@ func (a *app) cmdBuild(args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	if err := levelMain(ctx, repoPath); err != nil {
+	if err := gitwork.LevelMain(ctx, repoPath); err != nil {
 		return fail(exitRefused, "refused: %v", err)
 	}
 	specs, err := spec.ScanRef(repoPath, a.cfg.Spec.Glob, "main")
@@ -337,63 +338,25 @@ func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s 
 		Warnings: spec.CommandClashes(s, specs, mainCommands())}, nil
 }
 
-// recordOnMain sets spec id's status and fields on main: in a bmesh
-// worktree made from main, committed as msg, fast-forwarded onto main and
-// pushed, as choose-ideas lands. It returns the commit's sha. A main that
-// will not fast-forward is refused (exit 3) with the commit kept on its
-// branch.
+// recordOnMain sets spec id's status and fields on main (editOnMain, as
+// choose-ideas lands), committed as msg. It returns the commit's sha. A
+// main that will not fast-forward is refused (exit 3) with the commit kept
+// on its branch.
 func (a *app) recordOnMain(ctx context.Context, name, repoPath, msg string, id int, status string, from []string, fields ...spec.Field) (string, error) {
-	if err := levelMain(ctx, repoPath); err != nil {
-		return "", fail(exitRefused, "refused: %v", err)
-	}
-	tag, err := shortHex()
-	if err != nil {
-		return "", err
-	}
-	branch := mesh.RepoToken(name) + "-build-" + tag
-	wt := filepath.Join(a.cfg.Expand(a.cfg.Runner.Worktrees), name, branch)
-	if err := addWorktree(ctx, repoPath, wt, branch, "main"); err != nil {
-		return "", err
-	}
-	committed, landed := false, false
-	defer func() {
-		if err := removeWorktree(context.WithoutCancel(ctx), repoPath, wt, branch, committed && !landed); err != nil {
-			fmt.Fprintf(a.stderr, "bmesh: %v\n", err)
+	return a.editOnMain(ctx, name, repoPath, "build", func(wt string) (string, error) {
+		specs, err := spec.Scan(wt, a.cfg.Spec.Glob)
+		if err != nil {
+			return "", landFail(err)
 		}
-	}()
-	specs, err := spec.Scan(wt, a.cfg.Spec.Glob)
-	if err != nil {
-		return "", landFail(err)
-	}
-	s, ok := spec.Find(specs, id)
-	if !ok {
-		return "", fail(exitError, "no spec %03d on main in %s", id, repoPath)
-	}
-	if _, err := spec.SetStatus(s, status, from, fields...); err != nil {
-		return "", ledgerFail(err)
-	}
-	if _, err := gitIn(ctx, wt, "add", "-A", "--", spec.Dir(a.cfg.Spec.Glob)); err != nil {
-		return "", err
-	}
-	if _, err := gitIn(ctx, wt, "-c", "user.name=bmesh", "-c", "user.email=bmesh@localhost", "commit", "-q", "-m", msg); err != nil {
-		return "", err
-	}
-	committed = true
-	sha, err := gitIn(ctx, wt, "rev-parse", "HEAD")
-	if err != nil {
-		return "", err
-	}
-	if err := a.checkLedger(wt); err != nil {
-		return "", err
-	}
-	if err := a.landOnMain(ctx, repoPath, branch); err != nil {
-		return "", fail(exitRefused, "refused: %v; the record is committed on branch %s", err, branch)
-	}
-	landed = true
-	if err := pushMain(ctx, repoPath); err != nil {
-		return "", err
-	}
-	return sha, nil
+		s, ok := spec.Find(specs, id)
+		if !ok {
+			return "", fail(exitError, "no spec %03d on main in %s", id, repoPath)
+		}
+		if _, err := spec.SetStatus(s, status, from, fields...); err != nil {
+			return "", ledgerFail(err)
+		}
+		return msg, nil
+	})
 }
 
 // buildAccepted dispatches the repo's accepted specs in id order, keeping

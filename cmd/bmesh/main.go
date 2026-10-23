@@ -19,6 +19,7 @@ import (
 	"github.com/nats-io/nats.go"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/gitwork"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/upgrade"
 )
@@ -305,6 +306,10 @@ func (a *app) report(err error) int {
 			fmt.Fprintf(a.stderr, "bmesh: %s\n", ee.msg)
 		}
 		return ee.code
+	}
+	if errors.As(err, new(*gitwork.Refused)) {
+		fmt.Fprintf(a.stderr, "bmesh: %s\n", err)
+		return exitRefused
 	}
 	fmt.Fprintf(a.stderr, "bmesh: %s\n", err)
 	return exitError

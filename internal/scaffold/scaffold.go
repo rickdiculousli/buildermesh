@@ -232,25 +232,17 @@ func Targets(repoPath string, r config.Repo, snippet string) (targets []Target, 
 		targets = append(targets, t)
 	}
 	if len(r.Verify) > 0 {
-		t, err := read(repoPath, verifyRel(rc))
+		t, err := verifyTarget(repoPath, rc, r)
 		if err != nil {
 			return nil, nil, err
 		}
-		if t.Exists {
-			if t.Want, err = FollowVerify(t.Rel, t.Current, r); err != nil {
-				return nil, nil, err
-			}
-			if t.Changed() {
-				targets = append(targets, t)
-			}
+		if t.Exists && t.Changed() {
+			targets = append(targets, t)
 		}
 	}
 	if r.Setup != "" {
-		t, err := read(repoPath, kind.ConfigFile)
+		t, err := setupTarget(repoPath, r)
 		if err != nil {
-			return nil, nil, err
-		}
-		if t.Want, err = FollowSetup(t.Current, r); err != nil {
 			return nil, nil, err
 		}
 		if t.Changed() {
@@ -258,6 +250,67 @@ func Targets(repoPath string, r config.Repo, snippet string) (targets []Target, 
 		}
 	}
 	return targets, skipped, nil
+}
+
+// Follow is the row-fed targets of the repo at repoPath that read
+// otherwise than the row: the verify kind's command (when verify, the row
+// names verify commands and the kind exists) and .bmesh/config.toml's
+// [setup] (when setup, the row names a setup and the file exists). A
+// missing file is left to Targets, which creates it; AGENTS.md is never
+// one, since its wording is this binary's. An error is FollowVerify's or
+// FollowSetup's refusal.
+func Follow(repoPath string, r config.Repo, verify, setup bool) ([]Target, error) {
+	var out []Target
+	if verify && len(r.Verify) > 0 {
+		rc, err := kind.LoadRepoConfig(repoPath)
+		if err != nil {
+			return nil, err
+		}
+		t, err := verifyTarget(repoPath, rc, r)
+		if err != nil {
+			return nil, err
+		}
+		if t.Exists && t.Changed() {
+			out = append(out, t)
+		}
+	}
+	if setup && r.Setup != "" {
+		t, err := setupTarget(repoPath, r)
+		if err != nil {
+			return nil, err
+		}
+		if t.Exists && t.Changed() {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
+// verifyTarget is the verify kind with its command the row's; Want is
+// empty when the kind doesn't exist.
+func verifyTarget(repoPath string, rc kind.RepoConfig, r config.Repo) (Target, error) {
+	t, err := read(repoPath, verifyRel(rc))
+	if err != nil || !t.Exists {
+		return t, err
+	}
+	t.Want, err = FollowVerify(t.Rel, t.Current, r)
+	return t, err
+}
+
+// setupTarget is the repo config with its [setup] the row's.
+func setupTarget(repoPath string, r config.Repo) (Target, error) {
+	t, err := read(repoPath, kind.ConfigFile)
+	if err != nil {
+		return t, err
+	}
+	t.Want, err = FollowSetup(t.Current, r)
+	return t, err
+}
+
+// DoneFollows reports whether AGENTS.md's text holds the row's done block
+// as this binary writes it.
+func DoneFollows(text string, r config.Repo) bool {
+	return blockRE("done").FindString(text) == block("done", Done(r))
 }
 
 // RowSetup is the [setup] a row asks for, as the repo config reads it.

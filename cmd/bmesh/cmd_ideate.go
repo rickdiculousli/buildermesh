@@ -19,6 +19,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/brief"
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/daemon"
+	"github.com/rickdiculousli/buildermesh/internal/gitwork"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/runner"
@@ -171,7 +172,7 @@ func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string, f
 			return err
 		}
 	}
-	if err := levelMain(ctx, repoPath); err != nil {
+	if err := gitwork.LevelMain(ctx, repoPath); err != nil {
 		return fail(exitRefused, "refused: %v", err)
 	}
 	specs, err := spec.ScanRef(repoPath, a.cfg.Spec.Glob, "main")
@@ -352,7 +353,7 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 	} else if err := a.preflight(ctx, r); err != nil {
 		return childStarted{}, err
 	}
-	if err := levelMain(ctx, repoPath); err != nil {
+	if err := gitwork.LevelMain(ctx, repoPath); err != nil {
 		return childStarted{}, fail(exitRefused, "refused: %v", err)
 	}
 	roundPath := fmt.Sprintf("%s-round-%d", mesh.RepoToken(row.Name), round)
@@ -379,11 +380,11 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 	if abs, err := filepath.Abs(wt); err == nil {
 		wt = abs
 	}
-	if err := addWorktree(ctx, repoPath, wt, branch, "main"); err != nil {
+	if err := gitwork.AddWorktree(ctx, repoPath, wt, branch, "main"); err != nil {
 		return childStarted{}, err
 	}
 	undo := func() {
-		_ = removeWorktree(context.WithoutCancel(ctx), repoPath, wt, branch, false)
+		_ = gitwork.RemoveWorktree(context.WithoutCancel(ctx), repoPath, wt, branch, false)
 	}
 	tmpl, title := "engineer", "engineer"
 	if child == "ux" {

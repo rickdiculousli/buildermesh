@@ -38,7 +38,7 @@ Judge: <opus, fable or sonnet>, because <one clause>.
 The visible result when it's done.
 
 ## Verification
-Which verify commands prove it; anything new that's needed. A change to the verify commands themselves is a change to the repo's registry row: name it under "Needs from the operator" (`bmesh repos propose` with the new `verify`) and let `bmesh scaffold` write the files, never edit them by hand. A UI spec names its browser check: the viewports, and the repo's seed and check scripts where it has them (its README's testing section says).
+Which verify commands prove it; anything new that's needed. A change to the verify commands themselves is a change to the repo's registry row: name it under "Needs from the operator" (`bmesh repos propose` with the new `verify`); once it is published, the row's host box commits the files to `main`. Never edit them by hand. A UI spec names its browser check: the viewports, and the repo's seed and check scripts where it has them (its README's testing section says).
 
 ## Risks and the alternative considered
 

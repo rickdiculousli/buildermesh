@@ -25,7 +25,8 @@ func (h *hostsNode) conf() *config.Config {
 // syncRegistry takes a newer registry from the hub (writing repos.toml,
 // keeping repos.toml.prev) and puts this box's back when the hub's is
 // missing, unsigned or lower. A registry this binary can't read is left
-// as it is, and pushed once per version.
+// as it is, and pushed once per version. Then it starts the rescaffold of
+// any repo a registry changed that hasn't landed yet.
 func (h *hostsNode) syncRegistry(ctx context.Context) error {
 	if h.d.Cfg.Path() == "" {
 		return nil // no config file, so nowhere for repos.toml
@@ -59,6 +60,7 @@ func (h *hostsNode) syncRegistry(ctx context.Context) error {
 			h.d.Log.Warn("hosts: publish registry", "err", err)
 		}
 	}
+	h.goRescaffold(ctx)
 	return err
 }
 
@@ -77,8 +79,10 @@ func (h *hostsNode) applyRegistry(r hosts.Registry) error {
 }
 
 // useRows makes rows, from registry version v, the ones the hosts layer
-// reads.
+// reads, noting each repo of this box's whose scaffold fields they change
+// (noteScaffold).
 func (h *hostsNode) useRows(v int64, rows map[string]config.Repo) {
+	h.noteScaffold(v, h.conf().Repos, rows)
 	c := *h.d.Cfg
 	c.Repos = rows
 	h.mu.Lock()
