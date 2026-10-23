@@ -1,0 +1,8 @@
+# Upgrade notes for v0.4.6, distilled from the Upgrading sections of the
+# specs it carries. 074 has the daemon of a ship repo's host rescaffold that
+# repo when its registry row changes. A box that takes this release by its
+# own update needs nothing; the only thing to know is that a host still on
+# an older daemon leaves the rescaffold to a person, as before, so it is
+# the summary, not a step.
+
+summary = "Nothing to run on a box. A published change to a repo's verify or setup now reaches the repo by itself once the repo's host runs this release: its daemon rescaffolds main and pushes. While a host still runs an older bmesh, run bmesh scaffold <repo> there, then commit and push, as before."
