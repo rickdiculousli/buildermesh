@@ -4,10 +4,13 @@ title: A lead ends at bmesh ready, and its box's daemon lands the change, waking
 kind: token-cost
 size: L
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: c3029b53-10b6-4fab-83cb-465887cb0b73
 proposed_on: 2026-10-18
+built_by: 7397e410-ccdf-49a1-a046-3fa4c719dff7
+host: k16
+family: buildermesh-build-15
 ---
 
 ## Opportunity
