@@ -48,18 +48,23 @@ func (e ErrIllegalTransition) Error() string {
 
 var transitions = map[string][]string{
 	"idle":    {"working"},
-	"working": {"working", "blocked", "asking", "done", "silent", "held"},
+	"working": {"working", "blocked", "asking", "done", "silent", "held", "landing"},
 	"blocked": {"working", "done"},
 	"asking":  {"working", "blocked", "asking", "done", "held"},
 	"silent":  {"working", "blocked", "asking", "done", "held"},
 	// held: a lead waiting at a coordinator's gate (bmesh held). Only an
 	// event of its own moves it on; the daemon never calls it silent.
-	"held": {"working", "blocked", "asking", "done", "held"},
+	"held": {"working", "blocked", "asking", "done", "held", "landing"},
+	// landing: a lead that ran bmesh ready, whose box's daemon lands its
+	// change. The daemon moves it on (held at a hold, done, working after a
+	// refusal, landing again as land's text changes); the daemon never calls
+	// it silent.
+	"landing": {"landing", "held", "done", "working", "blocked"},
 }
 
 var eventStates = map[string]string{
 	"started": "working", "progress": "working", "blocked": "blocked", "ask": "asking", "done": "done",
-	"held": "held",
+	"held": "held", "ready": "landing",
 }
 
 // StateFor maps a node event to the state it sets.
@@ -141,6 +146,47 @@ func ReadAllStates(ctx context.Context, c *Client) (map[string]State, error) {
 // (absent) or Update at the read revision. A failed write re-reads once.
 func WriteState(ctx context.Context, c *Client, path string, to State) (uint64, error) {
 	return writeState(ctx, c, path, to, nil)
+}
+
+// ErrStateMoved is WriteStateAt's refusal: the state is no longer at the
+// revision the writer read.
+var ErrStateMoved = errors.New("state moved since it was read")
+
+// WriteStateAt moves path to the new state only while it is still at rev,
+// the revision its writer read (0: still absent): the daemon's writes for a
+// node, so a node's own event written meanwhile is never overwritten. A
+// state that moved is ErrStateMoved.
+func WriteStateAt(ctx context.Context, c *Client, path string, rev uint64, to State) (uint64, error) {
+	kv, err := bucket(ctx, c, BucketState)
+	if err != nil {
+		return 0, err
+	}
+	cur, now, err := ReadState(ctx, c, path)
+	if err != nil {
+		return 0, err
+	}
+	if now != rev {
+		return 0, ErrStateMoved
+	}
+	if !Legal(cur.State, to.State) {
+		return 0, ErrIllegalTransition{From: cur.State, To: to.State}
+	}
+	if to.At == "" {
+		to.At = time.Now().UTC().Format(time.RFC3339)
+	}
+	data, err := json.Marshal(to)
+	if err != nil {
+		return 0, err
+	}
+	if rev == 0 {
+		now, err = kv.Create(ctx, path, data)
+	} else {
+		now, err = kv.Update(ctx, path, data, rev)
+	}
+	if isConflict(err) {
+		return 0, ErrStateMoved
+	}
+	return now, err
 }
 
 // isConflict reports a lost revision race (Create on an existing key, or

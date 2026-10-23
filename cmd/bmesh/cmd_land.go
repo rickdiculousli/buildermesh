@@ -929,37 +929,14 @@ func (l *lander) mainPushed(ctx context.Context) error {
 	}
 }
 
-// rebaseRE matches a reflog entry a finished rebase wrote on the branch
-// (rebase, rebase -i, pull --rebase; "rebase finished" from older git).
-var rebaseRE = regexp.MustCompile(`^(rebase|pull)\b[^:]*\(finish\): |^rebase finished: `)
-
-// rebasedFrom reads the branch's reflog, newest first, for a rebase that
-// finished at head and returns the head it rewrote (the entry just before
-// it), and so on back while that head was itself made by a rebase: the
-// heads land would have rebased itself, nearest first. A head with commits
-// on top of the rebase, or a branch with no reflog, returns none.
+// rebasedFrom is checkout.RebasedFrom as land's sources: the heads a
+// rebase rewrote, nearest first.
 func rebasedFrom(ctx context.Context, dir, branch, head string) []source {
-	out, err := gitIn(ctx, dir, "reflog", "show", "--format=%H%x00%gs", "refs/heads/"+branch, "--")
-	if err != nil {
-		return nil
-	}
-	type entry struct{ sha, subject string }
-	var log []entry
-	for _, line := range strings.Split(out, "\n") {
-		if sha, subject, ok := strings.Cut(line, "\x00"); ok {
-			log = append(log, entry{sha, subject})
-		}
-	}
 	var heads []source
-	for i, cur := 0, head; ; {
-		k := slices.IndexFunc(log[i:], func(e entry) bool { return e.sha == cur && rebaseRE.MatchString(e.subject) })
-		if k < 0 || i+k+1 >= len(log) || log[i+k+1].sha == cur {
-			return heads
-		}
-		i += k + 1
-		heads = append(heads, source{head: log[i].sha, rebase: cur})
-		cur = log[i].sha
+	for _, r := range checkout.RebasedFrom(ctx, dir, branch, head) {
+		heads = append(heads, source{head: r.Head, rebase: r.Rebase})
 	}
+	return heads
 }
 
 // land runs the steps under the lease, on the worktree land waited on

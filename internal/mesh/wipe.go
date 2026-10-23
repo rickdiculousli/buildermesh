@@ -10,7 +10,8 @@ import (
 )
 
 // Wiped is what a wipe removes of one node from the mesh: its events, its
-// keys with any history (in bm-nodes, bm-state, bm-runner and bm-holds)
+// keys with any history (in bm-nodes, bm-state, bm-runner, bm-holds and
+// bm-ready)
 // and, when it had messages or a consumer, its inbox.
 type Wiped struct {
 	Events int
@@ -20,7 +21,7 @@ type Wiped struct {
 
 // wipeBuckets are the buckets keyed by node path, bm-nodes first: a
 // daemon that finds no node writes nothing for it.
-var wipeBuckets = []string{BucketNodes, BucketState, BucketRunner, BucketHolds}
+var wipeBuckets = []string{BucketNodes, BucketState, BucketRunner, BucketHolds, BucketReady}
 
 // WipeTree counts what the mesh holds of root and the nodes under it
 // (paths, root among them) and, with apply, purges it: the events on
@@ -72,7 +73,7 @@ func WipeTree(ctx context.Context, c *Client, root string, paths []string, apply
 		stream, prefix := "KV_"+b, "$KV."+b+"."
 		counts, err := subjectCounts(ctx, c, stream, under(prefix)...)
 		if errors.Is(err, jetstream.ErrStreamNotFound) {
-			continue // bm-holds is made by the first hold
+			continue // bm-holds and bm-ready are made on demand
 		}
 		if err != nil {
 			return nil, err

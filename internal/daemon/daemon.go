@@ -70,6 +70,11 @@ type Deps struct {
 	// StartFixer starts bmesh's own fixer and returns what it printed;
 	// nil runs `<Exe> fix`.
 	StartFixer func(ctx context.Context) (string, error)
+
+	// RunStep runs `bmesh <args>` in dir for the lander (land, done,
+	// held) and returns its output and exit code, err only when it could
+	// not run; nil runs Exe with --config, as the fixer start does.
+	RunStep func(ctx context.Context, dir string, args ...string) (out string, code int, err error)
 }
 
 func (d *Deps) defaults() {
@@ -150,7 +155,8 @@ func decodeEvent(data []byte) (mesh.Event, error) {
 // digest and push loops when [notify] has somewhere to send, the quota
 // reset reminders when [quota] remind_topic is set, and, when
 // [repos] names any repo, the routine loop and (with this binary's module
-// known) the fixer loop, with [hosts] enabled the hosts loop, and each
+// known) the fixer loop, with a binary to run (or RunStep) the lander that
+// lands for this box's leads, with [hosts] enabled the hosts loop, and each
 // add-on [addons] enable names; it
 // returns once ctx ends and every loop has stopped.
 func Run(ctx context.Context, d Deps) error {
@@ -210,6 +216,9 @@ func Run(ctx context.Context, d Deps) error {
 	}
 	if len(d.Cfg.Repos) > 0 && d.Module != "" {
 		start(func() { fixerLoop(ctx, d, pollEvery) })
+	}
+	if d.lands() {
+		start(func() { landLoop(ctx, d, act, pollEvery) })
 	}
 	if d.Cfg.Hosts.Enabled {
 		start(func() { hostsRun(ctx, d) })

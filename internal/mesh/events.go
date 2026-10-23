@@ -24,6 +24,9 @@ type Event struct {
 	To     string `json:"to,omitempty"`
 	Body   string `json:"body,omitempty"` // a digest's body
 	Seq    uint64 `json:"seq,omitempty"`  // a push claim's event: its stream sequence
+	// Can is what a daemon's started event says it does beyond the
+	// basics: "land" when it lands for its box's leads (bmesh ready).
+	Can []string `json:"can,omitempty"`
 }
 
 // Stored is a stream message as read back.

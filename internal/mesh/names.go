@@ -17,6 +17,7 @@ const (
 	BucketClaims  = "bm-claims"
 	BucketJobs    = "bm-jobs"
 	BucketHolds   = "bm-holds"
+	BucketReady   = "bm-ready"
 	BucketSpecIDs = "bm-specids"
 )
 

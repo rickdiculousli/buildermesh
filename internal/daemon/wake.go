@@ -22,16 +22,30 @@ var wakeMu sync.Mutex
 // wake it. A stopped lead (mesh.Stopped) is woken only by a message from
 // outside its own tree (resumer), and the wake says who resumed it. A
 // thread the user stopped in its runner is never woken here: the poll marks
-// it stopped.
+// it stopped. A lead with a ready request (bmesh ready) is finished too,
+// and left to the lander: only a message wakes it, once the lander has
+// cancelled its step and withdrawn the request.
 func wakeOnce(ctx context.Context, d Deps, act *Activity) {
 	leads, err := localLeads(ctx, d)
 	if err != nil {
 		d.Log.Warn("wake: list nodes", "err", err)
 		return
 	}
+	rs, err := mesh.ListReady(ctx, d.Client)
+	if err != nil {
+		d.Log.Warn("wake: list ready", "err", err)
+		return
+	}
+	landing := map[string]bool{}
+	for _, r := range rs {
+		landing[r.Path] = true
+	}
 	for _, n := range leads {
 		if ctx.Err() != nil {
 			return
+		}
+		if landing[n.Path] {
+			continue
 		}
 		st, _, err := mesh.ReadState(ctx, d.Client, n.Path)
 		if err != nil {
@@ -141,8 +155,7 @@ func wake(ctx context.Context, d Deps, act *Activity, n mesh.Node, unread int, r
 	if resumedBy != "" {
 		text = ResumeText(resumedBy, unread, pending)
 	}
-	// Runner.Send reads Status itself and refuses a running thread.
-	err := d.Runner.Send(ctx, n.Runner.Thread, text)
+	err := deliverWake(ctx, d, act, n, text)
 	if errors.Is(err, runner.ErrRunning) {
 		d.Log.Info("wake: not delivered, thread is running", "path", n.Path, "thread", n.Runner.Thread)
 		return false
@@ -151,10 +164,21 @@ func wake(ctx context.Context, d Deps, act *Activity, n mesh.Node, unread int, r
 		d.Log.Warn("wake: send", "path", n.Path, "thread", n.Runner.Thread, "err", err)
 		return false
 	}
+	return true
+}
+
+// deliverWake sends text to n's thread and, on delivery, records the wake
+// (Activity and a daemon wake event). Runner.Send reads Status itself and
+// refuses a running thread (ErrRunning). The caller holds wakeMu.
+func deliverWake(ctx context.Context, d Deps, act *Activity, n mesh.Node, text string) error {
+	now := d.Now()
+	if err := d.Runner.Send(ctx, n.Runner.Thread, text); err != nil {
+		return err
+	}
 	act.ObserveWake(n.Path, now)
 	ev := mesh.Event{From: d.from(), Event: "wake", To: n.Path, Text: text, At: now.UTC().Format(time.RFC3339)}
 	if err := mesh.PublishEvent(ctx, d.Client, ev); err != nil {
 		d.Log.Warn("wake: publish", "path", n.Path, "err", err)
 	}
-	return true
+	return nil
 }
