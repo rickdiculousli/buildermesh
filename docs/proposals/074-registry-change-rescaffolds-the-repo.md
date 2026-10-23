@@ -11,6 +11,7 @@ proposed_on: 2026-10-17
 built_by: 23b05757-c92b-4dfc-8d47-13b5a9160b16
 host: k16
 family: buildermesh-build-19
+branch: bmesh/23b05757-c92b-4dfc-8d47-13b5a9160b16
 ---
 
 ## Opportunity
