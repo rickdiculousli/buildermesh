@@ -1690,7 +1690,7 @@ Prints a kind's (or every kind's) instances with host, state and model, then the
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--json` | off | instances as `members`, `[{"path","host","state","model"}]`, and jobs as `jobs`, `[{"id","from","state","holder","seq"}]` |
+| `--json` | off | instances as `members`, `[{"path","host","state","model"}]`, and jobs as `jobs`, `[{"id","from","commit","state","holder","host","seq"}]` (`host` the box of the daemon holding it) |
 
 **Output.** A job's state and holder:
 
@@ -1972,18 +1972,19 @@ See also: [Setup](#setup), [`bmesh routine run`](#bmesh-routine-run).
 ### `bmesh land`
 
 ```
-bmesh land [--spec NNN] [--ttl D] [--wait D]
+bmesh land [--spec NNN] [--size XS|S|M|L] [--ttl D] [--wait D]
 ```
 
-Lands a lead's branch on `main` from its worktree in one command. It runs under the lease `land.<repo>` (`<repo>` is the node's repo, else the registry row or base name of the main checkout), so two leads landing at once queue.
+Lands a lead's branch on `main` from its worktree in one command. It verifies, queues the review the spec's size calls for and waits for it, then lands under the lease `land.<repo>` (`<repo>` is the node's repo, else the registry row or base name of the main checkout), so two leads landing at once queue. It waits out what clears by itself and stops only for what needs the lead: a hold, the operator's mail, a conflict, a failing verify or review, scaffold drift, a spec that isn't `building`, or a HEAD that moved.
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `--spec NNN` | the node's spec | the spec it lands |
+| `--size XS\|S\|M\|L` | the spec's `size` | the size the change was built at, when its scope grew past the spec's; it sizes the review land queues |
 | `--ttl D` | 10m | how long the lease lasts unrenewed; at least 3 s |
-| `--wait D` | 30m | how long to wait for a lease another holder has (exit 5 after) |
+| `--wait D` | 30m | how long `land` waits in all: for jobs, for the main checkout, for the lease and for `main` to stop moving (exit 5 after) |
 
-The holder is the node, else the host name.
+The holder is the node, else the host name. A lead runs `land` in the background with a timeout 15 minutes above `--wait`, since a killed `land` can leave a rebase half done.
 
 **What it does.** Before the lease, `land`:
 
@@ -1991,11 +1992,28 @@ The holder is the node, else the host name.
 2. Refuses (exit 3) a dirty worktree, and one not on a branch or on `main`.
 3. Run from a node, reads its inbox as the daemon's wake does (see [Config: Wake text](#wake-text)), holding and acking nothing. An unread message sent by `operator` with `bmesh send` refuses it (exit 3); there is no `--force`. Anything else unread (a report, a reply, another node's message) is named on one line, each item as the wake names it, `unread: done from <path> (branch <b> at <sha8>); reply to job <id> (<kind> ok|fail); message from <path>`. Outside a node there is no inbox and no check.
 4. Prints the kinds it will require of the landed tree and where each came from, `required: verify (the repo's verify kind), review (t:<tree8> at HEAD)`, or `review (t:<tree8> before the rebase at <sha8>)` for a result from before a rebase by hand (`required: nothing` when none).
-5. While another holder has the lease, prints `waiting for land.<repo> (held by <holder>)` once per holder and retries every 2 s, giving up after `--wait` (exit 5).
+5. **Verify first.** Runs the required inline kinds on HEAD, as step 4 under the lease runs them, so a review never reads code that fails its tests. A failing one prints its output and exits 1. Under the lease, a kind ok at the same tree here prints `<entry> (ran before the lease)` and isn't run again.
+6. **The review, sized by the spec.** Run from a node, in a repo whose `review` kind is queued (not inline), prints one of:
+    - `review: waiting for job <id>`: the node has an unanswered `review` job for a commit of the branch (one `land` queued before it timed out, or one the lead queued by hand); `land` waits for it instead of queueing another.
+    - `review: on the branch already (ok|fail at t:<tree8>)`: a commit of the branch has a review result (the check `routine queue review` makes, including the heads a rebase by hand rewrote, so a hand rebase carries its review). It queues nothing, so a failing review that was then fixed lands on verify alone.
+    - `review: none (size XS|S)`: the change is small enough to land on verify alone.
+    - `review: queued <id> (medium|high, size M|L)`: it pushes the branch (`push origin <branch> <sha8>`, so a daemon on any box can fetch the commit; a failing push is said on stderr and `land` goes on) and queues `review` on HEAD on the kind's first model, started at once, its text `base: <merge-base origin/main HEAD>`, at `medium` for size M and `high` for L or larger, bmesh's done rule.
 
-The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander blocks the next for at most that long. Holding it, `land` reads the hold and the inbox again, so an operator message that arrived while it waited refuses it before the fetch. A message arriving during the rebase and checks is not seen. It prints `lease land.<repo>`, then a line per step:
+    The size is `--size`, else the spec's `size`. Only when `land` would queue does it need one: a spec with neither is refused (exit 2, `land needs --size: spec NNN has no size`), and so is a repo not in the registry, whose review no daemon would take (exit 3). Outside a node, or in a repo with no queued review kind, this step prints nothing.
+7. **The node's jobs.** Waits for the reply to every unanswered job the node queued on HEAD of the repo's queued kinds, and to the review job of step 6. A job on an earlier commit is not waited for: its result isn't at HEAD's tree, and `land` requires what it would without it. Each job is named once, `waiting for job <id> (<kind>, waiting|held|running[ on <host>])`, and its reply looked for every 2 s. `land` acks each reply it reads, as `routine wait` does, so no wake follows.
+    - An ok reply prints `job <id> (<kind>): ok t:<tree8>`.
+    - A failing reply prints its output (a review's findings) and is refused (exit 3), so the lead never needs a `routine wait`.
+    - A reply that recorded nothing because its model run never answered (no result, output `model run failed: <why>; nothing recorded`) is queued once more as it was: `job <id> (<kind>): model run failed: ...; queued <id> once more`. A second such reply, or any other that recorded nothing, prints its output and is refused (exit 3).
 
-1. `fetch origin/main <sha8>`: `git fetch origin main`. It is refused (exit 3) while the main checkout's `main` has commits `origin/main` doesn't (unpushed work, which `land` never pushes). Without an origin the base is the local `main`.
+    Once the replies are in, `land` starts again from step 1, so the results they recorded are required (a second `required:` line). Outside a node it waits for no job.
+8. **The main checkout.** While the main checkout's `main` has commits `origin/main` doesn't (someone's unpushed work, which `land` never pushes), prints `waiting for main in <path> to be pushed: it has <n> commits origin/main doesn't (someone's unpushed work; land never pushes it)` once per count and fetches again every 15 s.
+9. While another holder has the lease, prints `waiting for land.<repo> (held by <holder>)` once per holder and retries every 2 s.
+
+**Waiting.** Every wait (steps 7 to 9, and the main checkout and a moving `main` under the lease) reads the node's hold and its mail again at each poll: a hold refuses at once, as step 1 does, and so does an unread operator message, or any the operator sent since `land` started, read or not, since a lead woken mid-land can't act on it before the push (`refused: <n> message(s) from the operator since land started; ...`). `--wait` bounds all of the waiting together; past it, `land` exits 5 with `timed out waiting for <what>; nothing is pushed`, `<what>` the job, the main checkout or `main` it waited for (`timed out waiting for land.<repo>, held by <holder>` for the lease). Run again, it waits for the same jobs rather than queueing them twice. Run from a node, `land` publishes a `land` event under the node when it starts and then once a minute until it ends, its text what it is doing (`waiting for job <id> (review)`, `landing under land.<repo>`). It sets no state, but it is the node's activity, so a lead waiting in `land` isn't called silent, and `watch` shows where it is.
+
+The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander blocks the next for at most that long. Holding it, `land` checks that the worktree is clean and that HEAD is the commit it waited on (or its own rebase of it), refusing `HEAD moved while land waited` (exit 3) otherwise, and reads the hold and the inbox again. A message arriving during the rebase and checks is not seen. It prints `lease land.<repo>`, then a line per step:
+
+1. `fetch origin/main <sha8>`: `git fetch origin main`. While the main checkout's `main` has commits `origin/main` doesn't, `land` waits under the lease, as step 8 before it does. Without an origin the base is the local `main`.
 2. `rebase onto <sha8>: N commits` (or `rebase: on <sha8> already`). When the rebase stops on a conflict, `land` resolves what a rule can (see Conflicts below): when every region of every conflicted file resolves, it adds the files, continues the rebase and prints `rebase: resolved <file> (<rules>)` per file, at each stop, `<rules>` from `kept both`, `applied both` and `by sentence`. Anything left aborts the rebase and is refused (exit 3), as is a rebase that fails for another reason. A branch with nothing beyond the base is refused (`nothing to land`), as are a spec the worktree doesn't have and a spec not reading `building` in the worktree.
 3. `scaffold: follows the row`, for a repo with a `ship` row whose `AGENTS.md` (in the rebased tree) has a `<!-- bmesh:` marker. Each marked block of `AGENTS.md` that differs from the base's (`origin/main`'s), except the `rules` block, which is the repo's own (a branch that edits, re-picks or drops its rules lands), the verify kind's command when it differs from the base's, and, when the row has a `setup`, `.bmesh/config.toml`'s `[setup]` when it reads otherwise than the base's (a `[slots]` edit is the repo's own), is compared with what `scaffold` writes from the row and the binary. A file the branch didn't change isn't compared, so a row published mid-build, a newer snippet or another box's older binary never refuse a landing. A file `scaffold` would create isn't drift.
     - Drift prints the first 20 lines of its unified diff (`...` after them) and is refused (exit 3). Once the row is published with the new verify or setup, `bmesh scaffold <worktree>` writes the files on the branch.
@@ -2010,11 +2028,11 @@ The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander b
         2. a result recorded with the rebased diff's patch-id (see [The verified line](#the-verified-line)), `<kind> ok t:<new8> m:<model> c:<old8> (carried from t:<old8>: the diff is unchanged)`;
         3. an ok result from before the rebase with no patch-id whose diff the rebase left unchanged (the patch-id of the fork point to the old head equals that of the new base to the new head). Each model's result is stored again with that patch-id and lands on the line as a carried entry, `<kind> ok t:<new8> m:<model> c:<old8> (carried from t:<old8>: the rebase left the diff unchanged)`, which `done` matches as any carried entry. A result with no model has nothing `done` can match, so it carries off the line: `<kind> ok t:<old8> carried: the rebase left the diff unchanged (not on the verified line)`.
 
-        A failing result, or a changed diff, is refused (exit 3) naming the kind and how to re-run it.
+        A failing result, or a changed diff, is refused (exit 3) naming the kind and how to re-run it. A review whose diff the rebase changed, when `land` runs from a node in a repo with a queued review kind, is instead queued again by `land`: it prints `review has a result for t:<old8> but none for t:<new8>, and the rebase changed the diff`, releases the lease (`released land.<repo>`), pushes the branch and queues the review again on the rebased HEAD at the size's effort with the new `base:`, printing `review: queued <id> again (the rebase changed the diff)`, and starts again from step 1 before the lease. The worktree stays rebased, and the rebase's reflog entry is what step 4 before the lease reads, so what `land` requires is worked out again.
     - Any failing entry for the tree is refused too.
 5. `verified: ...` and `spec NNN done: merged <sha8>, branch <b>`: the `verified` line as `spec verified --write` composes it, and `status: done` (from `building`) with `merged` the rebased HEAD and `branch` the worktree's branch. A spec whose `## Needs from the operator` section has steps also gets `operator_steps` (see Steps for the operator under [The ledger](#the-ledger)), printed `operator steps: N (bmesh spec steps NNN)`.
 6. `commit <sha8> NNN: done at <merged8>`: the spec's change, committed on the branch.
-7. `push origin main <sha8>`: `git push origin HEAD:refs/heads/main`, a fast-forward or nothing. When the push is refused because `origin/main` moved, `land` takes the record commit back off the branch, prints `main moved; again from the fetch` and restarts at step 1, once. Step 4 then carries the verify it just ran when what moved `main` is outside the code (a coordinator's ledger commit, or, with `code` set, a README commit). A second move is refused (exit 3), nothing pushed. Any other failure takes the commit back and exits 1.
+7. `push origin main <sha8>`: `git push origin HEAD:refs/heads/main`, a fast-forward or nothing. When the push is refused because `origin/main` moved, `land` takes the record commit back off the branch, prints `main moved; again from the fetch` and restarts at step 1, as often as `main` moves while `--wait` lasts (past it, exit 5, `timed out waiting for main to stop moving; nothing is pushed`). Step 4 then carries the verify it just ran when what moved `main` is outside the code (a coordinator's ledger commit, or, with `code` set, a README commit). Any other failure takes the commit back and exits 1.
 8. `main <sha8>`: the main checkout's `main` fast-forwarded as `choose-ideas` does (`merge --ff-only` when it is on `main`, else `fetch . <branch>:main`). When it can't, `land` says so on stderr and the landing stands, `origin/main` holding the commit. Without an origin this step is the landing, and a `main` that moved is retried as a refused push is.
 
 **Output.** It ends `released land.<repo>` and `landed <sha8>`, the record commit `bmesh done --commit` names.
@@ -2026,13 +2044,20 @@ The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander b
 | `--ttl` under 3 s | 2 | `land: --ttl must be at least 3s` |
 | no `--spec` and no node spec | 2 | `land needs --spec NNN (no node spec resolves)` |
 | `--spec` is not a number | 2 | `--spec "<NNN>" is not a number` |
+| `--size` is none of XS, S, M, L (or XL and up) | 2 | `land: --size "<size>": want XS, S, M or L` |
+| a review to queue and no size | 2 | `land needs --size: spec NNN has no size` |
 | not a worktree of a repo with a main checkout | 3 | `refused: <top> is not a worktree of a repo with a main checkout` |
 | a hold at either gate | 3 | `held <gate phrase> by <by> <age> ago: <why>; nothing is pushed: run bmesh held and end your turn, and run bmesh land again once the release wakes you` (e.g. `bmesh: held before land by <by> <age> ago: <why>; ...`) |
 | a dirty worktree | 3 | `worktree is dirty; commit first` |
 | not on a branch, or on `main` | 3 | `refused: land runs on a lead's branch, not <branch\|->` |
 | an unread message from the operator | 3 | `bmesh: refused: <n> unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh land again` |
+| a message from the operator since `land` started, read or not | 3 | `bmesh: refused: <n> message(s) from the operator since land started; nothing is pushed: run bmesh inbox, act on them, then run bmesh land again` |
+| a review to queue in a repo not in the registry | 3 | `refused: <repo> is not in the registry, so no daemon takes its review; nothing is pushed` |
+| a failing reply to a job it waited for | 3 | its output, then `refused: <kind> failed at t:<tree8> (job <id>); nothing is pushed: fix what it found, commit and run bmesh land again` |
+| a reply that recorded nothing, a second time after a model run that never answered, or once for any other reason | 3 | its output, then `refused: job <id> (<kind>) recorded nothing; nothing is pushed: see its output above, then run bmesh land again` |
+| HEAD or the worktree changed while it waited | 3 | `refused: HEAD moved while land waited (<sha8>, was <sha8>); nothing is pushed: run bmesh land again`, or `refused: HEAD moved while land waited: the worktree has changes not committed; ...` |
 | `--wait` passes while another holder has the lease | 5 | `bmesh: timed out waiting for land.<repo>, held by <holder>` |
-| `main` has commits `origin/main` doesn't | 3 | see below |
+| `--wait` passes while it waits for anything else | 5 | `bmesh: timed out waiting for <what>; nothing is pushed`, `<what>` `job <id> (<kind>)`, `main in <path> to be pushed` or `main to stop moving` |
 | the rebase fails | 3 | see below |
 | nothing beyond the base | 3 | `refused: nothing to land: HEAD is on <base>` |
 | the rebased ledger has two specs sharing an id (another writer landed the same number) | 3 | `refused: <file> and <file> share id NNN; renumber the newer with bmesh spec next-id` |
@@ -2042,15 +2067,13 @@ The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander b
 | a failing inline kind | 1 | `<kind> failed at t:<tree8>; fix it, commit and run bmesh land again`; after a resolution, see below |
 | an inline command kind's setup failed | 3 | as [`bmesh routine run`](#bmesh-routine-run) says |
 | a failing result or a changed diff; a failing entry for the tree | 3 | names the kind and how to re-run it; see below |
-| `main` moved a second time | 3 | `refused: main moved again before the push; nothing is pushed, run bmesh land again` |
 | any other push failure | 1 | `push main: <git error>` |
 
-- Unpushed main: `refused: main in <repo path> has <n> commits origin/main doesn't: someone's unpushed work; wait for it to be pushed (never push it yourself), then run bmesh land again`
 - Rebase conflict: `bmesh: refused: rebase onto origin/main conflicts in <files>; it is aborted and nothing is pushed. Rebase yourself, resolve it, re-validate, then run bmesh land again`, `<files>` those no rule resolves. When a rule resolved other files, at this stop or an earlier one, `<files>` is followed by `, which no rule resolves (a rule resolves <files>)`. When no file conflicts, it reads `rebase onto <base> fails` in place of `rebase onto origin/main conflicts in <files>`.
-- A failing inline kind after a resolution: `<kind> failed at t:<tree8>, after the rebase resolved <files> by rule: that is land's merge, and the branch is left rebased; fix it forward, commit, push the branch, queue the review again (--again), then run bmesh land again` (exit 1).
+- A failing inline kind after a resolution: `<kind> failed at t:<tree8>, after the rebase resolved <files> by rule: that is land's merge, and the branch is left rebased; fix it forward, commit, then run bmesh land again, which queues the review the new diff needs` (exit 1). Run again from a node, `land` finds no review on the branch (the reviewed commits are not under the fix) and queues one, as step 6 before the lease says.
 - A required kind with no result for the tree: `refused: <kind> has no result for t:<tree8>; run it, then run bmesh land again`
 - A required kind that failed before the rebase: `refused: <kind> failed at t:<tree8>, before the rebase; fix what it found, commit and run bmesh land again`
-- A changed diff: `refused: <kind> has a result for t:<old8> but none for t:<new8>, and the rebase changed the diff: run it again on this tree (for review: bmesh routine queue review --again --go --text "base: <sha>", then routine wait), then run bmesh land again`
+- A changed diff (a review that `land` doesn't queue again: run outside a node, or the repo's review kind is inline): `refused: <kind> has a result for t:<old8> but none for t:<new8>, and the rebase changed the diff: run it again on this tree (for review: bmesh routine queue review --again --go --text "base: <sha>", then routine wait), then run bmesh land again`
 - No results at all: `refused: no results for HEAD's tree; run the routines first`
 - A failing entry: `refused: <kind> fails at t:<tree8>; fix it, commit and run bmesh land again` (for a carried entry, `t:<c tree8>, the same diff`)
 - Scaffold drift: `bmesh: refused: the branch's scaffolded files differ from what bmesh scaffold writes from <repo>'s row; the row's verify and setup are the source: bmesh repos propose with the new verify or setup, or restore the scaffolded files`

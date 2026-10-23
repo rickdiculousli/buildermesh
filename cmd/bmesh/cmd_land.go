@@ -1294,7 +1294,7 @@ func (l *lander) inline(ctx context.Context, merged, tree, preTree string) error
 			fmt.Fprintf(out, "%s%s (%s)\n", output, line, how)
 			if len(l.resolved) > 0 {
 				return fail(exitError, "%s failed at t:%s, after the rebase resolved %s by rule: that is land's merge, and the branch is left rebased; "+
-					"fix it forward, commit, push the branch, queue the review again (--again), then run bmesh land again",
+					"fix it forward, commit, then run bmesh land again, which queues the review the new diff needs",
 					name, tree[:8], strings.Join(slices.Compact(slices.Sorted(slices.Values(l.resolved))), ", "))
 			}
 			return fail(exitError, "%s failed at t:%s; fix it, commit and run bmesh land again", name, tree[:8])
