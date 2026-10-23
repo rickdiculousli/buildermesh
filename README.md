@@ -239,7 +239,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 | [`bmesh ideate <repo>`](docs/manual.md#bmesh-ideate) | `[--idea] [--model M] [--effort E] [--context <text\|->] [--force]` |
 | [`bmesh choose-ideas <repo> "<reply>"`](docs/manual.md#bmesh-choose-ideas) |  |
 | [`bmesh spec list`](docs/manual.md#bmesh-spec-list) | `[--repo R] [--status S] [--json]` |
-| [`bmesh spec next-id`](docs/manual.md#bmesh-spec-next-id) | `[--repo R]` |
+| [`bmesh spec next-id`](docs/manual.md#bmesh-spec-next-id) | `[--repo R] [--count N] [--peek]` |
 | [`bmesh spec set`](docs/manual.md#bmesh-spec-set) | `--id NNN --status S [--repo R] [--from A,B] [--field K=V]...` |
 | [`bmesh spec template`](docs/manual.md#bmesh-spec-template) | `[--repo R]` |
 | [`bmesh spec steps [<NNN>]`](docs/manual.md#bmesh-spec-steps) | `[--repo R] [--tick N,N [--note W] \| --check [--wait D]]` |

@@ -107,7 +107,7 @@ func (a *app) cmdBuild(args []string) error {
 	}
 	specs, err := spec.ScanRef(repoPath, a.cfg.Spec.Glob, "main")
 	if err != nil {
-		return ledgerFail(err)
+		return landFail(err)
 	}
 	if err := a.connect(ctx, "build"); err != nil {
 		return err
@@ -363,7 +363,7 @@ func (a *app) recordOnMain(ctx context.Context, name, repoPath, msg string, id i
 	}()
 	specs, err := spec.Scan(wt, a.cfg.Spec.Glob)
 	if err != nil {
-		return "", ledgerFail(err)
+		return "", landFail(err)
 	}
 	s, ok := spec.Find(specs, id)
 	if !ok {
@@ -381,6 +381,9 @@ func (a *app) recordOnMain(ctx context.Context, name, repoPath, msg string, id i
 	committed = true
 	sha, err := gitIn(ctx, wt, "rev-parse", "HEAD")
 	if err != nil {
+		return "", err
+	}
+	if err := a.checkLedger(wt); err != nil {
 		return "", err
 	}
 	if err := a.landOnMain(ctx, repoPath, branch); err != nil {

@@ -228,7 +228,8 @@ commands:
                                            <kind> ok|fail t:<tree8>; exit 0 ok / 1 fail
   spec list [--repo R] [--status S] [--json]
                                            the repo's specs, one row each (id, status, size, kind, lens, title)
-  spec next-id [--repo R]                  the next free spec id
+  spec next-id [--repo R] [--count N] [--peek]
+                                           claim the repo's next spec id (a block of N) on the mesh
   spec set --id NNN --status S [--repo R] [--from A,B] [--field K=V]...
                                            set a spec's status and fields (--from refuses another status)
   spec template [--repo R]                 print the half-pager (the repo's .bmesh/briefs/half-pager.md, else embedded)

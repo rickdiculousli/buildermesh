@@ -683,3 +683,24 @@ func TestBuildStartedLineRepeatsCommandClashes(t *testing.T) {
 		t.Fatalf("%q", out)
 	}
 }
+
+// A main whose ledger has a duplicate id gets no dispatch commit.
+func TestBuildRefusesADuplicateID(t *testing.T) {
+	_, repo, fake := buildSetup(t)
+	writeFile(t, filepath.Join(repo, "docs", "proposals", "002-again.md"),
+		"---\nid: 002\ntitle: Again\nkind: feature\nsize: S\nstatus: accepted\njudge: opus\n---\n\n## Proposal\nx\n")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "by hand")
+	meshtest.Git(t, repo, "push", "origin", "main")
+	head := gitOut(t, "-C", repo, "rev-parse", "main")
+	want := "refused: 002-again.md and 002-second.md share id 002; renumber the newer with bmesh spec next-id"
+	if _, errs, code := runCLI(t, nil, "build", "demo", "002"); code != 3 || !strings.Contains(errs, want) {
+		t.Fatalf("build: %d %q", code, errs)
+	}
+	if gitOut(t, "-C", repo, "rev-parse", "main") != head || gitOut(t, "-C", repo, "rev-parse", "origin/main") != head {
+		t.Fatal("a refused build recorded on main")
+	}
+	if calls := fake.ToolCalls(); len(calls) != 0 {
+		t.Fatalf("the runner was called: %v", calls)
+	}
+}

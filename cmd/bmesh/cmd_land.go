@@ -461,7 +461,7 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 
 	specs, err := spec.Scan(l.top, l.a.cfg.Spec.Glob)
 	if err != nil {
-		return false, ledgerFail(err)
+		return false, landFail(err)
 	}
 	s, ok := spec.Find(specs, l.id)
 	if !ok {

@@ -16,7 +16,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
-const specUsage = "usage: bmesh spec list [--repo R] [--status S] [--json] | next-id [--repo R] | " +
+const specUsage = "usage: bmesh spec list [--repo R] [--status S] [--json] | next-id [--repo R] [--count N] [--peek] | " +
 	"set --id NNN --status S [--repo R] [--from A,B] [--field K=V]... | template [--repo R] | " +
 	"verified [--spec NNN] [--commit C] [--write] | steps [<NNN>] [--repo R] [--tick N,N [--note W] | --check [--wait D]]"
 
@@ -124,10 +124,16 @@ func (a *app) cmdSpecList(args []string) error {
 	return nil
 }
 
-// cmdSpecNextID prints the next free id, three digits.
+// cmdSpecNextID claims the repo's next spec id (--count N: a block of N)
+// on the mesh's counter and prints it, three digits, or the block as
+// NNN-NNN. --peek prints what the next claim would get and claims nothing.
+// With no mesh it prints main's next id and says on stderr that nothing is
+// claimed.
 func (a *app) cmdSpecNextID(args []string) error {
 	fs := a.flags("spec next-id")
 	repo := fs.String("repo", "", "repo name or path (default the current directory)")
+	count := fs.Int("count", 1, "how many ids to claim, a contiguous block")
+	peek := fs.Bool("peek", false, "print what the next claim would get, claiming nothing")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -135,15 +141,102 @@ func (a *app) cmdSpecNextID(args []string) error {
 	if len(pos) != 0 {
 		return fail(exitUsage, specUsage)
 	}
-	repoPath, err := a.ledgerRepo(*repo)
+	if *count < 1 {
+		return fail(exitUsage, "--count %d: want at least 1", *count)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	name, repoPath, err := a.ledgerRepoNamed(ctx, *repo)
 	if err != nil {
 		return err
 	}
-	specs, err := spec.Scan(repoPath, a.cfg.Spec.Glob)
+	highest, err := a.mainHighest(ctx, repoPath)
 	if err != nil {
-		return ledgerFail(err)
+		return err
 	}
-	fmt.Fprintf(a.stdout, "%03d\n", spec.NextID(specs))
+	ids := func(first int) string {
+		if *count == 1 {
+			return fmt.Sprintf("%03d", first)
+		}
+		return fmt.Sprintf("%03d-%03d", first, first+*count-1)
+	}
+	if err := a.connect(ctx, "spec-next-id"); err != nil {
+		if *count == 1 {
+			fmt.Fprintf(a.stderr, "next-id: no mesh, so %s is not claimed: another writer may take it\n", ids(highest+1))
+		} else {
+			fmt.Fprintf(a.stderr, "next-id: no mesh, so %s are not claimed: another writer may take them\n", ids(highest+1))
+		}
+		fmt.Fprintln(a.stdout, ids(highest+1))
+		return nil
+	}
+	var first int
+	if *peek {
+		first, err = mesh.PeekSpecID(ctx, a.client, name, highest)
+	} else {
+		first, err = mesh.ClaimSpecIDs(ctx, a.client, name, highest, *count)
+	}
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(a.stdout, ids(first))
+	return nil
+}
+
+// ledgerRepoNamed is ledgerRepo with the registry name the repo's spec ids
+// are claimed under: a worktree's is its main checkout's.
+func (a *app) ledgerRepoNamed(ctx context.Context, repo string) (name, path string, err error) {
+	if path, err = a.ledgerRepo(repo); err != nil {
+		return "", "", err
+	}
+	if repo == "" {
+		repo = "."
+	}
+	name, _, _ = a.cfg.RepoPath(repo)
+	if _, ok := a.cfg.Repos[name]; ok {
+		return name, path, nil
+	}
+	if common, err := gitIn(ctx, path, "rev-parse", "--path-format=absolute", "--git-common-dir"); err == nil && filepath.Base(common) == ".git" {
+		if n, _, err := a.cfg.RepoPath(filepath.Dir(common)); err == nil {
+			name = n
+		}
+	}
+	return name, path, nil
+}
+
+// mainHighest is the highest spec id on the repo's main: origin/main's
+// after a fetch when the repo has an origin, else the checkout's ledger.
+func (a *app) mainHighest(ctx context.Context, repoPath string) (int, error) {
+	read := func() ([]*spec.Spec, error) { return spec.Scan(repoPath, a.cfg.Spec.Glob) }
+	if hasOrigin(ctx, repoPath) {
+		if _, err := gitIn(ctx, repoPath, "fetch", "--quiet", "origin", "main"); err == nil {
+			read = func() ([]*spec.Spec, error) { return spec.ScanRef(repoPath, a.cfg.Spec.Glob, "origin/main") }
+		}
+	}
+	specs, err := read()
+	if err != nil {
+		return 0, ledgerFail(err)
+	}
+	return spec.NextID(specs) - 1, nil
+}
+
+// landFail is ledgerFail for a command about to push the ledger: a
+// duplicate id is refused (exit 3) naming both files, so a ledger nobody
+// can read never reaches main.
+func landFail(err error) error {
+	var le *spec.LedgerError
+	if errors.As(err, &le) && le.Shared[0] != "" {
+		return fail(exitRefused, "refused: %s and %s share id %03d; renumber the newer with bmesh spec next-id",
+			le.Shared[0], le.Shared[1], le.ID)
+	}
+	return ledgerFail(err)
+}
+
+// checkLedger refuses the ledger in dir that is about to be pushed when it
+// doesn't read, as landFail says it.
+func (a *app) checkLedger(dir string) error {
+	if _, err := spec.Scan(dir, a.cfg.Spec.Glob); err != nil {
+		return landFail(err)
+	}
 	return nil
 }
 
@@ -181,7 +274,7 @@ func (a *app) cmdSpecSet(args []string) error {
 	}
 	specs, err := spec.Scan(repoPath, a.cfg.Spec.Glob)
 	if err != nil {
-		return ledgerFail(err)
+		return landFail(err)
 	}
 	s, ok := spec.Find(specs, n)
 	if !ok {
@@ -320,6 +413,9 @@ func (a *app) editOnMain(ctx context.Context, name, repoPath, what string, edit 
 	if err != nil {
 		return "", err
 	}
+	if err := a.checkLedger(wt); err != nil {
+		return "", err
+	}
 	if err := a.landOnMain(ctx, repoPath, branch); err != nil {
 		return "", fail(exitRefused, "refused: %v; the %s is committed on branch %s", err, what, branch)
 	}
@@ -338,7 +434,7 @@ func (a *app) editOnMain(ctx context.Context, name, repoPath, what string, edit 
 func (a *app) applyReview(ctx context.Context, wt, repo, reply string) (lines, changed []string, err error) {
 	specs, err := spec.Scan(wt, a.cfg.Spec.Glob)
 	if err != nil {
-		return nil, nil, ledgerFail(err)
+		return nil, nil, landFail(err)
 	}
 	ranks, err := a.latestRanks(ctx, repo, specs)
 	if err != nil {

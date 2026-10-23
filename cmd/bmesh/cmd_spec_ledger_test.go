@@ -123,10 +123,14 @@ func TestSpecListNextIDSetTemplate(t *testing.T) {
 	if out, _, code := runCLI(t, nil, "spec", "template", "--repo", "demo"); code != 0 || out != "mine\n" {
 		t.Fatalf("override: %d %q", code, out)
 	}
-	// A malformed spec is an error for every command, never counted around.
+	// A malformed spec is an error for every command, never counted around;
+	// next-id reads main as origin has it.
 	if err := os.WriteFile(filepath.Join(repo, "docs", "proposals", "015-bad.md"), []byte("---\nid: 015\nstatus: maybe\n---\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "bad")
+	meshtest.Git(t, repo, "push", "origin", "main")
 	if _, errs, code := runCLI(t, nil, "spec", "next-id", "--repo", "demo"); code != 1 || !strings.Contains(errs, "015-bad.md") {
 		t.Fatalf("malformed: %d %q", code, errs)
 	}
@@ -241,5 +245,44 @@ func TestSpecReviewOnMainCheckoutMergesFastForward(t *testing.T) {
 	}
 	if gitOut(t, "-C", repo, "rev-parse", "main") != gitOut(t, "-C", repo, "rev-parse", "origin/main") {
 		t.Fatal("main not pushed")
+	}
+}
+
+// pushDuplicate lands 013-other.md, a second spec 013, on main by plain
+// git, as an operator by hand might, and returns origin's main.
+func pushDuplicate(t *testing.T, repo string) string {
+	t.Helper()
+	text := "---\nid: 013\ntitle: Other\nkind: feature\nsize: S\njudge: sonnet\nstatus: proposed\nlens: eng\n---\n\n## Proposal\nx\n"
+	if err := os.WriteFile(filepath.Join(repo, "docs", "proposals", "013-other.md"), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "by hand")
+	meshtest.Git(t, repo, "push", "origin", "main")
+	return gitOut(t, "-C", repo, "rev-parse", "origin/main")
+}
+
+const dupRefusal = "refused: 013-other.md and 013-thing.md share id 013; renumber the newer with bmesh spec next-id"
+
+// choose-ideas and spec set refuse a ledger with a duplicate id before
+// anything is pushed.
+func TestLedgerWritersRefuseADuplicateID(t *testing.T) {
+	_, _, repo := ledgerRepoSetup(t)
+	head := pushDuplicate(t, repo)
+	if _, errs, code := runCLI(t, nil, "choose-ideas", "demo", "12 yes"); code != 3 || !strings.Contains(errs, dupRefusal) {
+		t.Fatalf("choose-ideas: %d %q", code, errs)
+	}
+	if _, errs, code := runCLI(t, nil, "spec", "set", "--repo", "demo", "--id", "12", "--status", "accepted"); code != 3 || !strings.Contains(errs, dupRefusal) {
+		t.Fatalf("spec set: %d %q", code, errs)
+	}
+	if got := gitOut(t, "-C", repo, "rev-parse", "origin/main"); got != head {
+		t.Fatalf("origin main moved to %s", got)
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo, "docs", "proposals", "012-thing.md")); !strings.Contains(string(b), "status: proposed\n") {
+		t.Fatalf("spec 012 changed:\n%s", b)
+	}
+	// A reader still says it is malformed.
+	if _, errs, code := runCLI(t, nil, "spec", "list", "--repo", "demo"); code != 1 || !strings.Contains(errs, "malformed: 013-other.md and 013-thing.md share id 013") {
+		t.Fatalf("list: %d %q", code, errs)
 	}
 }

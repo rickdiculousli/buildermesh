@@ -9,7 +9,7 @@ lens: {{lens}}
 proposed_by: {{thread}}
 proposed_on: {{date}}
 # Guide lines; delete them in a real spec. Lines starting with # are ignored.
-# id: three digits, the next free number in this repo (`bmesh spec next-id`). File: docs/proposals/NNN-slug.md
+# id: three digits: claim it with `bmesh spec next-id`, then land it. File: docs/proposals/NNN-slug.md
 # kind: feature | refinement | ux | test-speed | token-cost | time-cost | maintenance
 # size: XS (one file) | S (one module) | M (crosses modules) | L (changes an interface others depend on). Never hours.
 # judge: who should build it. opus: the default, for anything with real judgment or complexity. fable: only exceptional taste or nuance that opus would visibly miss, never because the work is hard. sonnet: trivial, a careful junior could do it from the spec.

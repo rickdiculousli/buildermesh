@@ -1024,3 +1024,25 @@ func TestLandCarriesVerifyOnlyOutsideTheCode(t *testing.T) {
 		})
 	}
 }
+
+// The lead's branch adds spec 020 while another writer lands its own 020:
+// the rebase is clean, the ledger it would push is not, and land refuses
+// before the push.
+func TestLandRefusesADuplicateID(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	writeFile(t, filepath.Join(r.wt, "docs", "proposals", "020-mine.md"), "---\nid: 20\nstatus: proposed\n---\nmine\n")
+	meshtest.Git(t, r.wt, "add", "-A")
+	meshtest.Git(t, r.wt, "commit", "-m", "spec 020")
+	theirs := r.pushOther(t, "docs/proposals/020-theirs.md", "---\nid: 20\nstatus: proposed\n---\ntheirs\n")
+
+	_, errs, code := runCLI(t, as("app-012"), "land")
+	if code != 3 || !strings.Contains(errs, "refused: 020-mine.md and 020-theirs.md share id 020; renumber the newer with bmesh spec next-id") {
+		t.Fatalf("land: %d %q", code, errs)
+	}
+	if r.originMain(t) != theirs {
+		t.Fatal("origin main moved")
+	}
+	assertNoLeases(t, c, ctx)
+}

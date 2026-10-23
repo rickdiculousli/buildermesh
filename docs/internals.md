@@ -160,7 +160,9 @@ The runner reads its token through one credential interface, so a self-renewing 
 
 **Nodes.** The round node has role `round`; `N` is one past the repo's highest round in `bm-nodes`. Its children have role `engineer` and `parent` the round. With `--idea` the round node carries `"idea": true`.
 
-**Briefs.** Each brief carries its thread's UUID as `proposed_by`.
+**Briefs.** Each brief carries its thread's UUID as `proposed_by`, and as `next_id` the first id of the block claimed for its child in `bm-specids` (five, three for an `--idea` thread; see Spec ids), claimed after the refusals and before the round node is written. The child form on another host is passed that id and claims nothing.
+
+**Spec ids.** KV `bm-specids` holds one key per repo, its node token (see Names), whose value is the highest id claimed there, in decimal. A claim of `N` reads the key and its revision, writes `max(value, main's highest) + N` with `Create` (no key yet) or `Update` at that revision, and on a conflict (another writer's claim in between) reads again; it returns the first id of the block. `spec next-id --peek` reads it and writes nothing. The bucket is created by `Provision` or on first claim, has history 1 and no age limit, and stores to file like `bm-nodes`. The commands that land the ledger (`choose-ideas` and the `steps` edits through their worktree, `spec set`, `build`'s dispatch record and `land` after its rebase) read the ledger they are about to push; a duplicate id there is the scan's `LedgerError` with both files in `Shared`, refused with exit 3.
 
 **Registration.** The round's `started` event opens it as `working`.
 
@@ -401,6 +403,7 @@ The stream, subjects and buckets built on node paths:
 | KV | `bm-claims` | `quota.<provider>.<reset unix>` to the claiming daemon (`daemon.<host>`); age limit 8 days |
 | KV | `bm-jobs` | `<kind>.<host>` to `{"kind","host","at","jobs":[{"seq","job","from","holder","state","since"}]}` (that daemon's held and running jobs of the kind) |
 | KV | `bm-holds` | `<path>` to `{"gate","text","by","at"}` (a coordinator's hold on a lead, until `unhold`; see Holds) |
+| KV | `bm-specids` | `<repo token>` to the highest spec id claimed in that repo, in decimal (see Spec ids); no age limit |
 
 The map, `watch`, status, the push loop and the activity reader skip subjects whose first token is one of the five reserved words (`mesh.IsMeshInternal`), each keeping the inbox and daemon events it reads; host traffic (`bm.inbox.host.*`, `bm.hostreply.*`) never reaches the map or `watch`. JetStream is addressed in `[mesh] domain` (default `hub`).
 

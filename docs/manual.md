@@ -493,7 +493,7 @@ Starts a proposal round on one ship repo. A round is two threads, an engineer an
 **What it does.** `ideate` needs the repo's registry row (`host`, `ux_host`, `verify`, `surfaces`). Before anything starts, it checks the refusals below, both hosts included. Then, from `main`, it:
 
 1. makes `<[runner] worktrees>/<repo>/<repo>-round-<N>-eng` and `-ux` on branches of those names (an existing branch or path is refused, untouched);
-2. renders the two briefs, the engineer's with the next free spec ID and the UI/UX engineer's five past it, so they never collide;
+2. claims a block of spec ids for each child on the mesh, as [`bmesh spec next-id --count 5`](#bmesh-spec-next-id) does (three for an `--idea` thread), and renders the two briefs, each with the first id of its child's block, so they never collide with each other or with any other writer; a child that writes fewer leaves a gap;
 3. starts both threads through the runner, the engineer on the row's `host`, the UI/UX engineer on `ux_host` (`""` = `host`; `host` `""` = this box), with `--model` (default `[models] proposer`) at `--effort` (default `[models] proposer_effort`), titled `[ideate] <repo> round <N>: engineer|UI/UX`;
 4. prints the round as JSON (see Output).
 
@@ -517,7 +517,7 @@ To level `main`, `ideate` runs `pull --ff-only origin main` when the main checko
 
 **Details.**
 
-- `--force` starts a round anyway, numbering its specs from the same id and running the repo's tests beside the first round.
+- `--force` starts a round anyway, with blocks of its own, running the repo's tests beside the first round.
 - Briefs are kept under `<user cache dir>/bmesh/briefs/<round>-<child>.md`.
 - On another host, `ideate` makes the thread, worktree and brief there over ssh. A child whose node is live or whose branch exists is refused there too.
 - Each child starts whatever happens to the other. A child that doesn't start is marked `blocked` (`did not start: <error>`), the round reads `blocked` naming it, and the command exits 1. The other thread runs on, and its pitch arrives when the daemon resettles the round.
@@ -621,6 +621,7 @@ Each command is compared with the commands this binary's `bmesh help` lists (`ma
 |---|---|---|
 | `main` can't be levelled with origin | 3 | `refused: main in <path> is not level with origin: <git error>` |
 | `main` won't fast-forward; the review is kept on its branch | 3 | `refused: main in <path> did not fast-forward: <git error>; the review is committed on branch <branch>` |
+| Two specs share an id, on `main` or in the commit about to land | 3 | `refused: <file> and <file> share id NNN; renumber the newer with bmesh spec next-id` |
 
 See also: [`bmesh ideate`](#bmesh-ideate), [The ledger](#the-ledger), [`bmesh spec set`](#bmesh-spec-set).
 
@@ -628,7 +629,7 @@ See also: [`bmesh ideate`](#bmesh-ideate), [The ledger](#the-ledger), [`bmesh sp
 
 ```
 bmesh spec list [--repo R] [--status S] [--json]
-bmesh spec next-id [--repo R]
+bmesh spec next-id [--repo R] [--count N] [--peek]
 bmesh spec set --id NNN --status S [--repo R] [--from A,B] [--field K=V]...
 bmesh spec template [--repo R]
 bmesh spec verified [--spec NNN] [--commit C] [--write]
@@ -658,10 +659,25 @@ Prints the repo's specs.
 #### `bmesh spec next-id`
 
 ```
-bmesh spec next-id [--repo R]
+bmesh spec next-id [--repo R] [--count N] [--peek]
 ```
 
-Prints the next free spec id: one past the highest id (`001` for an empty ledger).
+Claims the repo's next spec id on the mesh and prints it (`066`), or a block of `N` with `--count` (`066-070`). Every writer of a spec claims its id this way, then lands the spec, so two writers never land the same number.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--repo R` | the current directory | The repo; a worktree counts as its main checkout. |
+| `--count N` | 1 | Claim a contiguous block of `N` ids; under 1 is refused (exit 2). |
+| `--peek` | off | Print what the next claim would get, claiming nothing. |
+
+**What it does.**
+
+1. Reads the highest id on `main`: `origin/main`'s after a `git fetch origin main` when the repo has an origin and the fetch works, else the checkout's ledger (`000` for an empty one). A ledger that breaks its rules is an error (exit 1).
+2. Sets the repo's counter in `bm-specids` (created on first use) to `max(counter, main's highest) + N` with a compare-and-swap, retrying when another writer moved it first, and prints the first id it claimed. A counter behind `main` (a spec landed by plain git) catches up to it.
+
+A claimed id that is never landed is a gap; nothing hands it out again.
+
+**With no mesh** (the hub can't be reached) it prints `main`'s next id, claims nothing and says so on stderr: `next-id: no mesh, so 066 is not claimed: another writer may take it` (`066-070 are not claimed: another writer may take them` for a block).
 
 #### `bmesh spec set`
 
@@ -688,6 +704,7 @@ Sets a spec's status and fields in its file.
 | `--id` is not a number | 2 | `--id "<x>" is not a number` |
 | `--status` is outside the ledger's statuses | 2 | `--status "<s>" is not one of ...` |
 | No spec with that id | 1 | `no spec NNN in <dir>` |
+| Two specs share an id | 3 | `refused: <file> and <file> share id NNN; renumber the newer with bmesh spec next-id` |
 | With `--from`, a status not listed (named) | 1 | `spec NNN is <status>, not <A or B>; left unchanged` |
 | A write the ledger would read back differently (a duplicated `status:` key) | 1 | `spec NNN: writing status <S> would read back as <X>; left unchanged` |
 | A key that isn't a word, or a value with a line break | 1 | `can't set "<key>" to "<value>": keys are words and values are one line` |
@@ -826,6 +843,7 @@ A runner that names the branch itself (`t3`) gets a second commit, `Dispatch NNN
 | No registry row | 2 | `<name> is not in repos.toml; a build needs its row (verify, remote, routines)` |
 | Row not `ship` | 3 | `refused: <name> is <mode>; builds are for ship repos only` |
 | No such spec on `main` | 1 | `no spec NNN on main in <path>` |
+| Two specs share an id on `main`, or in the dispatch commit about to land | 3 | `refused: <file> and <file> share id NNN; renumber the newer with bmesh spec next-id` |
 | Spec not `accepted` | 3 | `refused: spec NNN is <status>, not accepted` |
 | Spec `ruled` and sized `L` or larger | 3 | the sized message below |
 | `fix_of` chain three deep | 3 | the `fix 3` message below |
@@ -1994,6 +2012,7 @@ The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander b
 | `main` has commits `origin/main` doesn't | 3 | see below |
 | the rebase fails | 3 | see below |
 | nothing beyond the base | 3 | `refused: nothing to land: HEAD is on <base>` |
+| the rebased ledger has two specs sharing an id (another writer landed the same number) | 3 | `refused: <file> and <file> share id NNN; renumber the newer with bmesh spec next-id` |
 | the worktree has no such spec | 3 | `refused: no spec NNN in <top>` |
 | the spec doesn't read `building` | 3 | `refused: spec NNN reads <status>, not building` |
 | scaffold drift | 3 | see below |
@@ -2547,7 +2566,7 @@ A box on `release` restarts once per release, on `latest` once per code landing.
 - `bmesh: k16 runs 1a2b3c4d, this is 9e8f7a6b; run bmesh update`;
 - or, when this box's own daemon is the older of the two: `bmesh: this box's daemon runs 1a2b3c4d, this binary is 9e8f7a6b; restart the daemon: <command>`, with `<command>` as in [`bmesh update`](#bmesh-update)'s restart line.
 
-There is no hint for a binary or daemon of unknown revision, for commands that reach no hub (`help`, `version`, `init`, `repos`, `spec list|next-id|set|template`, `scaffold`), or for `update`, which prints its restart line instead.
+There is no hint for a binary or daemon of unknown revision, for commands that reach no hub (`help`, `version`, `init`, `repos`, `spec list|set|template`, `scaffold`), or for `update`, which prints its restart line instead.
 
 **The notice.** A daemon not self-updating from `[update] repo` checks the target every `[update] check_every` (default `6h`; `0` is off; it needs `[runner] checkouts`). When the target is ahead of the binary at its path, it writes one line to `<state dir>/update.txt`:
 
@@ -2747,6 +2766,8 @@ A repo's specs live in `docs/proposals/NNN-slug.md` (`[spec] glob`). Each spec i
 - a `judge` outside `fable`, `opus`, `sonnet`;
 - missing fences, or a line that is not `key: value`;
 - two files sharing an id.
+
+**Ids are claimed.** A writer claims a spec's id with [`bmesh spec next-id`](#bmesh-spec-next-id) before it lands the spec, and [`bmesh ideate`](#bmesh-ideate) claims a block per child: the counter on the mesh (`bm-specids`, one key per repo) never hands out a number twice. A spec written by plain git without a claim can still take a number another writer holds, so the commands that land the ledger (`choose-ideas`, `spec set`, `build`'s dispatch commit and `land`) refuse, before any push, a ledger in which two files share an id: `refused: <file> and <file> share id NNN; renumber the newer with bmesh spec next-id`. Renumbering is yours.
 
 With no id, `bmesh spec steps` passes over a repo whose ledger can't be read.
 
