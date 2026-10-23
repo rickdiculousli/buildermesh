@@ -4,7 +4,7 @@ title: AGENTS.md says k16 takes a change at its release, not at its landing
 kind: refinement
 size: XS
 judge: sonnet
-status: building
+status: done
 lens: eng
 proposed_by: buildermesh-fix-3
 proposed_on: 2026-10-23
@@ -15,6 +15,8 @@ built_by: 72dff5cc-ace8-494d-a75c-3e105a43b594
 host: k16
 family: buildermesh-fix-3
 branch: bmesh/72dff5cc-ace8-494d-a75c-3e105a43b594
+merged: 1d1f7140d9a7a610f3f6d8284f99ca2288bd99d3
+verified: verify ok t:9ebe2fb6
 ---
 
 ## Opportunity
