@@ -122,9 +122,9 @@ func (a *app) wipeNodes(ctx context.Context, n mesh.Node, nodes []mesh.Node, dry
 		w := parts[c.Path]
 		switch {
 		case dry:
-			w.Worktree = c.Worktree != "" && (!local(c) || dirExists(c.Worktree))
-			w.Branch = c.Branch != "" || w.Worktree
+			w.Worktree, w.Branch = c.Worktree != "", c.Worktree != "" && c.Branch != ""
 			if local(c) {
+				w.Worktree, w.Branch = prune.NodeWorktreeLeft(ctx, c)
 				if p, err := brief.CachePath(c.Path); err == nil {
 					_, err := os.Stat(p)
 					w.Brief = err == nil

@@ -81,6 +81,26 @@ func landedIn(ctx context.Context, repo, rev string, into []string) (bool, error
 // each. It is refused (a *Refusal, nothing touched) when they are on
 // another host, the worktree is dirty or the branch has not landed in
 // main (an executor's: or in its parent's branch). A worktree already gone
+// NodeWorktreeLeft reports whether n's worktree is still on disk here and
+// its branch (the one checked out there, else the node's) still in its
+// repo, as RemoveNodeWorktree finds them.
+func NodeWorktreeLeft(ctx context.Context, n mesh.Node) (worktree, branch bool) {
+	if n.Worktree == "" {
+		return false, false
+	}
+	repo, b := n.RepoPath, n.Branch
+	worktree = dirExists(n.Worktree)
+	if worktree {
+		if common, err := git(ctx, n.Worktree, "rev-parse", "--path-format=absolute", "--git-common-dir"); err == nil && repo == "" {
+			repo = filepath.Dir(common)
+		}
+		if cur, err := git(ctx, n.Worktree, "symbolic-ref", "--quiet", "--short", "HEAD"); err == nil {
+			b = cur
+		}
+	}
+	return worktree, repo != "" && b != "" && hasBranch(ctx, repo, b)
+}
+
 // from disk is pruned.
 func RemoveNodeWorktree(ctx context.Context, n mesh.Node, nodes []mesh.Node, self string) ([]string, error) {
 	if n.Worktree == "" {
