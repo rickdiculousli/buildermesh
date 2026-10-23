@@ -1,0 +1,4 @@
+	until(t, "the turn to die", idle(t, r, "th-1"))
+	if strings.Count(readLog(t, log), "--resume") != 0 {
+		t.Fatalf("a queued send ran after the stop: %q", readLog(t, log))
+	}

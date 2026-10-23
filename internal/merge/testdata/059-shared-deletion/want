@@ -1,0 +1,7 @@
+	bi, ok := readBuildInfo()
+	if !ok || bi == nil {
+		return ""
+	}
+	return a.cfg.OwnRepo(bi.Main.Path)
+}
+

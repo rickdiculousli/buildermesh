@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -19,6 +21,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/daemon"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
+	"github.com/rickdiculousli/buildermesh/internal/merge"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/scaffold"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
@@ -50,6 +53,7 @@ type lander struct {
 	before   map[string]*source // per kind with a result before land touched the branch: where it is
 	required []string           // the kinds the landed tree must carry
 	ran      map[string]string  // per inline kind, the last tree it was ok at in this run
+	resolved []string           // the files a rebase in this run resolved by rule
 
 	landed string // the commit main points at after the push
 }
@@ -432,17 +436,8 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 
 	if _, err := git("merge-base", "--is-ancestor", baseSHA, "HEAD"); err == nil {
 		fmt.Fprintf(out, "rebase: on %s already\n", baseSHA[:8])
-	} else if _, err := git("rebase", "--quiet", baseSHA); err != nil {
-		files, _ := cleanup("diff", "--name-only", "--diff-filter=U")
-		if _, aerr := cleanup("rebase", "--abort"); aerr != nil {
-			return false, fmt.Errorf("rebase onto %s failed (%v) and did not abort: %v", baseSHA[:8], err, aerr)
-		}
-		what := "fails"
-		if files != "" {
-			what = "conflicts in " + strings.Join(strings.Fields(files), ", ")
-		}
-		return false, fail(exitRefused, "refused: rebase onto %s %s; it is aborted and nothing is pushed. "+
-			"Rebase yourself, resolve it, re-validate, then run bmesh land again", l.base, what)
+	} else if err := l.rebase(ctx, baseSHA, cleanup); err != nil {
+		return false, err
 	} else {
 		n, _ := git("rev-list", "--count", baseSHA+"..HEAD")
 		fmt.Fprintf(out, "rebase onto %s: %s commits\n", baseSHA[:8], n)
@@ -685,6 +680,11 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA, preTree str
 				output += "\n"
 			}
 			fmt.Fprintf(out, "%s%s (%s)\n", output, line, how)
+			if len(l.resolved) > 0 {
+				return nil, fail(exitError, "%s failed at t:%s, after the rebase resolved %s by rule: that is land's merge, and the branch is left rebased; "+
+					"fix it forward, commit, push the branch, queue the review again (--again), then run bmesh land again",
+					name, tree[:8], strings.Join(slices.Compact(slices.Sorted(slices.Values(l.resolved))), ", "))
+			}
 			return nil, fail(exitError, "%s failed at t:%s; fix it, commit and run bmesh land again", name, tree[:8])
 		}
 		fmt.Fprintf(out, "%s (%s)\n", line, how)
@@ -909,4 +909,195 @@ func samePatch(ctx context.Context, dir, a, b, c, d string) (bool, error) {
 		return false, err
 	}
 	return x == y, nil
+}
+
+// rebase rebases the branch onto baseSHA. At each stop on a conflict it
+// merges every conflicted file's three sides again in diff3 style and
+// resolves their regions by rule (internal/merge); when every region of
+// every file resolves, it adds the files and continues, printing a
+// resolved line per file. Anything left aborts the rebase, refused with
+// the files a rule resolves and those that need the lead.
+func (l *lander) rebase(ctx context.Context, baseSHA string, cleanup func(...string) (string, error)) error {
+	n, err := gitIn(ctx, l.top, "rev-list", "--count", baseSHA+"..HEAD")
+	if err != nil {
+		return err
+	}
+	stops, _ := strconv.Atoi(n) // a commit stops the rebase once at most
+	rerr := rebaseGit(ctx, l.top, "rebase", "--quiet", baseSHA)
+	for ; rerr != nil && stops > 0; stops-- {
+		files, left, err := l.resolveStop(ctx)
+		if err != nil {
+			_, _ = cleanup("rebase", "--abort")
+			return err
+		}
+		names := slices.Sorted(maps.Keys(files))
+		if len(names) == 0 || len(left) > 0 {
+			l.resolved = append(l.resolved, names...)
+			return l.abortRebase(cleanup, baseSHA, rerr, left)
+		}
+		for _, f := range names {
+			fmt.Fprintf(l.a.stdout, "rebase: resolved %s (%s)\n", f, joinRules(files[f]))
+		}
+		l.resolved = append(l.resolved, names...)
+		if _, err := gitIn(ctx, l.top, append([]string{"add", "--"}, names...)...); err != nil {
+			return l.abortRebase(cleanup, baseSHA, err, nil)
+		}
+		rerr = rebaseGit(ctx, l.top, "rebase", "--continue")
+	}
+	if rerr != nil {
+		return l.abortRebase(cleanup, baseSHA, rerr, nil)
+	}
+	return nil
+}
+
+// abortRebase aborts a stopped rebase and refuses the landing, naming the
+// files that conflict and need the lead (left, or every unmerged file when
+// nil) and those a rule resolved.
+func (l *lander) abortRebase(cleanup func(...string) (string, error), baseSHA string, err error, left []string) error {
+	if left == nil {
+		files, _ := cleanup("diff", "--name-only", "--diff-filter=U")
+		left = strings.Fields(files)
+	}
+	if _, aerr := cleanup("rebase", "--abort"); aerr != nil {
+		return fmt.Errorf("rebase onto %s failed (%v) and did not abort: %v", baseSHA[:8], err, aerr)
+	}
+	what := "fails"
+	if len(left) > 0 {
+		what = "conflicts in " + strings.Join(left, ", ")
+		if len(l.resolved) > 0 {
+			slices.Sort(l.resolved)
+			what += fmt.Sprintf(", which no rule resolves (a rule resolves %s)", strings.Join(slices.Compact(l.resolved), ", "))
+		}
+	}
+	l.resolved = nil
+	return fail(exitRefused, "refused: rebase onto %s %s; it is aborted and nothing is pushed. "+
+		"Rebase yourself, resolve it, re-validate, then run bmesh land again", l.base, what)
+}
+
+// rebaseGit runs a git rebase step that may write a commit message, which
+// keeps the commit's own.
+func rebaseGit(ctx context.Context, dir string, args ...string) error {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = append(os.Environ(), "GIT_EDITOR=true")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func joinRules(rs []merge.Rule) string {
+	s := make([]string, len(rs))
+	for i, r := range rs {
+		s[i] = string(r)
+	}
+	return strings.Join(s, ", ")
+}
+
+// resolveStop resolves the conflicted files of a stopped rebase by rule:
+// those whose every region resolves (files, with their rules) and those a
+// rule can't resolve (left). A file is written only when nothing is left.
+// A file is left when it lacks a side (added or deleted on one), isn't a
+// regular file on all three, or is binary.
+func (l *lander) resolveStop(ctx context.Context) (files map[string][]merge.Rule, left []string, err error) {
+	out, err := exec.CommandContext(ctx, "git", "-C", l.top, "ls-files", "-u", "-z").Output()
+	if err != nil {
+		return nil, nil, fmt.Errorf("git ls-files -u: %v", err)
+	}
+	type stages struct {
+		blob [4]string
+		ok   bool
+	}
+	byPath := map[string]*stages{}
+	var order []string
+	for _, e := range strings.Split(string(out), "\x00") {
+		meta, path, found := strings.Cut(e, "\t")
+		f := strings.Fields(meta)
+		if !found || len(f) != 3 {
+			continue
+		}
+		st := byPath[path]
+		if st == nil {
+			st = &stages{ok: true}
+			byPath[path] = st
+			order = append(order, path)
+		}
+		n, _ := strconv.Atoi(f[2])
+		if n < 1 || n > 3 || (f[0] != "100644" && f[0] != "100755") {
+			st.ok = false
+			continue
+		}
+		st.blob[n] = f[1]
+	}
+	dir, err := os.MkdirTemp("", "bmesh-land-")
+	if err != nil {
+		return nil, nil, err
+	}
+	defer os.RemoveAll(dir)
+	files = map[string][]merge.Rule{}
+	texts := map[string]string{}
+	for _, path := range order {
+		st := byPath[path]
+		text, rules, ok := "", []merge.Rule(nil), st.ok && st.blob[1] != "" && st.blob[2] != "" && st.blob[3] != ""
+		if ok {
+			text, rules, ok, err = mergeStages(ctx, l.top, dir, path, st.blob[2], st.blob[1], st.blob[3])
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		if !ok {
+			left = append(left, path)
+			continue
+		}
+		files[path], texts[path] = rules, text
+	}
+	if len(left) > 0 {
+		return files, left, nil
+	}
+	for path, text := range texts {
+		full := filepath.Join(l.top, path)
+		mode := os.FileMode(0o644)
+		if fi, err := os.Stat(full); err == nil {
+			mode = fi.Mode().Perm()
+		}
+		if err := os.WriteFile(full, []byte(text), mode); err != nil {
+			return nil, nil, err
+		}
+	}
+	return files, nil, nil
+}
+
+// mergeStages merges a file's three sides (blobs) in diff3 style, with
+// markers longer than any line of them starts with, and resolves the
+// regions by rule. A side with a NUL byte (binary), or a merge git finds
+// clean (what made the rebase stop is not in the text), is not resolved.
+func mergeStages(ctx context.Context, top, dir, path, ours, base, theirs string) (string, []merge.Rule, bool, error) {
+	var sides [3]string
+	var names [3]string
+	for i, b := range []string{ours, base, theirs} {
+		text, err := exec.CommandContext(ctx, "git", "-C", top, "cat-file", "blob", b).Output()
+		if err != nil {
+			return "", nil, false, fmt.Errorf("git cat-file blob %s: %v", b, err)
+		}
+		if strings.IndexByte(string(text), 0) >= 0 {
+			return "", nil, false, nil
+		}
+		sides[i] = string(text)
+		names[i] = filepath.Join(dir, []string{"ours", "base", "theirs"}[i])
+		if err := os.WriteFile(names[i], text, 0o600); err != nil {
+			return "", nil, false, err
+		}
+	}
+	marker := merge.MarkerSize(sides[:]...)
+	cmd := exec.CommandContext(ctx, "git", "merge-file", "-p", "--diff3", "--marker-size="+strconv.Itoa(marker),
+		"-L", "ours", "-L", "base", "-L", "theirs", names[0], names[1], names[2])
+	text, err := cmd.Output()
+	var ee *exec.ExitError
+	switch {
+	case err == nil:
+		return "", nil, false, nil
+	case !errors.As(err, &ee) || ee.ExitCode() < 1 || ee.ExitCode() > 127:
+		return "", nil, false, fmt.Errorf("git merge-file %s: %v", path, err)
+	}
+	out, rules, ok := merge.File(path, string(text), marker)
+	return out, rules, ok, nil
 }

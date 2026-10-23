@@ -1,0 +1,4 @@
+// hub's is missing, unsigned or lower), drops expired holds and writes
+// signed presence; it takes this box's jobs one at a time, answers
+// approvals of its holds, and self-levels its repos on start and on each
+// wake. A box that hasn't joined logs so and does nothing.

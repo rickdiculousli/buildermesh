@@ -145,7 +145,7 @@ verified: review ok t:3f2a9c1e m:claude-opus-5-5 c:81d0b7a4; verify ok t:3f2a9c1
 2. **Choose.** Reply in plain words: `bmesh choose-ideas app "1 and 3 yes, 2 smaller, 4 no, 5 later"`. The verdicts land on `main`; a word that isn't a verdict, like `smaller`, marks the spec `adjusting`, with your words kept for the rework.
 3. **Build.** `bmesh build app 012` checks that `main` passes its verify commands, marks the spec `building` and starts a lead.
 4. **Verify.** Routines run `verify` (the repo's tests) and, for larger changes, `review` (Opus, in a session that never saw the change).
-5. **Land.** `bmesh land` rebases onto `origin/main`, requires a result for the tree it lands, writes the `verified` line, marks the spec `done` and fast-forwards `main`.
+5. **Land.** `bmesh land` rebases onto `origin/main` (resolving the conflicts a rule can), requires a result for the tree it lands, writes the `verified` line, marks the spec `done` and fast-forwards `main`.
 
 A lead reports problems outside its spec as feedback. When a batch started from a chat is done, the plugin's `build` skill starts builds for the quick fixes without asking you, writes the rest up as proposed specs for your review and tags the next version with `bmesh release`. In a chat, say "proposals for app", "1 and 3 yes", "build what's accepted in app" or "what's building".
 

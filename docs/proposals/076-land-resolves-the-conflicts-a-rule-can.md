@@ -45,6 +45,10 @@ In:
 - **No burden on anyone else.** The rules are land's own code, so every box and repo gets them with the release. Nothing is installed or configured, and nothing is written into a repo: no merge tool, no merge driver, no `.gitattributes`, no git config. No one changes how they write docs or code.
 - **Docs:** the manual's land step 2 and Refusals. The lead skill's conflict line says that land resolves what a rule can, and that a failing verify right after `rebase: resolved` is land's merge, to be fixed forward.
 
+As built:
+- **The re-merge.** Land runs `git merge-file --diff3` on each file's three stages instead of `git checkout --conflict=diff3`. Its markers are made longer than any line of the file starts with, so a file that holds conflict markers of its own (a test fixture, say) still parses. Checkout can't set the marker size.
+- **032's Modes line resolves `(by sentence)`.** Both sides added a sentence at one point of the line, which is what "What you'll see" describes and rule 1 on sentences keeps. The replay above used `git merge-file` on the sentences, and that calls touching sentences a conflict. With it, the whole of 032's refusal resolves, and its tree passes `go build ./... && go vet ./...`. That makes 5 refusals resolved and building, and 3 rewritten on both sides (020, 058, the second 056).
+
 Out: any merge tool or driver, a region both sides rewrote, carrying a review across a resolution, a merge by Go syntax, generating the README index, and holding specs at dispatch.
 
 The options weighed, by how many of the 12 refusals each removes:
@@ -72,7 +76,7 @@ The repo's verify, plus:
   - kept both: 057's tests and 020's struct fields;
   - applied both: 054's rename beside new lines, and 059's shared deletion;
   - by sentence: 037's comment and 061's `SKILL.md` paragraph;
-  - still conflicts: 020's comment, 032's Modes line, 058's Builds line and 056's `statusRow` comment;
+  - still conflicts: 020's comment, 058's Builds line and 056's `statusRow` comment (032's Modes line resolves by sentence, see As built);
   - a frontmatter key added on both sides stays a conflict, and a line that doesn't round-trip through the sentence split is left alone.
 - `cmd_land_test.go` over a bare origin:
   - two appended tests land with no refusal;

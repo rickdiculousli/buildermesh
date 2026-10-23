@@ -1,0 +1,8 @@
+	for _, n := range a.cfg.RepoNames() {
+		if _, p, err := a.cfg.RepoPath(n); err == nil && ownModuleRepo(p) {
+			return n
+		}
+	}
+	return ""
+}
+

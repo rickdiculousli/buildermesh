@@ -323,6 +323,8 @@ Results live in KV `bm-results`, key `<kind>.<tree>[.<args8>][.<model-short>]`: 
 
 The land lease is `bm-leases` key `land.<repo>.0`, one place per repo.
 
+A rebase that stops on a conflict is resolved in place by `internal/merge`, which takes text in and returns resolved text or a conflict, and runs no git. For each path `git ls-files -u` lists, `land` reads the three stage blobs and writes them to a temporary directory under `$TMPDIR`. It runs `git merge-file -p --diff3 --marker-size=<n> -L ours -L base -L theirs` on them, `<n>` one more than the longest run of `<`, `|`, `=` or `>` that starts a line of any side (at least 7), so no line of the file reads as a marker. In a rebase, `ours` is `origin/main` with the commits already replayed and `theirs` is the branch commit being replayed. `merge.File` resolves the regions. A side's changes to the base are matched as difflib's matching blocks: the longest common run first, earliest on ties, then each side of it. A path with no stage 1, 2 or 3, a mode other than `100644` or `100755`, a NUL byte, or a merge `merge-file` finds clean is left to the lead. When every path resolves, `land` writes each one over the worktree's file, runs `git add`, then `git rebase --continue` with `GIT_EDITOR=true`, at most once per commit being rebased. Anything left runs `git rebase --abort`. Nothing is written to the repo's config, attributes or hooks.
+
 ## Scaffold
 
 ### The rules block

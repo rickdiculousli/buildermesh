@@ -1,0 +1,2 @@
+// box has no kinds here and is logged once per daemon start. With [update] on, the update repo's main
+// is then compared with this binary; an update drains the feeds for good.

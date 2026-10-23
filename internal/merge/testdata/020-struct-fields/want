@@ -1,0 +1,6 @@
+
+	notesCut bool // notes.md was over 16 KB at the last read: logged once
+
+	heldMu    sync.Mutex  // the held store
+	levelling atomic.Bool // a self-level is running
+	wg        sync.WaitGroup
