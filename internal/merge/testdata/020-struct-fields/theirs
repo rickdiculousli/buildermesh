@@ -1,0 +1,4 @@
+
+	heldMu    sync.Mutex  // the held store
+	levelling atomic.Bool // a self-level is running
+	wg        sync.WaitGroup

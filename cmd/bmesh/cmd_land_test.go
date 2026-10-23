@@ -1024,3 +1024,105 @@ func TestLandCarriesVerifyOnlyOutsideTheCode(t *testing.T) {
 		})
 	}
 }
+
+// commitOn writes file on the lead's branch and commits it.
+func (r landRepo) commitOn(t *testing.T, file, body string) {
+	t.Helper()
+	writeFile(t, filepath.Join(r.wt, file), body)
+	meshtest.Git(t, r.wt, "add", "-A")
+	meshtest.Git(t, r.wt, "commit", "-qm", "lead "+file)
+}
+
+// Main and the branch each append a test to one file: land resolves the
+// rebase's stop (kept both, main's first) and lands.
+func TestLandResolvesTwoAppendedTests(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	r.pushOther(t, "x_test.go", "package x\n")
+	meshtest.Git(t, r.wt, "pull", "-q", "--rebase", "origin", "main")
+	r.commitOn(t, "x_test.go", "package x\n\nfunc TestB(t *testing.T) {}\n")
+	r.pushOther(t, "x_test.go", "package x\n\nfunc TestA(t *testing.T) {}\n")
+
+	out, errs, code := runCLI(t, as("app-012"), "land")
+	if code != 0 || !strings.Contains(out, "\nrebase: resolved x_test.go (kept both)\nrebase onto ") {
+		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+	}
+	want := "package x\n\nfunc TestA(t *testing.T) {}\n\nfunc TestB(t *testing.T) {}\n"
+	if got := gitOut(t, "-C", r.origin, "show", "main:x_test.go") + "\n"; got != want {
+		t.Fatalf("x_test.go on origin:\n%s", got)
+	}
+}
+
+// A resolution that keeps both sides but breaks what verify checks is
+// refused by verify, naming land's merge, with the branch left rebased.
+func TestLandVerifyRefusesAResolutionThatBreaks(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	writeFile(t, os.Getenv("HOOK"), "test \"$(grep -c '^func A' x.go)\" -le 1\n")
+	r.pushOther(t, "x.go", "package x\n")
+	meshtest.Git(t, r.wt, "pull", "-q", "--rebase", "origin", "main")
+	r.commitOn(t, "x.go", "package x\n\nfunc A() int { return 2 }\n")
+	moved := r.pushOther(t, "x.go", "package x\n\nfunc A() int { return 1 }\n")
+
+	out, errs, code := runCLI(t, as("app-012"), "land")
+	if code != 1 || !strings.Contains(out, "rebase: resolved x.go (kept both)\n") ||
+		!strings.Contains(errs, "after the rebase resolved x.go by rule: that is land's merge, and the branch is left rebased; fix it forward") {
+		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+	}
+	if r.originMain(t) != moved {
+		t.Fatal("land pushed")
+	}
+	if err := gitQuiet(r.wt, "merge-base", "--is-ancestor", moved, "HEAD"); err != nil || gitOut(t, "status", "--porcelain") != "" {
+		t.Fatal("the branch is not left rebased and clean")
+	}
+	assertNoLeases(t, c, ctx)
+}
+
+// A stop with one file a rule resolves and one whose line both sides
+// rewrote is aborted, the refusal naming each.
+func TestLandNamesTheFilesNoRuleResolves(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	r.pushOther(t, "x.go", "package x\n")
+	meshtest.Git(t, r.wt, "pull", "-q", "--rebase", "origin", "main")
+	writeFile(t, filepath.Join(r.wt, "a.txt"), "ONE\ntwo\nthree\n")
+	r.commitOn(t, "x.go", "package x\n\nfunc B() {}\n")
+	work := gitOut(t, "rev-parse", "HEAD")
+	r.pushOther(t, "a.txt", "uno\ntwo\nthree\n")
+	moved := r.pushOther(t, "x.go", "package x\n\nfunc A() {}\n")
+
+	out, errs, code := runCLI(t, as("app-012"), "land")
+	if code != 3 || errs != "bmesh: refused: rebase onto origin/main conflicts in a.txt, which no rule resolves (a rule resolves x.go); "+
+		"it is aborted and nothing is pushed. Rebase yourself, resolve it, re-validate, then run bmesh land again\n" {
+		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+	}
+	if r.originMain(t) != moved || gitOut(t, "rev-parse", "HEAD") != work || gitOut(t, "status", "--porcelain") != "" {
+		t.Fatal("the refusal changed origin or the branch")
+	}
+}
+
+// A rebase that stops at two of the branch's commits resolves each stop:
+// a test appended to a Go file, then a sentence added to a paragraph.
+func TestLandResolvesARebaseThatStopsTwice(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	r.pushOther(t, "x_test.go", "package x\n")
+	r.pushOther(t, "doc.md", "# Doc\n\nThe box runs jobs. It logs each.\n")
+	meshtest.Git(t, r.wt, "pull", "-q", "--rebase", "origin", "main")
+	r.commitOn(t, "x_test.go", "package x\n\nfunc TestB(t *testing.T) {}\n")
+	r.commitOn(t, "doc.md", "# Doc\n\nThe box runs jobs. It logs each. The branch adds that.\n")
+	r.pushOther(t, "x_test.go", "package x\n\nfunc TestA(t *testing.T) {}\n")
+	r.pushOther(t, "doc.md", "# Doc\n\nThe box runs jobs. Main adds this. It logs each.\n")
+
+	out, errs, code := runCLI(t, as("app-012"), "land")
+	if code != 0 || !strings.Contains(out, "\nrebase: resolved x_test.go (kept both)\nrebase: resolved doc.md (by sentence)\nrebase onto ") {
+		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+	}
+	if got := gitOut(t, "-C", r.origin, "show", "main:doc.md"); got != "# Doc\n\nThe box runs jobs. Main adds this. It logs each. The branch adds that." {
+		t.Fatalf("doc.md on origin: %q", got)
+	}
+}

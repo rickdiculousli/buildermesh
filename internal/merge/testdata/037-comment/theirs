@@ -1,0 +1,6 @@
+// box has no kinds here and is logged once per daemon start. Each feed is
+// handed, with its groups, the repos it can't judge the kind for here: no
+// checkout, a main that failed to read and left no group, or the kind left
+// out for another OS. Their jobs are deferred to a box that can. With
+// [update] on, the update repo's main is then compared with this binary; an
+// update drains the feeds for good.

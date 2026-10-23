@@ -1,0 +1,2 @@
+
+	notesCut bool // notes.md was over 16 KB at the last read: logged once

@@ -1,0 +1,4 @@
+// hub's is missing, unsigned or lower), writes signed presence and the
+// session line (this-box.txt); and it
+// takes this box's jobs one at a time. A box that hasn't joined logs so and
+// does nothing.

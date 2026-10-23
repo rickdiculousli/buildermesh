@@ -1,0 +1,177 @@
+
+// stepsRepo is ledgerRepoSetup with spec 015 landed done with four steps
+// for the operator: one with a check that passes here, one of this box's
+// whose check fails, one of another box's and one with no check.
+func stepsRepo(t *testing.T) (*mesh.Client, context.Context, string) {
+	t.Helper()
+	c, ctx, repo := ledgerRepoSetup(t)
+	steps := `[{"n":1,"box":"","text":"set the key","check":"test -f a.txt","done":""},` +
+		`{"n":2,"box":"` + testHost + `","text":"restart","check":"false","done":""},` +
+		`{"n":3,"box":"otherbox","text":"on the other box","check":"true","done":""},` +
+		`{"n":4,"box":"","text":"by hand","done":""}]`
+	meshtest.CommitFiles(t, repo, map[string]string{"docs/proposals/015-steps.md": "---\nid: 15\ntitle: Steps here\nkind: feature\n" +
+		"size: S\njudge: opus\nstatus: done\nlens: eng\noperator_steps: " + steps + "\n---\n\nbody\n"})
+	meshtest.Git(t, repo, "push", "-q", "origin", "main")
+	return c, ctx, repo
+}
+
+// stepsOnOrigin is spec 015's steps on origin's main.
+func stepsOnOrigin(t *testing.T, repo string) []spec.Step {
+	t.Helper()
+	meshtest.Git(t, repo, "fetch", "-q", "origin")
+	s, err := spec.Parse(gitOut(t, "-C", repo, "show", "origin/main:docs/proposals/015-steps.md"), "015-steps.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	steps, err := s.Steps()
+	if err != nil || len(steps) != 4 {
+		t.Fatalf("%+v %v", steps, err)
+	}
+	return steps
+}
+
+func TestLandCopiesOperatorSteps(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	writeFile(t, filepath.Join(r.wt, "docs", "proposals", "012-thing.md"), "---\nid: 12\nstatus: building\nbranch: lead\n---\n\n"+
+		"## Proposal\nx\n\n## Needs from the operator\nOn the Mac:\n- [ricks-macbook] run `bmesh update` check: `bmesh version`\n- answer the list\n")
+	meshtest.Git(t, r.wt, "commit", "-qam", "needs")
+	out, errs, code := runCLI(t, as("app-012"), "land")
+	if code != 0 || !strings.Contains(out, "operator steps: 2 (bmesh spec steps 012)\n") {
+		t.Fatalf("land: %d %q %q", code, out, errs)
+	}
+	want := `operator_steps: [{"n":1,"box":"ricks-macbook","text":"On the Mac: run ` + "`bmesh update`" + `","check":"bmesh version","done":""},` +
+		`{"n":2,"box":"","text":"On the Mac: answer the list","done":""}]` + "\n"
+	if got := r.specOnOrigin(t); !strings.Contains(got, "status: done\n") || !strings.Contains(got, want) {
+		t.Fatalf("spec on origin:\n%s", got)
+	}
+}
+
+// A spec landed again whose Needs section is now empty drops its steps.
+func TestLandDropsStepsTheNeedsNoLongerList(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	writeFile(t, filepath.Join(r.wt, "docs", "proposals", "012-thing.md"), "---\nid: 12\nstatus: building\nbranch: lead\n"+
+		`operator_steps: [{"n":1,"box":"","text":"old","done":""}]`+"\n---\n\n## Needs from the operator\nNone.\n")
+	meshtest.Git(t, r.wt, "commit", "-qam", "needs")
+	if out, errs, code := runCLI(t, as("app-012"), "land"); code != 0 || strings.Contains(out, "operator steps:") {
+		t.Fatalf("land: %d %q %q", code, out, errs)
+	}
+	if got := r.specOnOrigin(t); !strings.Contains(got, "operator_steps: []\n") {
+		t.Fatalf("spec on origin:\n%s", got)
+	}
+}
+
+func TestSpecStepsListAndTick(t *testing.T) {
+	_, _, repo := stepsRepo(t)
+	out, errs, code := runCLI(t, nil, "spec", "steps", "015", "--repo", "demo")
+	if code != 0 || out != "015 Steps here: 4 of 4 open\n1. set the key (check: test -f a.txt)\n2. ["+testHost+"] restart (check: false)\n"+
+		"3. [otherbox] on the other box (check: true)\n4. by hand\n" {
+		t.Fatalf("list: %d %q %q", code, out, errs)
+	}
+	if out, _, code := runCLI(t, nil, "spec", "steps", "014", "--repo", "demo"); code != 0 || out != "014 Thing 014: no operator steps\n" {
+		t.Fatalf("no steps: %d %q", code, out)
+	}
+	if out, errs, code := runCLI(t, nil, "spec", "steps", "--repo", "demo"); code != 0 ||
+		out != "operator: demo 015 Steps here: 4 of 4 open (bmesh spec steps 015 --repo demo)\n" {
+		t.Fatalf("open: %d %q %q", code, out, errs)
+	}
+
+	out, errs, code = runCLI(t, nil, "spec", "steps", "15", "--repo", "demo", "--tick", "4,2", "--note", "did it")
+	head := gitOut(t, "-C", repo, "rev-parse", "origin/main")
+	if code != 0 || !strings.HasPrefix(out, "landed ") || !strings.HasSuffix(out, " on main: Steps: 015 4, 2 done; 2 of 4 open\n") {
+		t.Fatalf("tick: %d %q %q", code, out, errs)
+	}
+	if msg := gitOut(t, "-C", repo, "log", "-1", "--format=%s", "origin/main"); msg != "Steps: 015 4, 2 done" {
+		t.Fatalf("commit %q", msg)
+	}
+	steps := stepsOnOrigin(t, repo)
+	for _, k := range []int{1, 3} {
+		if steps[k].Done == "" || !strings.HasSuffix(steps[k].Done, "Z "+testHost) || steps[k].Note != "did it" {
+			t.Fatalf("step %d: %+v", k+1, steps[k])
+		}
+	}
+	if steps[0].Done != "" || steps[2].Done != "" {
+		t.Fatalf("%+v", steps)
+	}
+	if out, errs, code := runCLI(t, nil, "spec", "steps", "--repo", "demo"); code != 0 ||
+		out != "operator: demo 015 Steps here: 2 of 4 open (bmesh spec steps 015 --repo demo)\n" {
+		t.Fatalf("open after: %d %q %q", code, out, errs)
+	}
+
+	// Ticking a done step again lands nothing.
+	head = gitOut(t, "-C", repo, "rev-parse", "origin/main")
+	out, errs, code = runCLI(t, nil, "spec", "steps", "015", "--repo", "demo", "--tick", "4")
+	if code != 0 || out != "step 4 already done "+steps[3].Done+"\n" {
+		t.Fatalf("again: %d %q %q", code, out, errs)
+	}
+	meshtest.Git(t, repo, "fetch", "-q", "origin")
+	if now := gitOut(t, "-C", repo, "rev-parse", "origin/main"); now != head {
+		t.Fatalf("landed again: %s -> %s", head, now)
+	}
+	for _, bad := range [][]string{{"--tick", "9"}, {"--tick", "x"}, {"--tick", "0"}, {"--note", "w"}, {"--tick", "1", "--check"}} {
+		if _, errs, code := runCLI(t, nil, append([]string{"spec", "steps", "015", "--repo", "demo"}, bad...)...); code != 2 {
+			t.Fatalf("%v: %d %q", bad, code, errs)
+		}
+	}
+	if _, errs, code := runCLI(t, nil, "spec", "steps", "014", "--repo", "demo", "--tick", "1"); code != 3 ||
+		!strings.Contains(errs, "spec 014 has no operator steps") {
+		t.Fatalf("no steps tick: %d %q", code, errs)
+	}
+
+	// Every step ticked: no line.
+	if _, errs, code := runCLI(t, nil, "spec", "steps", "015", "--repo", "demo", "--tick", "1,3"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	if out, _, code := runCLI(t, nil, "spec", "steps", "--repo", "demo"); code != 0 || out != "" {
+		t.Fatalf("all done: %d %q", code, out)
+	}
+}
+
+func TestSpecStepsCheck(t *testing.T) {
+	_, _, repo := stepsRepo(t)
+	out, errs, code := runCLI(t, nil, "spec", "steps", "015", "--repo", "demo", "--check")
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	if code != 0 || len(lines) != 4 || lines[0] != "1. "+testHost+": exit 0" || lines[1] != "2. "+testHost+": exit 1" ||
+		lines[2] != "3. otherbox: not run: hosts are off here; run bmesh spec steps 015 --check on otherbox" ||
+		!strings.HasSuffix(lines[3], " on main: Steps: 015 1 done; 3 of 4 open") {
+		t.Fatalf("check: %d %q %q", code, out, errs)
+	}
+	steps := stepsOnOrigin(t, repo)
+	if !strings.HasSuffix(steps[0].Done, "Z "+testHost) || steps[0].Note != "check passed" || steps[1].Done != "" || steps[2].Done != "" {
+		t.Fatalf("%+v", steps)
+	}
+	// Again: the passed step is done, the failing one lands nothing.
+	head := gitOut(t, "-C", repo, "rev-parse", "origin/main")
+	out, errs, code = runCLI(t, nil, "spec", "steps", "015", "--repo", "demo", "--check")
+	if code != 0 || strings.Contains(out, "1. ") || strings.Contains(out, "landed") {
+		t.Fatalf("again: %d %q %q", code, out, errs)
+	}
+	meshtest.Git(t, repo, "fetch", "-q", "origin")
+	if now := gitOut(t, "-C", repo, "rev-parse", "origin/main"); now != head {
+		t.Fatalf("landed again: %s -> %s", head, now)
+	}
+}
+
+// With hosts on and this box never joined, asking the other boxes fails;
+// the pass here lands all the same, and the failure is still reported.
+func TestSpecStepsCheckLandsHereWhenOtherBoxesFail(t *testing.T) {
+	_, _, repo := stepsRepo(t)
+	cfg := os.Getenv("BMESH_CONFIG")
+	b, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg, append(b, "[hosts]\nenabled = true\n"...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, errs, code := runCLI(t, nil, "spec", "steps", "015", "--repo", "demo", "--check")
+	if code != 3 || !strings.Contains(errs, "no host key") || !strings.Contains(out, " on main: Steps: 015 1 done; 3 of 4 open\n") {
+		t.Fatalf("check: %d %q %q", code, out, errs)
+	}
+	if steps := stepsOnOrigin(t, repo); steps[0].Note != "check passed" || steps[2].Done != "" {
+		t.Fatalf("%+v", steps)
+	}
+}
