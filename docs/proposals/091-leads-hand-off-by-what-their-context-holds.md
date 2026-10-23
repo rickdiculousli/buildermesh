@@ -4,10 +4,15 @@ title: Leads hand off work by what their context holds, pick the executor's mode
 kind: token-cost
 size: S
 judge: opus
-status: accepted
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-23
+built_by: e3ea05bb-bff3-48f6-8b55-68bc6de48f87
+host: k16
+branch: main
+merged: d9a181665deb128d61d264acb3e43bd3dd57f9d2
+verified: verify ok t:a181b3d0
 ---
 
 ## Opportunity
