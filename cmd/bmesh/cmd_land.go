@@ -1099,5 +1099,10 @@ func mergeStages(ctx context.Context, top, dir, path, ours, base, theirs string)
 		return "", nil, false, fmt.Errorf("git merge-file %s: %v", path, err)
 	}
 	out, rules, ok := merge.File(path, string(text), marker)
+	// merge-file ends a region's last side with a newline the sides may not
+	// have had: a file both sides end without one keeps it so.
+	if ok && !strings.HasSuffix(sides[0], "\n") && !strings.HasSuffix(sides[2], "\n") {
+		out = strings.TrimSuffix(out, "\n")
+	}
 	return out, rules, ok, nil
 }

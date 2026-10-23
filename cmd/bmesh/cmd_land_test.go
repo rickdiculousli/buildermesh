@@ -1103,6 +1103,26 @@ func TestLandResolvesTwoAppendedTests(t *testing.T) {
 	}
 }
 
+// A file both sides end without a final newline keeps it so when the
+// conflict at its end is resolved.
+func TestLandResolvesAtAFileEndWithNoNewline(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	r.pushOther(t, "x.txt", "a")
+	meshtest.Git(t, r.wt, "pull", "-q", "--rebase", "origin", "main")
+	r.commitOn(t, "x.txt", "a\nc")
+	r.pushOther(t, "x.txt", "a\nb")
+
+	out, errs, code := runCLI(t, as("app-012"), "land")
+	if code != 0 || !strings.Contains(out, "rebase: resolved x.txt (kept both, applied both)\n") {
+		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+	}
+	if b, err := exec.Command("git", "-C", r.origin, "show", "main:x.txt").Output(); err != nil || string(b) != "a\nb\nc" {
+		t.Fatalf("x.txt on origin: %q %v", b, err)
+	}
+}
+
 // A resolution that keeps both sides but breaks what verify checks is
 // refused by verify, naming land's merge, with the branch left rebased.
 func TestLandVerifyRefusesAResolutionThatBreaks(t *testing.T) {
