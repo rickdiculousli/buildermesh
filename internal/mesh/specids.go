@@ -5,16 +5,29 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-// bm-specids holds one key per repo, its RepoToken, whose value is the
+// bm-specids holds one key per repo, specIDsKey, whose value is the
 // highest spec id claimed there: spec next-id and ideate claim through it,
 // so two writers never take the same number. It has no age limit; a claim
 // that never lands is a gap.
 
 var specIDsConfig = jetstream.KeyValueConfig{Bucket: BucketSpecIDs, History: 1, Storage: jetstream.FileStorage}
+
+// specIDsKey is repo's key: its RepoToken, with any other character a KV
+// key can't hold (an unregistered checkout's directory name may have a
+// space or a +) as -.
+func specIDsKey(repo string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' {
+			return r
+		}
+		return '-'
+	}, RepoToken(repo))
+}
 
 // specIDsBucket opens bm-specids, creating it when it is missing (a hub
 // provisioned before it).
@@ -54,7 +67,7 @@ func ClaimSpecIDs(ctx context.Context, c *Client, repo string, highest, n int) (
 	if err != nil {
 		return 0, err
 	}
-	key := RepoToken(repo)
+	key := specIDsKey(repo)
 	for {
 		cur, rev, err := readSpecIDs(ctx, kv, key)
 		if err != nil {
@@ -88,7 +101,7 @@ func PeekSpecID(ctx context.Context, c *Client, repo string, highest int) (int, 
 	if err != nil {
 		return 0, err
 	}
-	cur, _, err := readSpecIDs(ctx, kv, RepoToken(repo))
+	cur, _, err := readSpecIDs(ctx, kv, specIDsKey(repo))
 	if err != nil {
 		return 0, err
 	}

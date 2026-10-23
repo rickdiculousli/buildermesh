@@ -535,6 +535,20 @@ func TestSpecNextIDClaimsOnTheMesh(t *testing.T) {
 	if out, errs, code := runCLI(t, nil, "spec", "next-id"); code != 0 || out != "032\n" {
 		t.Fatalf("from a worktree: %d %q %q", code, out, errs)
 	}
+	// An unregistered repo, its directory name no KV key could hold, claims
+	// from its main checkout and its worktrees on one counter.
+	loose := filepath.Join(t.TempDir(), "my repo+x")
+	meshtest.Git(t, filepath.Dir(loose), "init", "-q", "-b", "main", loose)
+	writeFile(t, filepath.Join(loose, "docs", "proposals", "004-a.md"), "---\nid: 004\nstatus: proposed\n---\nx\n")
+	meshtest.Git(t, loose, "add", "-A")
+	meshtest.Git(t, loose, "commit", "-q", "-m", "spec")
+	looseWT := filepath.Join(t.TempDir(), "a1b2")
+	meshtest.Git(t, loose, "worktree", "add", "-q", "-b", "side", looseWT, "main")
+	for _, c := range []struct{ dir, want string }{{loose, "005\n"}, {looseWT, "006\n"}} {
+		if out, errs, code := runCLI(t, nil, "spec", "next-id", "--repo", c.dir); code != 0 || out != c.want {
+			t.Fatalf("unregistered %s: %d %q %q", c.dir, code, out, errs)
+		}
+	}
 	if _, _, code := runCLI(t, nil, "spec", "next-id", "--count", "0"); code != exitUsage {
 		t.Fatalf("--count 0: code %d", code)
 	}
