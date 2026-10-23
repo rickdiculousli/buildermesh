@@ -4,10 +4,13 @@ title: A verify after a change outside the code is answered from the last verifi
 kind: time-cost
 size: M
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-17
+built_by: eecffa7f-6926-4b41-9f91-b1052843421b
+host: k16
+family: buildermesh-build-13
 ---
 
 ## Opportunity
