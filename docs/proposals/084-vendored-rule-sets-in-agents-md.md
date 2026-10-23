@@ -4,7 +4,7 @@ title: bmesh ships small engineering rule sets a repo picks on one marker line, 
 kind: feature
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-22
