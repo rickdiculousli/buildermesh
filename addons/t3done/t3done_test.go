@@ -222,6 +222,10 @@ func TestADoneUnderMinBusyIsQuiet(t *testing.T) {
 	f.request("t1", "q1", "pending", 801)
 	f.tick()
 	f.wantPosts(4)
+	// A quick ask after the long ones counts from itself.
+	f.run("t1", 6, "completed", 900, "quick again")
+	f.tick()
+	f.wantPosts(4)
 }
 
 func TestFailedPostsInterruptedDoesntRequestAsks(t *testing.T) {
