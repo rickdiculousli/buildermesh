@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -641,8 +642,8 @@ func TestLandWithNoNodeSkipsTheInbox(t *testing.T) {
 }
 
 // An operator message that arrives while land waits for the lease refuses
-// it once the lease is taken, before the fetch.
-func TestLandReadsTheInboxAgainUnderTheLease(t *testing.T) {
+// it there, before the lease is taken.
+func TestLandReadsTheInboxWhileItWaitsForTheLease(t *testing.T) {
 	c, ctx := setup(t)
 	r := newLandRepo(t)
 	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
@@ -651,29 +652,22 @@ func TestLandReadsTheInboxAgainUnderTheLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := r.originMain(t)
-	t.Setenv("BMESH_NODE", "app-012")
-	var out, errb meshtest.SyncBuffer
-	res := make(chan int, 1)
-	go func() { res <- run([]string{"land"}, strings.NewReader(""), &out, &errb) }()
-	waitingForLease(t, &out)
+	out, errb, res := landBG(t, "app-012")
+	waitingForLease(t, out)
 	sendTo(t, c, ctx, "app-012", mesh.Message{From: "operator", Kind: "message", Text: "hold"})
-	if err := mesh.ReleaseLease(ctx, c, key, "app-011"); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case code := <-res:
-		// prepare read an empty inbox (it got as far as waiting); the read
-		// under the lease found the message.
-		if code != 3 || out.String() != "required: verify (the repo's verify kind)\nverify ok t:"+gitOut(t, "rev-parse", "HEAD^{tree}")[:8]+" (recorded)\n"+
-			"waiting for land.repo (held by app-011)\nlease land.repo\n" ||
-			errb.String() != "bmesh: refused: 1 unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh land again\n" {
-			t.Fatalf("land: %d\n%s\nerr %q", code, out.String(), errb.String())
-		}
-	case <-time.After(meshtest.Within(t)):
-		t.Fatal("land never took the released lease")
+	landEnds(t, res, 3, out, errb)
+	// prepare read an empty inbox (it got as far as waiting); the read
+	// while it waited found the message.
+	if out.String() != "required: verify (the repo's verify kind)\nverify ok t:"+gitOut(t, "rev-parse", "HEAD^{tree}")[:8]+" (recorded)\n"+
+		"waiting for land.repo (held by app-011)\n" ||
+		errb.String() != "bmesh: refused: 1 unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh land again\n" {
+		t.Fatalf("land:\n%s\nerr %q", out.String(), errb.String())
 	}
 	if r.originMain(t) != base {
 		t.Fatal("land pushed")
+	}
+	if err := mesh.ReleaseLease(ctx, c, key, "app-011"); err != nil {
+		t.Fatal(err)
 	}
 	assertNoLeases(t, c, ctx)
 }
@@ -1287,4 +1281,442 @@ func TestLandRefusesADuplicateID(t *testing.T) {
 		t.Fatal("origin main moved")
 	}
 	assertNoLeases(t, c, ctx)
+}
+
+// reviewLandRepo is newLandRepo with a pooled review kind on model m1 and
+// spec 012 sized size ("" for none), both committed on the lead's branch,
+// the repo in the registry and node app-012 landing it.
+func reviewLandRepo(t *testing.T, c *mesh.Client, ctx context.Context, size string) landRepo {
+	t.Helper()
+	r := newLandRepo(t)
+	writeFile(t, filepath.Join(r.wt, ".bmesh", "routines", "review.toml"), "mode = \"pooled\"\nmodels = [\"m1\"]\nprompt = \"check\"\n")
+	front := "---\nid: 12\nstatus: building\nbranch: lead\n"
+	if size != "" {
+		front += "size: " + size + "\n"
+	}
+	writeFile(t, filepath.Join(r.wt, "docs", "proposals", "012-thing.md"), front+"---\nbody\n")
+	meshtest.Git(t, r.wt, "add", "-A")
+	meshtest.Git(t, r.wt, "commit", "-qm", "the review kind")
+	writeRepos(t, "[repos.repo]\npath = \""+r.repo+"\"\n")
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012", Repo: "repo"})
+	return r
+}
+
+var queuedRE = regexp.MustCompile(`review: queued (\S+)`)
+
+// queuedJob waits for land to queue a review, and returns the job.
+func queuedJob(t *testing.T, c *mesh.Client, ctx context.Context, out *meshtest.SyncBuffer, n int) mesh.Job {
+	t.Helper()
+	var id string
+	meshtest.Until(t, "land to queue a review", func() bool {
+		m := queuedRE.FindAllStringSubmatch(out.String(), -1)
+		if len(m) < n {
+			return false
+		}
+		id = m[n-1][1]
+		return strings.Contains(out.String(), "waiting for job "+id)
+	})
+	j, ok, err := mesh.FindJob(ctx, c, "review", id)
+	if err != nil || !ok {
+		t.Fatalf("job %s: %v %v", id, ok, err)
+	}
+	return j
+}
+
+// answer takes job j off the review kind's inbox and replies to it as a
+// daemon's review routine would: recorded (a result at its tree on m1 and
+// the reply naming it) when record, else a reply that recorded nothing.
+func answer(t *testing.T, c *mesh.Client, ctx context.Context, j mesh.Job, ok, record bool, output string) {
+	t.Helper()
+	if _, found, err := mesh.FetchMatch(ctx, c, mesh.RoutinePath("review"), func(m mesh.Message) bool {
+		return m.Kind == "job" && m.Job != nil && m.Job.ID == j.ID
+	}); err != nil || !found {
+		t.Fatalf("job %s on the inbox: %v %v", j.ID, found, err)
+	}
+	key := ""
+	if record {
+		if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "review", Tree: j.Tree, Commit: j.Commit, OK: ok, Model: "m1",
+			Output: output, By: "routine.review.m1-1"}); err != nil {
+			t.Fatal(err)
+		}
+		key = mesh.ResultKey("review", j.Tree, nil, "m1")
+	}
+	to, _ := mesh.ParsePath("app-012")
+	if err := mesh.SendReply(ctx, c, mesh.RoutinePath("review"), to, mesh.Reply{Job: j.ID, Kind: "review", Tree: j.Tree, OK: ok,
+		Output: output, ResultKey: key, By: "routine.review.m1-1"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// unanswered lists the review jobs no reply answers.
+func unanswered(t *testing.T, c *mesh.Client, ctx context.Context) []mesh.QueuedJob {
+	t.Helper()
+	jobs, err := mesh.KindJobs(ctx, c, "review")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return jobs
+}
+
+// An M spec with no review gets one on HEAD at medium, on the kind's first
+// model with the branch's base, waits for it and lands with it on the
+// verified line; the reply is acked, and land's event repeats while it
+// waits.
+func TestLandQueuesTheSizedReview(t *testing.T) {
+	c, ctx := setup(t)
+	r := reviewLandRepo(t, c, ctx, "M")
+	if _, errs, code := runCLI(t, as("app-012"), "started"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	landEventEvery = 20 * time.Millisecond
+	head := gitOut(t, "rev-parse", "HEAD")
+	base := gitOut(t, "merge-base", "origin/main", "HEAD")
+	out, errb, res := landBG(t, "app-012")
+	j := queuedJob(t, c, ctx, out, 1)
+	if j.Commit != head || j.Effort != "medium" || j.Model != "m1" || !j.Go || j.Text != "base: "+base || j.Repo != "repo" {
+		t.Fatalf("job %+v", j)
+	}
+	if gitOut(t, "-C", r.origin, "rev-parse", "lead") != head {
+		t.Fatal("the branch was not pushed for the review")
+	}
+	p, _ := mesh.ParsePath("app-012")
+	meshtest.Until(t, "land events to repeat", func() bool {
+		evs, err := mesh.History(ctx, c, mesh.EventSubject(p, "land"), time.Time{})
+		return err == nil && len(evs) >= 3 && strings.Contains(string(evs[len(evs)-1].Data), "waiting for job "+j.ID)
+	})
+	answer(t, c, ctx, j, true, true, "fine\nVERDICT: ok")
+	landEnds(t, res, 0, out, errb)
+	tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+	for _, w := range []string{"review: queued " + j.ID + " (medium, size M)\n", "waiting for job " + j.ID + " (review, waiting)\n",
+		"job " + j.ID + " (review): ok t:" + tree[:8] + "\n", "review: on the branch already (ok at t:" + tree[:8] + ")\n",
+		"verified: review ok t:" + tree[:8] + " m:m1; verify ok t:" + tree[:8] + "\n"} {
+		if !strings.Contains(out.String(), w) {
+			t.Fatalf("land lacks %q:\n%s", w, out.String())
+		}
+	}
+	if n, err := mesh.Unread(ctx, c, p); err != nil || n != 0 {
+		t.Fatalf("unread after land: %d %v", n, err)
+	}
+	evs, err := mesh.History(ctx, c, mesh.EventSubject(p, "land"), time.Time{})
+	if err != nil || len(evs) < 3 {
+		t.Fatalf("land events %d %v", len(evs), err)
+	}
+	rec := gitOut(t, "rev-parse", "HEAD")
+	if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", rec); code != 0 {
+		t.Fatalf("done: %d %q %q", code, out, errs)
+	}
+}
+
+// An S spec queues no review and lands on verify alone; --size L queues one
+// at high; a spec with no size and no --size refuses.
+func TestLandSizesTheReview(t *testing.T) {
+	t.Run("S", func(t *testing.T) {
+		c, ctx := setup(t)
+		reviewLandRepo(t, c, ctx, "S")
+		out, errs, code := runCLI(t, as("app-012"), "land")
+		tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+		if code != 0 || !strings.Contains(out, "review: none (size S)\n") || !strings.Contains(out, "verified: verify ok t:"+tree[:8]+"\n") {
+			t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+		}
+		if jobs := unanswered(t, c, ctx); len(jobs) != 0 {
+			t.Fatalf("jobs %+v", jobs)
+		}
+	})
+	t.Run("--size L", func(t *testing.T) {
+		c, ctx := setup(t)
+		reviewLandRepo(t, c, ctx, "M")
+		out, errb, res := landBG(t, "app-012", "--size", "L")
+		j := queuedJob(t, c, ctx, out, 1)
+		if j.Effort != "high" || !strings.Contains(out.String(), "review: queued "+j.ID+" (high, size L)\n") {
+			t.Fatalf("job %+v\n%s", j, out.String())
+		}
+		answer(t, c, ctx, j, true, true, "VERDICT: ok")
+		landEnds(t, res, 0, out, errb)
+	})
+	t.Run("no size", func(t *testing.T) {
+		c, ctx := setup(t)
+		r := reviewLandRepo(t, c, ctx, "")
+		base := r.originMain(t)
+		_, errs, code := runCLI(t, as("app-012"), "land")
+		if code != exitUsage || errs != "bmesh: land needs --size: spec 012 has no size\n" || r.originMain(t) != base {
+			t.Fatalf("land: %d %q", code, errs)
+		}
+		if _, errs, code := runCLI(t, as("app-012"), "land", "--size", "Q"); code != exitUsage || !strings.Contains(errs, `--size "Q"`) {
+			t.Fatalf("bad size: %d %q", code, errs)
+		}
+	})
+}
+
+// A review queued by hand is waited for, not queued again; so is land's
+// own after it timed out (exit 5) and is run again.
+func TestLandWaitsForAReviewAlreadyQueued(t *testing.T) {
+	t.Run("by hand", func(t *testing.T) {
+		c, ctx := setup(t)
+		reviewLandRepo(t, c, ctx, "M")
+		qout, errs, code := runCLI(t, as("app-012"), "routine", "queue", "review", "--go", "--effort", "medium")
+		id := strings.TrimSpace(strings.TrimPrefix(qout, "queued "))
+		if code != 0 || id == "" {
+			t.Fatalf("queue: %d %q %q", code, qout, errs)
+		}
+		out, errb, res := landBG(t, "app-012")
+		until(t, out, "review: waiting for job "+id+"\nwaiting for job "+id+" (review, waiting)\n")
+		if jobs := unanswered(t, c, ctx); len(jobs) != 1 || strings.Contains(out.String(), "review: queued") {
+			t.Fatalf("a second review: %+v\n%s", jobs, out.String())
+		}
+		j, _, _ := mesh.FindJob(ctx, c, "review", id)
+		answer(t, c, ctx, j, true, true, "VERDICT: ok")
+		landEnds(t, res, 0, out, errb)
+	})
+	t.Run("after exit 5", func(t *testing.T) {
+		c, ctx := setup(t)
+		r := reviewLandRepo(t, c, ctx, "M")
+		base := r.originMain(t)
+		out, errs, code := runCLI(t, as("app-012"), "land", "--wait", "200ms")
+		m := queuedRE.FindStringSubmatch(out)
+		if code != exitTimeout || m == nil || errs != "bmesh: timed out waiting for job "+m[1]+" (review); nothing is pushed\n" || r.originMain(t) != base {
+			t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+		}
+		bout, berr, res := landBG(t, "app-012")
+		until(t, bout, "review: waiting for job "+m[1]+"\n")
+		if jobs := unanswered(t, c, ctx); len(jobs) != 1 || strings.Contains(bout.String(), "review: queued") {
+			t.Fatalf("a second review: %+v\n%s", jobs, bout.String())
+		}
+		j, _, _ := mesh.FindJob(ctx, c, "review", m[1])
+		answer(t, c, ctx, j, true, true, "VERDICT: ok")
+		landEnds(t, res, 0, bout, berr)
+	})
+}
+
+// A branch reviewed ok queues none and lands with it; one reviewed fail
+// and then fixed queues none and lands on verify alone; one reviewed and
+// rebased by hand queues none, and the review carries.
+func TestLandQueuesNoSecondReview(t *testing.T) {
+	t.Run("ok", func(t *testing.T) {
+		c, ctx := setup(t)
+		reviewLandRepo(t, c, ctx, "M")
+		reviewed := putReview(t, c, ctx)
+		out, errs, code := runCLI(t, as("app-012"), "land")
+		tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+		if code != 0 || !strings.Contains(out, "review: on the branch already (ok at t:"+reviewed[:8]+")\n") ||
+			!strings.Contains(out, "verified: review ok t:"+tree[:8]+" m:claude-opus-5-5") {
+			t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+		}
+		if jobs := unanswered(t, c, ctx); len(jobs) != 0 {
+			t.Fatalf("jobs %+v", jobs)
+		}
+	})
+	t.Run("fail then fixed", func(t *testing.T) {
+		c, ctx := setup(t)
+		rp := reviewLandRepo(t, c, ctx, "M")
+		tree := gitOut(t, "rev-parse", "HEAD^{tree}")
+		if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "review", Tree: tree, Commit: gitOut(t, "rev-parse", "HEAD"),
+			OK: false, Model: "m1", By: "routine.review.m1-1"}); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(rp.wt, "b.txt"), "b fixed\n")
+		meshtest.Git(t, rp.wt, "commit", "-qam", "the review's findings")
+		out, errs, code := runCLI(t, as("app-012"), "land")
+		landedTree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+		if code != 0 || !strings.Contains(out, "review: on the branch already (fail at t:"+tree[:8]+")\n") ||
+			!strings.Contains(out, "verified: verify ok t:"+landedTree[:8]+"\n") {
+			t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+		}
+		if jobs := unanswered(t, c, ctx); len(jobs) != 0 {
+			t.Fatalf("jobs %+v", jobs)
+		}
+	})
+	t.Run("rebased by hand", func(t *testing.T) {
+		c, ctx := setup(t)
+		rp := reviewLandRepo(t, c, ctx, "M")
+		reviewed := putReview(t, c, ctx)
+		rp.pushOther(t, "c.txt", "c\n")
+		meshtest.Git(t, rp.wt, "fetch", "-q", "origin")
+		meshtest.Git(t, rp.wt, "rebase", "-q", "origin/main")
+		out, errs, code := runCLI(t, as("app-012"), "land")
+		tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+		if code != 0 || !strings.Contains(out, "review: on the branch already (ok at t:"+reviewed[:8]+")\n") ||
+			!strings.Contains(out, "review ok t:"+tree[:8]+" m:claude-opus-5-5 c:"+reviewed[:8]) {
+			t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+		}
+		if jobs := unanswered(t, c, ctx); len(jobs) != 0 {
+			t.Fatalf("jobs %+v", jobs)
+		}
+	})
+}
+
+// A failing review refuses with its findings; a reply whose model run never
+// answered is queued once more, and a second refuses; any other reply that
+// recorded nothing refuses at once. Every reply land read is acked.
+func TestLandReadsTheReviewsReply(t *testing.T) {
+	p, _ := mesh.ParsePath("app-012")
+	t.Run("fail", func(t *testing.T) {
+		c, ctx := setup(t)
+		reviewLandRepo(t, c, ctx, "M")
+		out, errb, res := landBG(t, "app-012")
+		j := queuedJob(t, c, ctx, out, 1)
+		answer(t, c, ctx, j, false, true, "### high: b.txt is wrong\nVERDICT: fail")
+		landEnds(t, res, 3, out, errb)
+		if !strings.Contains(out.String(), "### high: b.txt is wrong\nVERDICT: fail\n") ||
+			errb.String() != "bmesh: refused: review failed at t:"+j.Tree[:8]+" (job "+j.ID+"); nothing is pushed: fix what it found, commit and run bmesh land again\n" {
+			t.Fatalf("land:\n%s\nerr %q", out.String(), errb.String())
+		}
+		if n, err := mesh.Unread(ctx, c, p); err != nil || n != 0 {
+			t.Fatalf("unread: %d %v", n, err)
+		}
+	})
+	t.Run("unjudged twice", func(t *testing.T) {
+		c, ctx := setup(t)
+		reviewLandRepo(t, c, ctx, "M")
+		out, errb, res := landBG(t, "app-012")
+		j := queuedJob(t, c, ctx, out, 1)
+		answer(t, c, ctx, j, false, false, "model run failed: rate limited; nothing recorded")
+		var again mesh.Job
+		meshtest.Until(t, "land to queue the job once more", func() bool {
+			m := regexp.MustCompile(`queued (\S+) once more`).FindStringSubmatch(out.String())
+			if m == nil {
+				return false
+			}
+			var ok bool
+			again, ok, _ = mesh.FindJob(ctx, c, "review", m[1])
+			return ok
+		})
+		if again.Effort != "medium" || again.Commit != j.Commit || again.Text != j.Text || again.ID == j.ID {
+			t.Fatalf("queued again %+v, was %+v", again, j)
+		}
+		answer(t, c, ctx, again, false, false, "model run failed: rate limited; nothing recorded")
+		landEnds(t, res, 3, out, errb)
+		if !strings.Contains(errb.String(), "refused: job "+again.ID+" (review) recorded nothing") {
+			t.Fatalf("land:\n%s\nerr %q", out.String(), errb.String())
+		}
+		if n, err := mesh.Unread(ctx, c, p); err != nil || n != 0 {
+			t.Fatalf("unread: %d %v", n, err)
+		}
+	})
+	t.Run("another failure", func(t *testing.T) {
+		c, ctx := setup(t)
+		reviewLandRepo(t, c, ctx, "M")
+		out, errb, res := landBG(t, "app-012")
+		j := queuedJob(t, c, ctx, out, 1)
+		answer(t, c, ctx, j, false, false, "lease lost")
+		landEnds(t, res, 3, out, errb)
+		if !strings.Contains(out.String(), "lease lost\n") || !strings.Contains(errb.String(), "refused: job "+j.ID+" (review) recorded nothing") ||
+			strings.Contains(out.String(), "once more") {
+			t.Fatalf("land:\n%s\nerr %q", out.String(), errb.String())
+		}
+	})
+}
+
+// A rebase that changes the diff the review read releases the lease, queues
+// the review again with the new base, works out what land requires again
+// and lands after it.
+func TestLandQueuesTheReviewAgainAfterItsRebase(t *testing.T) {
+	c, ctx := setup(t)
+	rp := reviewLandRepo(t, c, ctx, "M")
+	writeFile(t, filepath.Join(rp.wt, "a.txt"), "ONE\ntwo\nthree\n")
+	meshtest.Git(t, rp.wt, "commit", "-qam", "lead a")
+	reviewed := putReview(t, c, ctx)
+	moved := rp.pushOther(t, "a.txt", "one\ntwo\nTHREE\n")
+	out, errb, res := landBG(t, "app-012")
+	until(t, out, "review: queued ")
+	j := queuedJob(t, c, ctx, out, 1)
+	for _, w := range []string{"review: on the branch already (ok at t:" + reviewed[:8] + ")\n",
+		"review has a result for t:" + reviewed[:8] + " but none for t:" + j.Tree[:8] + ", and the rebase changed the diff\n" +
+			"released land.repo\npush origin lead " + j.Commit[:8] + "\nreview: queued " + j.ID + " again (the rebase changed the diff)\n"} {
+		if !strings.Contains(out.String(), w) {
+			t.Fatalf("land lacks %q:\n%s", w, out.String())
+		}
+	}
+	if j.Text != "base: "+moved || j.Effort != "medium" {
+		t.Fatalf("job %+v", j)
+	}
+	assertNoLeases(t, c, ctx)
+	answer(t, c, ctx, j, true, true, "VERDICT: ok")
+	landEnds(t, res, 0, out, errb)
+	tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+	if tree != j.Tree || !strings.Contains(out.String(), "verified: review ok t:"+tree[:8]+" m:m1; verify ok t:"+tree[:8]+"\n") {
+		t.Fatalf("land:\n%s", out.String())
+	}
+}
+
+// While land waits, a hold refuses it, and so does a message from the
+// operator, even one already read; a commit made while it waits for the
+// lease refuses under it. Nothing is pushed.
+func TestLandStopsForWhatNeedsTheLead(t *testing.T) {
+	p, _ := mesh.ParsePath("app-012")
+	t.Run("hold", func(t *testing.T) {
+		c, ctx := setup(t)
+		r := reviewLandRepo(t, c, ctx, "M")
+		base := r.originMain(t)
+		out, errb, res := landBG(t, "app-012")
+		queuedJob(t, c, ctx, out, 1)
+		if err := mesh.PutLeadHold(ctx, c, mesh.LeadHold{Path: "app-012", Gate: mesh.GateLand, Text: "wait", By: "operator",
+			At: time.Now().UTC().Format(time.RFC3339)}); err != nil {
+			t.Fatal(err)
+		}
+		landEnds(t, res, 3, out, errb)
+		if !strings.Contains(errb.String(), "held before land by operator") || r.originMain(t) != base {
+			t.Fatalf("land: %q", errb.String())
+		}
+	})
+	t.Run("operator mail, read", func(t *testing.T) {
+		c, ctx := setup(t)
+		r := reviewLandRepo(t, c, ctx, "M")
+		base := r.originMain(t)
+		out, errb, res := landBG(t, "app-012")
+		queuedJob(t, c, ctx, out, 1)
+		sendTo(t, c, ctx, "app-012", mesh.Message{From: "operator", Kind: "message", Text: "two reviews"})
+		if _, err := mesh.Fetch(ctx, c, p, true); err != nil {
+			t.Fatal(err)
+		}
+		landEnds(t, res, 3, out, errb)
+		if errb.String() != "bmesh: refused: 1 message(s) from the operator since land started; nothing is pushed: "+
+			"run bmesh inbox, act on them, then run bmesh land again\n" || r.originMain(t) != base {
+			t.Fatalf("land: %q", errb.String())
+		}
+	})
+	t.Run("a commit", func(t *testing.T) {
+		c, ctx := setup(t)
+		r := newLandRepo(t)
+		putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+		key, err := mesh.AcquireLease(ctx, c, "land.repo", "app-011", time.Minute, 1, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		base := r.originMain(t)
+		out, errb, res := landBG(t, "app-012")
+		waitingForLease(t, out)
+		was := gitOut(t, "rev-parse", "HEAD")
+		r.commitOn(t, "e.txt", "e\n")
+		if err := mesh.ReleaseLease(ctx, c, key, "app-011"); err != nil {
+			t.Fatal(err)
+		}
+		landEnds(t, res, 3, out, errb)
+		if errb.String() != "bmesh: refused: HEAD moved while land waited ("+gitOut(t, "rev-parse", "HEAD")[:8]+", was "+was[:8]+
+			"); nothing is pushed: run bmesh land again\n" || r.originMain(t) != base {
+			t.Fatalf("land:\n%s\nerr %q", out.String(), errb.String())
+		}
+		assertNoLeases(t, c, ctx)
+	})
+}
+
+// Land run outside a node queues no review and waits on no job.
+func TestLandOutsideANodeQueuesNoReview(t *testing.T) {
+	c, ctx := setup(t)
+	reviewLandRepo(t, c, ctx, "M")
+	if _, errs, code := runCLI(t, as("app-012"), "routine", "queue", "review", "--go"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	out, errs, code := runCLI(t, nil, "land", "--spec", "012")
+	tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+	if code != 0 || strings.Contains(out, "review:") || strings.Contains(out, "waiting for job") ||
+		!strings.Contains(out, "verified: verify ok t:"+tree[:8]+"\n") {
+		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+	}
+	if jobs := unanswered(t, c, ctx); len(jobs) != 1 {
+		t.Fatalf("jobs %+v", jobs)
+	}
+	p, _ := mesh.ParsePath("app-012")
+	if evs, err := mesh.History(ctx, c, mesh.EventSubject(p, "land"), time.Time{}); err != nil || len(evs) != 0 {
+		t.Fatalf("land events %d %v", len(evs), err)
+	}
 }
