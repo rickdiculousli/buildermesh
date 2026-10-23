@@ -612,7 +612,7 @@ func (a *app) cmdRoutineRun(args []string) error {
 	model := fs.String("model", "", "one of the kind's models (default the first)")
 	effort := fs.String("effort", "", "a model kind's effort for this job (default the model's)")
 	here := fs.Bool("here", false, "run a fresh or pooled kind in this worktree")
-	rerun := fs.Bool("rerun", false, "run even when a result is recorded")
+	rerun := fs.Bool("rerun", false, "run even when a result is recorded or would carry")
 	text := fs.String("text", "", "text for a model kind")
 	pos, err := parse(fs, args)
 	if err != nil {
