@@ -2787,7 +2787,7 @@ A kind is `.bmesh/routines/<kind>.toml` (the directory is `[routines] dir` in th
 | `model` | `""` | a model id: the kind runs `claude -p` with it |
 | `models` | `[]` | several model ids; a job's `--model` picks one, default the first |
 | `prompt` | `""` | model kinds: a setup prompt, sent once per session before the first job |
-| `allow` | `[]` | model kinds: extra `--allowedTools` entries, e.g. `"Bash(npm test:*)"`; `Read`, `Grep`, `Glob` and `LS` are always allowed |
+| `allow` | `[]` | model kinds: extra `--allowedTools` entries, e.g. `"Bash(npm test:*)"`; `Read`, `Grep` and `Glob` are always allowed. They are also all the session holds: its tools are the built-in ones these name, no skills unless `"Skill"` is named, no MCP servers unless an `"mcp__<server>__<tool>"` is |
 | `pool` | `1` | pooled: instances per model; fresh: runs at once |
 | `batch_idle` | `"30s"` | pooled: held jobs start after this long with no new job and no go |
 | `recycle_uses` | `20` | pooled model: a new session after this many jobs |
@@ -2802,9 +2802,10 @@ A kind is `.bmesh/routines/<kind>.toml` (the directory is `[routines] dir` in th
 
 **Environment.** A command gets `BMESH_JOB`, `BMESH_KIND`, `BMESH_COMMIT`, `BMESH_TREE`, `BMESH_FROM` (the path the job runs as: the instance, or the requester inline) and `BMESH_REPLY` (the requester's path).
 
-**Model kinds** run `claude -p --model M --output-format json --session-id|--resume <uuid> [--effort E] --allowedTools <list> --max-turns 40` with the job on stdin: a header line `job: <id> commit: <sha> tree: <tree>`, the job's `--text` and its args.
+**Model kinds** run `claude -p --model M --output-format json --session-id|--resume <uuid> [--effort E] --tools <names> [--strict-mcp-config] [--disable-slash-commands] --allowedTools <list> --max-turns 40` with the job on stdin: a header line `job: <id> commit: <sha> tree: <tree>`, the job's `--text` and its args.
 
 - `--effort` is passed only when the job set one. The jobs of a pooled session each run at their own effort.
+- `--allowedTools` is `Read,Grep,Glob` and the kind's `allow`: what the session may run. `--tools` is what it holds: the same entries, each cut at `(` (`Bash(git diff:*)` gives `Bash`), once each, without the `mcp__` ones. `--strict-mcp-config`, with no `--mcp-config`, loads no MCP servers and is left off when `allow` names an `mcp__` tool; `--disable-slash-commands` loads no skills and is left off when `allow` names `Skill`. Hooks and CLAUDE.md load as the box's settings make them.
 - A run whose claude never answered judges nothing and records nothing: claude was killed or timed out, didn't start, exited non-zero, printed no result, or returned an `is_error` result (a failed sign-in, say). The daemon answers the job `ok=false`, and `routine run` refuses (exit 3), with `model run failed: <why>; nothing recorded`, `<why>` claude's error, `[timeout after <d>]`, `[bad claude output]`, `[exit status <n>]` when it exited saying nothing, or else the first line it printed, so a re-queued job records the real verdict.
 - A run claude answered is ok unless the reply's last `VERDICT:` line reads `VERDICT: fail` (the line is `VERDICT: ok` or `VERDICT: fail`). Leading `*`, `_`, `#`, `` ` ``, `>` and spaces are ignored, around the value too: `**VERDICT: fail**`, `**VERDICT:** fail` and `VERDICT: **ok**` all parse.
 - When the prompt contains `VERDICT:`, a reply without a verdict line fails (and is recorded). Otherwise it is ok.

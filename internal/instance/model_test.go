@@ -61,7 +61,7 @@ func TestModelInstanceResumesAndRecycles(t *testing.T) {
 	if !r.OK || r.Output != "fine" || r.Context != 1000 {
 		t.Fatalf("first reply %+v", r)
 	}
-	for _, want := range []string{"-p ", "--model m-test", "--output-format json", "--allowedTools Read,Grep,Glob,LS,Bash(go test:*)", "--max-turns 40"} {
+	for _, want := range []string{"-p ", "--model m-test", "--output-format json", "--allowedTools Read,Grep,Glob,Bash(go test:*)", "--max-turns 40"} {
 		if !strings.Contains(argv, want) {
 			t.Fatalf("first argv %q lacks %q", argv, want)
 		}
@@ -119,6 +119,46 @@ func TestModelInstanceResumesAndRecycles(t *testing.T) {
 	}
 	if !m.ShouldRecycle(time.Now()) {
 		t.Fatal("context past recycle_context: want ShouldRecycle")
+	}
+}
+
+// A model run, first or resumed, holds only the built-in tools its kind's
+// allow names besides the base set, and no MCP servers or skills unless allow
+// names them.
+func TestModelSessionHoldsOnlyAllowedTools(t *testing.T) {
+	has := func(argv, f string) bool { return strings.Contains(" "+argv+" ", " "+f+" ") }
+	for _, c := range []struct {
+		allow              []string
+		tools, allowed     string
+		strictMCP, noSkill bool
+	}{
+		{[]string{"Bash(git diff:*)", "Bash(git log:*)"}, "Read,Grep,Glob,Bash", "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*)", true, true},
+		{nil, "Read,Grep,Glob", "Read,Grep,Glob", true, true},
+		{[]string{"Skill"}, "Read,Grep,Glob,Skill", "Read,Grep,Glob,Skill", true, false},
+		{[]string{"mcp__x__y", "Edit"}, "Read,Grep,Glob,Edit", "Read,Grep,Glob,mcp__x__y,Edit", false, true},
+	} {
+		k := kind.Kind{Name: "review", Model: "m-test", Prompt: "P", Allow: c.allow}
+		m := NewModel(k, "m-test", fakeClaude(t))
+		j := Job{ID: "j1", Kind: "review", Text: "look", Dir: t.TempDir()}
+		t.Setenv("FAKE_RESULT", "fine")
+		for _, run := range []string{"first", "resume"} {
+			_, argv, _ := runLogged(t, m, j)
+			if (run == "first") != (flag(argv, "--session-id") != "") {
+				t.Fatalf("allow %q %s argv %q: want --session-id only on the first", c.allow, run, argv)
+			}
+			if got := flag(argv, "--tools"); got != c.tools {
+				t.Errorf("allow %q %s: --tools %q, want %q", c.allow, run, got, c.tools)
+			}
+			if !strings.Contains(argv, "--allowedTools "+c.allowed+" ") {
+				t.Errorf("allow %q %s argv %q: want --allowedTools %s", c.allow, run, argv, c.allowed)
+			}
+			if has(argv, "--strict-mcp-config") != c.strictMCP || has(argv, "--disable-slash-commands") != c.noSkill {
+				t.Errorf("allow %q %s argv %q: want --strict-mcp-config %v, --disable-slash-commands %v", c.allow, run, argv, c.strictMCP, c.noSkill)
+			}
+			if has(argv, "--mcp-config") {
+				t.Errorf("allow %q %s argv %q: want no --mcp-config", c.allow, run, argv)
+			}
+		}
 	}
 }
 

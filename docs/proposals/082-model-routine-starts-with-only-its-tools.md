@@ -33,7 +33,7 @@ In:
   - `--strict-mcp-config`, with no `--mcp-config`, so no MCP servers load, unless `allow` names an `mcp__` tool.
   - `--disable-slash-commands`, so no skills load, unless `allow` names `Skill`.
 - **`--allowedTools` stays as it is.** It sets permission; `--tools` sets which tools exist.
-- **`LS` is no longer a Claude Code tool.** `--tools` gets only names claude accepts: check what an unknown name does, and drop `LS` from `baseTools` if claude refuses it.
+- **`LS` is no longer a Claude Code tool.** `--tools` gets only names claude accepts: check what an unknown name does, and drop `LS` from `baseTools` if claude refuses it. As built: claude 2.1.309 ignores an unknown name in `--tools` without a word (the request held Bash, Glob, Grep and Read for `--tools Read,Grep,Glob,LS,Bash`), so `LS` is a dead name and goes from `baseTools`.
 - **Docs.** The manual's model-kind argv line and its `allow` row, which now also decides what the session holds; internals where it gives the argv.
 
 Out:

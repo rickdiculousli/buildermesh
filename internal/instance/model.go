@@ -15,7 +15,42 @@ import (
 )
 
 // baseTools are always allowed to a model instance.
-const baseTools = "Read,Grep,Glob,LS"
+var baseTools = []string{"Read", "Grep", "Glob"}
+
+// sessionFlags are the claude flags that give a model instance only what its
+// kind's allow names: --tools lists the built-in tools of baseTools and allow
+// (each entry cut at "(", MCP tools left out), --strict-mcp-config loads no
+// MCP servers unless allow names an mcp__ tool, and --disable-slash-commands
+// loads no skills unless allow names Skill. --allowedTools grants permission
+// to the same entries.
+func sessionFlags(allow []string) []string {
+	var builtin []string
+	seen := map[string]bool{}
+	mcp, skill := false, false
+	for _, e := range append(append([]string{}, baseTools...), allow...) {
+		name, _, _ := strings.Cut(e, "(")
+		name = strings.TrimSpace(name)
+		switch {
+		case strings.HasPrefix(name, "mcp__"):
+			mcp = true
+			continue
+		case name == "Skill":
+			skill = true
+		}
+		if name != "" && !seen[name] {
+			seen[name] = true
+			builtin = append(builtin, name)
+		}
+	}
+	flags := []string{"--tools", strings.Join(builtin, ",")}
+	if !mcp {
+		flags = append(flags, "--strict-mcp-config")
+	}
+	if !skill {
+		flags = append(flags, "--disable-slash-commands")
+	}
+	return append(flags, "--allowedTools", strings.Join(append(append([]string{}, baseTools...), allow...), ","))
+}
 
 // Model runs jobs through `claude -p`, one session across jobs: the first job
 // of a session sends the kind's prompt with --session-id, later jobs only the
@@ -82,10 +117,6 @@ func (m *Model) Run(ctx context.Context, j Job) Reply {
 	session, first := m.session, m.uses == 0
 	m.mu.Unlock()
 
-	tools := baseTools
-	if len(m.k.Allow) > 0 {
-		tools += "," + strings.Join(m.k.Allow, ",")
-	}
 	argv := append(append([]string{}, m.claude...), "-p", "--model", m.model, "--output-format", "json")
 	text := jobText(j)
 	if first {
@@ -97,7 +128,7 @@ func (m *Model) Run(ctx context.Context, j Job) Reply {
 	if j.Effort != "" {
 		argv = append(argv, "--effort", j.Effort)
 	}
-	argv = append(argv, "--allowedTools", tools, "--max-turns", "40")
+	argv = append(append(argv, sessionFlags(m.k.Allow)...), "--max-turns", "40")
 
 	var stdout, stderr bytes.Buffer
 	note, err := run(ctx, m.k.Timeout, j, func(ctx context.Context) *exec.Cmd { return exec.CommandContext(ctx, argv[0], argv[1:]...) },
