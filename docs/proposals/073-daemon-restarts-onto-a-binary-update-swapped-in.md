@@ -4,7 +4,7 @@ title: After a bmesh update run by hand, the daemon restarts itself onto the new
 kind: time-cost
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-17
@@ -12,6 +12,9 @@ built_by: 251205bf-8416-4916-ab37-4b57152ae1ea
 host: k16
 family: buildermesh-build-17
 branch: bmesh/251205bf-8416-4916-ab37-4b57152ae1ea
+merged: f9271ad28b0a7830d0e22cb0d2278bfdf4f671da
+operator_steps: [{"n":1,"box":"ricks-macbook","text":"Once the release after the one that brings this in is out, run `bmesh update` there: it ends `this box's daemon restarts onto <rev8> within a minute`, and a minute later the daemon's log shows `update: <old> -> <new> (swapped in by bmesh update); restarting`.","check":"bmesh hosts","done":""}]
+verified: verify ok t:d5613e22
 ---
 
 ## Opportunity
