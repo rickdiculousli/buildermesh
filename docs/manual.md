@@ -3607,11 +3607,11 @@ Internals: [internals](internals.md#t3-done)
 
 ### Map
 
-The map (`/`) draws one block per lead, a tree of the lead and its executors (a round and its engineers alike), then the orphans block, then the routines column (last on a phone, where blocks stack). Blocks run in need order: `blocked`, `asking`, `silent`, `working`, `held`, `idle` (no state yet), `done`. While a live lead (any state but `done`) is on the map, done leads leave the tree for a shelf under the live blocks: chips (`buildermesh-001 ✓`, newest first) headed `done (N)`, each linking its lead page. With no live lead, done leads draw as trees.
+The map (`/`) draws one block per lead, a tree of the lead and its executors (a round and its engineers alike), then the orphans block, then the routines column (last on a phone, where blocks stack). Blocks run in need order: `blocked`, `asking`, `silent`, `working`, `landing`, `held`, `idle` (no state yet), `done`. While a live lead (any state but `done`) is on the map, done leads leave the tree for a shelf under the live blocks: chips (`buildermesh-001 ✓`, newest first) headed `done (N)`, each linking its lead page. With no live lead, done leads draw as trees.
 
 **The routines column** draws one box per kind, with its queue and instance counts, linking to the routines page, which lists the instances per repo.
 
-**The strip**, under the header, opens with a summary row, `2 working · 1 asking · 1 silent · 2 held · 3 done` (`all idle` when none), over leads, rounds and their children, not routines. Below it come the quota lines, then the newest digest as a fold (`▸ digest 50m ago: <title>`) that opens to its body.
+**The strip**, under the header, opens with a summary row, `2 working · 1 landing · 1 asking · 1 silent · 2 held · 3 done` (`all idle` when none), over leads, rounds and their children, not routines. Below it come the quota lines, then the newest digest as a fold (`▸ digest 50m ago: <title>`) that opens to its body.
 
 **The recent-events drawer** shows each row's node as a chip in its lead tree's hue (routines and `daemon.*` grey); an inbox row shows the sender's chip, `→`, and a small recipient chip. Hovering a chip dims every row but that node's and those addressed to it. Clicking it (a tap on touch) pins that focus until you click it again or press Escape.
 
@@ -3620,7 +3620,7 @@ The map (`/`) draws one block per lead, a tree of the lead and its executors (a 
 1. One row per lead, round or engineer that is `asking`, `blocked` or `silent`, in need order: state badge, path (linking its lead page) and the state's words (the ask or block text; for a silent node `quiet for 20m` and how long ago). A row leaves on the node's next `started`, `progress` or `done`.
 2. Then one row per landed spec with operator steps still open, from every configured repo: an `operator` badge, `<repo> NNN`, and `<title>: X of Y open · bmesh spec steps NNN --repo <repo>`. The row goes once every step is ticked.
 
-On the map, an `asking` or `blocked` box's second line is the state and its words. A `held` box (a coordinator holds the lead at a gate) has a badge in its own slate colour and its words as the second line. A `held` lead counts in the strip but never gets a band row, because the coordinator put it there.
+On the map, an `asking` or `blocked` box's second line is the state and its words. A `held` box (a coordinator holds the lead at a gate) has a badge in its own slate colour and its words as the second line. A `held` lead counts in the strip but never gets a band row, because the coordinator put it there. A `landing` box (a lead that ran `ready`, its box's daemon landing its change) has a badge in its own calm teal and as its second line the daemon's latest landing words (`review job abc running on k16`); it counts in the strip (`1 landing`) and never gets a band row. The daemon's `land-refused` event puts the lead back to `working`.
 
 **The lead page** (`#/lead/<path>`, for any node) shows, in order:
 
@@ -3709,7 +3709,7 @@ Runner tests drive shell fakes instead of tmux and claude, and a fake T3. No tes
 | Exit | When |
 |---|---|
 | 0 | the title showed |
-| 1 | no such title showed within 20 s (the last title is printed anyway), or the title's `bandHeld=` is non-zero (stderr: `check.mjs: a held node is in the needs-you band`) |
+| 1 | no such title showed within 20 s (the last title is printed anyway), or the title's `bandHeld=` is non-zero (stderr: `check.mjs: a held node is in the needs-you band`), or its `bandLanding=` is non-zero (`check.mjs: a landing node is in the needs-you band`), or its `landing=` is 0 or missing (`check.mjs: no landing box on the map`; the seed always has one landing lead) |
 | 2 | a usage or browser error |
 
 A hash picks the view (`/#/lead/<path>`, `/#/routines`). Chromium is `$CHROME`, else the newest headless shell or Chromium in the Playwright cache (`$PLAYWRIGHT_BROWSERS_PATH`, `~/.cache/ms-playwright`, `~/Library/Caches/ms-playwright`); stderr names it. `chromium --dump-dom` is no substitute: the page's `/events` stream never ends, so it never returns.

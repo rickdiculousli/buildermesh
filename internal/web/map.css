@@ -13,6 +13,7 @@
   --working: #2f81f7;
   --asking: #bf8700;
   --held: #57728f;
+  --landing: #2f7d6d;
   --blocked: #cf222e;
   --done-bg: #e1e4e8;
   --done-fg: #6e7781;
@@ -41,6 +42,7 @@
     --working: #58a6ff;
     --asking: #d29922;
     --held: #8fa7c4;
+    --landing: #5cb8a5;
     --blocked: #f85149;
     --done-bg: #2a2f36;
     --done-fg: #8b949e;
@@ -99,6 +101,7 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
 .strip .sum .st-working { color: var(--working); }
 .strip .sum .st-asking { color: var(--asking); }
 .strip .sum .st-held { color: var(--held); }
+.strip .sum .st-landing { color: var(--landing); }
 .strip .sum .st-blocked, .strip .sum .st-silent { color: var(--blocked); }
 .strip .sum .st-done { color: var(--done-fg); }
 .strip .quota { padding: 2px 0; overflow-wrap: anywhere; }
@@ -169,6 +172,7 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
 .badge.st-working { border-color: var(--working); color: var(--working); }
 .badge.st-asking { border-color: var(--asking); color: var(--asking); }
 .badge.st-held { border-color: var(--held); color: var(--held); }
+.badge.st-landing { border-color: var(--landing); color: var(--landing); }
 .badge.st-operator { border-color: var(--held); color: var(--held); }
 .badge.st-blocked { border-color: var(--blocked); color: var(--blocked); }
 .badge.st-silent { border-style: dashed; border-color: var(--blocked); }
@@ -280,6 +284,8 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
 .st-asking .sub { fill: var(--asking); }
 .st-held .ring { stroke: var(--held); }
 .st-held .sub { fill: var(--held); }
+.st-landing .ring { stroke: var(--landing); }
+.st-landing .sub { fill: var(--landing); }
 .st-silent .box { stroke: var(--blocked); stroke-dasharray: 4 3; }
 .st-done .box { fill: var(--done-bg); stroke: var(--done-bg); }
 .st-done .label, .st-done .sub { fill: var(--done-fg); }

@@ -48,18 +48,19 @@ func (e ErrIllegalTransition) Error() string {
 
 var transitions = map[string][]string{
 	"idle":    {"working"},
-	"working": {"working", "blocked", "asking", "done", "silent", "held"},
+	"working": {"working", "blocked", "asking", "done", "silent", "held", "landing"},
 	"blocked": {"working", "done"},
 	"asking":  {"working", "blocked", "asking", "done", "held"},
 	"silent":  {"working", "blocked", "asking", "done", "held"},
 	// held: a lead waiting at a coordinator's gate (bmesh held). Only an
 	// event of its own moves it on; the daemon never calls it silent.
-	"held": {"working", "blocked", "asking", "done", "held"},
+	"held":    {"working", "blocked", "asking", "done", "held", "landing"},
+	"landing": {"landing", "held", "done", "working", "blocked"},
 }
 
 var eventStates = map[string]string{
 	"started": "working", "progress": "working", "blocked": "blocked", "ask": "asking", "done": "done",
-	"held": "held",
+	"held": "held", "ready": "landing",
 }
 
 // StateFor maps a node event to the state it sets.
