@@ -4,7 +4,7 @@ title: bmesh node forget --wipe removes a stopped node and everything under it f
 kind: maintenance
 size: M
 judge: opus
-status: building
+status: done
 lens: eng
 proposed_by: dfdc9673-27b2-4f3f-9f17-95a5b436de66
 proposed_on: 2026-10-17
@@ -12,6 +12,8 @@ built_by: be9109d0-70ba-4862-ba55-6f9a40ddd133
 host: k16
 family: buildermesh-build-13
 branch: bmesh/be9109d0-70ba-4862-ba55-6f9a40ddd133
+merged: 76363cfb653eceb4b1e361f933411465f6fa6bf6
+verified: verify ok t:9dc81069
 ---
 
 ## Opportunity
