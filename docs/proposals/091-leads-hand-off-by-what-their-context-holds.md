@@ -22,12 +22,12 @@ Wording in two skills; no code.
 
 In (`skills/lead/SKILL.md`):
 - §2.4: the lead's own hands are for the design and the core (the reading that decides the shape, code whose pieces depend on each other, judgment calls). Executors also take runs of settled work that need only part of what the lead read, even when they run one after another (a browser check that reports what it saw, the tests one area broke). The "worse you" line becomes the reason, in terms of what the context holds: setup, what was read, and the output of what was done. Hand off work that needs part of the reading, above all once the context is mostly output; keep work that needs most of it; cut as few pieces as keep each narrow, since each pays again for its share of the reading. Hand off only once the done condition can be written; never split one file between executors.
-- §3.2: the executor's model by the piece: Sonnet for a mechanical piece a careful junior could do from the brief, Opus for judgment; the same model goes to `executor new --model`.
-- §3.3: resume an executor for a question, a correction or a next piece that needs most of what it read; start a fresh one when it holds mostly the output of earlier work and the next piece needs little of its reading.
+- §3.1-3.2: the executor's model by the piece, passed to `executor new --model`: Sonnet for a mechanical piece a careful junior could do from the brief, Opus for judgment. The brief asks for a `progress` at least every 15 minutes of quiet work, so a lead that ended its turn isn't marked `silent`; a piece that only checks reports `done` at the commit it started from.
+- §3.3: resume an executor for a question, a correction or a next piece that needs most of what it read; otherwise start a fresh one, above all when it holds mostly the output of earlier work.
 - §4: while executors or routines run and nothing else is to do, end the turn; the harness notice or the daemon's wake brings the lead back.
 - §6: while building, run the tests the change touches; the whole suite is the verify routine's.
 
-In (`skills/build/SKILL.md` step 2): specs whose Proposals name the same files are dispatched one after another in the same family, not together.
+In (`skills/build/SKILL.md` step 2): specs whose Proposals name the same files are dispatched one after another in the same family (not with `--accepted`), and the family is drained once its last lead is done. The manual's `buildermesh:build` entry says so.
 
 Out: any change to `bmesh`, its config or the brief; a cap on context size (a lead can't read its own token count); a throughline mode.
 
@@ -37,7 +37,7 @@ Judge: opus, because the wording has to keep the lead's judgment where it is whi
 Leads that hand narrow runs of settled work to executors once their context is mostly work output, Sonnet on mechanical pieces, fresh executors instead of resumes that carry stale output, and overlapping specs building in sequence.
 
 ## Verification
-The repo's verify (the skill frontmatter tests read every `SKILL.md`). After the next opengym-rick batch, re-run `~/.cache/bmesh-scratch/analysis/throughline/{extract,profile}.py` on k16 and and `compose.py`, and compare the lead/executor split, the setup/orientation/work split at hand-offs and resumes, and any Sonnet executor's rework against the numbers above; a Sonnet piece that its lead had to redo is the signal to narrow that line.
+The repo's verify (the skill frontmatter tests read every `SKILL.md`). After the next opengym-rick batch, re-run `~/.cache/bmesh-scratch/analysis/throughline/{extract,profile}.py` on k16, and `compose.py`, and compare the lead/executor split, the setup/orientation/work split at hand-offs and resumes, and any Sonnet executor's rework against the numbers above; a Sonnet piece that its lead had to redo is the signal to narrow that line.
 
 ## Risks and the alternative considered
 More executors means more re-orientation: each one starts at about 28k and re-reads its share of what the lead read; past three pieces, or when a piece needs most of the reading, the re-reading costs more than the dropped work output saves, which is why the rule turns on what the context holds and how much of it the next work needs. The classification is approximate: a file read just before editing it counts as orientation. Sonnet's quality on these pieces is unmeasured. The alternative, one lead across specs, cost more in every variant: what a later spec can reuse from an earlier one's context is a few percent of its reading, while the carried context is re-read on every call.
