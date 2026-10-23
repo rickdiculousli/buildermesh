@@ -1,6 +1,7 @@
 // Command seed fills a scratch mesh (scripts/seed.sh runs it against a
 // throwaway bmesh serve) with every state the map draws: two live leads and
-// their executors (working, asking, done and one idle), a held lead, a done lead for the
+// their executors (working, asking, done and one idle), a held lead, a
+// landing lead (ready, its box's daemon landing it), a done lead for the
 // shelf, a silent lead, an orphan, a round and its two engineers (one
 // blocked), a pooled routine kind with instances in two repos and three
 // spent fresh runs, a queued job, a few events and messages, two leases, a
@@ -56,6 +57,7 @@ func seed(ctx context.Context, url string, leads int) error {
 		{Path: "app-0042.web", Role: "executor", Repo: "app", Parent: "app-0042", StartedAt: ago(40)},
 		{Path: "app-0042.e2e", Role: "executor", Repo: "app", Parent: "app-0042", StartedAt: ago(5)},
 		{Path: "app-0039", Role: "lead", Repo: "app", Spec: "0039", StartedAt: ago(80), Branch: "bmesh/app-0039"},
+		{Path: "app-0041", Role: "lead", Repo: "app", Spec: "0041", StartedAt: ago(55), Branch: "bmesh/app-0041"},
 		{Path: "app-0040", Role: "lead", Repo: "app", Spec: "0040", StartedAt: ago(60), Branch: "bmesh/app-0040"},
 		{Path: "docs-0007", Role: "lead", Repo: "docs", Spec: "0007", StartedAt: ago(30)},
 		{Path: "docs-0007.guide", Role: "executor", Repo: "docs", Parent: "docs-0007", StartedAt: ago(25)},
@@ -77,7 +79,8 @@ func seed(ctx context.Context, url string, leads int) error {
 			return err
 		}
 	}
-	// Each step is an event and the state it sets; silent is the daemon's.
+	// Each step is an event and the state it sets; silent and landing are
+	// the daemon's, addressed to the node they move.
 	for _, s := range [][4]string{
 		{"app-0042", "started", "planning the endpoints", "working"},
 		{"app-0042.api", "started", "", "working"},
@@ -87,6 +90,9 @@ func seed(ctx context.Context, url string, leads int) error {
 		{"docs-0007", "started", "", "working"},
 		{"app-0040", "started", "", "working"},
 		{"app-0040", "held", "before land by operator: hub move first", "held"},
+		{"app-0041", "started", "", "working"},
+		{"app-0041", "ready", "ready to land", "landing"},
+		{"daemon.seed", "landing", "review job 9f2kQ running on seed", "landing"},
 		{"app-0039", "started", "", "working"},
 		{"app-0039", "done", "landed the map's legend", "done"},
 		{"daemon.seed", "silent", "quiet for 25m", "silent"},
@@ -108,8 +114,11 @@ func seed(ctx context.Context, url string, leads int) error {
 		{"routine.review.f9c0d1e2f", "done", "", "done"},
 	} {
 		ev, path := mesh.Event{From: s[0], Event: s[1], Text: s[2]}, s[0]
-		if s[1] == "silent" {
+		switch s[1] {
+		case "silent":
 			ev.To, path = "docs-0007", "docs-0007"
+		case "landing":
+			ev.To, path = "app-0041", "app-0041"
 		}
 		if s[1] == "done" {
 			ev.Commit = "0123abcd"

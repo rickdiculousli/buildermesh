@@ -14,7 +14,7 @@ const LABEL_PX = 7.5, SUB_PX = 6; // average glyph widths of .label and .sub
 const CHIP = { h: 32, pad: 8, gap: 8, inset: 10, checkW: 16, maxLabel: 28, font: "500 12px", headFont: "700 14px" };
 // NEED orders the map's leads: what needs a hand, then what runs, what has
 // no state yet, what is finished.
-const NEED = { blocked: 0, asking: 1, silent: 2, working: 3, held: 4, idle: 5, done: 6 };
+const NEED = { blocked: 0, asking: 1, silent: 2, working: 3, landing: 4, held: 5, idle: 6, done: 7 };
 const PHONE = "(max-width: 699px)";
 const FETCH_MS = 10000; // a /api/tree read taking longer is abandoned
 const RECENT = 30;
@@ -22,7 +22,10 @@ const EDGE_MS = 1200;
 const REFETCH_MS = 500;
 const REFETCH_MAX_MS = 2000; // a steady stream of events still refetches this often
 const POLL_MS = 30000; // unread counts and runners change without an event
-const EVENT_STATE = { started: "working", progress: "working", ask: "asking", blocked: "blocked", held: "held", done: "done" };
+const EVENT_STATE = { started: "working", progress: "working", ask: "asking", blocked: "blocked", held: "held", ready: "landing", done: "done" };
+// DAEMON_STATE maps a daemon event addressed to a node to the state it
+// sets there: the daemon's silent verdict, and its landing of a ready lead.
+const DAEMON_STATE = { silent: "silent", landing: "landing", "land-refused": "working" };
 const MSG_KINDS = new Set(["message", "wake", "job", "reply"]);
 
 const $ = (id) => document.getElementById(id);
@@ -282,10 +285,11 @@ function classOf(kind, state) {
 }
 
 // subText is a box's second line, cut to n characters: for an asking,
-// blocked or held node the state and its words (the ask, the block or the hold), else the
+// blocked, held or landing node the state and its words (the ask, the block,
+// the hold or the landing's progress), else the
 // state and the extras.
 function subText(state, text, extra, n) {
-  const parts = state === "asking" || state === "blocked" || state === "held" ? [state, text] : [state, ...extra];
+  const parts = state === "asking" || state === "blocked" || state === "held" || state === "landing" ? [state, text] : [state, ...extra];
   return fit(parts.filter(Boolean).join(" · "), n);
 }
 
@@ -524,7 +528,7 @@ function apply(f) {
   const path = rest.slice(0, i), ev = rest.slice(i + 1);
   const text = String(p.text || ""), at = String(p.at || f.at || "");
   if (path.startsWith("daemon.")) {
-    if (ev === "silent" && p.to) liveState(String(p.to), "silent", text, at);
+    if (p.to && DAEMON_STATE[ev]) liveState(String(p.to), DAEMON_STATE[ev], text, at);
     return;
   }
   if (EVENT_STATE[ev]) liveState(path, EVENT_STATE[ev], text, at);
@@ -1219,7 +1223,7 @@ function pct(x) {
 }
 
 // COUNTED are the states the summary row counts, in the order it names them.
-const COUNTED = ["working", "asking", "blocked", "silent", "held", "done"];
+const COUNTED = ["working", "landing", "asking", "blocked", "silent", "held", "done"];
 
 // stateCounts counts the loaded tree's leads, rounds and their children by
 // state (routines are not nodes of it); a live event's state wins over the
@@ -1391,7 +1395,7 @@ function checkSoon() {
 
 // selfCheck writes, under ?check=1, whether the page scrolls sideways, the
 // smallest tap target, the page offset of the first working box's top (none
-// without one), the held boxes and held band rows, and the connection history into document.title.
+// without one), the held and landing boxes and band rows, and the connection history into document.title.
 function selfCheck() {
   const sw = document.documentElement.scrollWidth, iw = window.innerWidth;
   let tap = Infinity;
@@ -1403,6 +1407,8 @@ function selfCheck() {
   const workingTop = live ? Math.round(live.getBoundingClientRect().top + window.scrollY) : "none";
   const held = document.querySelectorAll("#map .node.st-held:not(.group)").length;
   const bandHeld = document.querySelectorAll("#needs .need.st-held").length;
+  const landing = document.querySelectorAll("#map .node.st-landing:not(.group)").length;
+  const bandLanding = document.querySelectorAll("#needs .need.st-landing").length;
   const c = check;
   document.title = `bmesh ${sw <= iw ? "ok" : "SCROLLS"} view=${pages.view} scrollWidth=${sw} innerWidth=${iw} minTap=${Math.round(tap)}` +
     ` workingTop=${workingTop}` +
@@ -1411,7 +1417,7 @@ function selfCheck() {
     ` vertical=${mesh.vertical} leads=${c.leads} trees=${c.trees} conn=${c.conn.join(">")}` +
     ` replay=${c.replay} live=${c.live} flashes=${c.flashes} strip=${$("strip").hidden ? "hidden" : $("strip").children.length}` +
     ` band=${$("needs").hidden ? "hidden" : $("needs").children.length}` +
-    ` held=${held} bandHeld=${bandHeld}`;
+    ` held=${held} bandHeld=${bandHeld} landing=${landing} bandLanding=${bandLanding}`;
 }
 
 // firstCard names the lead page's card drawn highest (leftmost on a tie),
