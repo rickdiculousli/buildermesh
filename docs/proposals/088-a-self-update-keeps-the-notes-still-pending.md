@@ -4,10 +4,13 @@ title: A daemon's self-update keeps the upgrade notes a box hasn't walked yet, s
 kind: refinement
 size: S
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: t3-e20b6274
 proposed_on: 2026-10-23
+built_by: a0971197-bc1c-4a76-8f9a-9a20e3355e08
+host: k16
+family: buildermesh-build-16
 ---
 
 ## Opportunity
