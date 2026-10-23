@@ -273,7 +273,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 | [`bmesh executor new`](docs/manual.md#bmesh-executor-new) | `--name N [--base REF] [--model M] [--json]` |
 | [`bmesh executor list`](docs/manual.md#bmesh-executor-list) | `[--json]` |
 | [`bmesh executor remove <name>`](docs/manual.md#bmesh-executor-remove) | `[--force]` |
-| [`bmesh node forget <path>`](docs/manual.md#bmesh-node-forget) | `[--worktree [--wait 30s]]` |
+| [`bmesh node forget <path>`](docs/manual.md#bmesh-node-forget) | `[--worktree \| --wipe [--dry-run]] [--wait 30s]` |
 | [`bmesh node stop <path>`](docs/manual.md#bmesh-node-stop) | `[--text T] [--wait 30s]` |
 
 **Checks and landing**

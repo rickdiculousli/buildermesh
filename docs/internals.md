@@ -205,7 +205,9 @@ The daemon decides on every feedback message and on each minute's pass, from the
 
 **Routine node cleanup.** A fresh run's node, state and runner sample are deleted once its run ends and its checkout is removed; its `started`, `progress` and `done` events stay in the stream for the map, and its reply's `by` still names it. The daemon's kind rescan, once a minute, deletes the node, state and runner sample of every routine instance on its host that is not running and has been `done` for `[status] keep_done` (`0`: never), a fresh run's leftovers included.
 
-**What `node forget` deletes:** the node's `bm-nodes` entry, its state, its runner sample and its inbox consumer; its events stay in the stream. Its idle checks read the node record: "published an event of its own" is an event in `bm-mesh` whose `from` is the node's path; "on another box" is a `host` that is not this box, "another runner" a `runner.kind` that is not this box's runner; the thread status is asked once, for `runner.thread`.
+**What `node forget` deletes:** the node's `bm-nodes` entry, its state, its runner sample and its inbox consumer; its events stay in the stream, and each key keeps a purge marker in its history.
+
+**What `--wipe` deletes** (`mesh.WipeTree`), for the node and every node under it: it counts first, per subject (`StreamInfo` with a subject filter), then purges with a subject filter, so a run cut short is run again and counts what is left. The filters are `bm.<path>.>`, `bm.inbox.<path>`, `bm.inbox.<path>.>` in `bm-mesh`, and `$KV.<bucket>.<path>` and `$KV.<bucket>.<path>.>` in the streams `KV_bm-nodes` (first, so no daemon writes for a node it can no longer read), `KV_bm-state`, `KV_bm-runner` and `KV_bm-holds`. A NATS wildcard matches whole tokens only, so no filter reaches a sibling whose path merely starts with the same text. What belongs to a path no longer in `bm-nodes` (a child forgotten earlier) counts toward its nearest wiped ancestor. Each inbox consumer `inbox-<path, "." as "-->` is deleted, and `bm.feedback.<family>` is purged for a family that no node left in `bm-nodes` carries. The disk goes first (worktrees deepest first, so an executor's branch is judged against its lead's while that exists; another box's through `forget-worktree <path> wipe`), and the mesh only once every box has answered, so a node is never left purged from the mesh with its worktree behind. The `wiped` line is `{"from":"daemon.<host>","event":"wiped","text":"<path> by <who>"}`, `<who>` the caller's node or else the box's name. Its idle checks read the node record: "published an event of its own" is an event in `bm-mesh` whose `from` is the node's path; "on another box" is a `host` that is not this box, "another runner" a `runner.kind` that is not this box's runner; the thread status is asked once, for `runner.thread`.
 
 ### Stopping a node
 
@@ -382,7 +384,7 @@ The stream, subjects and buckets built on node paths:
 | stream | `bm-mesh` | `bm.>` (30 days, file store, 2m duplicate window) |
 | event subject | | `bm.<path>.<event>` |
 | inbox subject | | `bm.inbox.<path>` |
-| daemon subject | | `bm.daemon.<host>.<event>` (`started`, `update`, `wake`, `silent`, `digest`, `push`, `push-failed`, `refused`, `held`, `level`, `registry`, `fixer`) |
+| daemon subject | | `bm.daemon.<host>.<event>` (`started`, `update`, `wake`, `silent`, `digest`, `push`, `push-failed`, `refused`, `held`, `level`, `registry`, `fixer`, `wiped`) |
 | consumer per inbox | `inbox-<path, "." as "--">` | filter `bm.inbox.<path>` |
 | kind inbox subject | | `bm.inbox.routine.<kind>` (jobs and gos) |
 | consumer per kind | `inbox-routine--<kind>` | filter `bm.inbox.routine.<kind>`, shared by every box that runs the kind; MaxAckPending -1 (each box fetches up to its own instance count), AckWait = timeout + 1m (the last writer's) |

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/rickdiculousli/buildermesh/internal/brief"
 	"github.com/rickdiculousli/buildermesh/internal/hosts"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/prune"
@@ -60,10 +61,13 @@ func (h *hostsNode) pruneJob(ctx context.Context, j *hosts.Job) (bool, string) {
 }
 
 // forgetWorktreeJob runs a received forget-worktree (023): j.Args is the
-// node's path. A done or blocked node of this box's has its worktree and
-// merged branch removed (prune.RemoveNodeWorktree), then is forgotten.
+// node's path, and `wipe` after it for a wipe's (067). A done or blocked
+// node of this box's has its worktree and merged branch removed
+// (prune.RemoveNodeWorktree), then is forgotten; for a wipe its brief is
+// removed instead, and the wiping box purges the node from the mesh.
 func (h *hostsNode) forgetWorktreeJob(ctx context.Context, j *hosts.Job) (bool, string) {
-	if len(j.Args) != 1 {
+	wipe := len(j.Args) == 2 && j.Args[1] == "wipe"
+	if len(j.Args) != 1 && !wipe {
 		return false, "refused: forget-worktree takes a node path"
 	}
 	p, err := mesh.ParsePath(j.Args[0])
@@ -103,6 +107,17 @@ func (h *hostsNode) forgetWorktreeJob(ctx context.Context, j *hosts.Job) (bool, 
 			return false, ref.Text
 		}
 		return false, strings.Join(append(lines, err.Error()), "; ")
+	}
+	if wipe {
+		removed, err := brief.RemoveCached(path)
+		if err != nil {
+			return false, strings.Join(append(lines, err.Error()), "; ")
+		}
+		if removed {
+			lines = append(lines, "removed brief")
+		}
+		h.d.Log.Info("hosts: forget-worktree", "node", path, "by", j.By, "wipe", true)
+		return true, strings.Join(lines, "; ")
 	}
 	if err := mesh.ForgetNode(ctx, h.d.Client, path); err != nil {
 		return false, strings.Join(append(lines, err.Error()), "; ")

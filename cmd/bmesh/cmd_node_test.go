@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -594,4 +596,255 @@ func TestNodeStopOnAnotherBox(t *testing.T) {
 	}
 	serveBox(t, tb.mac)
 	waitFor(t, "mac interrupts both threads", func() bool { return escapes() == 3 })
+}
+
+// wipeFixture is a lead with two executors (one with a worktree merged
+// into the lead's branch, the lead's merged into main), its siblings
+// app-06 and app-066-2 whose paths share its text, and feedback in three
+// families: the lead's own, the siblings' shared one, and another.
+type wipeFixture struct {
+	c        *mesh.Client
+	ctx      context.Context
+	repo     string
+	leadWT   string
+	execWT   string
+	briefDir string
+}
+
+func newWipeFixture(t *testing.T) wipeFixture {
+	t.Helper()
+	c, ctx := setup(t)
+	f := wipeFixture{c: c, ctx: ctx, briefDir: filepath.Join(t.TempDir(), "bmesh", "briefs")}
+	t.Setenv("BMESH_CACHE_DIR", filepath.Dir(filepath.Dir(f.briefDir)))
+	repo := gitRepo(t)
+	real, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.repo = real
+	f.leadWT = filepath.Join(t.TempDir(), "app-066")
+	f.execWT = filepath.Join(t.TempDir(), "app-066.x")
+	meshtest.Git(t, real, "worktree", "add", "-q", "-b", "bmesh/lead", f.leadWT)
+	meshtest.Git(t, f.leadWT, "worktree", "add", "-q", "-b", "bmesh/lead-x", f.execWT)
+	meshtest.CommitFiles(t, f.execWT, map[string]string{"x.txt": "x\n"})
+	meshtest.Git(t, f.leadWT, "merge", "-q", "--ff-only", "bmesh/lead-x")
+	meshtest.Git(t, real, "merge", "-q", "--ff-only", "bmesh/lead")
+
+	putNode(t, c, ctx, mesh.Node{Path: "app-066", RepoPath: real, Worktree: f.leadWT, Branch: "bmesh/lead", Family: "app-build-1"})
+	putNode(t, c, ctx, mesh.Node{Path: "app-066.x", Role: "executor", Parent: "app-066", RepoPath: real, Worktree: f.execWT, Branch: "bmesh/lead-x"})
+	putNode(t, c, ctx, mesh.Node{Path: "app-066.y", Role: "executor", Parent: "app-066"})
+	putNode(t, c, ctx, mesh.Node{Path: "app-06", Family: "app-build-2"})
+	putNode(t, c, ctx, mesh.Node{Path: "app-066-2", Family: "app-build-2"})
+	if err := os.MkdirAll(f.briefDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for p, family := range map[string]string{"app-066": "app-build-1", "app-06": "app-build-2", "app-066-2": "app-build-2"} {
+		if err := os.WriteFile(filepath.Join(f.briefDir, p+".md"), []byte("brief\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := mesh.PutLeadHold(ctx, c, mesh.LeadHold{Path: p, Gate: "land", By: "operator"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := mesh.PublishFeedback(ctx, c, mesh.Feedback{From: p, Family: family, Text: "lesson"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := mesh.PublishFeedback(ctx, c, mesh.Feedback{From: "other-001", Family: "app-build-3", Text: "other"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"app-066", "app-066.x", "app-066.y", "app-06", "app-066-2"} {
+		pp, _ := mesh.ParsePath(p)
+		if err := mesh.EnsureInbox(ctx, c, pp); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := mesh.Send(ctx, c, mesh.Message{ID: "m-" + p, From: "operator", To: p, Kind: "text", Text: "hi"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := mesh.PutRunner(ctx, c, p, mesh.RunnerSample{Known: true}); err != nil {
+			t.Fatal(err)
+		}
+		if err := mesh.PublishEvent(ctx, c, mesh.Event{From: p, Event: "started"}); err != nil {
+			t.Fatal(err)
+		}
+		stateAt(t, c, p, "blocked", time.Now())
+	}
+	return f
+}
+
+// left is what the mesh still holds of path: its event and inbox
+// messages, and the buckets with any history of its key.
+func (f wipeFixture) left(t *testing.T, path string) (events, inbox int, keys []string) {
+	t.Helper()
+	ev, err := mesh.History(f.ctx, f.c, "bm."+path+".*", time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, err := mesh.History(f.ctx, f.c, "bm.inbox."+path, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range []string{mesh.BucketNodes, mesh.BucketState, mesh.BucketRunner, mesh.BucketHolds} {
+		kv, err := f.c.JS.KeyValue(f.ctx, b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if h, err := kv.History(f.ctx, path); err == nil && len(h) > 0 {
+			keys = append(keys, b)
+		}
+	}
+	return len(ev), len(in), keys
+}
+
+func TestNodeForgetWipe(t *testing.T) {
+	f := newWipeFixture(t)
+	c, ctx := f.c, f.ctx
+
+	// Refused while anything in it runs, with the stop line.
+	stateAt(t, c, "app-066.x", "working", time.Now())
+	_, errs, code := runCLI(t, nil, "node", "forget", "app-066", "--wipe")
+	if code != exitRefused || errs != "bmesh: refused: app-066.x under app-066 is working; stop it first: bmesh node stop app-066\n" {
+		t.Fatalf("working executor: %d %q", code, errs)
+	}
+	stateAt(t, c, "app-066", "working", time.Now())
+	_, errs, code = runCLI(t, nil, "node", "forget", "app-066", "--wipe")
+	if code != exitRefused || errs != "bmesh: refused: app-066 is working; stop it first: bmesh node stop app-066\n" {
+		t.Fatalf("working: %d %q", code, errs)
+	}
+	stateAt(t, c, "app-066", "blocked", time.Now())
+	stateAt(t, c, "app-066.x", "done", time.Now())
+	if _, _, code := runCLI(t, nil, "node", "forget", "app-066", "--dry-run"); code != exitUsage {
+		t.Fatalf("--dry-run without --wipe: %d", code)
+	}
+	if _, errs, code := runCLI(t, nil, "node", "forget", "routine.verify", "--wipe"); code != exitRefused || !strings.Contains(errs, "routine") {
+		t.Fatalf("routine: %d %q", code, errs)
+	}
+
+	// --dry-run says what goes and changes nothing.
+	want := "app-066: 1 event, 4 keys, inbox, 1 feedback, brief, worktree, branch\n" +
+		"%[1]s app-066.x: 1 event, 3 keys, inbox, worktree, branch\n" +
+		"%[1]s app-066.y: 1 event, 3 keys, inbox\n"
+	out, errs, code := runCLI(t, nil, "node", "forget", "app-066", "--wipe", "--dry-run")
+	if code != 0 || out != fmt.Sprintf("would wipe "+want, "would wipe") {
+		t.Fatalf("dry run: %d %q %q", code, out, errs)
+	}
+	for _, p := range []string{"app-066", "app-066.x", "app-066.y"} {
+		if ev, in, keys := f.left(t, p); ev != 1 || in != 1 || len(keys) < 3 {
+			t.Fatalf("dry run touched %s: %d %d %v", p, ev, in, keys)
+		}
+	}
+	if !dirExists(f.leadWT) || !dirExists(f.execWT) {
+		t.Fatal("dry run removed a worktree")
+	}
+
+	out, errs, code = runCLI(t, nil, "node", "forget", "app-066", "--wipe")
+	if code != 0 || out != fmt.Sprintf("wiped "+want, "wiped") {
+		t.Fatalf("wipe: %d %q %q", code, out, errs)
+	}
+
+	// What goes: every message, key history and consumer of the three.
+	for _, p := range []string{"app-066", "app-066.x", "app-066.y"} {
+		if ev, in, keys := f.left(t, p); ev != 0 || in != 0 || len(keys) != 0 {
+			t.Fatalf("%s left: %d events, %d inbox, keys in %v", p, ev, in, keys)
+		}
+		pp, _ := mesh.ParsePath(p)
+		if _, err := c.JS.Consumer(ctx, mesh.StreamMesh, mesh.InboxConsumer(pp)); err == nil {
+			t.Fatalf("%s: inbox consumer kept", p)
+		}
+	}
+	if fb, err := mesh.ListFeedback(ctx, c, "app-build-1"); err != nil || len(fb) != 0 {
+		t.Fatalf("the lead's family's feedback kept: %v %v", fb, err)
+	}
+	if _, err := os.Stat(filepath.Join(f.briefDir, "app-066.md")); !os.IsNotExist(err) {
+		t.Fatalf("brief kept: %v", err)
+	}
+	if dirExists(f.leadWT) || dirExists(f.execWT) || worktrees(t, f.repo) != 1 {
+		t.Fatal("worktree kept")
+	}
+	if b := gitLines(t, f.repo, "branch", "--list", "bmesh/*"); len(b) != 0 {
+		t.Fatalf("branches kept: %v", b)
+	}
+	wiped, err := mesh.History(ctx, c, "bm.daemon.*.wiped", time.Time{})
+	if err != nil || len(wiped) != 1 || wiped[0].Subject != "bm.daemon."+testHost+".wiped" {
+		t.Fatalf("wiped line: %v %v", wiped, err)
+	}
+	var ev mesh.Event
+	if err := json.Unmarshal(wiped[0].Data, &ev); err != nil || ev.Text != "app-066 by "+testHost {
+		t.Fatalf("wiped text: %q %v", ev.Text, err)
+	}
+
+	// What stays: the siblings whose paths share its text, and the other
+	// families' feedback.
+	for _, p := range []string{"app-06", "app-066-2"} {
+		if ev, in, keys := f.left(t, p); ev != 1 || in != 1 || len(keys) != 4 {
+			t.Fatalf("sibling %s lost: %d events, %d inbox, keys in %v", p, ev, in, keys)
+		}
+		if _, err := os.Stat(filepath.Join(f.briefDir, p+".md")); err != nil {
+			t.Fatalf("sibling %s brief: %v", p, err)
+		}
+	}
+	for fam, n := range map[string]int{"app-build-2": 2, "app-build-3": 1} {
+		if fb, err := mesh.ListFeedback(ctx, c, fam); err != nil || len(fb) != n {
+			t.Fatalf("%s feedback: %d %v, want %d", fam, len(fb), err, n)
+		}
+	}
+
+	// A family with a node outside the wipe keeps its feedback.
+	out, errs, code = runCLI(t, nil, "node", "forget", "app-06", "--wipe")
+	if code != 0 || out != "wiped app-06: 1 event, 4 keys, inbox, brief\n" {
+		t.Fatalf("wipe app-06: %d %q %q", code, out, errs)
+	}
+	if fb, err := mesh.ListFeedback(ctx, c, "app-build-2"); err != nil || len(fb) != 2 {
+		t.Fatalf("shared family's feedback: %d %v", len(fb), err)
+	}
+	if ev, in, keys := f.left(t, "app-066-2"); ev != 1 || in != 1 || len(keys) != 4 {
+		t.Fatalf("app-066-2 lost: %d events, %d inbox, keys in %v", ev, in, keys)
+	}
+	// Twice is the same: the node is gone.
+	if _, errs, code := runCLI(t, nil, "node", "forget", "app-066", "--wipe"); code != exitRefused || errs != "bmesh: refused: no node app-066\n" {
+		t.Fatalf("again: %d %q", code, errs)
+	}
+}
+
+// Another box's node has its worktree and brief removed there, through
+// forget-worktree; the mesh is wiped once that box answers.
+func TestNodeForgetWipeOnAnotherBox(t *testing.T) {
+	tb := twoBoxSetup(t)
+	cache := t.TempDir()
+	t.Setenv("BMESH_CACHE_DIR", cache)
+	wt := tb.doneNode(t, tb.mac, "app-001", "bmesh/a")
+	briefs := filepath.Join(cache, "bmesh", "briefs")
+	if err := os.MkdirAll(briefs, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(briefs, "app-001.md"), []byte("brief\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := mesh.PublishEvent(tb.ctx, tb.c, mesh.Event{From: "app-001", Event: "done"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// mac asleep: the mesh is untouched until it answers.
+	out, errs, code := tb.k16.run(t, "", "node", "forget", "app-001", "--wipe", "--wait", "1s")
+	if code != 0 || out != "queued; nothing is wiped from the mesh until mac answers: run it again then\n" {
+		t.Fatalf("asleep: %d %q %s", code, out, errs)
+	}
+	if _, ok, _ := mesh.GetNode(tb.ctx, tb.c, "app-001"); !ok {
+		t.Fatal("an unanswered wipe forgot the node")
+	}
+	serveBox(t, tb.mac)
+	waitFor(t, "mac removes the worktree", func() bool { return !dirExists(wt) })
+	if _, ok, _ := mesh.GetNode(tb.ctx, tb.c, "app-001"); !ok {
+		t.Fatal("mac forgot the node of a wipe")
+	}
+
+	out, errs, code = tb.k16.run(t, "", "node", "forget", "app-001", "--wipe", "--wait", "20s")
+	if code != 0 || out != "wiped app-001: 1 event, 2 keys, worktree\n" {
+		t.Fatalf("wipe: %d %q %s", code, out, errs)
+	}
+	if _, err := os.Stat(filepath.Join(briefs, "app-001.md")); !os.IsNotExist(err) {
+		t.Fatalf("brief kept: %v", err)
+	}
+	if h, err := mesh.History(tb.ctx, tb.c, "bm.app-001.>", time.Time{}); err != nil || len(h) != 0 {
+		t.Fatalf("events kept: %d %v", len(h), err)
+	}
 }

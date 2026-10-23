@@ -1,6 +1,6 @@
 ---
 name: mesh-status
-description: Use when the operator asks "what's building", "mesh status", "where is X", "how is X doing", "what's waiting on me", "anything asking" or "stop X" - X a repo, a spec or a node. Reads bmesh mesh-status (and bmesh spec list for a named repo) and summarises it as working, asking, silent and done.
+description: Use when the operator asks "what's building", "mesh status", "where is X", "how is X doing", "what's waiting on me", "anything asking", "stop X" or "wipe X" - X a repo, a spec or a node. Reads bmesh mesh-status (and bmesh spec list for a named repo) and summarises it as working, asking, silent and done.
 ---
 
 # Mesh status
@@ -19,6 +19,6 @@ The mesh is the record; read it and summarise, never guess from the runner.
 3. **Keep it short.** One line per node, the asks first; a quiet mesh is one line.
 4. **This box's bmesh.** When `bmesh update --notice` prints a line (this box's binary is behind the bmesh release, or the code on main, that it follows; its daemon's update waits on `bmesh update`; or upgrade notes are pending), pass each on as the last lines of the summary, word for word.
 
-When the operator says "stop X" (a lead, a round or a thread), that is `bmesh --node operator node stop <path> --text "<why>"`, never a free-text STOP message: a message is mail, and mail wakes a thread.
+When the operator says "stop X" (a lead, a round or a thread), that is `bmesh --node operator node stop <path> --text "<why>"`, never a free-text STOP message: a message is mail, and mail wakes a thread. When the operator says "wipe X" (remove it "as if it never ran"), that is `bmesh --node operator node stop <path> --text "<why>"`, then `bmesh node forget <path> --wipe` (`--dry-run` first shows what goes): it removes X and every node under it, with their events, inboxes, key history, briefs, worktrees and branches; never the `nats` CLI or the mesh token.
 
 End with one line: what is running, and what waits on the operator (the asks and blocks, by path, and the specs with open steps). Say what each thing in it is in plain words (a spec or issue by what it does, its number after it in brackets if at all): the line is final and reads on its own, with nothing the operator has to look up.
