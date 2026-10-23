@@ -8,6 +8,7 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -15,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/rickdiculousli/buildermesh"
@@ -105,7 +107,7 @@ func (s *source) String() string {
 // fast-forward push. A push main refuses (it moved) starts again from the
 // fetch, and a rebase that changed the diff a review read queues the review
 // again and starts again from the top, while --wait lasts.
-func (a *app) cmdLand(args []string) error {
+func (a *app) cmdLand(args []string) (err error) {
 	fs := a.flags("land")
 	id := fs.String("spec", "", "spec id (default this node's spec)")
 	size := fs.String("size", "", "the size the change was built at, when it grew past the spec's (XS, S, M or L)")
@@ -137,7 +139,15 @@ func (a *app) cmdLand(args []string) error {
 	stop := l.events()
 	defer stop()
 	// Land's waits outlast a command's minute; each mesh call bounds its own.
-	ctx := context.Background()
+	// An interrupt (the daemon cancelling a step, or Ctrl-C) ends the waits
+	// and the kinds running before the lease; under it, holdLeases cleans up.
+	ctx, unsignal := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer unsignal()
+	defer func() {
+		if err != nil && ctx.Err() != nil && l.landed == "" {
+			err = fail(exitError, "interrupted; nothing is pushed")
+		}
+	}()
 	slot := "land." + l.repo
 	for {
 		if again, err := l.ready(ctx); err != nil {

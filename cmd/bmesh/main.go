@@ -378,6 +378,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdHub(rest)
 	case "land":
 		return a.cmdLand(rest)
+	case "ready":
+		return a.cmdReady(rest)
 	case "result":
 		return a.cmdResult(rest)
 	case "lock-lease":

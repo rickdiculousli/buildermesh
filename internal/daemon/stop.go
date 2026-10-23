@@ -63,7 +63,9 @@ func MarkStopped(ctx context.Context, c *mesh.Client, path, who, why string) (al
 
 // markBlocked writes path blocked with text and publishes that blocked; an
 // idle path passes through working, the only state idle moves to. A path
-// another writer finished meanwhile is left as it is (already).
+// another writer finished meanwhile is left as it is (already). A ready
+// request (bmesh ready) is deleted, so the lander cancels its running step
+// and a stopped thread stays stopped.
 func markBlocked(ctx context.Context, c *mesh.Client, path, text string) (already string, err error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	st, _, err := mesh.ReadState(ctx, c, path)
@@ -80,6 +82,9 @@ func markBlocked(ctx context.Context, c *mesh.Client, path, text string) (alread
 		if errors.As(err, &ill) && (ill.From == "done" || ill.From == "blocked") {
 			return ill.From, nil
 		}
+		return "", err
+	}
+	if _, err := mesh.DeleteReady(ctx, c, path); err != nil {
 		return "", err
 	}
 	return "", mesh.PublishEvent(ctx, c, mesh.Event{From: path, Event: "blocked", Text: text, At: now})

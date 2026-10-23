@@ -179,6 +179,9 @@ func NodeForWorktree(ctx context.Context, c *Client, worktree, host string) (Nod
 	return Node{}, false, nil
 }
 
+// SameDir reports whether a and b name one directory, symlinks resolved.
+func SameDir(a, b string) bool { return resolve(a) == resolve(b) }
+
 // resolve returns p with symlinks resolved, or p itself when that fails
 // (a worktree on another box, or one since removed).
 func resolve(p string) string {
