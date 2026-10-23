@@ -33,13 +33,14 @@ func swapSetup(t *testing.T, files map[string]string) (*ufix, string) {
 
 // swapIn puts a binary at the daemon's path as `bmesh update` leaves it: its
 // `version` names said (a revision, or "unknown") and is logged to the
-// returned file, and its `config check` exits config, saying why.
+// returned file, and its `config check` exits config, saying why, until
+// the config file it is given exists.
 func (u *ufix) swapIn(t *testing.T, said string, config int) (versions string) {
 	t.Helper()
 	versions = filepath.Join(t.TempDir(), "versions")
 	body := "#!/bin/sh\ncase \"$*\" in\n" +
 		"version) echo run >> " + versions + "; echo 'bmesh " + said + " 2026-10-23T00:00:00Z'; exit 0 ;;\n" +
-		"*config\\ check*) [ " + strconv.Itoa(config) + " = 0 ] || { echo 'bmesh: config check failed: config x: [runner] t3_server is empty' >&2; exit " + strconv.Itoa(config) + "; } ;;\n" +
+		"*config\\ check*) [ " + strconv.Itoa(config) + " = 0 ] || [ -f \"$2\" ] || { echo 'bmesh: config check failed: config x: [runner] t3_server is empty' >&2; exit " + strconv.Itoa(config) + "; } ;;\n" +
 		"esac\nexit 0\n"
 	tmp := u.exe + ".new"
 	if err := os.WriteFile(tmp, []byte(body), 0o755); err != nil {
@@ -155,7 +156,8 @@ func TestSwappedInBinaryNotNewerLeftAlone(t *testing.T) {
 
 // A newer binary whose walk is unfinished, or whose config check fails, is
 // refused with one log line, one push and the notice, then nothing more
-// until the walk record or the binary changes; then the daemon restarts.
+// until the walk record, the binary or the config changes; then the daemon
+// restarts.
 func TestSwappedInBinaryRefusedUntilItsWalkAndConfigPass(t *testing.T) {
 	for _, tc := range []struct {
 		name, why, record string
@@ -170,6 +172,12 @@ func TestSwappedInBinaryRefusedUntilItsWalkAndConfigPass(t *testing.T) {
 			}},
 		{"config check", "its config check failed: config x: [runner] t3_server is empty", "v0.2.0", 3,
 			func(t *testing.T, u *ufix, next string) { u.swapIn(t, next[:8], 0) }},
+		{"config fixed", "its config check failed: config x: [runner] t3_server is empty", "v0.2.0", 3,
+			func(t *testing.T, u *ufix, next string) {
+				if err := os.WriteFile(u.d.Cfg.Path(), []byte("# fixed\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			u, ntfy := swapSetup(t, map[string]string{})

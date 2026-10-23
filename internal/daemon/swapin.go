@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
@@ -68,8 +69,18 @@ type swapCheck struct {
 	exe      fileStamp // the binary at Exe when its version was last read
 	rev      string    // what that version named (selfupdate.Installed)
 	fetched  string    // the revision the upstream was last fetched for
-	heldAt   string    // the binary and walk record a refusal was said for
+	heldAt   string    // the binary, walk record and config a refusal was said for
 	heldLine string    // that refusal, kept as the notice while it stands
+}
+
+// configStamp is the stamps of the files `config check` reads: config.toml
+// and repos.toml beside it; none without a config file.
+func (d *Deps) configStamp() [2]fileStamp {
+	p := d.Cfg.Path()
+	if p == "" {
+		return [2]fileStamp{}
+	}
+	return [2]fileStamp{stampOf(p), stampOf(filepath.Join(filepath.Dir(p), "repos.toml"))}
 }
 
 // checkSwapped restarts this daemon onto a binary `bmesh update` swapped
@@ -78,8 +89,8 @@ type swapCheck struct {
 // contains this daemon's and is another commit. Its version is read only
 // when the file changed. It waits while `bmesh update` holds update.lock,
 // and refuses a binary whose walk is pending or whose config check fails,
-// saying so once (hold) and again only when the binary or the walk record
-// changes. A restart drains first, as the self-update does; it reports
+// saying so once (hold) and again only when the binary, the walk record
+// or the config changes. A restart drains first, as the self-update does; it reports
 // whether it restarted.
 func (r *routineSet) checkSwapped(dir string) bool {
 	d, s := r.d, &r.swap
@@ -122,7 +133,7 @@ func (r *routineSet) checkSwapped(dir string) bool {
 	}
 	defer unlock()
 	label := selfupdate.Label(dir, next)
-	key := fmt.Sprint(s.exe, stampOf(upgrade.InstalledPath(d.StateDir)))
+	key := fmt.Sprint(s.exe, stampOf(upgrade.InstalledPath(d.StateDir)), d.configStamp())
 	if key == s.heldAt {
 		d.writeNotice("bmesh: " + s.heldLine)
 		return false
