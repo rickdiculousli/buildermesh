@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/hosts"
 	"github.com/rickdiculousli/buildermesh/internal/level"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
@@ -75,11 +76,11 @@ func (s *scaffoldFixture) show(t *testing.T, rel string) string {
 
 func (s *scaffoldFixture) records(t *testing.T) map[string]scaffoldRec {
 	t.Helper()
-	recs, err := loadScaffolded(s.d.StateDir)
+	f, err := loadScaffolded(s.d.StateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return recs
+	return f.Repos
 }
 
 func TestRescaffoldWritesSetupOnlyAndOnce(t *testing.T) {
@@ -176,12 +177,40 @@ func TestRescaffoldPendingSurvivesARestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.d.Cfg.Repos = rows // repos.toml at start is v3's, taken before the restart
-	if err := saveScaffolded(s.d.StateDir, map[string]scaffoldRec{"app": {Version: 3, Fields: []string{"setup"}, Told: true}}); err != nil {
+	if err := hosts.SaveRegistry(s.d.StateDir, adminRegistry(3, s.rows("npm ci --ignore-scripts", "go test ./...", ""))); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveScaffolded(s.d.StateDir, scaffolded{Version: 3, Rows: rowsOf(rows),
+		Repos: map[string]scaffoldRec{"app": {Version: 3, Fields: []string{"setup"}, Told: "failed"}}}); err != nil {
 		t.Fatal(err)
 	}
 	s.start(t)
 	waitTrue(t, "the pending version lands", func() bool { return s.records(t)["app"].Landed })
 	if log := s.originLog(t); log[0] != "Scaffold: app follows registry v3" {
+		t.Fatalf("origin log %q", log)
+	}
+}
+
+// A registry another process took while the daemon was down (repos.toml
+// already the new rows at start) is still compared with the rows the
+// daemon recorded last.
+func TestRescaffoldSeesARegistryTakenWhileDown(t *testing.T) {
+	s := scaffoldSetup(t, nil)
+	if err := saveScaffolded(s.d.StateDir, scaffolded{Version: 1, Rows: rowsOf(s.d.Cfg.Repos), Repos: map[string]scaffoldRec{}}); err != nil {
+		t.Fatal(err)
+	}
+	v2 := s.rows("npm ci && make", "go test ./...", "")
+	rows, err := config.ParseRepos(v2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.d.Cfg.Repos = rows
+	if err := hosts.SaveRegistry(s.d.StateDir, adminRegistry(2, v2)); err != nil {
+		t.Fatal(err)
+	}
+	s.start(t)
+	waitTrue(t, "v2 lands", func() bool { return s.records(t)["app"].Landed })
+	if log := s.originLog(t); log[0] != "Scaffold: app follows registry v2" {
 		t.Fatalf("origin log %q", log)
 	}
 }
@@ -284,6 +313,15 @@ func TestRescaffoldNoCheckoutTellsOncePerVersion(t *testing.T) {
 	evs := s.claims(t, "scaffold")
 	want := fmt.Sprintf("%s: registry v2 changes app's scaffold but %s has no checkout; run bmesh scaffold app where it has one", testHost, s.box)
 	if len(evs) != 1 || evs[0].Text != want || evs[0].Body != "nocheckout v2" {
+		t.Fatalf("events %+v", evs)
+	}
+	// The checkout comes, and its first failure is told, not taken as a retry.
+	meshtest.Git(t, filepath.Dir(s.box), "clone", "-q", s.origin, s.box)
+	if err := os.WriteFile(filepath.Join(s.origin, "hooks", "pre-receive"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	waitTrue(t, "a failure", func() bool { return len(s.claims(t, "scaffold")) > 1 })
+	if evs := s.claims(t, "scaffold"); evs[1].Body != "failed v2" {
 		t.Fatalf("events %+v", evs)
 	}
 }

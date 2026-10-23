@@ -14,12 +14,8 @@ import (
 // conf is the config the hosts layer reads rows from: the daemon's, with
 // the rows of the newest registry it took since it started.
 func (h *hostsNode) conf() *config.Config {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.cfg != nil {
-		return h.cfg
-	}
-	return h.d.Cfg
+	c, _ := h.confVersion()
+	return c
 }
 
 // syncRegistry takes a newer registry from the hub (writing repos.toml,
@@ -88,6 +84,16 @@ func (h *hostsNode) useRows(v int64, rows map[string]config.Repo) {
 	h.mu.Lock()
 	h.cfg, h.cfgVersion = &c, v
 	h.mu.Unlock()
+}
+
+// confVersion is conf and version read together.
+func (h *hostsNode) confVersion() (*config.Config, int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.cfg != nil {
+		return h.cfg, h.cfgVersion
+	}
+	return h.d.Cfg, h.cfgVersion
 }
 
 // version is the registry version the rows are from (0: repos.toml's at

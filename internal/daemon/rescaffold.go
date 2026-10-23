@@ -29,37 +29,66 @@ const rescaffoldTimeout = 3 * time.Minute
 // registry that changes one of them changes the repo's scaffold.
 var scaffoldFields = []string{"verify", "setup", "setup_inputs", "setup_timeout"}
 
-// scaffoldRec is one repo's line in scaffolded.json: the registry version
-// that last changed its row's scaffold fields, the fields changed since
-// the last landing, and whether it landed. Told is set once a failure or
-// a missing checkout for Version was pushed.
+// scaffolded is scaffolded.json: the registry version Rows are from,
+// every row's scaffold fields at that version (what the next registry is
+// compared with, so a version another process took while the daemon was
+// down is still seen), and each repo's record.
+type scaffolded struct {
+	Version int64                  `json:"version"`
+	Rows    map[string]scaffoldRow `json:"rows"`
+	Repos   map[string]scaffoldRec `json:"repos"`
+}
+
+// scaffoldRow is a row's scaffold fields.
+type scaffoldRow struct {
+	Verify       []string `json:"verify,omitempty"`
+	Setup        string   `json:"setup,omitempty"`
+	SetupInputs  []string `json:"setup_inputs,omitempty"`
+	SetupTimeout string   `json:"setup_timeout,omitempty"`
+}
+
+func rowsOf(rows map[string]config.Repo) map[string]scaffoldRow {
+	out := make(map[string]scaffoldRow, len(rows))
+	for name, r := range rows {
+		out[name] = scaffoldRow{Verify: r.Verify, Setup: r.Setup, SetupInputs: r.SetupInputs, SetupTimeout: r.SetupTimeout}
+	}
+	return out
+}
+
+// scaffoldRec is one repo's record: the registry version that last
+// changed its row's scaffold fields, the fields changed since the last
+// landing, and whether it landed. Told is what was pushed for Version:
+// "failed" or "nocheckout", each once.
 type scaffoldRec struct {
 	Version int64    `json:"version"`
 	Fields  []string `json:"fields"`
 	Landed  bool     `json:"landed"`
 	Commit  string   `json:"commit,omitempty"`
-	Told    bool     `json:"told,omitempty"`
+	Told    string   `json:"told,omitempty"`
 }
 
 func scaffoldedPath(stateDir string) string { return filepath.Join(stateDir, scaffoldedFile) }
 
-func loadScaffolded(stateDir string) (map[string]scaffoldRec, error) {
+func loadScaffolded(stateDir string) (scaffolded, error) {
+	s := scaffolded{Repos: map[string]scaffoldRec{}}
 	b, err := os.ReadFile(scaffoldedPath(stateDir))
 	if errors.Is(err, os.ErrNotExist) {
-		return map[string]scaffoldRec{}, nil
+		return s, nil
 	}
 	if err != nil {
-		return nil, err
+		return s, err
 	}
-	recs := map[string]scaffoldRec{}
-	if err := json.Unmarshal(b, &recs); err != nil {
-		return nil, fmt.Errorf("%s: %v", scaffoldedFile, err)
+	if err := json.Unmarshal(b, &s); err != nil {
+		return scaffolded{Repos: map[string]scaffoldRec{}}, fmt.Errorf("%s: %v", scaffoldedFile, err)
 	}
-	return recs, nil
+	if s.Repos == nil {
+		s.Repos = map[string]scaffoldRec{}
+	}
+	return s, nil
 }
 
-func saveScaffolded(stateDir string, recs map[string]scaffoldRec) error {
-	b, err := json.MarshalIndent(recs, "", "  ")
+func saveScaffolded(stateDir string, s scaffolded) error {
+	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -80,7 +109,7 @@ func saveScaffolded(stateDir string, recs map[string]scaffoldRec) error {
 
 // changedScaffold is the scaffold fields that differ between a row's old
 // and new versions.
-func changedScaffold(old, new config.Repo) []string {
+func changedScaffold(old, new scaffoldRow) []string {
 	var out []string
 	if !slices.Equal(old.Verify, new.Verify) {
 		out = append(out, "verify")
@@ -97,46 +126,45 @@ func changedScaffold(old, new config.Repo) []string {
 	return out
 }
 
-// noteScaffold records, for registry version v, each ship row this box
-// hosts whose scaffold fields differ between old and rows, as pending in
-// scaffolded.json: a newer version replaces a pending one (the fields
-// add up until one lands). A row new in rows is not a change: its first
-// scaffold is the operator's.
+// noteScaffold records registry version v's rows in scaffolded.json and,
+// as pending, each ship row this box hosts whose scaffold fields differ
+// from the rows recorded there (old, the rows the daemon had, when
+// nothing is recorded yet): a newer version replaces a pending one (the
+// fields add up until one lands). A version already recorded changes
+// nothing; a row new in rows is not a change, its first scaffold being the
+// operator's.
 func (h *hostsNode) noteScaffold(v int64, old, rows map[string]config.Repo) {
-	type change struct {
-		repo   string
-		fields []string
+	h.scaffoldMu.Lock()
+	defer h.scaffoldMu.Unlock()
+	s, err := loadScaffolded(h.d.StateDir)
+	if err != nil {
+		h.d.Log.Warn("hosts: rescaffold", "err", err)
 	}
-	var changes []change
+	if s.Version == v && s.Rows != nil {
+		return
+	}
+	base := s.Rows
+	if base == nil {
+		base = rowsOf(old)
+	}
+	now := rowsOf(rows)
 	for name, r := range rows {
-		o, ok := old[name]
+		o, ok := base[name]
 		if !ok || r.Host != h.d.Host || r.Mode != "ship" {
 			continue
 		}
-		if f := changedScaffold(o, r); len(f) > 0 {
-			changes = append(changes, change{name, f})
+		fields := changedScaffold(o, now[name])
+		if len(fields) == 0 {
+			continue
 		}
-	}
-	if len(changes) == 0 {
-		return
-	}
-	h.scaffoldMu.Lock()
-	defer h.scaffoldMu.Unlock()
-	recs, err := loadScaffolded(h.d.StateDir)
-	if err != nil {
-		h.d.Log.Warn("hosts: rescaffold", "err", err)
-		recs = map[string]scaffoldRec{}
-	}
-	for _, c := range changes {
-		rec := recs[c.repo]
-		fields := c.fields
-		if !rec.Landed && rec.Version > 0 {
+		if rec := s.Repos[name]; !rec.Landed && rec.Version > 0 {
 			fields = unionFields(rec.Fields, fields)
 		}
-		recs[c.repo] = scaffoldRec{Version: v, Fields: fields}
-		h.d.Log.Info("hosts: registry changes a repo's scaffold", "repo", c.repo, "version", v, "fields", strings.Join(fields, ","))
+		s.Repos[name] = scaffoldRec{Version: v, Fields: fields}
+		h.d.Log.Info("hosts: registry changes a repo's scaffold", "repo", name, "version", v, "fields", strings.Join(fields, ","))
 	}
-	if err := saveScaffolded(h.d.StateDir, recs); err != nil {
+	s.Version, s.Rows = v, now
+	if err := saveScaffolded(h.d.StateDir, s); err != nil {
 		h.d.Log.Warn("hosts: rescaffold", "err", err)
 	}
 }
@@ -170,14 +198,14 @@ func (h *hostsNode) goRescaffold(ctx context.Context) {
 // for the next run.
 func (h *hostsNode) rescaffold(ctx context.Context) {
 	h.scaffoldMu.Lock()
-	recs, err := loadScaffolded(h.d.StateDir)
+	s, err := loadScaffolded(h.d.StateDir)
 	h.scaffoldMu.Unlock()
 	if err != nil {
 		h.d.Log.Warn("hosts: rescaffold", "err", err)
 		return
 	}
-	names := make([]string, 0, len(recs))
-	for name, rec := range recs {
+	names := make([]string, 0, len(s.Repos))
+	for name, rec := range s.Repos {
 		if !rec.Landed {
 			names = append(names, name)
 		}
@@ -187,17 +215,26 @@ func (h *hostsNode) rescaffold(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		was := recs[name]
-		rec, keep := h.rescaffoldRepo(ctx, name, was)
+		// The rows, then the record: a version is noted before its rows
+		// are taken, so a record newer than the rows waits for them.
+		cfg, v := h.confVersion()
 		h.scaffoldMu.Lock()
-		now, err := loadScaffolded(h.d.StateDir)
-		if err == nil && now[name].Version == was.Version && slices.Equal(now[name].Fields, was.Fields) {
+		s, err := loadScaffolded(h.d.StateDir)
+		h.scaffoldMu.Unlock()
+		was, ok := s.Repos[name]
+		if err != nil || !ok || was.Landed || was.Version > v {
+			continue
+		}
+		rec, keep := h.rescaffoldRepo(ctx, cfg, name, was)
+		h.scaffoldMu.Lock()
+		s, err = loadScaffolded(h.d.StateDir)
+		if now := s.Repos[name]; err == nil && now.Version == was.Version && slices.Equal(now.Fields, was.Fields) {
 			if keep {
-				now[name] = rec
+				s.Repos[name] = rec
 			} else {
-				delete(now, name)
+				delete(s.Repos, name)
 			}
-			err = saveScaffolded(h.d.StateDir, now)
+			err = saveScaffolded(h.d.StateDir, s)
 		}
 		h.scaffoldMu.Unlock()
 		if err != nil {
@@ -206,13 +243,13 @@ func (h *hostsNode) rescaffold(ctx context.Context) {
 	}
 }
 
-// rescaffoldRepo makes one attempt at landing repo's pending rec: in a
-// bmesh worktree from levelled main, it writes the row-fed targets of the
-// fields that changed (the verify kind's command, [setup]), commits them
-// as bmesh and pushes, under the repo's lock. It returns the record to
-// keep, or keep false when the row is no longer this box's ship row.
-func (h *hostsNode) rescaffoldRepo(ctx context.Context, repo string, rec scaffoldRec) (scaffoldRec, bool) {
-	cfg := h.conf()
+// rescaffoldRepo makes one attempt at landing repo's pending rec with
+// cfg's row: in a bmesh worktree from levelled main, it writes the
+// row-fed targets of the fields that changed (the verify kind's command,
+// [setup]), commits them as bmesh and pushes, under the repo's lock. It
+// returns the record to keep, or keep false when the row is no longer
+// this box's ship row.
+func (h *hostsNode) rescaffoldRepo(ctx context.Context, cfg *config.Config, repo string, rec scaffoldRec) (scaffoldRec, bool) {
 	r, ok := cfg.Repos[repo]
 	if !ok || r.Host != h.d.Host || r.Mode != "ship" {
 		h.d.Log.Info("hosts: rescaffold dropped; the row is no longer this box's ship row", "repo", repo, "version", rec.Version)
@@ -220,11 +257,11 @@ func (h *hostsNode) rescaffoldRepo(ctx context.Context, repo string, rec scaffol
 	}
 	path := cfg.Expand(r.Path)
 	if _, err := os.Stat(filepath.Join(path, ".git")); err != nil {
-		if !rec.Told {
+		if rec.Told != "nocheckout" {
 			h.scaffoldEvent(ctx, fmt.Sprintf("nocheckout v%d", rec.Version), fmt.Sprintf(
 				"%s: registry v%d changes %s's scaffold but %s has no checkout; run bmesh scaffold %s where it has one",
 				h.d.Host, rec.Version, repo, path, repo))
-			rec.Told = true
+			rec.Told = "nocheckout"
 		}
 		return rec, true
 	}
@@ -263,11 +300,11 @@ func (h *hostsNode) rescaffoldRepo(ctx context.Context, repo string, rec scaffol
 	switch {
 	case err != nil:
 		body := fmt.Sprintf("failed v%d", rec.Version)
-		if rec.Told {
+		if rec.Told == "failed" {
 			body += " again"
 		}
 		h.scaffoldEvent(ctx, body, fmt.Sprintf("%s: scaffold %s for registry v%d failed: %s", h.d.Host, repo, rec.Version, oneLine(err.Error())))
-		rec.Told = true
+		rec.Told = "failed"
 	case unscaffolded:
 		h.d.Log.Info("hosts: rescaffold skipped; AGENTS.md has no bmesh: marker", "repo", repo, "version", rec.Version)
 		rec.Landed = true

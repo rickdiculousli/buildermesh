@@ -95,6 +95,8 @@ func hostsRun(ctx context.Context, d Deps) {
 	// saves from now on (the admin's publish) is read from registry.json.
 	if reg, ok, err := hosts.LoadRegistry(d.StateDir, local.Pinned); err == nil && ok {
 		h.cfgVersion = reg.Version
+		// A registry taken while the daemon was down still rescaffolds.
+		h.noteScaffold(reg.Version, d.Cfg.Repos, d.Cfg.Repos)
 	}
 	if row, ok := local.Roster.Host(d.Host); !ok {
 		d.Log.Warn("hosts: this box isn't in its roster", "host", d.Host, "roster", local.Roster.Version)
