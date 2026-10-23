@@ -4,7 +4,7 @@ title: choose-ideas takes spec ids and flags, not a reply in plain words, so the
 kind: refinement
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-23
