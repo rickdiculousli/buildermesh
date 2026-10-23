@@ -604,7 +604,8 @@ func waitTimeout(ctx context.Context, c *mesh.Client, id string) time.Duration {
 // cmdRoutineRun runs a kind in this worktree: the requester's own run of
 // HEAD, holding the kind's slots, and records its result (with the model for
 // a model kind). It needs a clean tree; a deterministic kind answers from a
-// recorded result unless --rerun.
+// recorded result, and verify from one carried from HEAD's code run
+// (carryVerify), unless --rerun.
 func (a *app) cmdRoutineRun(args []string) error {
 	fs := a.flags("routine run")
 	commit := fs.String("commit", "HEAD", "commit to run (must be HEAD)")
@@ -674,6 +675,16 @@ func (a *app) cmdRoutineRun(args []string) error {
 	self, err := a.identityOrHost(ctx, "routine")
 	if err != nil {
 		return err
+	}
+	// A verify over the code of a commit verified before answers from it.
+	if k.Deterministic && !*rerun {
+		from, err := a.carryVerify(ctx, name, top, a.repoNameAt(top), head, tree, self, *model, jobArgs, head)
+		if err != nil {
+			return err
+		}
+		if from != "" {
+			return a.printRunVerdict(name, tree, *model, true, "", carriedHow(from))
+		}
 	}
 	ok, out, how, err := a.runInline(ctx, k, top, head, tree, self, *model, *effort, *text, jobArgs, *rerun)
 	if err != nil {

@@ -167,7 +167,7 @@ func (a *app) cmdBuild(args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := a.verifyMain(ctx, row, repoPath, head, note, *force, "build its fix with --force"); err != nil {
+		if err := a.verifyMain(ctx, row, repoPath, "main", head, note, *force, "build its fix with --force"); err != nil {
 			return err
 		}
 	}

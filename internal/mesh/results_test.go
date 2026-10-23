@@ -87,3 +87,33 @@ func TestResultKeyWithAndWithoutArgs(t *testing.T) {
 		t.Fatalf("all: %+v %v", all, err)
 	}
 }
+
+// CreateResult stores only where nothing is; NearestResult passes over a
+// carried result to the run result after it.
+func TestCreateAndNearestResult(t *testing.T) {
+	c, ctx := connect(t)
+	ran := Result{Kind: "verify", Tree: "t3", OK: true, Output: "ran\n", By: "host"}
+	if err := PutResult(ctx, c, ran); err != nil {
+		t.Fatal(err)
+	}
+	carried := Result{Kind: "verify", Tree: "t2", OK: true, Output: CarriedPrefix + "t3: nothing under code changed\nran\n", By: "host"}
+	if ok, err := CreateResult(ctx, c, carried); err != nil || !ok {
+		t.Fatalf("create: %v %v", ok, err)
+	}
+	if ok, err := CreateResult(ctx, c, Result{Kind: "verify", Tree: "t3", OK: false, By: "other"}); err != nil || ok {
+		t.Fatalf("create over a result: %v %v", ok, err)
+	}
+	if r, _, _ := GetResult(ctx, c, "verify.t3"); !r.OK || r.By != "host" {
+		t.Fatalf("overwritten: %+v", r)
+	}
+	r, ok, err := NearestResult(ctx, c, "verify", []string{"t1", "t2", "t3"}, nil, "")
+	if err != nil || !ok || r.Tree != "t3" || r.Carried() {
+		t.Fatalf("nearest: %+v %v %v", r, ok, err)
+	}
+	if _, ok, err := NearestResult(ctx, c, "verify", []string{"t1", "t2"}, nil, ""); err != nil || ok {
+		t.Fatalf("only a carried one: %v %v", ok, err)
+	}
+	if _, ok, err := NearestResult(ctx, c, "verify", []string{"t3"}, []string{"x"}, ""); err != nil || ok {
+		t.Fatalf("other args: %v %v", ok, err)
+	}
+}
