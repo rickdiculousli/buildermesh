@@ -29,6 +29,8 @@ In: `land` also reads the branch's own first-parent commits from the fork point 
 
 A failing one reads `review fail t:<tree8> at <sha8>`, as a review that failed and was fixed. Nothing else changes: the required kinds, the carries, the `verified` line and `done` are as today. The manual's `bmesh land` step 4 gains the form, with one clause saying why it is not required (one pass, `--again` is for rebased code). The lead skill's "Its first line, `required: ...`, names each kind and where it came from" stays true and needs no new sentence (`smallest`).
 
+As built, the walk also reads the first-parent commits of each head a hand rebase rewrote, back to that head's fork point, so a review fixed and then rebased by hand (whose commit is on no line of the rebased branch) is named too. Each commit is read once, and the heads themselves are skipped: their kinds are the required ones.
+
 Out:
 - carrying a review across a later commit onto the `verified` line, or refusing the landing until it is re-run, the two the lead asked for. Carrying changes what `review ok` on the line asserts (a reviewer read that tree), and refusing reverses the operator's one-pass rule; both are product direction for the operator, not this fix;
 - `spec verified` and `done`, which read the landed tree only.

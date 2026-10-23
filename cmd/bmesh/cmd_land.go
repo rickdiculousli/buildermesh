@@ -238,33 +238,11 @@ func (l *lander) prepare(ctx context.Context) error {
 		if h.tree, err = gitIn(ctx, l.top, "rev-parse", h.head+"^{tree}"); err != nil {
 			return err
 		}
-		// The newest result per (kind, model), as spec verified composes
-		// them; a kind is as good as its worst model.
-		type group struct{ kind, model string }
-		newest := map[group]mesh.Result{}
-		for _, r := range all {
-			g := group{r.Kind, r.Model}
-			if old, ok := newest[g]; r.Tree == h.tree && (!ok || spec.Newer(r.At, old.At)) {
-				newest[g] = r
+		for k, src := range kindsAt(all, h.tree) {
+			if _, ok := l.before[k]; !ok {
+				src.head, src.tree, src.rebase = h.head, h.tree, h.rebase
+				l.before[k] = src
 			}
-		}
-		at := map[string]*source{}
-		for g, r := range newest {
-			if _, ok := l.before[g.kind]; ok {
-				continue
-			}
-			src, ok := at[g.kind]
-			if !ok {
-				src = &source{head: h.head, tree: h.tree, rebase: h.rebase, result: r}
-				at[g.kind] = src
-			}
-			src.newest = append(src.newest, r)
-			if src.result.OK && !r.OK {
-				src.result = r
-			}
-		}
-		for k, src := range at {
-			l.before[k] = src
 		}
 	}
 	for k := range l.before {
@@ -279,6 +257,10 @@ func (l *lander) prepare(ctx context.Context) error {
 		l.required = append(l.required, "verify")
 	}
 	sort.Strings(l.required)
+	behind, err := l.leftBehind(ctx, heads, all)
+	if err != nil {
+		return err
+	}
 	var said []string
 	for _, k := range l.required {
 		switch {
@@ -291,8 +273,87 @@ func (l *lander) prepare(ctx context.Context) error {
 	if len(said) == 0 {
 		said = []string{"nothing"}
 	}
-	fmt.Fprintf(l.a.stdout, "required: %s\n", strings.Join(said, ", "))
+	line := strings.Join(said, ", ")
+	if len(behind) > 0 {
+		line += "; left behind by later commits: " + strings.Join(behind, ", ") + " (not on the verified line)"
+	}
+	fmt.Fprintf(l.a.stdout, "required: %s\n", line)
 	return nil
+}
+
+// kindsAt is, per kind with a result at tree, its newest result per model,
+// as spec verified composes them, and the one that speaks for the kind: a
+// failing one when any model's newest fails, since a kind is as good as its
+// worst model.
+func kindsAt(all []mesh.Result, tree string) map[string]*source {
+	type group struct{ kind, model string }
+	newest := map[group]mesh.Result{}
+	for _, r := range all {
+		g := group{r.Kind, r.Model}
+		if old, ok := newest[g]; r.Tree == tree && (!ok || spec.Newer(r.At, old.At)) {
+			newest[g] = r
+		}
+	}
+	at := map[string]*source{}
+	for g, r := range newest {
+		src, ok := at[g.kind]
+		if !ok {
+			src = &source{result: r}
+			at[g.kind] = src
+		}
+		src.newest = append(src.newest, r)
+		if src.result.OK && !r.OK {
+			src.result = r
+		}
+	}
+	return at
+}
+
+// leftBehind names the kinds land doesn't require that have a result on an
+// earlier commit of the branch: one pass of a review is fixed in later
+// commits and landed, so it is not required, but it is said. It walks each
+// head's own first-parent commits back to its fork point from base, nearest
+// first, skipping the heads themselves, which prepare has read; a kind takes
+// the nearest commit with a result for it. Each reads
+// "<kind> ok|fail t:<tree8> at <sha8>", sorted by kind.
+func (l *lander) leftBehind(ctx context.Context, heads []source, all []mesh.Result) ([]string, error) {
+	seen := map[string]bool{}
+	for _, h := range heads {
+		seen[h.head] = true
+	}
+	found := map[string]string{}
+	for _, h := range heads {
+		fork, err := gitIn(ctx, l.top, "merge-base", l.base, h.head)
+		if err != nil {
+			continue // no fork point (an unrelated history): nothing to walk
+		}
+		out, err := gitIn(ctx, l.top, "log", "--first-parent", "--format=%H %T", fork+".."+h.head, "--")
+		if err != nil {
+			return nil, err
+		}
+		for _, line := range strings.Split(out, "\n") {
+			sha, tree, ok := strings.Cut(line, " ")
+			if !ok || seen[sha] {
+				continue
+			}
+			seen[sha] = true
+			for k, src := range kindsAt(all, tree) {
+				if _, ok := found[k]; ok || slices.Contains(l.required, k) {
+					continue
+				}
+				verdict := "fail"
+				if src.result.OK {
+					verdict = "ok"
+				}
+				found[k] = fmt.Sprintf("%s %s t:%s at %s", k, verdict, tree[:8], sha[:8])
+			}
+		}
+	}
+	var said []string
+	for _, k := range slices.Sorted(maps.Keys(found)) {
+		said = append(said, found[k])
+	}
+	return said, nil
 }
 
 // gate refuses the landing while the node is held (bm-holds), at either

@@ -701,13 +701,15 @@ func TestLandCarriesTheReviewAcrossAHandRebase(t *testing.T) {
 // A review's findings fixed in a commit on top land on verify alone, the
 // fix's tree having no review, whether the branch is then rebased by hand
 // onto a main that moved or not: the head before the rebase is the fix's.
+// The review is named as left behind, from the commit it read.
 func TestLandAFixedReviewOnVerifyAlone(t *testing.T) {
 	for _, rebase := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unrebased", true: "rebased"}[rebase], func(t *testing.T) {
 			c, ctx := setup(t)
 			r := newLandRepo(t)
 			putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
-			putReview(t, c, ctx)
+			reviewed := putReview(t, c, ctx)
+			at := gitOut(t, "rev-parse", "HEAD")
 			writeFile(t, filepath.Join(r.wt, "b.txt"), "b fixed\n")
 			meshtest.Git(t, r.wt, "commit", "-qam", "the review's findings")
 			r.pushOther(t, "c.txt", "c\n")
@@ -717,9 +719,43 @@ func TestLandAFixedReviewOnVerifyAlone(t *testing.T) {
 			}
 			out, errs, code := runCLI(t, as("app-012"), "land")
 			tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
-			if code != 0 || !strings.HasPrefix(out, "required: verify (the repo's verify kind)\n") ||
+			if code != 0 || !strings.HasPrefix(out, "required: verify (the repo's verify kind); left behind by later commits: review ok t:"+
+				reviewed[:8]+" at "+at[:8]+" (not on the verified line)\n") ||
 				!strings.Contains(out, "verified: verify ok t:"+tree[:8]+"\n") {
 				t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+			}
+		})
+	}
+}
+
+// A review on an earlier commit of the branch, followed by a commit to the
+// spec's own text, is not required and not on the verified line, but land
+// names it, ok or failed, with the tree and commit it read.
+func TestLandNamesAReviewLeftBehind(t *testing.T) {
+	for _, ok := range []bool{true, false} {
+		t.Run(map[bool]string{true: "ok", false: "fail"}[ok], func(t *testing.T) {
+			c, ctx := setup(t)
+			r := newLandRepo(t)
+			putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+			reviewed := gitOut(t, "rev-parse", "HEAD^{tree}")
+			at := gitOut(t, "rev-parse", "HEAD")
+			if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "review", Tree: reviewed, Commit: at,
+				OK: ok, Model: "claude-opus-5-5", By: "routine.review.x"}); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(r.wt, "docs", "proposals", "012-thing.md"), "---\nid: 12\nstatus: building\nbranch: lead\n---\nbody, as built\n")
+			meshtest.Git(t, r.wt, "commit", "-qam", "012: as built")
+
+			out, errs, code := runCLI(t, as("app-012"), "land")
+			tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+			verdict := map[bool]string{true: "ok", false: "fail"}[ok]
+			want := "required: verify (the repo's verify kind); left behind by later commits: review " + verdict +
+				" t:" + reviewed[:8] + " at " + at[:8] + " (not on the verified line)\n"
+			if code != 0 || !strings.HasPrefix(out, want) {
+				t.Fatalf("land: %d\n%s\nwant prefix\n%s\nerr %q", code, out, want, errs)
+			}
+			if front := r.specOnOrigin(t); !strings.Contains(front, "verified: verify ok t:"+tree[:8]+"\n") {
+				t.Fatalf("spec on origin:\n%s", front)
 			}
 		})
 	}
