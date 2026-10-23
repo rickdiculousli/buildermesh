@@ -4,10 +4,13 @@ title: Levelling main never reads another process's FETCH_HEAD, so a daemon fetc
 kind: refinement
 size: S
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: t3-e20b6274
 proposed_on: 2026-10-23
+built_by: d14515c8-7268-494a-800e-5cf68e119b99
+host: k16
+family: buildermesh-build-20
 ---
 
 ## Opportunity
