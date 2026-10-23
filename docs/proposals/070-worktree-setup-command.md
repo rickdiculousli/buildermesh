@@ -13,7 +13,7 @@ host: k16
 family: buildermesh-build-10
 branch: bmesh/e64e8811-bc3b-49a5-9119-5abe0523d21a
 merged: 4fca7d2678697d2e0c451460d890441ea8caca6b
-operator_steps: [{"n":1,"box":"","text":"Give each repo whose verify needs installed dependencies (the one whose build was refused with `vitest: not found` first) a `setup` and its `setup_inputs` in its registry row, publish the registry once every box running its routines or leads runs this bmesh, then `bmesh scaffold <repo>` and commit and push what it writes.","check":"bmesh repos show <repo>","done":""}]
+operator_steps: [{"n":1,"box":"","text":"Give each repo whose verify needs installed dependencies (the one whose build was refused with `vitest: not found` first) a `setup` and its `setup_inputs` in its registry row, publish the registry once every box running its routines or leads runs this bmesh, then `bmesh scaffold <repo>` and commit and push what it writes.","check":"bmesh repos show <repo>","done":"2026-10-23T06:38:37Z ricks-macbook","note":"party-buzzer scaffolded at b7f460c; opengym-rick already had setup; uv repos and gametrainer need none; openGym (fork) left alone"}]
 verified: verify ok t:44c64d29
 ---
 
