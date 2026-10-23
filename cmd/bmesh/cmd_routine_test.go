@@ -198,7 +198,7 @@ func TestRoutineListStatusAndGo(t *testing.T) {
 		t.Fatalf("status jobs: %q", out)
 	}
 	out, _, code = runCLI(t, nil, "routine", "status", "review", "--json")
-	if code != 0 || !strings.Contains(out, `"jobs":[{"id":"`+id+`","from":"app-001","state":"waiting"`) {
+	if code != 0 || !strings.Contains(out, `"jobs":[{"id":"`+id+`","from":"app-001","commit":"`) {
 		t.Fatalf("status json: %d %q", code, out)
 	}
 	// Without a kind: the kinds in the mesh, found from node paths and consumers.

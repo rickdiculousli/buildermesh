@@ -178,3 +178,35 @@ func Pending(ctx context.Context, c *Client, p Path) ([]Message, error) {
 		}
 	}
 }
+
+// InboxSeq is the stream sequence of the newest message on p's inbox
+// subject, read or not; 0 when it has none.
+func InboxSeq(ctx context.Context, c *Client, p Path) (uint64, error) {
+	st, err := c.JS.Stream(ctx, StreamMesh)
+	if err != nil {
+		return 0, err
+	}
+	m, err := st.GetLastMsgForSubject(ctx, InboxSubject(p))
+	if errors.Is(err, jetstream.ErrMsgNotFound) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return m.Sequence, nil
+}
+
+// InboxAfter lists the messages on p's inbox subject after stream sequence
+// after, read or not, oldest first.
+func InboxAfter(ctx context.Context, c *Client, p Path, after uint64) ([]Message, error) {
+	st, err := c.JS.Stream(ctx, StreamMesh)
+	if err != nil {
+		return nil, err
+	}
+	var out []Message
+	err = scanSubject(ctx, c, st, InboxSubject(p), after+1, func(_ uint64, m Message) (bool, error) {
+		out = append(out, m)
+		return true, nil
+	})
+	return out, err
+}

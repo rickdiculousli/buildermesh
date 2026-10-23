@@ -295,3 +295,41 @@ func JobKind(ctx context.Context, c *Client, id string) (string, bool, error) {
 		}
 	}
 }
+
+// FindReply looks for the reply to job in p's inbox history, read or not,
+// without waiting for one; ok is false when none has arrived.
+func FindReply(ctx context.Context, c *Client, p Path, job string) (Message, bool, error) {
+	st, err := c.JS.Stream(ctx, StreamMesh)
+	if err != nil {
+		return Message{}, false, err
+	}
+	var found Message
+	ok := false
+	err = scanSubject(ctx, c, st, InboxSubject(p), 1, func(_ uint64, m Message) (bool, error) {
+		ok = m.Kind == "reply" && m.Reply != nil && m.Reply.Job == job
+		if ok {
+			found = m
+		}
+		return !ok, nil
+	})
+	return found, ok, err
+}
+
+// FindJob reads the job id queued to kindName from the kind's inbox
+// history; ok is false when the stream no longer holds it.
+func FindJob(ctx context.Context, c *Client, kindName, id string) (Job, bool, error) {
+	st, err := c.JS.Stream(ctx, StreamMesh)
+	if err != nil {
+		return Job{}, false, err
+	}
+	var found Job
+	ok := false
+	err = scanSubject(ctx, c, st, InboxSubject(RoutinePath(kindName)), 1, func(_ uint64, m Message) (bool, error) {
+		ok = m.Kind == "job" && m.Job != nil && m.Job.ID == id
+		if ok {
+			found = *m.Job
+		}
+		return !ok, nil
+	})
+	return found, ok, err
+}

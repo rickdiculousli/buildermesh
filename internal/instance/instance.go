@@ -34,6 +34,9 @@ type Reply struct {
 	Context    int
 }
 
+// UnjudgedPrefix starts the answer for a reply that judged nothing.
+const UnjudgedPrefix = "model run failed: "
+
 // Unjudged is the answer for a reply that judged nothing:
 // "model run failed: <the output's first non-empty line>; nothing recorded".
 func (r Reply) Unjudged() string {
@@ -43,7 +46,7 @@ func (r Reply) Unjudged() string {
 			break
 		}
 	}
-	return "model run failed: " + why + "; nothing recorded"
+	return UnjudgedPrefix + why + "; nothing recorded"
 }
 
 // Instance runs jobs.

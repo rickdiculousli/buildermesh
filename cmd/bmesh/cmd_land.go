@@ -14,12 +14,14 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/rickdiculousli/buildermesh"
 	"github.com/rickdiculousli/buildermesh/internal/checkout"
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/daemon"
+	"github.com/rickdiculousli/buildermesh/internal/instance"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/merge"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
@@ -28,13 +30,24 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
-const landUsage = "usage: bmesh land [--spec NNN] [--ttl D] [--wait D]"
+const landUsage = "usage: bmesh land [--spec NNN] [--size XS|S|M|L] [--ttl D] [--wait D]"
 
-// landPoll is how often land tries a held lease again; tests shorten it.
-var landPoll = 2 * time.Second
+// landPoll is how often land tries a held lease again and looks for a job's
+// reply; landMainPoll how often it fetches again while the main checkout
+// has unpushed commits; landEventEvery how often it publishes its land
+// event. Tests shorten them.
+var (
+	landPoll       = 2 * time.Second
+	landMainPoll   = 15 * time.Second
+	landEventEvery = time.Minute
+)
 
 // landRepoRE is what a repo name must look like to name a lease key.
 var landRepoRE = regexp.MustCompile(`^[A-Za-z0-9_-][A-Za-z0-9_.-]*$`)
+
+// errReviewAgain is land's own rebase changing the diff the branch's review
+// read: land releases the lease and queues the review again.
+var errReviewAgain = errors.New("the rebase changed the diff the review read")
 
 // lander is one `bmesh land`: a lead's worktree landing its spec on main.
 type lander struct {
@@ -48,7 +61,14 @@ type lander struct {
 	branch   string
 	origin   bool
 	base     string // origin/main, or main without an origin
+	size     string // --size: the size the change was built at
 
+	deadline time.Time          // the end of all of land's waiting (--wait)
+	mailSeq  uint64             // the node's inbox sequence when land started: operator mail after it refuses
+	waited   string             // HEAD as land first read it, or land's own rebase of it
+	requeued map[string]bool    // the jobs land queued once more after a reply that recorded nothing
+	kinds    []kind.Kind        // the repo's kinds
+	doing    atomic.Value       // what land is doing, for its land events
 	heads    []string           // the branch's heads before land touched it: HEAD and the heads a rebase by hand rewrote
 	before   map[string]*source // per kind with a result before land touched the branch: where it is
 	required []string           // the kinds the landed tree must carry
@@ -76,15 +96,20 @@ func (s *source) String() string {
 	return "t:" + s.tree[:8] + " before the rebase at " + s.rebase[:8]
 }
 
-// cmdLand lands the worktree's branch on main under the lease land.<repo>:
-// fetch, rebase onto main, results for the rebased tree, the spec's verified
-// line, done with merged and branch, a commit, a fast-forward push. A push
-// main refuses (it moved) starts again from the fetch, once.
+// cmdLand lands the worktree's branch on main under the lease land.<repo>.
+// Before the lease: the inline kinds on HEAD, the review the spec's size
+// calls for, the node's jobs on HEAD and a main checkout with nothing
+// unpushed. Under it: fetch, rebase onto main, results for the rebased
+// tree, the spec's verified line, done with merged and branch, a commit, a
+// fast-forward push. A push main refuses (it moved) starts again from the
+// fetch, and a rebase that changed the diff a review read queues the review
+// again and starts again from the top, while --wait lasts.
 func (a *app) cmdLand(args []string) error {
 	fs := a.flags("land")
 	id := fs.String("spec", "", "spec id (default this node's spec)")
+	size := fs.String("size", "", "the size the change was built at, when it grew past the spec's (XS, S, M or L)")
 	ttl := fs.Duration("ttl", defaultTTL, "how long the lease lasts unrenewed")
-	wait := fs.Duration("wait", 30*time.Minute, "how long to wait for a held lease (exit 5 after)")
+	wait := fs.Duration("wait", 30*time.Minute, "how long land waits in all, for jobs, main, the main checkout and the lease (exit 5 after)")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -95,10 +120,61 @@ func (a *app) cmdLand(args []string) error {
 	if *ttl < minTTL {
 		return fail(exitUsage, "land: --ttl must be at least %s", minTTL)
 	}
+	if _, ok := reviewEffort(*size); *size != "" && !ok {
+		return fail(exitUsage, "land: --size %q: want XS, S, M or L", *size)
+	}
 	top, err := gitRev("--show-toplevel")
 	if err != nil {
 		return err
 	}
+	l := &lander{a: a, top: top, size: *size, deadline: time.Now().Add(*wait),
+		ran: map[string]string{}, requeued: map[string]bool{}}
+	l.doing.Store("landing")
+	if err := l.setup(id); err != nil {
+		return err
+	}
+	stop := l.events()
+	defer stop()
+	// Land's waits outlast a command's minute; each mesh call bounds its own.
+	ctx := context.Background()
+	slot := "land." + l.repo
+	for {
+		if again, err := l.ready(ctx); err != nil {
+			return err
+		} else if again {
+			continue
+		}
+		key, err := a.acquireWait(slot, l.holder, *ttl, l.deadline, func(by string) error {
+			l.doing.Store(fmt.Sprintf("waiting for %s (held by %s)", slot, by))
+			return l.check(ctx)
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(a.stdout, "lease %s\n", slot)
+		l.doing.Store("landing under " + slot)
+		err = a.holdLeases([]string{key}, l.holder, *ttl, l.land)
+		if !errors.Is(err, errReviewAgain) {
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(a.stdout, "released %s\nlanded %s\n", slot, l.landed[:8])
+			return nil
+		}
+		fmt.Fprintf(a.stdout, "released %s\n", slot)
+		if l.waited, err = gitIn(ctx, l.top, "rev-parse", "HEAD"); err != nil {
+			return err
+		}
+		if _, err := l.queueReview(ctx, true); err != nil {
+			return err
+		}
+	}
+}
+
+// setup resolves the node, the spec, the repo and the main checkout, and
+// notes where the node's inbox stands.
+func (l *lander) setup(id *string) error {
+	a := l.a
 	ctx, cancel := cmdCtx()
 	defer cancel()
 	p, err := a.identity(ctx, "land")
@@ -108,12 +184,12 @@ func (a *app) cmdLand(args []string) error {
 	case err != nil:
 		return err
 	}
-	l := &lander{a: a, top: top, holder: a.cfg.HostName(), ran: map[string]string{}}
-	repo := a.repoNameAt(top)
+	l.holder = a.cfg.HostName()
+	repo := a.repoNameAt(l.top)
 	if p != nil {
 		l.holder = p.String()
 		l.node = p
-		if repo, err = a.repoName(ctx, p, top); err != nil {
+		if repo, err = a.repoName(ctx, p, l.top); err != nil {
 			return err
 		}
 		if *id == "" {
@@ -125,6 +201,9 @@ func (a *app) cmdLand(args []string) error {
 				*id = n.Spec
 			}
 		}
+		if l.mailSeq, err = mesh.InboxSeq(ctx, a.client, p); err != nil {
+			return err
+		}
 	}
 	if *id == "" {
 		return fail(exitUsage, "land needs --spec NNN (no node spec resolves)")
@@ -135,35 +214,21 @@ func (a *app) cmdLand(args []string) error {
 	if !landRepoRE.MatchString(repo) {
 		return fail(exitUsage, "repo name %q can't name a lease", repo)
 	}
-	common, ok := checkout.CommonDir(top)
+	common, ok := checkout.CommonDir(l.top)
 	if !ok || filepath.Base(common) != ".git" {
-		return fail(exitRefused, "refused: %s is not a worktree of a repo with a main checkout", top)
+		return fail(exitRefused, "refused: %s is not a worktree of a repo with a main checkout", l.top)
 	}
 	l.repoPath = filepath.Dir(common)
 	l.repo = repo
-	if err := l.prepare(ctx); err != nil {
-		return err
-	}
-
-	slot := "land." + repo
-	key, err := a.acquireWait(slot, l.holder, *ttl, *wait)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(a.stdout, "lease %s\n", slot)
-	if err := a.holdLeases([]string{key}, l.holder, *ttl, l.land); err != nil {
-		return err
-	}
-	fmt.Fprintf(a.stdout, "released %s\nlanded %s\n", slot, l.landed[:8])
 	return nil
 }
 
 // acquireWait takes the one place of slot for holder, trying again every
 // landPoll while someone else holds it (at once when it was released
-// between the try and the look); it names the holder once per holder and
-// gives up after wait (exit 5).
-func (a *app) acquireWait(slot, holder string, ttl, wait time.Duration) (string, error) {
-	deadline := time.Now().Add(wait)
+// between the try and the look); it names the holder once per holder, calls
+// check with it before each wait (an error ends the wait) and gives up at
+// deadline (exit 5).
+func (a *app) acquireWait(slot, holder string, ttl time.Duration, deadline time.Time, check func(by string) error) (string, error) {
 	said := ""
 	for {
 		ctx, cancel := cmdCtx()
@@ -187,6 +252,11 @@ func (a *app) acquireWait(slot, holder string, ttl, wait time.Duration) (string,
 			fmt.Fprintf(a.stdout, "waiting for %s (held by %s)\n", slot, by)
 			said = by
 		}
+		if check != nil {
+			if err := check(by); err != nil {
+				return "", err
+			}
+		}
 		if time.Now().After(deadline) {
 			return "", fail(exitTimeout, "timed out waiting for %s, held by %s", slot, by)
 		}
@@ -194,12 +264,108 @@ func (a *app) acquireWait(slot, holder string, ttl, wait time.Duration) (string,
 	}
 }
 
+// events publishes the node's land event, naming what land is doing, now
+// and every landEventEvery until the returned stop: it sets no state but is
+// the node's activity, so a lead waiting in land is not called silent.
+// Land run outside a node publishes none.
+func (l *lander) events() (stop func()) {
+	if l.node == nil {
+		return func() {}
+	}
+	done, finished := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(finished)
+		t := time.NewTicker(landEventEvery)
+		defer t.Stop()
+		for {
+			ctx, cancel := cmdCtx()
+			text, _ := l.doing.Load().(string)
+			if err := mesh.PublishEvent(ctx, l.a.client, mesh.Event{From: l.node.String(), Event: "land", Text: text}); err != nil {
+				fmt.Fprintf(l.a.stderr, "bmesh: land event: %v\n", err)
+			}
+			cancel()
+			select {
+			case <-done:
+				return
+			case <-t.C:
+			}
+		}
+	}()
+	return func() { close(done); <-finished }
+}
+
+// check reads the node's hold and its mail again, as every wait does
+// before it sleeps: a hold or the operator's mail refuses the landing.
+func (l *lander) check(ctx context.Context) error {
+	if err := l.gate(ctx); err != nil {
+		return err
+	}
+	return l.mail(ctx, false)
+}
+
+// pause is one poll of a wait for what: the hold and the mail read again
+// (check), then a sleep of d, cut short at the deadline; past the deadline
+// it gives up (exit 5).
+func (l *lander) pause(ctx context.Context, d time.Duration, what string) error {
+	l.doing.Store("waiting for " + what)
+	if err := l.check(ctx); err != nil {
+		return err
+	}
+	left := time.Until(l.deadline)
+	if left <= 0 {
+		return fail(exitTimeout, "timed out waiting for %s; nothing is pushed", what)
+	}
+	select {
+	case <-time.After(min(d, left)):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return nil
+}
+
+// ready runs one pass of land's steps before the lease: prepare, the inline
+// kinds on HEAD, the review the spec's size calls for, the node's jobs and
+// a main checkout with nothing unpushed. again reports a pass that waited
+// for jobs, whose results change what land requires: the next pass reads
+// them.
+func (l *lander) ready(ctx context.Context) (again bool, err error) {
+	if err := l.prepare(ctx); err != nil {
+		return false, err
+	}
+	tree, err := gitIn(ctx, l.top, "rev-parse", l.waited+"^{tree}")
+	if err != nil {
+		return false, err
+	}
+	l.doing.Store("running the inline kinds on t:" + tree[:8])
+	if err := l.inline(ctx, l.waited, tree, tree); err != nil {
+		return false, err
+	}
+	jobs, err := l.review(ctx)
+	if err != nil {
+		return false, err
+	}
+	onHead, err := l.headJobs(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, j := range onHead {
+		if !slices.ContainsFunc(jobs, func(w waitJob) bool { return w.ID == j.ID }) {
+			jobs = append(jobs, j)
+		}
+	}
+	if len(jobs) > 0 {
+		return true, l.waitJobs(ctx, jobs)
+	}
+	return false, l.mainPushed(ctx)
+}
+
 // prepare refuses a worktree land can't start from and reads the results
 // recorded for the branch, which name the kinds the landed tree must carry
 // (verify always, when the repo has it): those at HEAD's tree and, when HEAD
 // is a commit a rebase made, those at the tree of the head it rewrote, as if
 // land had done that rebase itself. A kind takes the nearest head with a
-// result for it. It prints the kinds and where each came from.
+// result for it. It prints the kinds and where each came from. A pass after
+// the first refuses a HEAD other than the one land waited on.
 func (l *lander) prepare(ctx context.Context) error {
 	if err := l.gate(ctx); err != nil {
 		return err
@@ -215,7 +381,7 @@ func (l *lander) prepare(ctx context.Context) error {
 		return fail(exitRefused, "refused: land runs on a lead's branch, not %s", dash(b))
 	}
 	l.branch = b
-	if err := l.mail(ctx, true); err != nil {
+	if err := l.mail(ctx, l.waited == ""); err != nil {
 		return err
 	}
 	l.origin = hasOrigin(ctx, l.top)
@@ -227,12 +393,17 @@ func (l *lander) prepare(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if l.waited == "" {
+		l.waited = head
+	} else if head != l.waited {
+		return l.moved(head)
+	}
 	heads := append([]source{{head: head}}, rebasedFrom(ctx, l.top, b, head)...)
 	all, err := mesh.ListAllResults(ctx, l.a.client)
 	if err != nil {
 		return err
 	}
-	l.before = map[string]*source{}
+	l.before, l.heads, l.required = map[string]*source{}, nil, nil
 	for _, h := range heads {
 		l.heads = append(l.heads, h.head)
 		if h.tree, err = gitIn(ctx, l.top, "rev-parse", h.head+"^{tree}"); err != nil {
@@ -252,6 +423,7 @@ func (l *lander) prepare(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	l.kinds = kinds
 	repoVerify := slices.ContainsFunc(kinds, func(k kind.Kind) bool { return k.Name == "verify" })
 	if repoVerify && !slices.Contains(l.required, "verify") {
 		l.required = append(l.required, "verify")
@@ -372,9 +544,11 @@ func (l *lander) gate(ctx context.Context) error {
 
 // mail peeks the node's inbox, holding and acking nothing: a message the
 // operator sent with bmesh send refuses the landing, since it may change
-// what landing needs; anything else (a report, a reply, another node's
-// message) is named on one line when say, so the lead sees it before the
-// push. Land run outside a node has no inbox and skips it.
+// what landing needs, when it is unread or arrived after land started, read
+// or not (a lead woken mid-land can't act on it before the push); anything
+// else (a report, a reply, another node's message) is named on one line
+// when say, so the lead sees it before the push. Land run outside a node
+// has no inbox and skips it.
 func (l *lander) mail(ctx context.Context, say bool) error {
 	if l.node == nil {
 		return nil
@@ -395,10 +569,340 @@ func (l *lander) mail(ctx context.Context, say bool) error {
 	if operator > 0 {
 		return fail(exitRefused, "refused: %d unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh land again", operator)
 	}
+	since, err := mesh.InboxAfter(ctx, l.a.client, l.node, l.mailSeq)
+	if err != nil {
+		return err
+	}
+	if n := len(slices.DeleteFunc(since, func(m mesh.Message) bool { return !fromOperator(m) })); n > 0 {
+		return fail(exitRefused, "refused: %d message(s) from the operator since land started; nothing is pushed: "+
+			"run bmesh inbox, act on them, then run bmesh land again", n)
+	}
 	if say && len(others) > 0 {
 		fmt.Fprintf(l.a.stdout, "unread: %s\n", strings.Join(others, "; "))
 	}
 	return nil
+}
+
+// fromOperator reports a message the operator sent with bmesh send.
+func fromOperator(m mesh.Message) bool { return m.Kind == "message" && m.From == "operator" }
+
+// moved refuses a HEAD other than the one land waited on.
+func (l *lander) moved(head string) error {
+	return fail(exitRefused, "refused: HEAD moved while land waited (%.8s, was %.8s); nothing is pushed: run bmesh land again", head, l.waited)
+}
+
+// kind is the repo's kind name, when it has one.
+func (l *lander) kind(name string) (kind.Kind, bool) {
+	i := slices.IndexFunc(l.kinds, func(k kind.Kind) bool { return k.Name == name })
+	if i < 0 {
+		return kind.Kind{}, false
+	}
+	return l.kinds[i], true
+}
+
+// reviewEffort is the effort a review of a change of size gets, by bmesh's
+// done rule: none for XS or S, medium for M, high for L or larger. ok is
+// false for a size that is none of these.
+func reviewEffort(size string) (effort string, ok bool) {
+	switch size {
+	case "XS", "S":
+		return "", true
+	case "M":
+		return "medium", true
+	}
+	if l, ok := strings.CutSuffix(size, "L"); ok && strings.Trim(l, "X") == "" {
+		return "high", true
+	}
+	return "", false
+}
+
+// sized is the size the change was built at, --size or the spec's own, and
+// the effort its review gets; a spec with neither refuses.
+func (l *lander) sized() (size, effort string, err error) {
+	size = l.size
+	if size == "" {
+		specs, err := spec.Scan(l.top, l.a.cfg.Spec.Glob)
+		if err != nil {
+			return "", "", landFail(err)
+		}
+		s, ok := spec.Find(specs, l.id)
+		if !ok {
+			return "", "", fail(exitRefused, "refused: no spec %03d in %s", l.id, l.top)
+		}
+		size = s.Fields["size"]
+		if size == "" {
+			return "", "", fail(exitUsage, "land needs --size: spec %03d has no size", l.id)
+		}
+	}
+	effort, ok := reviewEffort(size)
+	if !ok {
+		return "", "", fail(exitUsage, "land needs --size: spec %03d's size %q is none of XS, S, M or L", l.id, size)
+	}
+	return size, effort, nil
+}
+
+// waitJob is a job of the node's land waits for the reply to.
+type waitJob struct {
+	kind string
+	mesh.QueuedJob
+}
+
+// review makes sure the branch's review is on its way when the spec's size
+// calls for one: with the node's review job unanswered for a commit of the
+// branch, it waits for that job; with a review result on the branch (spec
+// 038's hand rebase included) it queues none, so a fixed failing review
+// lands on verify alone; else it queues one on HEAD at the size's effort,
+// or none for XS or S. It returns the jobs to wait for. Land run outside a
+// node, or in a repo with no queued review kind, does nothing here.
+func (l *lander) review(ctx context.Context) ([]waitJob, error) {
+	k, ok := l.kind(reviewKind)
+	if l.node == nil || !ok || k.Mode == "inline" {
+		return nil, nil
+	}
+	queued, err := mesh.KindJobs(ctx, l.a.client, reviewKind)
+	if err != nil {
+		return nil, err
+	}
+	var mine []waitJob
+	for _, j := range queued {
+		if j.From == l.node.String() && onBranch(ctx, l.top, l.base, l.heads, j.Commit) {
+			fmt.Fprintf(l.a.stdout, "review: waiting for job %s\n", j.ID)
+			mine = append(mine, waitJob{reviewKind, j})
+		}
+	}
+	if len(mine) > 0 {
+		return mine, nil
+	}
+	prior, ok, err := l.a.priorReview(ctx, l.top)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		fmt.Fprintf(l.a.stdout, "review: on the branch already (%s at t:%.8s)\n", okWord(prior.OK), prior.Tree)
+		return nil, nil
+	}
+	size, effort, err := l.sized()
+	if err != nil {
+		return nil, err
+	}
+	if effort == "" {
+		fmt.Fprintf(l.a.stdout, "review: none (size %s)\n", size)
+		return nil, nil
+	}
+	j, err := l.queueReview(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	return []waitJob{j}, nil
+}
+
+// queueReview queues the review kind on HEAD at the effort the change's size
+// calls for, on the kind's first model, started at once, its text the
+// branch's base, after pushing the branch so a daemon on any box can fetch
+// the commit; again is the second pass after land's rebase changed the
+// diff.
+func (l *lander) queueReview(ctx context.Context, again bool) (waitJob, error) {
+	k, _ := l.kind(reviewKind)
+	size, effort, err := l.sized()
+	if err != nil {
+		return waitJob{}, err
+	}
+	if _, ok := l.a.cfg.Repos[l.repo]; !ok {
+		return waitJob{}, fail(exitRefused, "refused: %s is not in the registry, so no daemon takes its review; nothing is pushed", l.repo)
+	}
+	head, err := gitIn(ctx, l.top, "rev-parse", "HEAD")
+	if err != nil {
+		return waitJob{}, err
+	}
+	base, err := gitIn(ctx, l.top, "merge-base", l.base, head)
+	if err != nil {
+		return waitJob{}, err
+	}
+	if l.origin {
+		if _, err := gitIn(ctx, l.top, "push", "--quiet", "--force", "origin", head+":refs/heads/"+l.branch); err != nil {
+			fmt.Fprintf(l.a.stderr, "bmesh: push %s: %v; a daemon on another box can't fetch the commit\n", l.branch, err)
+		} else {
+			fmt.Fprintf(l.a.stdout, "push origin %s %.8s\n", l.branch, head)
+		}
+	}
+	model := ""
+	if k.IsModel() {
+		model = k.ModelsList()[0]
+	}
+	j := mesh.Job{ID: newID(), Kind: reviewKind, Repo: l.repo, Commit: head, Model: model, Effort: effort,
+		Text: "base: " + base, Go: true}
+	if _, err := mesh.Queue(ctx, l.a.client, l.node, j, l.top); err != nil {
+		return waitJob{}, err
+	}
+	if again {
+		fmt.Fprintf(l.a.stdout, "review: queued %s again (the rebase changed the diff)\n", j.ID)
+	} else {
+		fmt.Fprintf(l.a.stdout, "review: queued %s (%s, size %s)\n", j.ID, effort, size)
+	}
+	return waitJob{reviewKind, mesh.QueuedJob{ID: j.ID, From: l.node.String(), Commit: head, State: "waiting"}}, nil
+}
+
+// onBranch reports whether commit is one of the branch's: an ancestor of
+// one of heads (HEAD and the heads a hand rebase rewrote) that main
+// (mainRef) doesn't have.
+func onBranch(ctx context.Context, top, mainRef string, heads []string, commit string) bool {
+	if commit == "" {
+		return false
+	}
+	if _, err := gitIn(ctx, top, "merge-base", "--is-ancestor", commit, mainRef); err == nil {
+		return false
+	}
+	return slices.ContainsFunc(heads, func(h string) bool {
+		_, err := gitIn(ctx, top, "merge-base", "--is-ancestor", commit, h)
+		return err == nil
+	})
+}
+
+// headJobs lists the node's unanswered jobs on HEAD of the repo's queued
+// kinds. A job on an earlier commit is not waited for: its result is not
+// at HEAD's tree. Land run outside a node waits for none.
+func (l *lander) headJobs(ctx context.Context) ([]waitJob, error) {
+	if l.node == nil {
+		return nil, nil
+	}
+	var out []waitJob
+	for _, k := range l.kinds {
+		if k.Mode == "inline" {
+			continue
+		}
+		queued, err := mesh.KindJobs(ctx, l.a.client, k.Name)
+		if err != nil {
+			return nil, err
+		}
+		for _, j := range queued {
+			if j.From == l.node.String() && j.Commit == l.waited {
+				out = append(out, waitJob{k.Name, j})
+			}
+		}
+	}
+	return out, nil
+}
+
+// waitJobs waits for the reply to each job, naming each once, and acks each
+// reply it reads so no wake follows. An ok reply is done; a failing one
+// refuses with its output (a review's findings); one that recorded nothing
+// because its model run never answered is queued once more, and a second
+// such, or any other that recorded nothing, refuses with its output.
+func (l *lander) waitJobs(ctx context.Context, jobs []waitJob) error {
+	out := l.a.stdout
+	say := func(j waitJob) {
+		where := j.State
+		switch {
+		case j.Host != "":
+			where += " on " + j.Host
+		case j.Holder != "":
+			where += " on " + j.Holder
+		}
+		fmt.Fprintf(out, "waiting for job %s (%s, %s)\n", j.ID, j.kind, where)
+	}
+	for _, j := range jobs {
+		say(j)
+	}
+	for {
+		var left []waitJob
+		for _, j := range jobs {
+			m, ok, err := mesh.FindReply(ctx, l.a.client, l.node, j.ID)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				left = append(left, j)
+				continue
+			}
+			isReply := func(m mesh.Message) bool { return m.Kind == "reply" && m.Reply != nil && m.Reply.Job == j.ID }
+			if _, _, err := mesh.FetchMatch(ctx, l.a.client, l.node, isReply); err != nil {
+				return err
+			}
+			r := m.Reply
+			tree := r.Tree
+			if len(tree) > 8 {
+				tree = tree[:8]
+			}
+			output := r.Output
+			if output != "" && !strings.HasSuffix(output, "\n") {
+				output += "\n"
+			}
+			switch {
+			case r.OK:
+				fmt.Fprintf(out, "job %s (%s): ok t:%s\n", j.ID, j.kind, tree)
+			case r.ResultKey != "":
+				fmt.Fprint(out, output)
+				return fail(exitRefused, "refused: %s failed at t:%s (job %s); nothing is pushed: fix what it found, commit and run bmesh land again",
+					j.kind, tree, j.ID)
+			case strings.HasPrefix(r.Output, instance.UnjudgedPrefix) && !l.requeued[j.ID]:
+				again, err := l.requeue(ctx, j)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(out, "job %s (%s): %s; queued %s once more\n", j.ID, j.kind, strings.TrimSpace(r.Output), again.ID)
+				say(again)
+				left = append(left, again)
+			default:
+				fmt.Fprint(out, output)
+				return fail(exitRefused, "refused: job %s (%s) recorded nothing; nothing is pushed: see its output above, then run bmesh land again",
+					j.ID, j.kind)
+			}
+		}
+		if jobs = left; len(jobs) == 0 {
+			return nil
+		}
+		ids := make([]string, len(jobs))
+		for i, j := range jobs {
+			ids[i] = fmt.Sprintf("job %s (%s)", j.ID, j.kind)
+		}
+		if err := l.pause(ctx, landPoll, strings.Join(ids, ", ")); err != nil {
+			return err
+		}
+	}
+}
+
+// requeue queues job j once more as it was queued, under a new id.
+func (l *lander) requeue(ctx context.Context, j waitJob) (waitJob, error) {
+	job, ok, err := mesh.FindJob(ctx, l.a.client, j.kind, j.ID)
+	if err != nil {
+		return waitJob{}, err
+	}
+	if !ok {
+		return waitJob{}, fail(exitRefused, "refused: job %s (%s) recorded nothing and the stream no longer holds it; run bmesh land again", j.ID, j.kind)
+	}
+	job.ID = newID()
+	if _, err := mesh.Queue(ctx, l.a.client, l.node, job, l.top); err != nil {
+		return waitJob{}, err
+	}
+	l.requeued[job.ID] = true
+	return waitJob{j.kind, mesh.QueuedJob{ID: job.ID, From: l.node.String(), Commit: job.Commit, State: "waiting"}}, nil
+}
+
+// mainPushed waits while the main checkout's main has commits origin's
+// doesn't (someone's unpushed work, which land never pushes), fetching
+// again every landMainPoll; it says so once per count.
+func (l *lander) mainPushed(ctx context.Context) error {
+	if !l.origin {
+		return nil
+	}
+	said := ""
+	for {
+		if _, err := gitIn(ctx, l.top, "fetch", "--quiet", "origin", "main"); err != nil {
+			return err
+		}
+		n, err := gitIn(ctx, l.top, "rev-list", "--count", "origin/main..refs/heads/main")
+		if err != nil || n == "0" {
+			return nil
+		}
+		what := "main in " + l.repoPath + " to be pushed"
+		if n != said {
+			fmt.Fprintf(l.a.stdout, "waiting for %s: it has %s commits origin/main doesn't (someone's unpushed work; land never pushes it)\n", what, n)
+			said = n
+		}
+		if err := l.pause(ctx, landMainPoll, what); err != nil {
+			return err
+		}
+	}
 }
 
 // rebaseRE matches a reflog entry a finished rebase wrote on the branch
@@ -434,16 +938,27 @@ func rebasedFrom(ctx context.Context, dir, branch, head string) []source {
 	}
 }
 
-// land runs the steps under the lease, starting again from the fetch once
-// when main moved before the push.
+// land runs the steps under the lease, on the worktree land waited on
+// (clean, HEAD the commit it read or its own rebase of it), starting again
+// from the fetch when main moved before the push, while --wait lasts.
 func (l *lander) land(ctx context.Context) error {
-	for attempt := 1; ; attempt++ {
+	if st, err := gitIn(ctx, l.top, "status", "--porcelain"); err != nil {
+		return err
+	} else if st != "" {
+		return fail(exitRefused, "refused: HEAD moved while land waited: the worktree has changes not committed; nothing is pushed: commit and run bmesh land again")
+	}
+	if head, err := gitIn(ctx, l.top, "rev-parse", "HEAD"); err != nil {
+		return err
+	} else if head != l.waited {
+		return l.moved(head)
+	}
+	for {
 		moved, err := l.once(ctx)
 		if err != nil || !moved {
 			return err
 		}
-		if attempt == 2 {
-			return fail(exitRefused, "refused: main moved again before the push; nothing is pushed, run bmesh land again")
+		if time.Now().After(l.deadline) {
+			return fail(exitTimeout, "timed out waiting for main to stop moving; nothing is pushed")
 		}
 		fmt.Fprintln(l.a.stdout, "main moved; again from the fetch")
 	}
@@ -469,14 +984,9 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 	if err := l.mail(ctx, false); err != nil {
 		return false, err
 	}
-	if l.origin {
-		if _, err := git("fetch", "--quiet", "origin", "main"); err != nil {
-			return false, err
-		}
-		if n, err := git("rev-list", "--count", "origin/main..refs/heads/main"); err == nil && n != "0" {
-			return false, fail(exitRefused, "refused: main in %s has %s commits origin/main doesn't: someone's unpushed work; "+
-				"wait for it to be pushed (never push it yourself), then run bmesh land again", l.repoPath, n)
-		}
+	// Fetches, and waits while the main checkout has unpushed commits.
+	if err := l.mainPushed(ctx); err != nil {
+		return false, err
 	}
 	baseSHA, err := git("rev-parse", l.base)
 	if err != nil {
@@ -683,73 +1193,22 @@ func (l *lander) mainMoved(ctx context.Context, baseSHA string) bool {
 }
 
 // results makes sure the rebased tree carries every required kind: an
-// inline kind runs (a deterministic one is answered from its record, or
-// carried to tree by carryCode from preTree, the branch's tree before the
-// rebase, or the last tree it was ok at in this run, and verify then by
-// carryVerify from the code run of the rebased head and of each head
-// before the rebase);
-// another must have its own result there or one carried to it by patch-id
-// (spec.ComposeVerified), unless the branch had an ok one before the rebase
-// (land's, or the one by hand its source names) that recorded no patch-id
-// and the rebase left the diff unchanged, which is carried. It returns the verified entries for the tree,
-// refusing a failing one.
+// inline kind runs (inline); another must have its own result there or one
+// carried to it by patch-id (spec.ComposeVerified), unless the branch had an
+// ok one before the rebase (land's, or the one by hand its source names)
+// that recorded no patch-id and the rebase left the diff unchanged, which is
+// carried. A review the rebase changed the diff of is errReviewAgain, for
+// land to queue again, when land runs in a node of a repo with a queued
+// review kind. It returns the verified entries for the tree, refusing a
+// failing one.
 func (l *lander) results(ctx context.Context, merged, tree, baseSHA, preTree string) ([]spec.Entry, error) {
 	out := l.a.stdout
-	_, kinds, err := cwdKinds()
-	if err != nil {
+	if err := l.inline(ctx, merged, tree, preTree); err != nil {
 		return nil, err
 	}
 	byName := map[string]kind.Kind{}
-	for _, k := range kinds {
+	for _, k := range l.kinds {
 		byName[k.Name] = k
-	}
-	for _, name := range l.required {
-		k, ok := byName[name]
-		if !ok || k.Mode != "inline" {
-			continue
-		}
-		model := ""
-		if k.IsModel() {
-			model = k.ModelsList()[0]
-		}
-		line := spec.Entry{Kind: name, OK: true, Tree8: tree[:8], Model: model}.String()
-		if k.Deterministic {
-			from := []string{l.ran[name], preTree}
-			if src := l.before[name]; src != nil {
-				from = append(from, src.tree)
-			}
-			old, err := l.carryCode(ctx, k, model, merged, tree, from)
-			if err == nil && old == "" {
-				old, err = l.a.carryVerify(ctx, name, l.top, l.repo, merged, tree, l.holder, model, nil, append([]string{merged}, l.heads...)...)
-			}
-			if err != nil {
-				return nil, err
-			}
-			if old != "" {
-				fmt.Fprintf(out, "%s (%s)\n", line, carriedHow(old))
-				l.ran[name] = tree
-				continue
-			}
-		}
-		ok, output, how, err := l.a.runInline(ctx, k, l.top, merged, tree, l.holder, model, "", "", nil, false)
-		if err != nil {
-			return nil, err
-		}
-		line = spec.Entry{Kind: name, OK: ok, Tree8: tree[:8], Model: model}.String()
-		if !ok {
-			if output != "" && !strings.HasSuffix(output, "\n") {
-				output += "\n"
-			}
-			fmt.Fprintf(out, "%s%s (%s)\n", output, line, how)
-			if len(l.resolved) > 0 {
-				return nil, fail(exitError, "%s failed at t:%s, after the rebase resolved %s by rule: that is land's merge, and the branch is left rebased; "+
-					"fix it forward, commit, push the branch, queue the review again (--again), then run bmesh land again",
-					name, tree[:8], strings.Join(slices.Compact(slices.Sorted(slices.Values(l.resolved))), ", "))
-			}
-			return nil, fail(exitError, "%s failed at t:%s; fix it, commit and run bmesh land again", name, tree[:8])
-		}
-		fmt.Fprintf(out, "%s (%s)\n", line, how)
-		l.ran[name] = tree
 	}
 	composeCtx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
@@ -794,6 +1253,10 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA, preTree str
 				return nil, err
 			}
 		}
+		if k, ok := byName[name]; !same && name == reviewKind && ok && k.Mode != "inline" && l.node != nil {
+			fmt.Fprintf(out, "%s has a result for t:%s but none for t:%s, and the rebase changed the diff\n", name, src.tree[:8], tree[:8])
+			return nil, errReviewAgain
+		}
 		if !same {
 			return nil, fail(exitRefused, "refused: %s has a result for t:%s but none for t:%s, and the rebase changed the diff: "+
 				"run it again on this tree (for review: bmesh routine queue review --again --go --text \"base: %s\", then routine wait), "+
@@ -827,6 +1290,70 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA, preTree str
 		}
 	}
 	return entries, nil
+}
+
+// inline runs each required inline kind on merged (tree): a deterministic
+// one is answered from its record, or carried to tree by carryCode from
+// preTree (the branch's tree before the rebase), the last tree it was ok at
+// in this run or its source's tree, and verify then by carryVerify from the
+// code run of merged and of each head before the rebase. A kind that was ok
+// at tree earlier in this run is not run again. A failing one refuses (exit
+// 1).
+func (l *lander) inline(ctx context.Context, merged, tree, preTree string) error {
+	out := l.a.stdout
+	for _, name := range l.required {
+		k, ok := l.kind(name)
+		if !ok || k.Mode != "inline" {
+			continue
+		}
+		model := ""
+		if k.IsModel() {
+			model = k.ModelsList()[0]
+		}
+		line := spec.Entry{Kind: name, OK: true, Tree8: tree[:8], Model: model}.String()
+		if l.ran[name] == tree {
+			fmt.Fprintf(out, "%s (ran before the lease)\n", line)
+			continue
+		}
+		if k.Deterministic {
+			from := []string{l.ran[name], preTree}
+			if src := l.before[name]; src != nil {
+				from = append(from, src.tree)
+			}
+			old, err := l.carryCode(ctx, k, model, merged, tree, from)
+			if err == nil && old == "" {
+				old, err = l.a.carryVerify(ctx, name, l.top, l.repo, merged, tree, l.holder, model, nil, append([]string{merged}, l.heads...)...)
+			}
+			if err != nil {
+				return err
+			}
+			if old != "" {
+				fmt.Fprintf(out, "%s (%s)\n", line, carriedHow(old))
+				l.ran[name] = tree
+				continue
+			}
+		}
+		ok, output, how, err := l.a.runInline(ctx, k, l.top, merged, tree, l.holder, model, "", "", nil, false)
+		if err != nil {
+			return err
+		}
+		line = spec.Entry{Kind: name, OK: ok, Tree8: tree[:8], Model: model}.String()
+		if !ok {
+			if output != "" && !strings.HasSuffix(output, "\n") {
+				output += "\n"
+			}
+			fmt.Fprintf(out, "%s%s (%s)\n", output, line, how)
+			if len(l.resolved) > 0 {
+				return fail(exitError, "%s failed at t:%s, after the rebase resolved %s by rule: that is land's merge, and the branch is left rebased; "+
+					"fix it forward, commit, push the branch, queue the review again (--again), then run bmesh land again",
+					name, tree[:8], strings.Join(slices.Compact(slices.Sorted(slices.Values(l.resolved))), ", "))
+			}
+			return fail(exitError, "%s failed at t:%s; fix it, commit and run bmesh land again", name, tree[:8])
+		}
+		fmt.Fprintf(out, "%s (%s)\n", line, how)
+		l.ran[name] = tree
+	}
+	return nil
 }
 
 // carryCode carries deterministic kind k's ok result to tree, which has no
