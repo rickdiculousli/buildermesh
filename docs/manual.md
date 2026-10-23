@@ -3179,7 +3179,7 @@ The roster is the admin's signed list of boxes. For each box it holds the name, 
 - A box keeps its pinned admin key and newest valid roster in `<state dir>/roster.json`.
 - A box accepts a roster only when the pinned key signed it and its `version` is higher.
 - The admin alone publishes the next version: [`bmesh hosts invite`](#bmesh-hosts-invite), [`set`](#bmesh-hosts-set) and [`revoke`](#bmesh-hosts-revoke).
-- Every daemon re-reads the hub's roster each minute and before each job. It puts its own back when the hub's copy is missing, unsigned or lower. So a roster a token holder deleted or rolled back is back within a minute.
+- Every daemon watches the hub's roster key, so a box takes a roster when it is published, and re-reads it each minute (for a change a watch missed while the hub restarted or the box slept) and before each job. It puts its own back when the hub's copy is missing, unsigned or lower. So a roster a token holder deleted or rolled back is back at once on every awake box. A copy signed by another admin key, or unsigned, is answered on the minute's re-read only, so two boxes pinned to different admin keys don't put theirs over each other in a loop.
 
 #### Presence
 
@@ -3281,7 +3281,7 @@ With `[hosts]` on, `repos.toml` is the admin's signed document. A row's `verify`
 - A box takes a registry only when its pinned admin key signed it, its `version` is higher than the box's own, and the box's own loader reads the rows (with `repos.toml`'s refusals, an unknown key among them).
 - The box writes the rows as its `repos.toml` (through a rename, the old file kept as `repos.toml.prev`). Its hosts layer (presence, levels, prune and nix) reads the new rows at once; the routine loop reads them at start.
 - A box that can't read a registry leaves its file alone, and the newer registry stays on the hub for the boxes that can. The box pushes this once per version (with `[notify]`): `<host>: refused: registry v<N> needs a newer bmesh (<error>)`, priority `high`.
-- Every daemon re-reads the hub's registry each minute (so at start and on wake). It puts its own back when the hub's copy is missing, unsigned or lower, as with the roster.
+- Every daemon watches the hub's registry key, so a box takes a registry when it is published (or a proposal is approved), and re-reads it each minute (so at start and on wake). It puts its own back when the hub's copy is missing, unsigned or lower, as with the roster.
 - A box re-pinned to a new admin starts again from no registry.
 
 The admin changes the registry with [`bmesh repos publish`](#bmesh-repos-publish). Another box sends its changes with [`bmesh repos propose`](#bmesh-repos-propose). [`bmesh repos remove`](#bmesh-repos-remove) takes a row out.

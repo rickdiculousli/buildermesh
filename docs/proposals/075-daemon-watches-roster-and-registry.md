@@ -27,6 +27,7 @@ In:
 - **Updates only.** The watch is opened with `jetstream.UpdatesOnly()`. The tick already does the start-up read, so the initial values a default watch delivers would only run one extra sync.
 - **The tick stays as the resync.** Its other work is time-driven: the wake check, presence, salts, holds and `this-box.txt`. It also keeps the minute's roster and registry reads, which cover what a watch misses: the gap while the watch re-subscribes after the hub restarts or the box wakes from sleep.
 - **A watch that ends is restarted.** When its updates channel closes, or opening it fails, it is opened again after the tick interval, with a log line, and never takes the daemon down. The jetstream watcher usually rebuilds its consumer itself after a hub restart, so a watch can also go quiet without closing. That case is the tick's to cover, and no liveness probe is added for it.
+- **A put this box can't verify waits for the tick** (as built). A watched put signed by another admin key, or unsigned, isn't synced at once: two boxes pinned to different keys (an admin key mid-rotation) would each re-put their own over the other's in a loop at network speed. The minute's read answers it, as before. A delete or purge is always synced at once.
 - **Docs.** The manual's "Every daemon re-reads the hub's roster/registry each minute" lines say that a box takes a change when it is published, and re-checks each minute.
 
 Out: presence, rounds, branches and self-update, which stay on the tick. Changing the tick interval.

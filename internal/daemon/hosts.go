@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"runtime"
@@ -67,9 +68,10 @@ type hostsNode struct {
 	regRefused int64          // the last registry version refused and pushed
 }
 
-// hostsRun runs the hosts layer until ctx ends: each minute it notes a
-// wake, syncs the roster (taking a newer one, putting its own back when the
-// hub's is missing, unsigned or lower), drops expired holds, writes signed
+// hostsRun runs the hosts layer until ctx ends: it syncs the roster and
+// the registry as each changes on the hub (taking a newer one, putting its
+// own back when the hub's is missing, unsigned or lower), and each minute it
+// notes a wake, syncs both again, drops expired holds, writes signed
 // presence and the session line (this-box.txt); it takes this box's jobs
 // one at a time, answers approvals of its holds, and self-levels its repos
 // on start and on each wake. A box that hasn't joined logs so and does
@@ -100,8 +102,9 @@ func hostsRun(ctx context.Context, d Deps) {
 	if tick <= 0 {
 		tick = defaultHostsEvery
 	}
-	h.wg.Add(4)
+	h.wg.Add(5)
 	go func() { defer h.wg.Done(); h.jobLoop(ctx) }()
+	go func() { defer h.wg.Done(); h.watchKeys(ctx, tick) }()
 	go func() { defer h.wg.Done(); h.serveApprovals(ctx) }()
 	go func() { defer h.wg.Done(); h.selfLevel(ctx) }()
 	go func() { defer h.wg.Done(); every(ctx, tick, func() { h.tick(ctx) }) }()
@@ -138,6 +141,80 @@ func (h *hostsNode) tick(ctx context.Context) {
 	if err := h.writeHere(ctx, now); err != nil {
 		h.d.Log.Warn("hosts: this-box.txt", "err", err)
 	}
+}
+
+// watchOpened is called with each watch watchKeys opens; tests stop it.
+var watchOpened = func(jetstream.KeyWatcher) {}
+
+// watchKeys syncs the roster and the registry as soon as the hub's key
+// changes, so a publish reaches this box at once; the tick re-reads both
+// each minute for what a watch misses. A watch that ends or can't open is
+// opened again after retry.
+func (h *hostsNode) watchKeys(ctx context.Context, retry time.Duration) {
+	for ctx.Err() == nil {
+		err := h.watch(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		h.d.Log.Warn("hosts: roster watch ended; opening it again", "in", retry, "err", err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(retry):
+		}
+	}
+}
+
+// watch runs one watch on the roster and registry keys until its updates
+// end. Updates only: the tick did the start-up read.
+func (h *hostsNode) watch(ctx context.Context) error {
+	kv, err := hosts.Bucket(ctx, h.d.Client.JS, hosts.BucketRoster)
+	if err != nil {
+		return err
+	}
+	w, err := kv.WatchFiltered(ctx, []string{hosts.RosterKey, hosts.RegistryKey}, jetstream.UpdatesOnly())
+	if err != nil {
+		return err
+	}
+	defer w.Stop()
+	watchOpened(w)
+	for e := range w.Updates() {
+		if e == nil || h.othersPin(e) {
+			continue
+		}
+		switch e.Key() {
+		case hosts.RosterKey:
+			err = h.syncRoster(ctx)
+		case hosts.RegistryKey:
+			err = h.syncRegistry(ctx)
+		}
+		if err != nil && ctx.Err() == nil {
+			h.d.Log.Warn("hosts: "+e.Key(), "err", err)
+		}
+	}
+	return errors.New("the hub closed it")
+}
+
+// othersPin reports a put this box can't verify: one signed by another
+// admin key (a box not yet re-invited after the admin's key changed) or
+// unsigned. Re-putting this box's copy over it at once would race that
+// box's watch doing the same, so the tick answers it, as before.
+func (h *hostsNode) othersPin(e jetstream.KeyValueEntry) bool {
+	if e.Operation() != jetstream.KeyValuePut {
+		return false
+	}
+	h.mu.Lock()
+	pinned := h.local.Pinned
+	h.mu.Unlock()
+	switch e.Key() {
+	case hosts.RosterKey:
+		var r hosts.Roster
+		return json.Unmarshal(e.Value(), &r) != nil || r.Verify(pinned) != nil
+	case hosts.RegistryKey:
+		var r hosts.Registry
+		return json.Unmarshal(e.Value(), &r) != nil || r.Verify(pinned) != nil
+	}
+	return false
 }
 
 // writeHere writes the session line, <state dir>/this-box.txt, from the

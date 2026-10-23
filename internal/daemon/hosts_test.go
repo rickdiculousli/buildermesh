@@ -65,37 +65,53 @@ func testRoster(version int64, accept ...string) hosts.Roster {
 
 func hostsSetup(t *testing.T, accept ...string) *hostsFixture {
 	t.Helper()
-	f := setup(t)
-	f.now = time.Now()
-	f.d.Now = time.Now
-	f.d.StateDir = t.TempDir()
-	f.d.ConfigDir = t.TempDir()
-	f.d.HostsEvery = 100 * time.Millisecond
-	f.d.Revision = "1a2b3c4d5e6f"
-	f.d.Cfg.Hosts.Enabled = true
-	seed := hostKey(testHost).Seed()
-	if err := os.WriteFile(hosts.HostKeyPath(f.d.ConfigDir), []byte(hexs(seed)+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	r := testRoster(2, accept...)
-	if err := hosts.SaveLocal(f.d.StateDir, hosts.Local{Pinned: hostPub("admin"), Roster: r}); err != nil {
-		t.Fatal(err)
-	}
-	hostsNak = 200 * time.Millisecond
-	t.Cleanup(func() { hostsNak = time.Minute })
-	h := &hostsFixture{fixture: f, roster: r}
+	h := hostsOn(t, setup(t), 100*time.Millisecond, accept...)
 	h.start(t)
 	return h
 }
 
+// hostsOn joins f's test host, to tick every every once started.
+func hostsOn(t *testing.T, f *fixture, every time.Duration, accept ...string) *hostsFixture {
+	t.Helper()
+	f.now = time.Now()
+	f.d.Now = time.Now
+	f.d.HostsEvery = every
+	f.d.Revision = "1a2b3c4d5e6f"
+	f.d.Cfg.Hosts.Enabled = true
+	r := testRoster(2, accept...)
+	joinHost(t, &f.d, testHost, r)
+	hostsNak = 200 * time.Millisecond
+	t.Cleanup(func() { hostsNak = time.Minute })
+	return &hostsFixture{fixture: f, roster: r}
+}
+
+// joinHost gives d a fresh state and config dir, host's key and r as its
+// roster.
+func joinHost(t *testing.T, d *Deps, host string, r hosts.Roster) {
+	t.Helper()
+	d.Host = host
+	d.StateDir = t.TempDir()
+	d.ConfigDir = t.TempDir()
+	seed := hostKey(host).Seed()
+	if err := os.WriteFile(hosts.HostKeyPath(d.ConfigDir), []byte(hexs(seed)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := hosts.SaveLocal(d.StateDir, hosts.Local{Pinned: hostPub("admin"), Roster: r}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func hexs(b []byte) string { return hosts.KeyHex(ed25519.PublicKey(b)) }
 
-func (h *hostsFixture) start(t *testing.T) {
+func (h *hostsFixture) start(t *testing.T) { h.stop = runHosts(t, h.d) }
+
+// runHosts runs d's hosts loop until the test ends or the returned stop.
+func runHosts(t *testing.T, d Deps) func() {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() { defer close(done); hostsRun(ctx, h.d) }()
+	go func() { defer close(done); hostsRun(ctx, d) }()
 	var once sync.Once
-	h.stop = func() {
+	stop := func() {
 		once.Do(func() {
 			cancel()
 			select {
@@ -105,7 +121,8 @@ func (h *hostsFixture) start(t *testing.T) {
 			}
 		})
 	}
-	t.Cleanup(h.stop)
+	t.Cleanup(stop)
+	return stop
 }
 
 func (h *hostsFixture) send(t *testing.T, j hosts.Job) {

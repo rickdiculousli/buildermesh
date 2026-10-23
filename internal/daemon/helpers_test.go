@@ -79,10 +79,16 @@ func (r *fakeRunner) failSends(err error) {
 
 func setup(t *testing.T) *fixture {
 	t.Helper()
-	url := meshtest.Start(t)
+	return setupOn(t, meshtest.Start(t), false)
+}
+
+// setupOn is setup on the server at url; a daemon client reconnects to
+// a server that restarts.
+func setupOn(t *testing.T, url string, daemon bool) *fixture {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	t.Cleanup(cancel)
-	c, err := mesh.Connect(ctx, url, "", "hub", "test", false)
+	c, err := mesh.Connect(ctx, url, "", "hub", "test", daemon)
 	if err != nil {
 		t.Fatal(err)
 	}
