@@ -784,7 +784,8 @@ func (l *lander) headJobs(ctx context.Context) ([]waitJob, error) {
 	return out, nil
 }
 
-// waitJobs waits for the reply to each job, naming each once, and acks each
+// waitJobs starts each job's kind (a go, as routine go sends) and waits for
+// the reply to each job, naming each once, and acks each
 // reply it reads so no wake follows. A job the node's jobs list as
 // unanswered is answered after land started, so the replies are read from
 // there on. An ok reply is done; a failing one
@@ -805,6 +806,18 @@ func (l *lander) waitJobs(ctx context.Context, jobs []waitJob) error {
 	}
 	for _, j := range jobs {
 		say(j)
+	}
+	// A job queued without --go waits for a go its batch never gets from
+	// land's lead: land needs it now, so it starts each kind's batch once.
+	kinds := map[string]bool{}
+	for _, j := range jobs {
+		if !kinds[j.kind] {
+			kinds[j.kind] = true
+			m := mesh.Message{ID: newID(), Kind: "message", Text: "go", From: l.node.String(), To: mesh.RoutinePath(j.kind).String()}
+			if _, err := mesh.Send(ctx, l.a.client, m); err != nil {
+				return err
+			}
+		}
 	}
 	for {
 		since, err := mesh.InboxAfter(ctx, l.a.client, l.node, l.mailSeq)
@@ -871,7 +884,8 @@ func (l *lander) waitJobs(ctx context.Context, jobs []waitJob) error {
 	}
 }
 
-// requeue queues job j once more as it was queued, under a new id.
+// requeue queues job j once more as it was queued, under a new id, started
+// at once.
 func (l *lander) requeue(ctx context.Context, j waitJob) (waitJob, error) {
 	job, ok, err := mesh.FindJob(ctx, l.a.client, j.kind, j.ID)
 	if err != nil {
@@ -880,7 +894,7 @@ func (l *lander) requeue(ctx context.Context, j waitJob) (waitJob, error) {
 	if !ok {
 		return waitJob{}, fail(exitRefused, "refused: job %s (%s) recorded nothing and the stream no longer holds it; run bmesh land again", j.ID, j.kind)
 	}
-	job.ID = newID()
+	job.ID, job.Go = newID(), true
 	if _, err := mesh.Queue(ctx, l.a.client, l.node, job, l.top); err != nil {
 		return waitJob{}, err
 	}

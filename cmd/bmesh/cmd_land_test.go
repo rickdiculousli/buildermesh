@@ -1483,13 +1483,14 @@ func TestLandSizesTheReview(t *testing.T) {
 	})
 }
 
-// A review queued by hand is waited for, not queued again; so is land's
-// own after it timed out (exit 5) and is run again.
+// A review queued by hand is waited for, not queued again, and started
+// with a go when it was queued without one; so is land's own after it
+// timed out (exit 5) and is run again.
 func TestLandWaitsForAReviewAlreadyQueued(t *testing.T) {
 	t.Run("by hand", func(t *testing.T) {
 		c, ctx := setup(t)
 		reviewLandRepo(t, c, ctx, "M")
-		qout, errs, code := runCLI(t, as("app-012"), "routine", "queue", "review", "--go", "--effort", "medium")
+		qout, errs, code := runCLI(t, as("app-012"), "routine", "queue", "review", "--effort", "medium")
 		id := strings.TrimSpace(strings.TrimPrefix(qout, "queued "))
 		if code != 0 || id == "" {
 			t.Fatalf("queue: %d %q %q", code, qout, errs)
@@ -1498,6 +1499,10 @@ func TestLandWaitsForAReviewAlreadyQueued(t *testing.T) {
 		until(t, out, "review: waiting for job "+id+"\nwaiting for job "+id+" (review, waiting)\n")
 		if jobs := unanswered(t, c, ctx); len(jobs) != 1 || strings.Contains(out.String(), "review: queued") {
 			t.Fatalf("a second review: %+v\n%s", jobs, out.String())
+		}
+		msgs, err := mesh.InboxAfter(ctx, c, mesh.RoutinePath("review"), 0)
+		if err != nil || len(msgs) != 2 || msgs[0].Kind != "job" || msgs[1].Text != "go" || msgs[1].From != "app-012" {
+			t.Fatalf("the kind's inbox: %+v %v", msgs, err)
 		}
 		j, _, _ := mesh.FindJob(ctx, c, "review", id)
 		answer(t, c, ctx, j, true, true, "VERDICT: ok")
@@ -1616,7 +1621,7 @@ func TestLandReadsTheReviewsReply(t *testing.T) {
 			again, ok, _ = mesh.FindJob(ctx, c, "review", m[1])
 			return ok
 		})
-		if again.Effort != "medium" || again.Commit != j.Commit || again.Text != j.Text || again.ID == j.ID {
+		if again.Effort != "medium" || again.Commit != j.Commit || again.Text != j.Text || again.ID == j.ID || !again.Go {
 			t.Fatalf("queued again %+v, was %+v", again, j)
 		}
 		answer(t, c, ctx, again, false, false, "model run failed: rate limited; nothing recorded")
