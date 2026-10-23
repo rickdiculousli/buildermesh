@@ -4,10 +4,13 @@ title: bmesh land resolves the rebase conflicts a rule can, and leaves the lead 
 kind: token-cost
 size: M
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: acc7c4cb-5a7b-4a96-bc3b-bf2508d0beac
 proposed_on: 2026-10-18
+built_by: f03cbeb7-55f7-4be8-a303-6aca6c0133dd
+host: k16
+family: buildermesh-build-13
 ---
 
 ## Opportunity
