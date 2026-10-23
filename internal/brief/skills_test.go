@@ -105,7 +105,7 @@ func TestSkillsLeaveRulesToAgentsMD(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, w := range []string{"The rules interview", "clear conflicts out of the repo's own prose", "Rule sets section of bmesh's manual"} {
+	for _, w := range []string{"The rules interview", "Clear conflicts out of the repo's own prose", "Rule sets section of bmesh's manual"} {
 		if !strings.Contains(string(b), w) {
 			t.Errorf("the scaffold skill lacks %q", w)
 		}
