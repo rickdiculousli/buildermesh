@@ -22,6 +22,8 @@ The first wrong decision is in `levelMain` (`cmd/bmesh/gitwork.go`): on main it 
 ## Proposal
 In: `levelMain` stops reading `FETCH_HEAD`: on main it runs `git fetch --quiet origin +refs/heads/main:refs/remotes/origin/main` then `git merge --quiet --ff-only refs/remotes/origin/main`, so the merge names a ref no other fetch rewrites. The refusals stay what they are (local commits origin lacks, a dirty checkout the merge would touch), with the same message. Every other place in bmesh that runs `git pull`, or merges `FETCH_HEAD`, gets the same change. Fetches that never merge (`selfupdate`, `spec`, `land`, `release`) pass `--no-write-fetch-head`, so none of them leaves a `FETCH_HEAD` behind for a person's own `git pull` either.
 
+As built, every fetch bmesh runs goes through one helper, `gitfetch.Args`, which adds `--no-write-fetch-head` when `git version` reads 2.29 or newer: the four named above and also the sync level's, the routine checkout's, the lander's and `LevelMain`'s own. A rule that holds for every fetch is easier to keep than a list.
+
 Out: a lock shared between the daemon and every command. Reading a named ref removes the sharing instead.
 
 Judge: opus, because `levelMain` gates `build`, `choose-ideas`, `spec set`, `spec steps --tick` and `land`.
