@@ -851,10 +851,10 @@ func (a *app) printVerdict(ok bool, out string) error {
 const reviewKind = "review"
 
 // priorReview finds the newest review result recorded for a commit of this
-// branch: one whose commit is an ancestor of the worktree's HEAD but not of
-// main (origin/main when the repo has an origin), so a landed spec's review
-// in the history does not count. A result whose commit is unknown here is
-// skipped.
+// branch: one whose commit is an ancestor of the worktree's HEAD, or of a
+// head a rebase by hand rewrote (rebasedFrom), but not of main (origin/main
+// when the repo has an origin), so a landed spec's review in the history
+// does not count. A result whose commit is unknown here is skipped.
 func (a *app) priorReview(ctx context.Context, top string) (mesh.Result, bool, error) {
 	results, err := mesh.ListResults(ctx, a.client, reviewKind)
 	if err != nil {
@@ -865,21 +865,20 @@ func (a *app) priorReview(ctx context.Context, top string) (mesh.Result, bool, e
 	if hasOrigin(ctx, top) {
 		mainRef = "origin/main"
 	}
-	onMain := func(commit string) bool {
-		_, err := gitIn(ctx, top, "merge-base", "--is-ancestor", commit, mainRef)
-		return err == nil
+	head, err := gitIn(ctx, top, "rev-parse", "HEAD")
+	if err != nil {
+		return mesh.Result{}, false, err
+	}
+	heads := []string{head}
+	if b, err := gitIn(ctx, top, "branch", "--show-current"); err == nil && b != "" {
+		for _, src := range rebasedFrom(ctx, top, b, head) {
+			heads = append(heads, src.head)
+		}
 	}
 	for _, r := range results {
-		if r.Commit == "" {
-			continue
+		if onBranch(ctx, top, mainRef, heads, r.Commit) {
+			return r, true, nil
 		}
-		if _, err := gitIn(ctx, top, "merge-base", "--is-ancestor", r.Commit, "HEAD"); err != nil {
-			continue
-		}
-		if onMain(r.Commit) {
-			continue
-		}
-		return r, true, nil
 	}
 	return mesh.Result{}, false, nil
 }

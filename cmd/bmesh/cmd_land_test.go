@@ -31,9 +31,9 @@ func newLandRepo(t *testing.T) landRepo {
 	} {
 		t.Setenv(k, v)
 	}
-	orig := landPoll
-	landPoll = 20 * time.Millisecond
-	t.Cleanup(func() { landPoll = orig })
+	poll, mainPoll, every := landPoll, landMainPoll, landEventEvery
+	landPoll, landMainPoll = 20*time.Millisecond, 20*time.Millisecond
+	t.Cleanup(func() { landPoll, landMainPoll, landEventEvery = poll, mainPoll, every })
 	root := t.TempDir()
 	r := landRepo{root: root, origin: filepath.Join(root, "origin.git"), repo: filepath.Join(root, "repo"), wt: filepath.Join(root, "wt")}
 	hook := filepath.Join(root, "hook.sh")
@@ -108,10 +108,11 @@ func TestLandCleanThenDone(t *testing.T) {
 	out, errs, code := runCLI(t, as("app-012"), "land")
 	rec := gitOut(t, "rev-parse", "HEAD")
 	want := "required: verify (the repo's verify kind)\n" +
+		"verify ok t:" + tree[:8] + " (recorded)\n" +
 		"lease land.repo\n" +
 		"fetch origin/main " + base[:8] + "\n" +
 		"rebase: on " + base[:8] + " already\n" +
-		"verify ok t:" + tree[:8] + " (recorded)\n" +
+		"verify ok t:" + tree[:8] + " (ran before the lease)\n" +
 		"verified: verify ok t:" + tree[:8] + "\n" +
 		"spec 012 done: merged " + work[:8] + ", branch lead\n" +
 		"commit " + rec[:8] + " 012: done at " + work[:8] + "\n" +
@@ -148,21 +149,23 @@ func TestLandCleanThenDone(t *testing.T) {
 	}
 }
 
-// Main moves while verify runs (the hook pushes once): the push is refused,
-// the record commit is taken back and land starts again from the fetch.
-func TestLandRetriesOnceWhenMainMoved(t *testing.T) {
+// Main moves each time verify runs, three times (the first run being
+// verify before the lease, which the rebase under it takes in): each push
+// under the lease is refused, the record commit taken back and land starts
+// again from the fetch, and lands on the third try.
+func TestLandStartsAgainWhileMainMoves(t *testing.T) {
 	c, ctx := setup(t)
 	r := newLandRepo(t)
 	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
 	other := filepath.Join(r.root, "other")
 	meshtest.Git(t, r.root, "clone", "-q", "-b", "main", r.origin, other)
-	mark := filepath.Join(r.root, "moved")
-	writeFile(t, os.Getenv("HOOK"), "test -e '"+mark+"' && exit 0\ntouch '"+mark+"'\n"+
-		"cd '"+other+"' && echo c > c.txt && git add c.txt && git commit -qm 'other c' && git push -q origin HEAD:main\n")
+	runs := filepath.Join(r.root, "runs")
+	writeFile(t, os.Getenv("HOOK"), "echo >> '"+runs+"'\nn=$(wc -l < '"+runs+"')\ntest $n -le 3 || exit 0\n"+
+		"cd '"+other+"' && echo $n > c.txt && git add c.txt && git commit -qm 'other c' && git push -q origin HEAD:main\n")
 	work := gitOut(t, "rev-parse", "HEAD")
 
 	out, errs, code := runCLI(t, as("app-012"), "land")
-	if code != 0 || strings.Count(out, "main moved; again from the fetch\n") != 1 || !strings.HasSuffix(out, "landed "+gitOut(t, "rev-parse", "HEAD")[:8]+"\n") {
+	if code != 0 || strings.Count(out, "main moved; again from the fetch\n") != 2 || !strings.HasSuffix(out, "landed "+gitOut(t, "rev-parse", "HEAD")[:8]+"\n") {
 		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
 	}
 	moved := gitOut(t, "-C", other, "rev-parse", "HEAD")
@@ -183,9 +186,9 @@ func TestLandRetriesOnceWhenMainMoved(t *testing.T) {
 	assertNoLeases(t, c, ctx)
 }
 
-// Main moving on every try is refused after the one retry, with nothing
+// Main moving on every try is given up on at --wait (exit 5), with nothing
 // pushed and the branch as the rebase left it.
-func TestLandRefusesWhenMainKeepsMoving(t *testing.T) {
+func TestLandTimesOutWhenMainKeepsMoving(t *testing.T) {
 	c, ctx := setup(t)
 	r := newLandRepo(t)
 	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
@@ -193,8 +196,8 @@ func TestLandRefusesWhenMainKeepsMoving(t *testing.T) {
 	meshtest.Git(t, r.root, "clone", "-q", "-b", "main", r.origin, other)
 	writeFile(t, os.Getenv("HOOK"), "cd '"+other+"' && date +%s%N >> c.txt && git add c.txt && git commit -qm 'other c' && git push -q origin HEAD:main\n")
 
-	out, errs, code := runCLI(t, as("app-012"), "land")
-	if code != 3 || !strings.Contains(errs, "main moved again before the push") || strings.Count(out, "main moved; again") != 1 {
+	out, errs, code := runCLI(t, as("app-012"), "land", "--wait", "1s")
+	if code != exitTimeout || errs != "bmesh: timed out waiting for main to stop moving; nothing is pushed\n" || !strings.Contains(out, "main moved; again") {
 		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
 	}
 	if r.originMain(t) != gitOut(t, "-C", other, "rev-parse", "HEAD") {
@@ -247,7 +250,8 @@ func TestLandWaitsForHeldLease(t *testing.T) {
 	}
 	select {
 	case code := <-res:
-		if code != 0 || !strings.HasPrefix(out.String(), "required: verify (the repo's verify kind)\nwaiting for land.repo (held by app-011)\nlease land.repo\n") ||
+		if code != 0 || !strings.HasPrefix(out.String(), "required: verify (the repo's verify kind)\nverify ok t:"+gitOut(t, "rev-parse", "HEAD~1^{tree}")[:8]+" (recorded)\n"+
+			"waiting for land.repo (held by app-011)\nlease land.repo\n") ||
 			!strings.Contains(out.String(), "landed ") {
 			t.Fatalf("land: %d\n%s\nerr %q", code, out.String(), errb.String())
 		}
@@ -289,23 +293,86 @@ func TestLandStopsOnConflict(t *testing.T) {
 	assertNoLeases(t, c, ctx)
 }
 
-// Local main ahead of origin (someone's unpushed work) is refused before
-// the rebase.
-func TestLandRefusesMainAheadOfOrigin(t *testing.T) {
+// landBG runs land as node in the background; its exit code arrives on
+// the channel.
+func landBG(t *testing.T, node string, args ...string) (out, errb *meshtest.SyncBuffer, res chan int) {
+	t.Helper()
+	t.Setenv("BMESH_NODE", node)
+	out, errb, res = &meshtest.SyncBuffer{}, &meshtest.SyncBuffer{}, make(chan int, 1)
+	go func() { res <- run(append([]string{"land"}, args...), strings.NewReader(""), out, errb) }()
+	return out, errb, res
+}
+
+// landEnds waits for land in the background to end, and fails unless it
+// exits code.
+func landEnds(t *testing.T, res chan int, code int, out, errb *meshtest.SyncBuffer) {
+	t.Helper()
+	select {
+	case got := <-res:
+		if got != code {
+			t.Fatalf("land: %d, want %d\n%s\nerr %q", got, code, out.String(), errb.String())
+		}
+	case <-time.After(meshtest.Within(t)):
+		t.Fatalf("land never ended\n%s", out.String())
+	}
+}
+
+// until waits until out says what.
+func until(t *testing.T, out *meshtest.SyncBuffer, what string) {
+	t.Helper()
+	meshtest.Until(t, "land to say "+what, func() bool { return strings.Contains(out.String(), what) })
+}
+
+// Local main ahead of origin (someone's unpushed work) is waited for, not
+// pushed, before the lease: land lands once it is pushed.
+func TestLandWaitsForMainAheadOfOrigin(t *testing.T) {
 	c, ctx := setup(t)
 	r := newLandRepo(t)
 	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
 	writeFile(t, filepath.Join(r.repo, "d.txt"), "d\n")
 	meshtest.Git(t, r.repo, "add", "d.txt")
 	meshtest.Git(t, r.repo, "commit", "-m", "coordinator's")
-	work := gitOut(t, "rev-parse", "HEAD")
-	_, errs, code := runCLI(t, as("app-012"), "land")
-	if code != 3 || !strings.Contains(errs, "has 1 commits origin/main doesn't") {
-		t.Fatalf("land: %d %q", code, errs)
+	theirs := gitOut(t, "-C", r.repo, "rev-parse", "main")
+	out, errb, res := landBG(t, "app-012")
+	until(t, out, "waiting for main in "+r.repo+" to be pushed: it has 1 commits origin/main doesn't")
+	if strings.Contains(out.String(), "lease") || r.originMain(t) == theirs {
+		t.Fatalf("land went on, or pushed main:\n%s", out.String())
 	}
-	if gitOut(t, "rev-parse", "HEAD") != work {
-		t.Fatal("branch moved")
+	meshtest.Git(t, r.repo, "push", "-q", "origin", "main")
+	landEnds(t, res, 0, out, errb)
+	if gitOut(t, "rev-parse", "HEAD~2") != theirs || r.originMain(t) != gitOut(t, "rev-parse", "HEAD") {
+		t.Fatalf("not landed on the pushed main:\n%s", out.String())
 	}
+	if strings.Count(out.String(), "waiting for main in") != 1 {
+		t.Fatalf("the wait named more than once:\n%s", out.String())
+	}
+	assertNoLeases(t, c, ctx)
+}
+
+// Unpushed commits on main that appear while land waits for the lease are
+// waited for under it.
+func TestLandWaitsForMainAheadUnderTheLease(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	key, err := mesh.AcquireLease(ctx, c, "land.repo", "app-011", time.Minute, 1, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, errb, res := landBG(t, "app-012")
+	waitingForLease(t, out)
+	writeFile(t, filepath.Join(r.repo, "d.txt"), "d\n")
+	meshtest.Git(t, r.repo, "add", "d.txt")
+	meshtest.Git(t, r.repo, "commit", "-m", "coordinator's")
+	if err := mesh.ReleaseLease(ctx, c, key, "app-011"); err != nil {
+		t.Fatal(err)
+	}
+	until(t, out, "lease land.repo\nwaiting for main in "+r.repo+" to be pushed")
+	if leases, err := mesh.ListLeases(ctx, c); err != nil || len(leases) != 1 || leases[0].Holder != "app-012" {
+		t.Fatalf("leases while waiting %+v %v", leases, err)
+	}
+	meshtest.Git(t, r.repo, "push", "-q", "origin", "main")
+	landEnds(t, res, 0, out, errb)
 	assertNoLeases(t, c, ctx)
 }
 
@@ -551,6 +618,7 @@ func TestLandNamesOtherUnreadMail(t *testing.T) {
 	out, errs, code := runCLI(t, as("app-012"), "land")
 	want := "unread: done from app-012.alpha (branch lead-alpha at 1a2b3c4d); reply to job j1 (review ok); message from app-012.beta\n" +
 		"required: verify (the repo's verify kind)\n" +
+		"verify ok t:" + gitOut(t, "rev-parse", "HEAD~1^{tree}")[:8] + " (recorded)\n" +
 		"lease land.repo\n" + "fetch origin/main " + base[:8] + "\n"
 	if code != 0 || !strings.HasPrefix(out, want) || !strings.Contains(out, "landed ") {
 		t.Fatalf("land: %d\n%s\nwant prefix\n%s\nerr %q", code, out, want, errs)
@@ -596,7 +664,8 @@ func TestLandReadsTheInboxAgainUnderTheLease(t *testing.T) {
 	case code := <-res:
 		// prepare read an empty inbox (it got as far as waiting); the read
 		// under the lease found the message.
-		if code != 3 || out.String() != "required: verify (the repo's verify kind)\nwaiting for land.repo (held by app-011)\nlease land.repo\n" ||
+		if code != 3 || out.String() != "required: verify (the repo's verify kind)\nverify ok t:"+gitOut(t, "rev-parse", "HEAD^{tree}")[:8]+" (recorded)\n"+
+			"waiting for land.repo (held by app-011)\nlease land.repo\n" ||
 			errb.String() != "bmesh: refused: 1 unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh land again\n" {
 			t.Fatalf("land: %d\n%s\nerr %q", code, out.String(), errb.String())
 		}
@@ -776,7 +845,7 @@ func TestLandRefusesAVerifyKindTheRowDoesntWrite(t *testing.T) {
 			t.Errorf("land's drift lacks %q:\n%s", w, out)
 		}
 	}
-	if strings.Contains(out, "verify ok") || r.originMain(t) != base {
+	if _, under, _ := strings.Cut(out, "lease land.repo\n"); strings.Contains(under, "verify ok") || r.originMain(t) != base {
 		t.Fatalf("land went on past the drift:\n%s", out)
 	}
 	// The same edit in AGENTS.md's blocks is refused with that diff too.
@@ -930,9 +999,9 @@ func countRuns(t *testing.T, r landRepo, body string) func() int {
 	}
 }
 
-// Main moves with a commit outside the row's code while verify runs: the
-// retry carries the verify to the new tree, stores it there, and done
-// accepts the landing.
+// Main moves with a commit outside the row's code while verify runs before
+// the lease: the rebase under it carries the verify to the new tree, stores
+// it there, and done accepts the landing.
 func TestLandCarriesVerifyOverACommitOutsideTheCode(t *testing.T) {
 	c, ctx := setup(t)
 	r := newLandRepo(t)
@@ -951,7 +1020,7 @@ func TestLandCarriesVerifyOverACommitOutsideTheCode(t *testing.T) {
 	out, errs, code := runCLI(t, as("app-012"), "land")
 	rec := gitOut(t, "rev-parse", "HEAD")
 	tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
-	if code != 0 || runs() != 1 || strings.Count(out, "main moved; again from the fetch\n") != 1 ||
+	if code != 0 || runs() != 1 ||
 		!strings.Contains(out, "verify ok t:"+first[:8]+" (recorded)\n") ||
 		!strings.Contains(out, "verify ok t:"+tree[:8]+" (carried from t:"+first[:8]+": nothing under code changed)\n") ||
 		!strings.HasSuffix(out, "landed "+rec[:8]+"\n") {
@@ -1055,13 +1124,15 @@ func TestLandCarriesVerifyFromTheBranchRun(t *testing.T) {
 				t.Fatal(err)
 			}
 			commitDoc(t, "README.md", "# app\n")
+			head := gitOut(t, "rev-parse", "HEAD^{tree}")
 			r.pushOther(t, "docs/proposals/013-other.md", "---\nid: 13\nstatus: accepted\n---\n")
 
 			out, errs, code := runCLI(t, as("app-012"), "land")
 			rec := gitOut(t, "rev-parse", "HEAD")
 			tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
 			if code != 0 || runs() != 0 ||
-				!strings.Contains(out, "verify ok t:"+tree[:8]+" (carried from t:"+verified[:8]+": nothing under code changed)\n") {
+				!strings.Contains(out, "verify ok t:"+head[:8]+" (carried from t:"+verified[:8]+": nothing under code changed)\n") ||
+				!strings.Contains(out, "verify ok t:"+tree[:8]+" (carried from t:"+head[:8]+": nothing under code changed)\n") {
 				t.Fatalf("land: %d runs %d\n%s\nerr %q", code, runs(), out, errs)
 			}
 			if front := r.specOnOrigin(t); !strings.Contains(front, "verified: verify ok t:"+tree[:8]+"\n") {

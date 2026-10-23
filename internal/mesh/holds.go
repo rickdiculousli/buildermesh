@@ -78,8 +78,10 @@ func ListHolds(ctx context.Context, c *Client, kindName string) ([]Holds, error)
 type QueuedJob struct {
 	ID     string `json:"id"`
 	From   string `json:"from"`
+	Commit string `json:"commit"`
 	State  string `json:"state"` // waiting, held or running
 	Holder string `json:"holder,omitempty"`
+	Host   string `json:"host,omitempty"` // the box of the daemon holding it
 	Seq    uint64 `json:"seq"`
 }
 
@@ -108,6 +110,7 @@ func KindJobs(ctx context.Context, c *Client, kindName string) ([]QueuedJob, err
 	}
 	live := time.Now().Add(-info.Config.AckWait)
 	held := map[uint64]Hold{}
+	hosts := map[uint64]string{}
 	newest := map[uint64]string{} // seq → the At of the Holds it came from
 	for _, hs := range all {
 		at, err := time.Parse(time.RFC3339, hs.At)
@@ -116,7 +119,7 @@ func KindJobs(ctx context.Context, c *Client, kindName string) ([]QueuedJob, err
 		}
 		for _, h := range hs.Jobs {
 			if h.Seq > floor && hs.At >= newest[h.Seq] {
-				held[h.Seq], newest[h.Seq] = h, hs.At
+				held[h.Seq], hosts[h.Seq], newest[h.Seq] = h, hs.Host, hs.At
 			}
 		}
 	}
@@ -135,9 +138,9 @@ func KindJobs(ctx context.Context, c *Client, kindName string) ([]QueuedJob, err
 				return err == nil, err
 			}
 		}
-		q := QueuedJob{ID: m.Job.ID, From: m.From, State: "waiting", Seq: seq}
+		q := QueuedJob{ID: m.Job.ID, From: m.From, Commit: m.Job.Commit, State: "waiting", Seq: seq}
 		if h, ok := held[seq]; ok {
-			q.State, q.Holder = h.State, h.Holder
+			q.State, q.Holder, q.Host = h.State, h.Holder, hosts[seq]
 		}
 		out = append(out, q)
 		return true, nil

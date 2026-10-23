@@ -1,7 +1,9 @@
 package mesh_test
 
 import (
+	"os/exec"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -89,13 +91,18 @@ func TestKindJobsWaitingHeldAndAnswered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	out, err := exec.Command("git", "-C", repo, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := strings.TrimSpace(string(out))
 	for i := range got {
 		got[i].Seq = 0
 	}
 	want := []QueuedJob{
-		{ID: "j-held", From: "app-001", State: "running", Holder: "routine.review.opus-5-5-1"},
-		{ID: "j-orphan", From: "app-001", State: "waiting"},
-		{ID: "j-new", From: "app-001", State: "waiting"},
+		{ID: "j-held", From: "app-001", Commit: head, State: "running", Holder: "routine.review.opus-5-5-1", Host: "k16"},
+		{ID: "j-orphan", From: "app-001", Commit: head, State: "waiting"},
+		{ID: "j-new", From: "app-001", Commit: head, State: "waiting"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("jobs\n got %+v\nwant %+v", got, want)
