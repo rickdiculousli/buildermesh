@@ -67,6 +67,7 @@ type lander struct {
 	mailSeq  uint64             // the node's inbox sequence when land started: operator mail after it refuses
 	waited   string             // HEAD as land first read it, or land's own rebase of it
 	requeued map[string]bool    // the jobs land queued once more after a reply that recorded nothing
+	answered map[string]bool    // the jobs whose replies land read
 	kinds    []kind.Kind        // the repo's kinds
 	doing    atomic.Value       // what land is doing, for its land events
 	heads    []string           // the branch's heads before land touched it: HEAD and the heads a rebase by hand rewrote
@@ -128,7 +129,7 @@ func (a *app) cmdLand(args []string) error {
 		return err
 	}
 	l := &lander{a: a, top: top, size: *size, deadline: time.Now().Add(*wait),
-		ran: map[string]string{}, requeued: map[string]bool{}}
+		ran: map[string]string{}, requeued: map[string]bool{}, answered: map[string]bool{}}
 	l.doing.Store("landing")
 	if err := l.setup(id); err != nil {
 		return err
@@ -665,7 +666,7 @@ func (l *lander) review(ctx context.Context) ([]waitJob, error) {
 	}
 	var mine []waitJob
 	for _, j := range queued {
-		if j.From == l.node.String() && onBranch(ctx, l.top, l.base, l.heads, j.Commit) {
+		if j.From == l.node.String() && !l.answered[j.ID] && onBranch(ctx, l.top, l.base, l.heads, j.Commit) {
 			fmt.Fprintf(l.a.stdout, "review: waiting for job %s\n", j.ID)
 			mine = append(mine, waitJob{reviewKind, j})
 		}
@@ -719,7 +720,7 @@ func (l *lander) queueReview(ctx context.Context, again bool) (waitJob, error) {
 		return waitJob{}, err
 	}
 	if l.origin {
-		if _, err := gitIn(ctx, l.top, "push", "--quiet", "--force", "origin", head+":refs/heads/"+l.branch); err != nil {
+		if _, err := gitIn(ctx, l.top, "push", "--quiet", "--force-with-lease", "origin", head+":refs/heads/"+l.branch); err != nil {
 			fmt.Fprintf(l.a.stderr, "bmesh: push %s: %v; a daemon on another box can't fetch the commit\n", l.branch, err)
 		} else {
 			fmt.Fprintf(l.a.stdout, "push origin %s %.8s\n", l.branch, head)
@@ -775,7 +776,7 @@ func (l *lander) headJobs(ctx context.Context) ([]waitJob, error) {
 			return nil, err
 		}
 		for _, j := range queued {
-			if j.From == l.node.String() && j.Commit == l.waited {
+			if j.From == l.node.String() && !l.answered[j.ID] && j.Commit == l.waited {
 				out = append(out, waitJob{k.Name, j})
 			}
 		}
@@ -784,7 +785,9 @@ func (l *lander) headJobs(ctx context.Context) ([]waitJob, error) {
 }
 
 // waitJobs waits for the reply to each job, naming each once, and acks each
-// reply it reads so no wake follows. An ok reply is done; a failing one
+// reply it reads so no wake follows. A job the node's jobs list as
+// unanswered is answered after land started, so the replies are read from
+// there on. An ok reply is done; a failing one
 // refuses with its output (a review's findings); one that recorded nothing
 // because its model run never answered is queued once more, and a second
 // such, or any other that recorded nothing, refuses with its output.
@@ -804,21 +807,28 @@ func (l *lander) waitJobs(ctx context.Context, jobs []waitJob) error {
 		say(j)
 	}
 	for {
+		since, err := mesh.InboxAfter(ctx, l.a.client, l.node, l.mailSeq)
+		if err != nil {
+			return err
+		}
+		replies := map[string]*mesh.Reply{}
+		for _, m := range since {
+			if m.Kind == "reply" && m.Reply != nil {
+				replies[m.Reply.Job] = m.Reply
+			}
+		}
 		var left []waitJob
 		for _, j := range jobs {
-			m, ok, err := mesh.FindReply(ctx, l.a.client, l.node, j.ID)
-			if err != nil {
-				return err
-			}
+			r, ok := replies[j.ID]
 			if !ok {
 				left = append(left, j)
 				continue
 			}
+			l.answered[j.ID] = true
 			isReply := func(m mesh.Message) bool { return m.Kind == "reply" && m.Reply != nil && m.Reply.Job == j.ID }
 			if _, _, err := mesh.FetchMatch(ctx, l.a.client, l.node, isReply); err != nil {
 				return err
 			}
-			r := m.Reply
 			tree := r.Tree
 			if len(tree) > 8 {
 				tree = tree[:8]
