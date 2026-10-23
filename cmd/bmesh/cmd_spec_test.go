@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -498,5 +499,110 @@ func TestChooseIdeasWarnsOfCommandClashes(t *testing.T) {
 	}
 	if !strings.Contains(gitOut(t, "-C", repo, "show", "main:docs/proposals/012-thing.md"), "status: accepted\n") {
 		t.Fatal("012 not accepted on main")
+	}
+}
+
+// next-id claims on the mesh's counter: a claimed id is never handed out
+// again, --peek claims nothing, --count claims a block, and a counter
+// behind main catches up to it.
+func TestSpecNextIDClaimsOnTheMesh(t *testing.T) {
+	_, _, repo := ledgerRepoSetup(t) // 012 to 014 on main
+	next := func(want string, args ...string) {
+		t.Helper()
+		out, errs, code := runCLI(t, nil, append([]string{"spec", "next-id", "--repo", "demo"}, args...)...)
+		if code != 0 || out != want+"\n" || errs != "" {
+			t.Fatalf("next-id %v: %d %q %q, want %s", args, code, out, errs, want)
+		}
+	}
+	next("015")
+	next("016") // 015 is claimed, though nothing landed it
+	next("017", "--peek")
+	next("017", "--peek")
+	next("017")
+	next("018-020", "--count", "3")
+	next("021")
+	// A spec landed by plain git, past the counter: the counter catches up.
+	writeFile(t, filepath.Join(repo, "docs", "proposals", "030-hand.md"), "---\nid: 030\nstatus: proposed\n---\nx\n")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "by hand")
+	meshtest.Git(t, repo, "push", "origin", "main")
+	next("031", "--peek")
+	next("031")
+	// A worktree of the repo claims on the repo's counter.
+	wt := filepath.Join(t.TempDir(), "wt")
+	meshtest.Git(t, repo, "worktree", "add", "-q", "-b", "side", wt, "main")
+	t.Chdir(wt)
+	if out, errs, code := runCLI(t, nil, "spec", "next-id"); code != 0 || out != "032\n" {
+		t.Fatalf("from a worktree: %d %q %q", code, out, errs)
+	}
+	if _, _, code := runCLI(t, nil, "spec", "next-id", "--count", "0"); code != exitUsage {
+		t.Fatalf("--count 0: code %d", code)
+	}
+}
+
+// Two writers on two connections claiming at once never get the same id.
+func TestSpecIDClaimsNeverCollide(t *testing.T) {
+	c, ctx := setup(t)
+	other, err := mesh.Connect(ctx, c.NC.ConnectedUrl(), "", "hub", "other", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(other.Close)
+	const per = 40
+	got := make([][]int, 2)
+	var wg sync.WaitGroup
+	for i, cl := range []*mesh.Client{c, other} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for k := 0; k < per; k++ {
+				n := 1 + k%3
+				first, err := mesh.ClaimSpecIDs(ctx, cl, "demo", 7, n)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				for id := first; id < first+n; id++ {
+					got[i] = append(got[i], id)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	seen := map[int]bool{}
+	for _, ids := range got {
+		for _, id := range ids {
+			if id <= 7 || seen[id] {
+				t.Fatalf("id %d handed out twice or below main's highest", id)
+			}
+			seen[id] = true
+		}
+	}
+	// Every id from 8 to the counter was handed out once: the blocks are
+	// contiguous and leave no hole between them.
+	top, err := mesh.PeekSpecID(ctx, c, "demo", 0)
+	if err != nil || len(seen) != top-8 {
+		t.Fatalf("%d ids, next %d, %v", len(seen), top, err)
+	}
+}
+
+// With no mesh, next-id reads main and says nothing is claimed.
+func TestSpecNextIDWithNoMesh(t *testing.T) {
+	repo, _, _ := landedRepo(t)
+	writeFile(t, filepath.Join(repo, "docs", "proposals", "065-last.md"), "---\nid: 065\nstatus: proposed\n---\nx\n")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-m", "spec")
+	meshtest.Git(t, repo, "push", "origin", "main")
+	cfg := filepath.Join(t.TempDir(), "config.toml")
+	writeFile(t, cfg, "[mesh]\nnats = \"nats://127.0.0.1:1\"\n[host]\nname = \""+testHost+"\"\n")
+	t.Setenv("BMESH_CONFIG", cfg)
+	writeRepos(t, "[repos.demo]\npath = \""+repo+"\"\n")
+	out, errs, code := runCLI(t, nil, "spec", "next-id", "--repo", "demo")
+	if code != 0 || out != "066\n" || errs != "next-id: no mesh, so 066 is not claimed: another writer may take it\n" {
+		t.Fatalf("next-id: %d %q %q", code, out, errs)
+	}
+	out, errs, code = runCLI(t, nil, "spec", "next-id", "--repo", "demo", "--count", "5")
+	if code != 0 || out != "066-070\n" || errs != "next-id: no mesh, so 066-070 are not claimed: another writer may take them\n" {
+		t.Fatalf("next-id --count: %d %q %q", code, out, errs)
 	}
 }

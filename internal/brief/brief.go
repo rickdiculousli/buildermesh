@@ -170,7 +170,7 @@ func RoundValues(idea bool) map[string]string {
 	return map[string]string{
 		"round_ask":     "Find what would most improve this repo and bring back three to five ranked half-page specs that the operator can accept, adjust or reject in a sentence.",
 		"round_partner": "The UI/UX engineer runs beside you on the same round and lands on the same `main`.",
-		"ux_ids":        " The UI/UX engineer numbers from five past that, so a gap is expected.",
+		"ux_ids":        " The UI/UX engineer has a block of its own, so a gap is expected.",
 	}
 }
 

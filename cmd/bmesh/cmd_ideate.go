@@ -188,7 +188,7 @@ func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string, f
 		return fail(exitRefused, "refused: %s has %d proposed specs waiting on review (%s); review them first",
 			row.Name, len(proposed), strings.Join(proposed, ", "))
 	}
-	next := spec.NextID(specs)
+	highest := spec.NextID(specs) - 1
 	if err := a.connect(ctx, "ideate"); err != nil {
 		return err
 	}
@@ -210,9 +210,13 @@ func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string, f
 		return fail(exitUsage, "round path: %v", err)
 	}
 	threads := map[string]string{}
+	ids := map[string]int{}
 	for _, c := range kids {
 		if threads[c], err = uuid4(); err != nil {
 			return err
+		}
+		if ids[c], err = mesh.ClaimSpecIDs(ctx, a.client, row.Name, highest, idBlock(idea)); err != nil {
+			return fmt.Errorf("claim the %s thread's spec ids: %w", c, err)
 		}
 	}
 	round := mesh.Node{Path: roundPath, Role: "round", Repo: row.Name, RepoPath: repoPath, Host: me, Model: model, Effort: effort,
@@ -235,7 +239,6 @@ func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string, f
 		return err
 	}
 	out := map[string]any{"path": roundPath, "round": n}
-	ids := map[string]int{"eng": next, "ux": next + 5}
 	var failed []string
 	for _, c := range kids {
 		var started childStarted
@@ -268,6 +271,16 @@ func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string, f
 		return fmt.Errorf("round %s: %s", roundPath, strings.Join(failed, "; "))
 	}
 	return a.printJSON(out)
+}
+
+// idBlock is how many spec ids a round claims for each child it starts:
+// five, the most a round's thread writes, or three for an idea thread.
+// A child that writes fewer leaves a gap.
+func idBlock(idea bool) int {
+	if idea {
+		return 3
+	}
+	return 5
 }
 
 // nextRound is one past the highest round number registered for repo.

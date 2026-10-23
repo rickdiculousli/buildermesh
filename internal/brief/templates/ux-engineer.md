@@ -12,7 +12,7 @@ You are the UI/UX engineer on `{{repo}}` (`{{repo_path}}`) for this proposal rou
 
 - Surfaces to screenshot, each at its stated viewport: {{surfaces}}.
 - Verify commands: {{verify}}.
-- Spec IDs: number yours from {{next_id}} in rank order (`NNN` three digits); the engineer numbers from five below that, so a gap is expected.
+- Spec IDs: number yours from {{next_id}} in rank order (`NNN` three digits): the mesh claimed a block of five from it for you, and the engineer has a block of its own, so a gap is expected.
 - `proposed_by`: `{{thread_id}}` (this thread). `proposed_on`: {{date}}. `lens: ux`.
 - The half-pager is `bmesh spec template`; the ledger check is `bmesh spec list --repo .`.
 

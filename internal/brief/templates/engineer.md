@@ -11,7 +11,7 @@ You are the engineer on `{{repo}}` (`{{repo_path}}`) for this proposal round, {{
 ## The repo's facts
 
 - Verify commands: {{verify}}.
-- Spec IDs: number yours from {{next_id}} in rank order (`NNN` three digits).{{ux_ids}}
+- Spec IDs: number yours from {{next_id}} in rank order (`NNN` three digits): the mesh claimed a block from it for you.{{ux_ids}}
 - `proposed_by`: `{{thread_id}}` (this thread). `proposed_on`: {{date}}.
 - The half-pager is `bmesh spec template`; the ledger check is `bmesh spec list --repo .`.
 

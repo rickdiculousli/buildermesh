@@ -249,6 +249,10 @@ func TestIdeateIdeaStartsOnlyTheEngineer(t *testing.T) {
 	if _, ok, _ := mesh.GetNode(ctx, c, "demo-round-1.ux"); ok {
 		t.Fatal("an idea round registered a ux node")
 	}
+	// An idea thread claims three ids: 014 to 016.
+	if next, err := mesh.PeekSpecID(ctx, c, "demo", 13); err != nil || next != 17 {
+		t.Fatalf("peek: %d %v", next, err)
+	}
 	b, err := os.ReadFile(filepath.Join(os.Getenv("BMESH_CACHE_DIR"), "bmesh", "briefs", "demo-round-1-eng.md"))
 	if err != nil || !strings.Contains(string(b), "## The operator's idea\n") || !strings.Contains(string(b), "an automated fix lead") ||
 		strings.Contains(string(b), "## The operator's focus") || strings.Contains(string(b), "UI/UX engineer runs beside you") ||
@@ -359,6 +363,11 @@ func TestIdeateRefusesFiveProposedAndNonShip(t *testing.T) {
 func TestIdeateRemoteChildGoesThroughSSH(t *testing.T) {
 	c, repo, fake := proposeSetup(t, "ux_host = \"other\"\n")
 	ctx := t.Context()
+	// Another writer claimed 014 and 015 first, so the round's blocks
+	// start past them: the engineer's at 016, the UI/UX engineer's at 021.
+	if first, err := mesh.ClaimSpecIDs(ctx, c, "demo", 13, 2); err != nil || first != 14 {
+		t.Fatalf("claim: %d %v", first, err)
+	}
 	t.Setenv("FAKE_SSH_OUTPUT", `{"path":"demo-round-1.ux","thread":"t-remote","branch":"demo-round-1-ux","worktree":"/other/wt","host":"other"}`)
 	out, errs, code := runCLI(t, nil, "ideate", "demo")
 	if code != 0 {
@@ -374,12 +383,20 @@ func TestIdeateRemoteChildGoesThroughSSH(t *testing.T) {
 	l, _ := os.ReadFile(os.Getenv("FAKE_SSH_LOG"))
 	lines := strings.Split(strings.TrimSpace(string(l)), "\n")
 	if len(lines) != 2 || lines[0] != "ssh other bash -lc 'bmesh help >/dev/null'" ||
-		!strings.HasPrefix(lines[1], "ssh other bash -lc 'bmesh ideate demo --child ux --round 1 --next-id 19 --thread-id ") ||
+		!strings.HasPrefix(lines[1], "ssh other bash -lc 'bmesh ideate demo --child ux --round 1 --next-id 21 --thread-id ") ||
 		!strings.HasSuffix(lines[1], " --model prop-model --effort xhigh'") {
 		t.Fatalf("ssh log:\n%s", l)
 	}
 	if _, ok, _ := mesh.GetNode(ctx, c, "demo-round-1.eng"); !ok {
 		t.Fatal("the local child was not registered")
+	}
+	if b, err := os.ReadFile(filepath.Join(os.Getenv("BMESH_CACHE_DIR"), "bmesh", "briefs", "demo-round-1-eng.md")); err != nil ||
+		!strings.Contains(string(b), "number yours from 016") {
+		t.Fatalf("eng brief: %v\n%s", err, b)
+	}
+	// Both blocks are claimed: the next claim is past the UI/UX engineer's.
+	if next, err := mesh.PeekSpecID(ctx, c, "demo", 13); err != nil || next != 26 {
+		t.Fatalf("peek: %d %v", next, err)
 	}
 	// Only the local child ran through this box's runner.
 	if l := launches(fake); len(l) != 1 {

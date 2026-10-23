@@ -44,12 +44,17 @@ func ValidStatus(s string) bool {
 	return false
 }
 
-// LedgerError is a malformed spec or a refused edit.
-type LedgerError struct{ Msg string }
+// LedgerError is a malformed spec or a refused edit. Shared names the two
+// files of a duplicate id, and ID that id, when that is what is wrong.
+type LedgerError struct {
+	Msg    string
+	Shared [2]string
+	ID     int
+}
 
 func (e *LedgerError) Error() string { return e.Msg }
 
-func ledgerErr(format string, a ...any) error { return &LedgerError{fmt.Sprintf(format, a...)} }
+func ledgerErr(format string, a ...any) error { return &LedgerError{Msg: fmt.Sprintf(format, a...)} }
 
 var (
 	keyRE  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]*$`)
@@ -224,8 +229,9 @@ func checkIDs(specs []*Spec) ([]*Spec, error) {
 	sort.SliceStable(specs, func(i, j int) bool { return specs[i].ID < specs[j].ID })
 	for i := 1; i < len(specs); i++ {
 		if specs[i-1].ID == specs[i].ID {
-			return nil, ledgerErr("malformed: %s and %s share id %03d", filepath.Base(specs[i-1].Path),
-				filepath.Base(specs[i].Path), specs[i].ID)
+			a, b := filepath.Base(specs[i-1].Path), filepath.Base(specs[i].Path)
+			return nil, &LedgerError{Msg: fmt.Sprintf("malformed: %s and %s share id %03d", a, b, specs[i].ID),
+				Shared: [2]string{a, b}, ID: specs[i].ID}
 		}
 	}
 	return specs, nil

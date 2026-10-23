@@ -34,7 +34,7 @@ Then rank: three to five specs, best first, at least one that isn't a feature.
 
 - Lens `ux`. Each spec's `kind` is usually `ux`; use another kind (`refinement`, `feature`, ...) when it fits better.
 - Measure before claiming: every claim points at a screenshot, a viewport, or a principle in the product doc, quoted.
-- One file per spec at `docs/proposals/NNN-slug.md`, numbered from the ID your brief gives in rank order (`NNN` three digits, slug a few hyphenated lowercase words), screenshots beside them in `docs/proposals/assets/`. The engineer numbers from five below you, so a gap in the numbering is expected.
+- One file per spec at `docs/proposals/NNN-slug.md`, numbered from the ID your brief gives in rank order (`NNN` three digits, slug a few hyphenated lowercase words), screenshots beside them in `docs/proposals/assets/`. Your brief's ID starts a block of five ids `bmesh ideate` claimed for you on the mesh; the engineer has a block of its own, so a gap in the numbering is expected.
 - The shape is `bmesh spec template`. Fill every placeholder in its frontmatter (`lens: ux`), keep `status: proposed`, delete the `#` guide lines, keep the six headings in order. `proposed_by` is the thread id in your brief; `proposed_on` is today.
 - No product code changes. A one-line fix is a size `XS` proposal, not a change made here.
 - Sizes are relative, never hours: `XS` one file, `S` one module, `M` crosses modules, `L` changes an interface others depend on.
@@ -48,7 +48,7 @@ Change nothing outside `docs/proposals/`. Then:
 
 1. Commit on your branch.
 2. Where the repo has a remote (`git -C <repo path> remote`), bring main up to date: `git -C <repo path> pull --ff-only origin main` when the main checkout is on `main` (`git -C <repo path> symbolic-ref --short HEAD`), else `git -C <repo path> fetch origin main:main`. If that refuses because local `main` has commits `origin` doesn't, stop and report it; never push or reset them yourself. Then `git rebase main`.
-3. If main gained specs with your numbers while you worked (the engineer runs at the same time), renumber yours to follow them, file names, asset names and `id` all, and run the list check again.
+3. If main gained specs with your numbers while you worked (a writer who didn't claim them), claim new ones with `bmesh spec next-id --repo . --count N` and renumber yours to them, file names, asset names and `id` all, and run the list check again.
 4. Land it on `main`, never on another branch. If the main checkout is on `main`, `git -C <repo path> merge --ff-only <your branch>`; otherwise `git -C <repo path> fetch . <your branch>:main`, which fast-forwards `main` without touching that checkout. If either refuses (main moved again: rebase and try once more; main checked out in some other worktree, or not a fast-forward), stop and report it with `bmesh ask`. Never check out, switch, reset or stash in `<repo path>`.
 5. `git -C <repo path> push origin main` where a remote exists.
 
