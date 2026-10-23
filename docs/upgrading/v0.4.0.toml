@@ -1,0 +1,8 @@
+# Upgrade notes for v0.4.0, distilled from the Upgrading sections of the
+# specs it carries. 084 moves the rule sets into AGENTS.md's rules block and
+# takes the pstack moments out of the skills. Re-scaffolding is per repo, done
+# once by the admin, not a step a box takes. The plugin refreshes when a box
+# levels its checkout; until a session reloads, the old skills name pstack
+# moments that never run.
+
+summary = "Nothing to run on a box. Once: scaffold each ship repo through the scaffold skill (\"scaffold <repo>\"), which asks which rule sets it gets, and commit what it writes; a plain bmesh scaffold <repo> gives it core."
