@@ -257,6 +257,11 @@ func (l *landers) step(ctx context.Context, n mesh.Node) (again bool) {
 			return false
 		}
 		d.Log.Info("land: " + n.Path + " withdrawn: " + why)
+		if message || r.Phase == mesh.PhaseCancelled {
+			// Nothing lands it now: the lead is working again, so silence
+			// applies to it.
+			l.writeWithdrawn(ctx, n, st, srev, why)
+		}
 		if message {
 			l.wakeForMail(ctx, n)
 		}
@@ -561,6 +566,26 @@ func (l *landers) writeLanding(ctx context.Context, n mesh.Node, srev uint64, te
 		d.Log.Warn("land: publish", "path", n.Path, "err", err)
 	}
 	return true
+}
+
+// writeWithdrawn writes a landing or held lead working, "ready withdrawn:
+// <why>", at srev, and publishes the daemon's land-withdrawn event.
+func (l *landers) writeWithdrawn(ctx context.Context, n mesh.Node, st mesh.State, srev uint64, why string) {
+	if st.State != "landing" && st.State != "held" {
+		return
+	}
+	d := l.d
+	now := d.Now().UTC().Format(time.RFC3339)
+	text := "ready withdrawn: " + why
+	if _, err := mesh.WriteStateAt(ctx, d.Client, n.Path, srev, mesh.State{State: "working", Text: text, By: "daemon", At: now}); err != nil {
+		if !errors.Is(err, mesh.ErrStateMoved) {
+			d.Log.Warn("land: write state", "path", n.Path, "err", err)
+		}
+		return
+	}
+	if err := mesh.PublishEvent(ctx, d.Client, mesh.Event{From: d.from(), Event: "land-withdrawn", To: n.Path, Text: text, At: now}); err != nil {
+		d.Log.Warn("land: publish", "path", n.Path, "err", err)
+	}
 }
 
 // refuse turns the request refused, with land's refusal and last lines,

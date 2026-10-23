@@ -430,6 +430,13 @@ func TestLandMessageCancelsTheStepThenWakes(t *testing.T) {
 	if sends := f.sends(t); len(sends) != 1 || sends[0] != wakeLine("th-1", 1) {
 		t.Fatalf("sends %q", sends)
 	}
+	// Nothing lands it now: it is working again, so silence applies.
+	if st := f.state(t); st.State != "working" || st.Text != "ready withdrawn: a message came" || st.By != "daemon" {
+		t.Fatalf("state %+v", st)
+	}
+	if evs := f.daemonEvents(t, "land-withdrawn"); len(evs) != 1 || evs[0].To != "app-080" {
+		t.Fatalf("land-withdrawn events %+v", evs)
+	}
 }
 
 // The lead's own progress withdraws the request; the daemon runs nothing
@@ -552,6 +559,9 @@ func TestLandCancelEndsTheStep(t *testing.T) {
 	<-done
 	if _, ok := f.ready(t); ok || len(f.sends(t)) != 0 || len(f.steps()) != 1 {
 		t.Fatalf("request %v sends %q steps %q", ok, f.sends(t), f.steps())
+	}
+	if st := f.state(t); st.State != "working" || st.Text != "ready withdrawn: cancelled" {
+		t.Fatalf("state %+v", st)
 	}
 	assertNoClaims(t, f)
 }

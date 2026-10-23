@@ -1104,6 +1104,11 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 	fmt.Fprintf(out, "commit %s %s\n", rec[:8], msg)
 	undo := func() { _, _ = cleanup("reset", "--quiet", "--keep", "HEAD~1") }
 
+	// The push is past the point of no return: an interrupt during it
+	// lets it finish, and land reports what happened, since a push killed
+	// after origin took it would read as nothing pushed.
+	ctx = context.WithoutCancel(ctx)
+	git = func(args ...string) (string, error) { return gitIn(ctx, l.top, args...) }
 	if l.origin {
 		if _, err := git("push", "--quiet", "origin", "HEAD:refs/heads/main"); err != nil {
 			undo()

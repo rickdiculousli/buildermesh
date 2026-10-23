@@ -25,7 +25,7 @@ const POLL_MS = 30000; // unread counts and runners change without an event
 const EVENT_STATE = { started: "working", progress: "working", ask: "asking", blocked: "blocked", held: "held", ready: "landing", done: "done" };
 // DAEMON_STATE maps a daemon event addressed to a node to the state it
 // sets there: the daemon's silent verdict, and its landing of a ready lead.
-const DAEMON_STATE = { silent: "silent", landing: "landing", "land-refused": "working" };
+const DAEMON_STATE = { silent: "silent", landing: "landing", "land-refused": "working", "land-withdrawn": "working" };
 const MSG_KINDS = new Set(["message", "wake", "job", "reply"]);
 
 const $ = (id) => document.getElementById(id);
