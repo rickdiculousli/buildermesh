@@ -4,10 +4,13 @@ title: An optional t3-done add-on pushes to ntfy when a T3 thread a person start
 kind: feature
 size: M
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-22
+built_by: 64928f53-eaec-4e2f-9447-e3eb03ce848f
+host: k16
+family: buildermesh-build-12
 ---
 
 ## Opportunity
