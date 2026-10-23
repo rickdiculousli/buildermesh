@@ -4,10 +4,13 @@ title: After a bmesh update run by hand, the daemon restarts itself onto the new
 kind: time-cost
 size: M
 judge: opus
-status: accepted
+status: building
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-17
+built_by: 251205bf-8416-4916-ab37-4b57152ae1ea
+host: k16
+family: buildermesh-build-17
 ---
 
 ## Opportunity
