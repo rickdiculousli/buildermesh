@@ -1506,7 +1506,7 @@ Removes a merged executor's worktree and branch. The executor's parent runs it.
 ### `bmesh node`
 
 ```
-bmesh node forget <path> [--worktree [--wait 30s]]
+bmesh node forget <path> [--worktree | --wipe [--dry-run]] [--wait 30s]
 bmesh node stop <path> [--text "<why>"] [--wait 30s]
 ```
 
@@ -1517,15 +1517,17 @@ Removes a finished node from the mesh, or stops a running one. [`bmesh mesh-stat
 #### `bmesh node forget`
 
 ```
-bmesh node forget <path> [--worktree [--wait 30s]]
+bmesh node forget <path> [--worktree | --wipe [--dry-run]] [--wait 30s]
 ```
 
-Removes a node from the mesh: its state and inbox. Its events stay, and nodes under it are not forgotten with it.
+Removes a node from the mesh: its state and inbox. Its events stay, and nodes under it are not forgotten with it, unless `--wipe` removes it and every node under it as if they never ran.
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `--worktree` | off | also remove the node's clean worktree and merged branch |
-| `--wait D` | 30s | with `--worktree`, how long to wait for another box's answer |
+| `--wipe` | off | remove the node and every node under it, with their events, inboxes, key history, briefs, worktrees and branches (below) |
+| `--dry-run` | off | with `--wipe`, print what it would remove and change nothing |
+| `--wait D` | 30s | with `--worktree` or `--wipe`, how long to wait for another box's answer |
 
 **What it takes:**
 
@@ -1541,14 +1543,32 @@ A lead between its runner start and its first `started` is such an idle node; th
 - A dirty worktree (`git status --porcelain` prints anything) or a branch not merged into `main` (an executor's: or into its parent's branch, while that exists) is refused (exit 3, naming the cause, nothing touched).
 - Merged means the tip is an ancestor, or every commit has an equivalent there (`git cherry`, as after a rebase before landing). The branch is deleted with `-D`, since `-d` would also require it merged by ancestry into its upstream.
 
+**What it does with `--wipe`.** It takes the nodes above, and refuses any other state with `stop it first: bmesh node stop <path>`. For the node and every node under it (a lead's executors, a round's children: every path in `bm-nodes` that starts with `<path>.`), deepest first:
+
+1. Everything `--worktree` does, with its refusals: the worktree and branch, here or, for another box's node, through a `forget-worktree <path> wipe` job to that box, sent together for every such node (see [Other ops](#other-ops)). A refusal exits 3 with nothing purged from the mesh. A box that doesn't answer within `--wait` prints `queued; nothing is wiped from the mesh until <box> answers: run it again then`, exit 0: the mesh is untouched until every box has answered, and the same command, run again once it has, finishes the wipe.
+2. Its brief, `<user cache dir>/bmesh/briefs/<path, "." as "->.md`, on the box that ran it (another box's through the same job).
+3. From `bm-mesh`, a subject-filtered purge of its events (`bm.<path>.>`, its own and those of every node under it) and its inbox (`bm.inbox.<path>` and `bm.inbox.<path>.>`).
+4. A subject-filtered purge of the whole history of its keys (`<path>` and `<path>.>`) in `bm-nodes` (first), `bm-state`, `bm-runner` and `bm-holds`, so no entry and no purge marker is left.
+5. Its inbox consumer.
+6. The pending feedback of its family (`bm.feedback.<family>`), when no node outside the wipe is in that family.
+
+Every filter names the path as whole tokens: `buildermesh-06` and `buildermesh-066-2` beside `buildermesh-066` keep everything. A routine's path is refused (its inbox is its kind's queue). Then it publishes `<path> by <who>` on `bm.daemon.<this box>.wiped`: a record that a wipe happened, never of what the node did.
+
+Out of its reach: the spec's commits on `main`, the runner's thread (T3, tmux, claude), a push already sent, the daemons' own lines that name the node (`bm.daemon.<host>.wake`, `push`, `silent`, which expire with the stream after 30 days) and results in `bm-results`, keyed by tree.
+
+**Output with `--wipe`.** One line per node, the named one first: `wiped <path>: <N> events, <K> keys, inbox, <F> feedback, brief, worktree, branch`, each part only when there was one (`nothing left` when none), e.g. `wiped buildermesh-066: 1 event, 3 keys, inbox, brief, worktree, branch`. With `--dry-run`, the same lines as `would wipe ...`, and nothing changes; another box's worktree and branch are read from the node's record there, and its brief isn't listed. Afterwards `bmesh watch --nodes <path> --since <before it started>` prints nothing.
+
 **Output.** `forgot <path>`. `node forget` deletes a node's hold with the node (see [Holds](#holds)). Without `--worktree` the disk is untouched, and a node with a worktree prints `worktree <path> kept`. With `--worktree` it first prints `removed worktree <path>` and `deleted branch <b>`.
 
 **Refusals.** Each exits 3.
 
 | When | Message |
 |---|---|
-| Any state but those above | `refused: <path> is <state>; only a done or blocked node is forgotten` |
-| A live node under it | `refused: <child> under <path> is <state>` |
+| Any state but those above | `refused: <path> is <state>; only a done or blocked node is forgotten` (with `--wipe`: `refused: <path> is <state>; stop it first: bmesh node stop <path>`) |
+| A live node under it | `refused: <child> under <path> is <state>` (with `--wipe`, the same `; stop it first: ...`) |
+| `--wipe` of a routine's path | `refused: <path> is a routine's; its inbox is its kind's queue` |
+| `--wipe` with a node on another box and `[hosts]` off | `refused: <child> ran on <host>; run it there` |
+| `--wipe` with a node on a box not in the roster | `refused: <child> ran on <host>, which isn't in the roster; run it there` |
 | An idle node that published an event of its own | `refused: <path> is idle but published <event>; only an idle node that never reported is forgotten` |
 | An idle node that names no box | `refused: <path> is idle and names no host` |
 | An idle node on another box | `refused: <path> is idle and its thread is on <host>; run it on <host>` |
@@ -3164,7 +3184,7 @@ The last line is `<N> worktrees, <B> branches, <M> to remove, <K> kept` (applied
 
 #### Other ops
 
-**Another box's worktree.** `forget-worktree <node path>` runs the removal of `node forget --worktree` on the node's own box, with the same rules (see [`bmesh node forget`](#bmesh-node-forget)). On success it forgets the node there too: `removed worktree <path>; deleted branch <b>; forgot <path>`. Beyond the removal's own refusals it answers:
+**Another box's worktree.** `forget-worktree <node path>` runs the removal of `node forget --worktree` on the node's own box, with the same rules (see [`bmesh node forget`](#bmesh-node-forget)). On success it forgets the node there too: `removed worktree <path>; deleted branch <b>; forgot <path>`. `forget-worktree <node path> wipe`, sent by [`node forget --wipe`](#bmesh-node-forget), also removes the node's brief there and leaves the node for the wiping box to purge: `removed worktree <path>; deleted branch <b>; removed brief`. A box on an older bmesh refuses it (`takes a node path`). Beyond the removal's own refusals it answers:
 
 - `refused: no node <path>`;
 - `refused: <path> is on <host>, not <box>`;

@@ -268,3 +268,29 @@ func HasSection(text, name string) bool {
 	}
 	return false
 }
+
+// CachePath is where the brief of the node at path is kept for reading:
+// <cache dir>/bmesh/briefs/<path, "." as "-">.md.
+func CachePath(path string) (string, error) {
+	c, err := config.CacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(c, "bmesh", "briefs", strings.ReplaceAll(path, ".", "-")+".md"), nil
+}
+
+// RemoveCached deletes the brief of the node at path; false when there was
+// none.
+func RemoveCached(path string) (bool, error) {
+	p, err := CachePath(path)
+	if err != nil {
+		return false, err
+	}
+	switch err := os.Remove(p); {
+	case os.IsNotExist(err):
+		return false, nil
+	case err != nil:
+		return false, err
+	}
+	return true, nil
+}

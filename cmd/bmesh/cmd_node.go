@@ -16,7 +16,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/runner"
 )
 
-const nodeUsage = "usage: bmesh node forget <path> [--worktree [--wait D]] | bmesh node stop <path> [--text \"<why>\"] [--wait D]"
+const nodeUsage = "usage: bmesh node forget <path> [--worktree | --wipe [--dry-run]] [--wait D] | bmesh node stop <path> [--text \"<why>\"] [--wait D]"
 
 // forgetTTL is how long a forget-worktree (or a stop-thread) waits for a
 // box that is asleep.
@@ -234,16 +234,19 @@ func (a *app) stopRemote(ctx context.Context, b *hostsBox, nodes []mesh.Node, wh
 // sample and inbox consumer. With --worktree it first removes the
 // node's clean worktree and merged branch: here, or, for another box's
 // node with hosts on, by a forget-worktree job to that box, forgetting
-// the node only once that box answers it did.
+// the node only once that box answers it did. With --wipe it takes the
+// same nodes and wipes them and every node under it (wipeNodes).
 func (a *app) cmdNodeForget(args []string) error {
 	fs := a.flags("node forget")
 	withWorktree := fs.Bool("worktree", false, "also remove the node's clean worktree and merged branch, on its host")
-	wait := fs.Duration("wait", 30*time.Second, "with --worktree on another box: how long to wait for its answer")
+	wipe := fs.Bool("wipe", false, "remove the node and every node under it from the mesh, as if it never ran")
+	dry := fs.Bool("dry-run", false, "with --wipe: print what it would remove and change nothing")
+	wait := fs.Duration("wait", 30*time.Second, "with --worktree or --wipe on another box: how long to wait for its answer")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
-	if len(pos) != 1 {
+	if len(pos) != 1 || *dry && !*wipe {
 		return fail(exitUsage, nodeUsage)
 	}
 	p, err := mesh.ParsePath(pos[0])
@@ -251,6 +254,13 @@ func (a *app) cmdNodeForget(args []string) error {
 		return fail(exitUsage, "%v", err)
 	}
 	path := p.String()
+	if _, ok := mesh.KindFromPath(p); ok && *wipe {
+		return fail(exitRefused, "refused: %s is a routine's; its inbox is its kind's queue", path)
+	}
+	stopFirst := ""
+	if *wipe {
+		stopFirst = "; stop it first: bmesh node stop " + path
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute+*wait)
 	defer cancel()
 	if err := a.connect(ctx, "node forget"); err != nil {
@@ -292,13 +302,18 @@ func (a *app) cmdNodeForget(args []string) error {
 		if err := a.idleForgettable(ctx, n); err != nil {
 			return err
 		}
+	case *wipe:
+		return fail(exitRefused, "refused: %s is %s%s", path, s, stopFirst)
 	default:
 		return fail(exitRefused, "refused: %s is %s; only a done or blocked node is forgotten", path, s)
 	}
 	for _, c := range nodes {
 		if s := stateOf(c.Path); strings.HasPrefix(c.Path, path+".") && s != "done" && s != "blocked" {
-			return fail(exitRefused, "refused: %s under %s is %s", c.Path, path, s)
+			return fail(exitRefused, "refused: %s under %s is %s%s", c.Path, path, s, stopFirst)
 		}
+	}
+	if *wipe {
+		return a.wipeNodes(ctx, n, nodes, *dry, *wait)
 	}
 
 	var kept string

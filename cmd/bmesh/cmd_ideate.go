@@ -401,7 +401,7 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 		// the operator's words.
 		text = strings.TrimRight(text, "\n") + "\n\n" + strings.TrimRight(section, "\n") + "\n"
 	}
-	briefPath, err := writeBrief(roundPath+"-"+child, text)
+	briefPath, err := writeBrief(roundPath+"."+child, text)
 	if err != nil {
 		undo()
 		return childStarted{}, err
@@ -458,18 +458,16 @@ func operatorSection(focus string, idea bool) string {
 	return brief.OperatorContext(focus)
 }
 
-// writeBrief writes a rendered brief under <user cache dir>/bmesh/briefs,
-// where it stays for reading.
-func writeBrief(name, text string) (string, error) {
-	c, err := config.CacheDir()
+// writeBrief writes the rendered brief of the node at path where it stays
+// for reading (brief.CachePath).
+func writeBrief(path, text string) (string, error) {
+	p, err := brief.CachePath(path)
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(c, "bmesh", "briefs")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return "", err
 	}
-	p := filepath.Join(dir, name+".md")
 	if err := os.WriteFile(p, []byte(text), 0o600); err != nil {
 		return "", err
 	}

@@ -81,6 +81,6 @@ The repo's verify, plus `cmd_node_test.go` on `meshtest.Start`:
 - **Alternative: let the 30-day stream age do it.** That leaves the node visible to `watch` for a month and leaves the key history behind for good.
 
 ## Upgrading
-nothing
+nothing: a wipe that reaches another box needs that box on this release; an older one refuses the `forget-worktree ... wipe` job, and the wipe stops before it purges anything from the mesh.
 
 ## Needs from the operator
