@@ -5,7 +5,7 @@ Every `bmesh` command with its flags, output and refusals, then the model behind
 ## Contents
 
 - [Synopsis](#synopsis)
-- [Setup and updates](#setup-and-updates): [`bmesh init`](#bmesh-init) · [`bmesh serve`](#bmesh-serve) · [`bmesh hub`](#bmesh-hub) · [`bmesh config check`](#bmesh-config-check) · [`bmesh t3 login`](#bmesh-t3-login) · [`bmesh version`](#bmesh-version) · [`bmesh update`](#bmesh-update)
+- [Setup and updates](#setup-and-updates): [`bmesh init`](#bmesh-init) · [`bmesh serve`](#bmesh-serve) · [`bmesh hub`](#bmesh-hub) · [`bmesh config check`](#bmesh-config-check) · [`bmesh t3 login`](#bmesh-t3-login) · [`bmesh version`](#bmesh-version) · [`bmesh update`](#bmesh-update) · [`bmesh plugin`](#bmesh-plugin)
 - [Proposals and builds](#proposals-and-builds): [`bmesh ideate`](#bmesh-ideate) · [`bmesh spec`](#bmesh-spec) · [`bmesh build`](#bmesh-build) · [`bmesh lead start`](#bmesh-lead-start) · [`bmesh hold`, `unhold`, `held`](#bmesh-hold-unhold-held) · [`bmesh feedback`](#bmesh-feedback) · [`bmesh fix`](#bmesh-fix) · [`bmesh release`](#bmesh-release) · [`bmesh scaffold`](#bmesh-scaffold)
 - [Nodes](#nodes): [`bmesh whoami`](#bmesh-whoami) · [`bmesh context`](#bmesh-context) · [`bmesh started`, `progress`, `blocked`, `ask`, `done`](#bmesh-started-progress-blocked-ask-done) · [`bmesh send`](#bmesh-send) · [`bmesh inbox`](#bmesh-inbox) · [`bmesh thread-status`](#bmesh-thread-status) · [`bmesh mesh-status`](#bmesh-mesh-status) · [`bmesh watch`](#bmesh-watch) · [`bmesh executor`](#bmesh-executor) · [`bmesh node`](#bmesh-node)
 - [Checks and landing](#checks-and-landing): [`bmesh routine`](#bmesh-routine) · [`bmesh result`](#bmesh-result) · [`bmesh lock-lease`](#bmesh-lock-lease) · [`bmesh setup`](#bmesh-setup) · [`bmesh land`](#bmesh-land) · [`bmesh ready`](#bmesh-ready)
@@ -41,7 +41,7 @@ A path that does not parse exits 2 with `node "<path>": <why>`. When nothing res
 
 **The context line.** Run on the main thread of an agent session whose context bmesh can measure, any command but `context`, `serve`, `hub`, `hosts --here` and `update --notice` ends with at most one more line on stderr, after its own output and its exit message, when the session's context has crossed a nudge it hasn't heard (`bmesh: this session's context is 312k. <advice>`) or has dropped since (`bmesh: this session compacted (412k -> 38k); read your state file before going on.`). See [`bmesh context`](#bmesh-context). It is never on stdout, so `--json` output stays whole.
 
-**The setup flag.** `<config dir>/.setup-complete` is the file [`bmesh init`](#bmesh-init) writes last. Any other command but `help`, `version`, `context`, `hosts --here` and `update --notice` checks for it, or for a `config.toml`, first. When it finds neither:
+**The setup flag.** `<config dir>/.setup-complete` is the file [`bmesh init`](#bmesh-init) writes last. Any other command but `help`, `version`, `context`, `plugin`, `hosts --here` and `update --notice` checks for it, or for a `config.toml`, first. When it finds neither:
 
 - At a terminal, it prints one line (`bmesh: not set up yet (no <path>); running bmesh init first`) and runs `init` first.
 - Outside a terminal, it is refused (exit 3, `` not set up (no <path>): run `bmesh init` ``).
@@ -95,7 +95,8 @@ Sets this box up: it writes `config.toml`, registers the current repo in `repos.
 4. Registers the repo (prompt `Register <name> (<path>) in <repos.toml>? [Y/n]`).
 5. With `--service`, writes the units.
 6. Records the box's release (see [Upgrading](#upgrading)).
-7. Writes the setup flag last (see [Synopsis](#synopsis)).
+7. Writes the setup flag (see [Synopsis](#synopsis)).
+8. Writes the plugin this binary carries and points Claude Code at it, as [`bmesh plugin --install`](#bmesh-plugin) does. A box without `claude` on PATH, or an install that fails, prints `plugin not installed: <why>` and is set up all the same.
 
 **Multi-box setup.** With the multi-box answer, `init` writes `[mesh]` and `[hub]` for this box's part:
 
@@ -146,7 +147,7 @@ remote = "nats://<hub tailnet ip>:7422"
 - **What it writes.** Last, after the keys and the join, it writes the `[hosts]` table (`enabled`, `admin`, `secure`) and, with routines off, `[runner] checkouts = ""`. Turning routines back on drops a `checkouts = ""` line. Other `config.toml` lines stay, the old file is kept as `config.toml.prev`, and `repos.toml` is not touched. `--force` still starts over. Restart the daemon afterwards.
 - **Output.** The admin prints `admin: <host> <fingerprint>, roster v<N>`. If the hub holds a roster signed by another key, it prints `a roster signed by <fingerprint> exists; becoming admin replaces it on every box you invite again`. A joining box prints `joined: roster v2, admin <host> <fingerprint>`.
 
-**Output.** `init` prints `wrote <file>` for each file it wrote. Last, before `Next:`, it prints every setting in effect (defaults included) with its value, meaning and key. On an existing config, it prints the same block for what is there:
+**Output.** `init` prints `wrote <file>` for each file it wrote, then the plugin's lines (`plugin: wrote <dir> (bmesh <version>)` and each change `--install` made). Last, before `Next:`, it prints every setting in effect (defaults included) with its value, meaning and key. On an existing config, it prints the same block for what is there:
 
 ```
 What this box is set to:
@@ -412,18 +413,19 @@ Builds the target (see [Updates](#updates)) over this binary and swaps it in, on
 **What it does**, in order:
 
 1. Picks the repo. It builds from a bmesh-owned checkout of the repo's main, never the operator's.
-2. Finds the target. A binary at the target, or past it, prints `up to date`, or past the newest release `ahead of v0.2.0, up to date`, and goes on from step 6. After `--latest`, the next `update` follows `track` again without going back.
+2. Finds the target. A binary at the target, or past it, prints `up to date`, or past the newest release `ahead of v0.2.0, up to date`, and goes on from step 7. After `--latest`, the next `update` follows `track` again without going back.
 3. Builds the target and runs the build's `version`.
 4. The new binary checks the config and answers the asks:
    - **The config check** loads this box's `config.toml` and `repos.toml` with the new binary ([`bmesh config check`](#bmesh-config-check)). A refused config keeps the old binary, so a box never restarts into a binary that won't load its config. A start-over walk skips the check: it moves the config aside.
    - **The asks** come one line each at a terminal: `track: boxes now update to releases, not every landing. Follow releases or every landing? [release]/latest`. Enter takes the default; an answer outside the choices is asked again. Without a terminal every ask needs `--answer <key>=<value>` or `--defaults`; else nothing is written and `update` refuses, keeping the old binary.
    - Answers go into `config.toml` (the old file kept as `config.toml.prev`, and put back when the new binary then refuses it). A registry ask's answer goes into every row of `repos.toml` (kept as `repos.toml.prev`), which the admin publishes ([`bmesh repos publish`](#bmesh-repos-publish)) or another box proposes.
 5. Moves this binary to `bmesh.prev` beside it, puts the build at its path, and prints `<old> -> <new>`.
-6. Runs the notes' steps for this box (see Output). A run on the new binary, now `up to date`, resumes after the last step done.
-7. Prints the restart line (below), then the stale-hub line when the hub runs an older binary than the serve running beside it (see [`bmesh hub`](#bmesh-hub)). Once the daemon restarts onto a new release the hub follows it, so a swap alone prints no hub line.
-8. Once the binary is current (`up to date`, `ahead of …`, or after a swap from either source), removes the notice file.
+6. The new binary writes the plugin it carries to the plugin dir, `plugin: wrote <dir> (bmesh <version>)`, unless the dir already holds it (see [`bmesh plugin`](#bmesh-plugin)). New sessions on the box load the new binary's skills, with nothing to pull or approve. A write that fails is said on stderr and the walk goes on.
+7. Runs the notes' steps for this box (see Output). A run on the new binary, now `up to date`, resumes after the last step done.
+8. Prints the restart line (below), then the stale-hub line when the hub runs an older binary than the serve running beside it (see [`bmesh hub`](#bmesh-hub)). Once the daemon restarts onto a new release the hub follows it, so a swap alone prints no hub line.
+9. Once the binary is current (`up to date`, `ahead of …`, or after a swap from either source), removes the notice file.
 
-**No repo row** (no `--repo`, `[update] repo` or own-module row, as after a first install): `update` installs from the module's `main` with `go install` instead, keeping `bmesh.prev` as above. After that swap it prints `<old> -> <new>`, then `update the buildermesh plugin too: claude plugin marketplace update buildermesh && claude plugin update buildermesh@buildermesh (then restart Claude Code)`, since the skills name commands only a matching binary has.
+**No repo row** (no `--repo`, `[update] repo` or own-module row, as after a first install): `update` installs from the module's `main` with `go install` instead, keeping `bmesh.prev` as above. After that swap it prints `<old> -> <new>` and goes on from step 6.
 
 **Output.**
 
@@ -468,10 +470,64 @@ The flags that don't go together: `--notice` with any other `update` flag; `--be
 - A binary installed as `go install <module>/cmd/bmesh@vX.Y.Z` whose release `main` lacks: `update` installs the target as for an unknown revision.
 - `update` prints its restart line instead of the revision hint (see [Updates](#updates)).
 - **Driven by an agent:** `bmesh update --plan --json` prints the walk, then `bmesh update --defaults --apply --yes` (or `--answer` for each ask) walks it without a terminal.
-- **`--walk`** (`bmesh update --walk --from <revision or release> [--to <revision>] [--dir <repo>]`) walks a range by hand with this binary: what `update` runs on the new binary. `--plan` takes the same `--from`, `--to` and `--dir`.
+- **`--walk`** (`bmesh update --walk --from <revision or release> [--to <revision>] [--dir <repo>]`) walks a range by hand with this binary: what `update` runs on the new binary. Without `--before-swap` it writes the plugin first (step 6), so a binary swapped in by an older one writes its own. `--plan` takes the same `--from`, `--to` and `--dir`.
 - **`bmesh update --notice`** only prints the notice file, `<state dir>/update.txt` (see [Updates](#updates)), and the pending-notes line (see [Upgrading](#upgrading)). It uses no network, runs no `init`, and prints nothing (exit 0) when the file is absent. The plugin's session hook runs it after `hosts --here` (see [The plugin](#the-plugin)).
 
-See also: [Updates](#updates), [Upgrading](#upgrading), [Upgrade notes](#upgrade-notes), [`bmesh version`](#bmesh-version).
+See also: [Updates](#updates), [Upgrading](#upgrading), [Upgrade notes](#upgrade-notes), [`bmesh version`](#bmesh-version), [`bmesh plugin`](#bmesh-plugin).
+
+### `bmesh plugin`
+
+```
+bmesh plugin
+bmesh plugin --install
+```
+
+The binary carries its plugin (see [The plugin](#the-plugin)) and writes it to the plugin dir, `<state dir>/plugin`, which Claude Code reads as the `buildermesh` marketplace. So a box's skills are always its binary's: they move when the binary does, by [`bmesh update`](#bmesh-update) or the daemon's, and never ahead of it or behind it.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--install` | off | Write the plugin dir, then point Claude Code at it. |
+
+**`bmesh plugin`** prints three lines:
+
+```
+dir: /home/me/.local/state/bmesh/plugin
+written by: bmesh v0.5.0 (1a2b3c4d 2026-10-24T08:00:00Z)
+claude: reads it (buildermesh@buildermesh, user scope)
+```
+
+- `written by:` names the binary that wrote the dir, as its `bmesh version` prints, or `none yet (bmesh plugin --install writes it)`.
+- `claude:` says whether Claude Code loads the plugin from the dir: `reads it (...)`; `no buildermesh marketplace; ...`; `its buildermesh marketplace reads <path or repo>; bmesh plugin --install moves it here`; `buildermesh@buildermesh is not installed at user scope; ...`; `... is disabled; ...`; or `not on PATH`. A `claude` that fails prints its error there.
+
+**`bmesh plugin --install`**, in order:
+
+1. Writes the plugin dir unless it already holds this binary's plugin, `plugin: wrote <dir> (bmesh <version>)`.
+2. Removes a `buildermesh` marketplace that reads anything but the dir (a checkout, or the GitHub repo): `plugin: removed marketplace buildermesh (<what it read>)`. Removing it uninstalls its plugin.
+3. Adds the dir as the `buildermesh` marketplace (`claude plugin marketplace add <dir>`): `plugin: added marketplace buildermesh (<dir>)`.
+4. Installs `buildermesh@buildermesh` at user scope (`plugin: installed buildermesh@buildermesh (user scope)`), or enables it when it is disabled (`plugin: enabled ...`).
+5. Checks that `claude plugin list` shows the install, enabled, from the dir.
+
+Each step runs only when needed, so a second run prints nothing and changes nothing. A new session loads the plugin from the dir; a session already open keeps what it loaded.
+
+**When the dir is written.** By the daemon at start (`plugin: wrote <dir>` in its log), which covers a daemon that updated itself and a binary installed by hand; by the new binary after `bmesh update` swaps it in; and by `--install` (and so `bmesh init`). Each writes only when the dir's stamp (`<dir>/.bmesh-stamp`: a digest of the plugin's files and the writing binary's version) differs from its own.
+
+- The dir is written whole: into a new dir beside it, which then replaces it, so a session reads the old plugin or the new one, never half of one. A write that fails leaves the old dir as it was.
+- On a secure box nothing about it is held: whatever moves the binary moves the skills.
+- The plugin dir moves with the state dir (`XDG_STATE_HOME`, see [Synopsis](#synopsis)).
+
+**Refusals.**
+
+| When | Exit | Message |
+|---|---|---|
+| `claude` is not on PATH (`--install`; the dir is still written) | 3 | `claude is not on PATH: install Claude Code, then run bmesh plugin --install` |
+| A `claude` command fails | 1 | `claude plugin <args>: <its stderr>`; after the old marketplace was removed, then `; to put the old marketplace back: claude plugin marketplace add <what it read> && claude plugin install buildermesh@buildermesh --scope user` |
+| An argument | 2 | `usage: bmesh plugin [--install]` |
+
+**Trying skills before a release.** The dir holds the binary's skills, not a checkout's. To try a skill change before it lands, run its session with `claude --plugin-dir <checkout>`, or measure it with the skill test (`scripts/skilltest`, its cand arm).
+
+`BMESH_CLAUDE_COMMAND` replaces the `claude` it runs (see [Testing](#testing)).
+
+See also: [The plugin](#the-plugin), [`bmesh update`](#bmesh-update), [Updates](#updates).
 
 ## Proposals and builds
 
@@ -2711,6 +2767,8 @@ Updates name both ends by release: `v0.1.0` for a tagged commit, `v0.1.0+2 (<rev
 
 A box on `release` restarts once per release, on `latest` once per code landing. Clients reconnect to an embedded hub as after any restart.
 
+**Skills move with the binary.** The restarted daemon writes the plugin its binary carries to the plugin dir at start, and `bmesh update`'s new binary writes it after the swap (see [`bmesh plugin`](#bmesh-plugin)). So a skill change that lands on `main` reaches a box's sessions when the box's binary moves to a target that has it, at the next release on `track = "release"`, together with the binary.
+
 - A failed build is logged once per target; the daemon runs on.
 - On Windows, a `bmesh.prev` that can't be removed (the supervisor's own image) is moved to `bmesh.prev.old` first, so you may see that file beside the binary.
 - A binary with neither a revision nor a release tag never updates.
@@ -3314,16 +3372,16 @@ A level, the daemon's routine fetch, and the fast-forward of `main` in the main 
    - Level with the target: `up to date`.
    - Ahead only: `git push origin <branch> <tags…>` (the tags that point at the pushed commits, lightweight ones included), answered `pushed <N>`. It pushes only when the caller may push (a received job or `bmesh sync`, never a self-level), the row's mode is in `[hosts] push_modes` (default `["ship", "fork"]`) and the newest local commit is at least 10 minutes old. Else it answers `ahead <N>, not pushed: <why>` (`a self-level never pushes`, `mode <m> is not in push_modes`, `the newest commit is <age> old (10m0s before a push)`). If another box pushed first, the push fails as not a fast-forward: `refused: diverged`.
 6. **Plugin refresh.** After the checkout moves, the box refreshes what it loads from it:
-   - with `.claude-plugin/marketplace.json` in it: `claude plugin marketplace update <name>`, then `claude plugin update <id> --scope user` for each user-scope install from that marketplace whose version lags the checkout's;
+   - with `.claude-plugin/marketplace.json` in it and `claude` on `PATH`: `claude plugin marketplace update <name>`, then `claude plugin update <id> --scope user` for each user-scope install from that marketplace whose version lags the checkout's;
    - with `codex` on `PATH`: `codex plugin add <id>` for each installed Codex plugin whose marketplace source is the checkout.
 
    Each refresh adds a part to the answer (`fast-forwarded 3; claude buildermesh@buildermesh 0.7.3 -> 0.7.4`). A failure is appended as `plugins: <error>`. A new session loads the change. bmesh runs no other command a job or the registry names.
 
-**The hold.** On a secure box (its `[hosts] secure`, or its roster row's), a level that would move a repo sessions load waits for the operator. This applies to a job, a self-level and `bmesh sync` alike. Such a repo is a plugin marketplace (`.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`, or the marketplace source of a Codex install) or the `[update] repo`. A push moves nothing here, so it isn't held.
+**The hold.** On a secure box (its `[hosts] secure`, or its roster row's), a level that would move a repo sessions load waits for the operator. This applies to a job, a self-level and `bmesh sync` alike. Such a repo is a checkout an installed marketplace reads: a Claude Code marketplace whose directory is the checkout or inside it (as `claude plugin marketplace list` names it), or the marketplace source of a Codex install. A `claude` on PATH that fails to answer counts as reading it, so the box holds what it can't tell; with no `claude` on PATH, no Claude Code marketplace reads it. A checkout with a marketplace file that nothing reads levels like any other: bmesh's own repo, once its box's sessions load the plugin from the plugin dir (see [`bmesh plugin`](#bmesh-plugin)), is one. The `[update] repo` isn't held for itself either: an update builds from a checkout of its own, never from the repo's working tree, and the binary carries its plugin. A push moves nothing here, so it isn't held.
 
 - The hold keeps the job, the repo, its head and target, and `git log --stat HEAD..<target>`. The job is answered `held for approval (+<N> commits)`.
 - A repo has one hold. A newer job's hold replaces it, and the older job's sender gets the reply `hold superseded by job <id>`. A self-level leaves an existing hold as it is.
-- The box pushes the hold once (with `[notify]`, priority `default`). The title is `<host>: <repo> waits for your approval (+<N> commits)`. The body says what the move would change, `New sessions on <host> load its skills and plugins.` for a plugin marketplace and `<host>'s bmesh builds from it.` for the `[update] repo` (both for a repo that is both), then `In a terminal on <host>: bmesh hosts approve <id> (it shows the commits first), or bmesh hosts deny <id> to leave it as it is. Expires <day hh:mm>.` in the holding box's time zone.
+- The box pushes the hold once (with `[notify]`, priority `default`). The title is `<host>: <repo> waits for your approval (+<N> commits)`. The body says what the move would change, `New sessions on <host> load its skills and plugins.`, then `In a terminal on <host>: bmesh hosts approve <id> (it shows the commits first), or bmesh hosts deny <id> to leave it as it is. Expires <day hh:mm>.` in the holding box's time zone.
 - The box's presence carries the hold until it is approved, denied or expires, so every box's session line and [`bmesh mesh-status`](#bmesh-mesh-status) show it as waiting on the operator (see [Presence](#presence)).
 - A hold expires with its job (24h, a self-level's too) and is dropped, logged only.
 
@@ -3434,7 +3492,7 @@ Internals: [internals](internals.md#hosts)
 
 ### The plugin
 
-The repo is a Claude Code plugin, `buildermesh`, with ten skills. The binary reads none of them; a session loads them.
+The repo is a Claude Code plugin, `buildermesh`, with ten skills. The binary reads none of them; a session loads them. The binary carries the plugin (`.claude-plugin/`, `skills/`, `hooks/` and `third_party/ponytail/LICENSE`, embedded from the repo) and writes it to the plugin dir, which Claude Code reads (see [`bmesh plugin`](#bmesh-plugin)), so a box's skills are always its binary's.
 
 | Skill | Run by | What it covers |
 |---|---|---|
@@ -3478,13 +3536,7 @@ Both stop, saying so, on a box with `[hosts]` off.
 
 **The optional `method` skill.** The lead skill runs `method:writing-plans` on an L or larger spec when it is in the session's skill list, and otherwise writes the plan itself; the binary doesn't read the `method` plugin. Engineering principles come from the repo's `AGENTS.md`, its [rule sets](#rule-sets) included, which every node works by.
 
-**Install** it from the repo:
-
-```
-claude plugin marketplace add rickdiculousli/buildermesh && claude plugin install buildermesh@buildermesh
-```
-
-or from a checkout: `claude plugin marketplace add <path to the checkout> && claude plugin install buildermesh@buildermesh`.
+**Install** it with the binary: `bmesh init` does, or `bmesh plugin --install` on a box set up already (see [`bmesh plugin`](#bmesh-plugin)). Either makes the plugin dir the `buildermesh` marketplace, replacing one that read a checkout or the GitHub repo, and installs `buildermesh@buildermesh` at user scope. The plugin's name and its skills' (`buildermesh:work`, ...) are the same from any source. To try a skill change before a release, run the session with `claude --plugin-dir <checkout>`, or measure it with `scripts/skilltest`.
 
 **The hook.** `hooks/hooks.json` runs `bmesh hosts --here` and then `bmesh update --notice` at every session start when `bmesh` is on PATH, with a 10-second timeout, and always exits 0. The stderr of `bmesh update --notice` is dropped, so a binary older than the plugin prints nothing there. On a box with `[hosts]` on, a session opens with the line naming the box (see [Several boxes](#several-boxes) and [`bmesh hosts --here`](#bmesh-hosts---here)); on a box whose binary is behind `main`, with the notice (see [Updates](#updates)). The hook prints nothing else.
 

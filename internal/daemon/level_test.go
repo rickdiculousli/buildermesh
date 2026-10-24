@@ -410,3 +410,19 @@ func TestPushHoldsAndUnansweredLevels(t *testing.T) {
 		t.Fatalf("pushes %+v", got)
 	}
 }
+
+// On a secure box a checkout with a marketplace file that no marketplace
+// reads levels like any other, the [update] repo's included.
+func TestSecureBoxLevelsACheckoutNothingReads(t *testing.T) {
+	l := levelSetup(t, true)
+	t.Setenv("FAKE_CLAUDE_MARKETPLACES", "[]")
+	l.d.Cfg.Update.Repo = "plug"
+	top := l.land(t, map[string]string{"skill.md": "new\n"})
+	l.startLevel(t)
+	if all := l.held(t); len(all) != 0 {
+		t.Fatalf("holds %+v", all)
+	}
+	if head := meshtest.Git(t, l.box, "rev-parse", "HEAD"); head != top {
+		t.Fatalf("head %s, want %s", head, top)
+	}
+}
