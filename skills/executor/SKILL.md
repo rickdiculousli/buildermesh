@@ -19,9 +19,9 @@ Run `bmesh --node <path> inbox` at every milestone and before you ask anything: 
 
 ## 3. Routines
 
-When the repo names a setup command (`.bmesh/config.toml`'s `[setup]`; your header puts it first), run `cd <worktree> && bmesh setup` before anything else, and again after you change dependencies; read its output when it fails. A verify runs it too when your installs are stale, and refuses, recording nothing, when it fails or leaves files the repo doesn't ignore.
+When the repo names a setup command (`.bmesh/config.toml`'s `[setup]`; your header puts it first), run `cd <worktree> && bmesh setup` before anything else, and again after you change dependencies; read its output when it fails.
 
-The repo's routines are yours to use: `bmesh --node <path> routine list` shows the kinds; `routine run <kind>` runs an inline one in your worktree; `routine queue <kind> --go` then `routine wait <job id>` runs one through the daemon. Commit before queueing: a job names a commit, and a deterministic kind's result is recorded for that commit's tree. When the daemon runs on another box, push the branch first so it can fetch the commit (your lead's brief says whether that applies). A kind whose `os` line names another OS than this box's always runs elsewhere: `git push origin HEAD` before queueing it (`queue` refuses an unpushed commit, and prints `queued <id> (runs on <os>)`).
+The repo's routines are yours to use: `bmesh --node <path> routine list` shows the kinds; `routine run <kind>` runs an inline one in your worktree; `routine queue <kind> --go` then `routine wait <job id>` runs one through the daemon. Commit before queueing: a job names a commit, and a deterministic kind's result is recorded for that commit's tree. When the daemon runs on another box, push the branch first so it can fetch the commit (your lead's brief says whether that applies).
 
 ## 4. Report
 

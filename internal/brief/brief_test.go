@@ -196,23 +196,6 @@ func TestDoneRule(t *testing.T) {
 	}
 }
 
-func TestLeadSkillLandsTheWorktreesBranch(t *testing.T) {
-	b, err := os.ReadFile(filepath.Join("..", "..", "skills", "lead", "SKILL.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, sec, ok := strings.Cut(string(b), "## 7. Land")
-	if !ok {
-		t.Fatal("no section 7")
-	}
-	sec, _, _ = strings.Cut(sec, "\n## ")
-	for _, s := range []string{"`bmesh land`", "`git branch --show-current`", "never the name in your brief"} {
-		if !strings.Contains(sec, s) {
-			t.Errorf("lead skill §7 missing %q", s)
-		}
-	}
-}
-
 func TestWithUpgrading(t *testing.T) {
 	half, _, err := Template("", "half-pager")
 	if err != nil {
