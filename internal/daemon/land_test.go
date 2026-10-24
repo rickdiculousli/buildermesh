@@ -136,7 +136,7 @@ func (f *landFix) step(ctx context.Context, dir string, args ...string) (string,
 func (f *landFix) landed() string {
 	ctx := context.Background()
 	tree, _ := gitOut(ctx, f.wt, "rev-parse", "HEAD^{tree}")
-	msg := "the work\n\nSpec: 080\nVerified: verify ok t:" + short8(tree)
+	msg := "the work\n\nSpec: 080\nVerified: review fail t:0011aabb m:claude-opus-5-5 at:882e6c94; verify ok t:" + short8(tree)
 	for _, args := range [][]string{{"commit", "--amend", "-q", "-m", msg}, {"push", "-q", "origin", "HEAD:main"}} {
 		if out, err := gitOut(ctx, f.wt, args...); err != nil {
 			return "git " + strings.Join(args, " ") + ": " + out

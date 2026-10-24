@@ -407,7 +407,7 @@ func TestLeadPageReadsALandingsTrailers(t *testing.T) {
 	repo := filepath.Join(t.TempDir(), "app")
 	meshtest.Git(t, filepath.Dir(repo), "init", "-q", "-b", "main", "app")
 	meshtest.CommitFiles(t, repo, map[string]string{"docs/proposals/012-thing.md": "---\nid: 12\ntitle: Thing\nstatus: done\n---\nbody\n"})
-	meshtest.Git(t, repo, "commit", "-q", "--allow-empty", "-m", "the work\n\nSpec: 012\nVerified: verify ok t:3f2a9c1e")
+	meshtest.Git(t, repo, "commit", "-q", "--allow-empty", "-m", "the work\n\nSpec: 012\nVerified: review fail t:0011aabb m:claude-opus-5-5 at:882e6c94; verify ok t:3f2a9c1e")
 	landed := meshtest.Git(t, repo, "rev-parse", "HEAD")
 	meshtest.Git(t, repo, "commit", "-q", "--allow-empty", "-m", "later")
 	cfg := &config.Config{Repos: map[string]config.Repo{"app": {Path: repo}}, Spec: config.SpecConfig{Glob: "docs/proposals/{id}-*.md"}}
@@ -420,7 +420,7 @@ func TestLeadPageReadsALandingsTrailers(t *testing.T) {
 		Spec *Spec `json:"spec"`
 	}
 	getJSON(t, srv, "/api/lead/a", 200, &p)
-	if p.Spec == nil || p.Spec.Status != "done" || p.Spec.Merged != landed || p.Spec.Verified != "verify ok t:3f2a9c1e" {
+	if p.Spec == nil || p.Spec.Status != "done" || p.Spec.Merged != landed || p.Spec.Verified != "review fail t:0011aabb m:claude-opus-5-5 at:882e6c94; verify ok t:3f2a9c1e" {
 		t.Fatalf("spec %+v, want merged %s", p.Spec, landed)
 	}
 }

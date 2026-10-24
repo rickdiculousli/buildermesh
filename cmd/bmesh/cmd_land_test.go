@@ -866,13 +866,17 @@ func TestLandCarriesTheReviewAcrossAHandRebase(t *testing.T) {
 // A review's findings fixed in a commit on top land on verify alone, the
 // fix's tree having no review, whether the branch is then rebased by hand
 // onto a main that moved or not: the head before the rebase is the fix's.
-// The review is named as left behind, from the commit it read.
+// The review is named as left behind, from the commit it read, and goes on
+// the verified line as a record of what ran there, which done accepts.
 func TestLandAFixedReviewOnVerifyAlone(t *testing.T) {
 	for _, rebase := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unrebased", true: "rebased"}[rebase], func(t *testing.T) {
 			c, ctx := setup(t)
 			r := newLandRepo(t)
 			putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+			if _, errs, code := runCLI(t, as("app-012"), "started"); code != 0 {
+				t.Fatal(code, errs)
+			}
 			reviewed := putReview(t, c, ctx)
 			at := gitOut(t, "rev-parse", "HEAD")
 			writeFile(t, filepath.Join(r.wt, "b.txt"), "b fixed\n")
@@ -884,45 +888,96 @@ func TestLandAFixedReviewOnVerifyAlone(t *testing.T) {
 			}
 			out, errs, code := runCLI(t, as("app-012"), "land")
 			tree := gitOut(t, "rev-parse", "HEAD^{tree}")
+			line := "review ok t:" + reviewed[:8] + " m:claude-opus-5-5 at:" + at[:8] + "; verify ok t:" + tree[:8]
 			if code != 0 || !strings.HasPrefix(out, "required: verify (the repo's verify kind); left behind by later commits: review ok t:"+
-				reviewed[:8]+" at "+at[:8]+" (not on the verified line)\n") ||
-				!strings.Contains(out, "verified: verify ok t:"+tree[:8]+"\n") {
+				reviewed[:8]+" at "+at[:8]+" (on the verified line as at:"+at[:8]+")\n") ||
+				!strings.Contains(out, "verified: "+line+"\n") {
 				t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+			}
+			if got := strings.TrimSpace(r.trailersOnOrigin(t)); got != "Spec: 012\nVerified: "+line {
+				t.Fatalf("trailers on origin:\n%s", got)
+			}
+			rec := gitOut(t, "rev-parse", "HEAD")
+			if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", rec); code != 0 || out != "done app-012 "+rec[:8]+"\n" {
+				t.Fatalf("done: %d %q %q", code, out, errs)
 			}
 		})
 	}
 }
 
 // A review on an earlier commit of the branch, followed by a commit to the
-// spec's own text, is not required and not on the verified line, but land
-// names it, ok or failed, with the tree and commit it read.
+// spec's own text, is not required, but land names it, ok or failed, with
+// the tree and commit it read, and puts it on the verified line as an
+// at:<sha8> entry: done accepts it, a failing one included, matched at its
+// own tree, and refuses it when the result recorded there says otherwise.
 func TestLandNamesAReviewLeftBehind(t *testing.T) {
 	for _, ok := range []bool{true, false} {
 		t.Run(map[bool]string{true: "ok", false: "fail"}[ok], func(t *testing.T) {
 			c, ctx := setup(t)
 			r := newLandRepo(t)
 			putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+			if _, errs, code := runCLI(t, as("app-012"), "started"); code != 0 {
+				t.Fatal(code, errs)
+			}
 			reviewed := gitOut(t, "rev-parse", "HEAD^{tree}")
 			at := gitOut(t, "rev-parse", "HEAD")
-			if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "review", Tree: reviewed, Commit: at,
-				OK: ok, Model: "claude-opus-5-5", By: "routine.review.x"}); err != nil {
-				t.Fatal(err)
+			put := func(ok bool) {
+				if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "review", Tree: reviewed, Commit: at,
+					OK: ok, Model: "claude-opus-5-5", By: "routine.review.x"}); err != nil {
+					t.Fatal(err)
+				}
 			}
+			put(ok)
 			writeFile(t, filepath.Join(r.wt, "docs", "proposals", "012-thing.md"), "---\nid: 12\nstatus: done\n---\nbody, as built\n")
 			meshtest.Git(t, r.wt, "commit", "-qam", "012: as built")
 
 			out, errs, code := runCLI(t, as("app-012"), "land")
 			tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 			verdict := map[bool]string{true: "ok", false: "fail"}[ok]
+			entry := "review " + verdict + " t:" + reviewed[:8] + " m:claude-opus-5-5 at:" + at[:8]
 			want := "required: verify (the repo's verify kind); left behind by later commits: review " + verdict +
-				" t:" + reviewed[:8] + " at " + at[:8] + " (not on the verified line)\n"
-			if code != 0 || !strings.HasPrefix(out, want) {
+				" t:" + reviewed[:8] + " at " + at[:8] + " (on the verified line as at:" + at[:8] + ")\n"
+			if code != 0 || !strings.HasPrefix(out, want) || !strings.Contains(out, entry+" (left behind by later commits: a record, not the landed tree's)\n") {
 				t.Fatalf("land: %d\n%s\nwant prefix\n%s\nerr %q", code, out, want, errs)
 			}
-			if front := r.trailersOnOrigin(t); !strings.Contains(front, "Verified: verify ok t:"+tree[:8]+"") {
-				t.Fatalf("spec on origin:\n%s", front)
+			if got := strings.TrimSpace(r.trailersOnOrigin(t)); got != "Spec: 012\nVerified: "+entry+"; verify ok t:"+tree[:8] {
+				t.Fatalf("trailers on origin:\n%s", got)
+			}
+			rec := gitOut(t, "rev-parse", "HEAD")
+			put(!ok)
+			_, errs, code = runCLI(t, as("app-012"), "done", "--commit", rec)
+			if code != 3 || !strings.Contains(errs, "not done: verified names review but no result for tree "+reviewed[:8]+
+				"; it was recorded at "+at[:8]+", before later commits, so no run can record it again") {
+				t.Fatalf("done, the result changed: %d %q", code, errs)
+			}
+			put(ok)
+			if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", rec); code != 0 || out != "done app-012 "+rec[:8]+"\n" {
+				t.Fatalf("done: %d %q %q", code, out, errs)
 			}
 		})
+	}
+}
+
+// A branch reviewed at HEAD lands as before: the review is the landed
+// tree's, and nothing is left behind.
+func TestLandAReviewAtHeadLeavesNothingBehind(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	if _, errs, code := runCLI(t, as("app-012"), "started"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	reviewed := putReview(t, c, ctx)
+	out, errs, code := runCLI(t, as("app-012"), "land")
+	if code != 0 || !strings.HasPrefix(out, "required: verify (the repo's verify kind), review (t:"+reviewed[:8]+" at HEAD)\n") {
+		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
+	}
+	if got := strings.TrimSpace(r.trailersOnOrigin(t)); got != "Spec: 012\nVerified: review ok t:"+reviewed[:8]+" m:claude-opus-5-5; verify ok t:"+reviewed[:8] {
+		t.Fatalf("trailers on origin:\n%s", got)
+	}
+	rec := gitOut(t, "rev-parse", "HEAD")
+	if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", rec); code != 0 || out != "done app-012 "+rec[:8]+"\n" {
+		t.Fatalf("done: %d %q %q", code, out, errs)
 	}
 }
 

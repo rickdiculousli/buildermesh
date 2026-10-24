@@ -16,16 +16,23 @@ import (
 )
 
 // Entry is one `<kind> <ok|fail> t:<tree first 8>[ m:<model>][ c:<tree
-// first 8>]` of a spec's verified line. Carried is the tree a model's result
-// was recorded at when it carries to Tree8: the diff it read is the one that
-// lands.
+// first 8>| at:<commit first 8>]` of a spec's verified line. Carried is the
+// tree a model's result was recorded at when it carries to Tree8: the diff
+// it read is the one that lands. At is the commit of the branch a result
+// was recorded at when later commits left it behind: the entry records what
+// ran there, at its own tree Tree8, and is no result for the landed tree.
 type Entry struct {
 	Kind    string
 	OK      bool
 	Tree8   string
 	Model   string
 	Carried string
+	At      string
 }
+
+// Behind reports an entry that records a result later commits left behind
+// (At): its verdict is not the landed tree's.
+func (e Entry) Behind() bool { return e.At != "" }
 
 func (e Entry) String() string {
 	s := e.Kind + " fail t:" + e.Tree8
@@ -37,6 +44,9 @@ func (e Entry) String() string {
 	}
 	if e.Carried != "" {
 		s += " c:" + e.Carried
+	}
+	if e.At != "" {
+		s += " at:" + e.At
 	}
 	return s
 }
@@ -63,7 +73,7 @@ func ParseVerified(line string) ([]Entry, error) {
 }
 
 func parseEntry(s string) (Entry, error) {
-	bad := fmt.Errorf("verified entry %q is not `<kind> <ok|fail> t:<tree first 8>[ m:<model>][ c:<tree first 8>]`", s)
+	bad := fmt.Errorf("verified entry %q is not `<kind> <ok|fail> t:<tree first 8>[ m:<model>][ c:<tree first 8>| at:<commit first 8>]`", s)
 	f := strings.Fields(s)
 	if len(f) < 3 || len(f) > 5 {
 		return Entry{}, bad
@@ -91,12 +101,17 @@ func parseEntry(s string) (Entry, error) {
 		}
 		rest = rest[1:]
 	}
+	if len(rest) > 1 {
+		return Entry{}, bad
+	}
 	if len(rest) > 0 {
-		c, ok := strings.CutPrefix(rest[0], "c:")
-		if !ok || !tree8RE.MatchString(c) || len(rest) > 1 {
+		if c, ok := strings.CutPrefix(rest[0], "c:"); ok && tree8RE.MatchString(c) {
+			e.Carried = c
+		} else if at, ok := strings.CutPrefix(rest[0], "at:"); ok && tree8RE.MatchString(at) {
+			e.At = at
+		} else {
 			return Entry{}, bad
 		}
-		e.Carried = c
 	}
 	return e, nil
 }

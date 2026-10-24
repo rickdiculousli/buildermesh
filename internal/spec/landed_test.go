@@ -22,12 +22,12 @@ func TestLandings(t *testing.T) {
 	base := commit("base")
 	work := commit("old work")
 	commit("011: done at " + work[:8])
-	a := commit("the work\n\nCo-Authored-By: x <x@x>\nSpec: 12\nVerified: verify ok t:3f2a9c1e")
+	a := commit("the work\n\nCo-Authored-By: x <x@x>\nSpec: 12\nVerified: review fail t:0011aabb m:claude-opus-5-5 at:882e6c94; verify ok t:3f2a9c1e")
 	commit("unrelated\n\nSpec: twelve, for once")
 	commit("again\n\nSpec: 012\nVerified: verify ok t:00000000")
 
 	l, err := ReadLanded(ctx, repo, a)
-	if err != nil || l.Commit != a || l.Spec != "012" || l.Verified != "verify ok t:3f2a9c1e" || l.Legacy != "" {
+	if err != nil || l.Commit != a || l.Spec != "012" || l.Verified != "review fail t:0011aabb m:claude-opus-5-5 at:882e6c94; verify ok t:3f2a9c1e" || l.Legacy != "" {
 		t.Fatalf("%+v %v", l, err)
 	}
 	if l, _ := ReadLanded(ctx, repo, a+"~1"); l.Spec != "" || l.Legacy != "011" || l.LegacyAt != work[:8] {
