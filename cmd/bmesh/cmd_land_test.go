@@ -1710,9 +1710,14 @@ func TestLandStopsForWhatNeedsTheLead(t *testing.T) {
 			t.Fatal(err)
 		}
 		landEnds(t, res, 3, out, errb)
-		if errb.String() != "bmesh: refused: 1 message(s) from the operator since land started; nothing is pushed: "+
-			"run bmesh inbox, act on them, then run bmesh land again\n" || r.originMain(t) != base {
-			t.Fatalf("land: %q", errb.String())
+		// Land reads its mail before every pause of its wait: one that fell
+		// between the send and the read refuses the mail as unread. Either
+		// way nothing is pushed.
+		read := "bmesh: refused: 1 message(s) from the operator since land started; nothing is pushed: " +
+			"run bmesh inbox, act on them, then run bmesh land again\n"
+		unread := "bmesh: refused: 1 unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh land again\n"
+		if e := errb.String(); e != read && e != unread || r.originMain(t) != base {
+			t.Fatalf("land: %q", e)
 		}
 	})
 	t.Run("a commit", func(t *testing.T) {
