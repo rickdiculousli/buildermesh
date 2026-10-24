@@ -160,7 +160,7 @@ func Depth(ctx context.Context, c *Client, kindName string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	info, err := cons.Info(ctx)
+	info, err := caughtUp(ctx, c, cons, RoutinePath(kindName))
 	if err != nil {
 		return 0, err
 	}
@@ -185,6 +185,9 @@ func FetchMatch(ctx context.Context, c *Client, p Path, match func(Message) bool
 	}
 	cons, err := c.JS.Consumer(ctx, StreamMesh, InboxConsumer(p))
 	if err != nil {
+		return Message{}, false, err
+	}
+	if _, err := caughtUp(ctx, c, cons, p); err != nil {
 		return Message{}, false, err
 	}
 	batch, err := cons.FetchNoWait(100)

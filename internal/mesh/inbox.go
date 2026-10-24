@@ -77,6 +77,9 @@ func Fetch(ctx context.Context, c *Client, p Path, ack bool) ([]Message, error) 
 	if err != nil {
 		return nil, err
 	}
+	if _, err := caughtUp(ctx, c, cons, p); err != nil {
+		return nil, err
+	}
 	batch, err := cons.FetchNoWait(100)
 	if err != nil {
 		return nil, err
@@ -118,7 +121,7 @@ func Unread(ctx context.Context, c *Client, p Path) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	info, err := cons.Info(ctx)
+	info, err := caughtUp(ctx, c, cons, p)
 	if err != nil {
 		return 0, err
 	}
@@ -137,7 +140,7 @@ func Pending(ctx context.Context, c *Client, p Path) ([]Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	info, err := cons.Info(ctx)
+	info, err := caughtUp(ctx, c, cons, p)
 	if err != nil {
 		return nil, err
 	}
@@ -175,6 +178,31 @@ func Pending(ctx context.Context, c *Client, p Path) ([]Message, error) {
 		}
 		if meta.NumPending == 0 {
 			return out, nil
+		}
+	}
+}
+
+// caughtUp is cons's info once p's inbox consumer has taken in the newest
+// message the stream holds on p's inbox subject. The server acks a publish
+// before it tells the stream's consumers, so for a moment after a send the
+// consumer counts nothing pending and a no-wait fetch finds nothing; the
+// stream's record is current at the ack. A consumer still behind after a
+// second (a box under load) is answered as it stands.
+func caughtUp(ctx context.Context, c *Client, cons jetstream.Consumer, p Path) (*jetstream.ConsumerInfo, error) {
+	last, err := InboxSeq(ctx, c, p)
+	if err != nil {
+		return nil, err
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		info, err := cons.Info(ctx)
+		if err != nil || info.NumPending > 0 || last <= info.Delivered.Stream || time.Now().After(deadline) {
+			return info, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(5 * time.Millisecond):
 		}
 	}
 }
