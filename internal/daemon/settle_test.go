@@ -80,6 +80,9 @@ func TestSettleFinishedFamilies(t *testing.T) {
 	if err := mesh.CreateReady(f.ctx, f.c, mesh.Ready{Path: "demo-007", Spec: "007", Head: "abc", Phase: mesh.PhaseLanded}); err != nil {
 		t.Fatal(err)
 	}
+	// A fixer and its fix lead, both done: the lead settles, the fixer, a coordinator, never.
+	f.member(t, fake, mesh.Node{Path: "demo-fix-1", Role: "fixer", Family: "demo-fix-1"}, "", done)
+	f.member(t, fake, mesh.Node{Path: "demo-008", Role: "lead", Family: "demo-fix-1"}, "", done)
 	// A round that settled done, and one whose engineer is done but the round is blocked.
 	if err := mesh.PutNode(f.ctx, f.c, mesh.Node{Path: "demo-round-1", Role: "round", Host: testHost}); err != nil {
 		t.Fatal(err)
@@ -93,11 +96,11 @@ func TestSettleFinishedFamilies(t *testing.T) {
 	f.member(t, fake, mesh.Node{Path: "demo-round-2.eng", Role: "engineer", Parent: "demo-round-2"}, "", done)
 
 	settleOnce(f.ctx, f.d)
-	want := []string{"mcp:demo-001", "mcp:demo-002", "mcp:demo-round-1.eng"}
+	want := []string{"mcp:demo-001", "mcp:demo-002", "mcp:demo-008", "mcp:demo-round-1.eng"}
 	if got := settles(fake); !slices.Equal(got, want) {
 		t.Fatalf("settled %v, want %v", got, want)
 	}
-	for _, p := range []string{"demo-001", "demo-002", "demo-round-1.eng"} {
+	for _, p := range []string{"demo-001", "demo-002", "demo-008", "demo-round-1.eng"} {
 		if n, _, _ := mesh.GetNode(f.ctx, f.c, p); n.Settled == "" {
 			t.Errorf("%s not marked settled", p)
 		}
@@ -106,7 +109,7 @@ func TestSettleFinishedFamilies(t *testing.T) {
 	for _, ev := range f.daemonEvents(t, "settled") {
 		texts = append(texts, ev.Text)
 	}
-	if want := []string{"demo-build-1: 2 threads", "demo-round-1: 1 thread"}; !slices.Equal(texts, want) {
+	if want := []string{"demo-build-1: 2 threads", "demo-fix-1: 1 thread", "demo-round-1: 1 thread"}; !slices.Equal(texts, want) {
 		t.Fatalf("settled events %q, want %q", texts, want)
 	}
 
@@ -115,7 +118,7 @@ func TestSettleFinishedFamilies(t *testing.T) {
 	if got := settles(fake); !slices.Equal(got, want) {
 		t.Fatalf("second pass settled %v", got)
 	}
-	if n := len(f.daemonEvents(t, "settled")); n != 2 {
+	if n := len(f.daemonEvents(t, "settled")); n != 3 {
 		t.Fatalf("second pass published: %d settled events", n)
 	}
 
@@ -128,7 +131,7 @@ func TestSettleFinishedFamilies(t *testing.T) {
 	if got := settles(fake)[len(want):]; !slices.Equal(got, []string{"mcp:demo-006", "mcp:demo-007"}) {
 		t.Fatalf("third pass settled %v", got)
 	}
-	all := []string{"mcp:demo-001", "mcp:demo-002", "mcp:demo-round-1.eng", "mcp:demo-006", "mcp:demo-007"}
+	all := []string{"mcp:demo-001", "mcp:demo-002", "mcp:demo-008", "mcp:demo-round-1.eng", "mcp:demo-006", "mcp:demo-007"}
 	fake.Do(func(s *t3fake.Server) {
 		for id, th := range s.Threads {
 			if th.Settled != slices.Contains(all, id) {

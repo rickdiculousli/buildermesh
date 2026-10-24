@@ -146,7 +146,7 @@ A launch has no retry key: after a lost or timed-out reply, `start` reads the pr
 
 **`settle`** is `t3_thread_organize` with action `settle`; only the `t3` runner has it (`runner.Settler`). The daemon's settle pass runs each minute after the poll, wake and rounds passes:
 
-1. **Units.** It groups `bm-nodes` by unit (`daemon.SettleUnit`): an `engineer` by its `parent` (the round), a `lead` or `fixer` by its `family`, else its own path (a fixer's family is its path, so its fix leads join it). Executors, routines and rounds have no thread of their own to settle.
+1. **Units.** It groups `bm-nodes` by unit (`daemon.SettleUnit`): an `engineer` by its `parent` (the round), a `lead` by its `family`, else its own path (a fix lead's family is its fixer's path). A `fixer` is in no unit: it coordinates its fix leads and its closing report asks the operator, so its thread stays. Executors, routines and rounds have no thread of their own to settle.
 2. **Finished.** A unit is finished when every member's state is `done` or stopped (`mesh.Stopped`), no member has a `bm-ready` key (its final wake not yet delivered), and a round unit's round reads `done`.
 3. **Settle.** For each member of a finished unit with `host` this box, `runner.kind` `t3`, a `runner.thread` and no `settled`: `status` first, skipped while running (the closing turn); then `settle`. A `thread_not_found` at either step counts as settled. The node is then re-read and written with `"settled": <RFC 3339>`, unless its `runner.thread` changed.
 4. **Report.** A pass that marked any publishes `bm.daemon.<host>.settled`, `to` the unit's first member, text `<unit>: <n> threads` (`1 thread`), `<n>` the unit's members on this box marked `settled`, with `Nats-Msg-Id` `settled-<unit>-<host>-<n>`.

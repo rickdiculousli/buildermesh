@@ -19,14 +19,15 @@ import (
 var settleErrs sync.Map // thread -> string
 
 // SettleUnit is what a node's thread is settled with: an engineer with its
-// round, a lead or fixer with its build family (a lead with none alone);
-// "" for a node bmesh started no thread for that settles (a round itself,
-// an executor, a routine).
+// round, a lead with its build family (one with none alone, a fixer's fix
+// leads under the fixer's path); "" for a node whose thread never settles:
+// a fixer, a coordinator whose closing report asks the operator, a round
+// itself, an executor, a routine.
 func SettleUnit(n mesh.Node) string {
 	switch n.Role {
 	case "engineer":
 		return n.Parent
-	case "lead", "fixer":
+	case "lead":
 		return cmp.Or(n.Family, n.Path)
 	}
 	return ""
