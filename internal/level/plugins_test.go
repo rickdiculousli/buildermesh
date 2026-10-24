@@ -148,24 +148,47 @@ func TestRefreshUpdateFails(t *testing.T) {
 	}
 }
 
+// A checkout sessions load is one a marketplace reads, not one that has a
+// marketplace file: the same checkout levels once nothing reads it.
 func TestLoadsPlugins(t *testing.T) {
 	setup(t)
 	ctx := context.Background()
-	if !LoadsPlugins(ctx, checkout(t, "mk")) {
+	d := checkout(t, "mk")
+	if LoadsPlugins(ctx, d) {
+		t.Fatal("a marketplace file nothing reads")
+	}
+	t.Setenv("FAKE_CLAUDE_MARKETPLACES", fmt.Sprintf(`[{"name":"mk","source":"directory","path":%q}]`, d))
+	if !LoadsPlugins(ctx, d) {
 		t.Fatal("claude marketplace")
 	}
-	d := checkout(t, "")
-	os.MkdirAll(filepath.Join(d, ".agents", "plugins"), 0o755)
-	os.WriteFile(filepath.Join(d, ".agents", "plugins", "marketplace.json"), []byte(`{}`), 0o644)
+	t.Setenv("FAKE_CLAUDE_MARKETPLACES", fmt.Sprintf(`[{"name":"mk","source":"directory","path":%q}]`, filepath.Join(d, "plugins")))
 	if !LoadsPlugins(ctx, d) {
-		t.Fatal("agents marketplace")
+		t.Fatal("claude marketplace inside the checkout")
 	}
-	d = checkout(t, "")
+	t.Setenv("FAKE_CLAUDE_MARKETPLACES", `[{"name":"buildermesh","source":"directory","path":"/elsewhere/plugin"},{"name":"o","source":"github","repo":"o/o"}]`)
 	if LoadsPlugins(ctx, d) {
-		t.Fatal("bare")
+		t.Fatal("read from elsewhere")
 	}
 	t.Setenv("FAKE_CODEX_LIST", fmt.Sprintf(`{"installed":[{"pluginId":"a@x","installed":true,"marketplaceSource":{"source":%q}}]}`, d))
 	if !LoadsPlugins(ctx, d) {
 		t.Fatal("codex install")
+	}
+}
+
+// A claude that fails to answer counts as reading the checkout, so a
+// secure box holds; one that isn't on PATH reads nothing.
+func TestLoadsPluginsWhenClaudeFails(t *testing.T) {
+	setup(t)
+	ctx := context.Background()
+	d := checkout(t, "")
+	t.Setenv("FAKE_PLUGIN_FAIL", "marketplace")
+	t.Setenv("FAKE_PLUGIN_EXIT", "1")
+	if !LoadsPlugins(ctx, d) {
+		t.Fatal("a failing claude")
+	}
+	t.Setenv("BMESH_CLAUDE_COMMAND", "")
+	t.Setenv("PATH", t.TempDir())
+	if LoadsPlugins(ctx, d) {
+		t.Fatal("no claude")
 	}
 }

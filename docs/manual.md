@@ -2734,8 +2734,8 @@ There is no hint for a binary or daemon of unknown revision, for commands that r
 
 **The notice.** A daemon not self-updating from `[update] repo` checks the target every `[update] check_every` (default `6h`; `0` is off; it needs `[runner] checkouts`). When the target is ahead of the binary at its path, it writes one line to `<state dir>/update.txt`:
 
-- for a release: `bmesh: v0.2.0 is out (you run v0.1.0: 046, 047); run bmesh update, then update the buildermesh plugin`;
-- for a code head (`track = "latest"`, or no release yet): `bmesh: 9 commits behind main (landed since: 032 The Quickstart works as written, 033 …); run bmesh update, then update the buildermesh plugin`. It counts only commits that change the repo's code, and lists the specs landed since, oldest first, each with its title (the id alone without one).
+- for a release: `bmesh: v0.2.0 is out (you run v0.1.0: 046, 047); run bmesh update`;
+- for a code head (`track = "latest"`, or no release yet): `bmesh: 9 commits behind main (landed since: 032 The Quickstart works as written, 033 …); run bmesh update`. It counts only commits that change the repo's code, and lists the specs landed since, oldest first, each with its title (the id alone without one).
 
 The specs both lines list are the landings between the binary's commit and `main`: each commit with a `Spec: NNN` trailer, and each old `NNN: done at <sha8>` subject, whose landed commit the target has and the binary hasn't (or one the repo doesn't know).
 

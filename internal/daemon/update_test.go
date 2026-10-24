@@ -338,7 +338,7 @@ func (u *ufix) landSpec(t *testing.T) string {
 	return code
 }
 
-const behindOne = "bmesh: 1 commit behind main (landed since: 001 The first); run bmesh update, then update the buildermesh plugin"
+const behindOne = "bmesh: 1 commit behind main (landed since: 001 The first); run bmesh update"
 
 func TestNoticeWrittenWhenBehindAndRemovedWhenCurrent(t *testing.T) {
 	u := upstreamSetup(t, false)
@@ -646,7 +646,7 @@ func TestNoticeNamesTheRelease(t *testing.T) {
 		t.Fatalf("notice before the release: %q", u.notice())
 	}
 	u.tag(t, "v0.2.0", code)
-	want := "bmesh: v0.2.0 is out (you run v0.1.0: 001); run bmesh update, then update the buildermesh plugin"
+	want := "bmesh: v0.2.0 is out (you run v0.1.0: 001); run bmesh update"
 	waitFor(t, 20*time.Second, "the release notice", func() bool { return u.notice() == want })
 }
 

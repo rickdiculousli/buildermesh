@@ -58,6 +58,7 @@ type Deps struct {
 	Release  string // the release this binary is or follows (v0.2.0, v0.2.0+3), as stamped; "" = none
 	Tag      string // with no Revision, the release tag a tagged module install was built at, resolved on main by an update; "" = none
 	RevTime  string // that commit's time (RFC 3339); "" = unknown
+	Label    string // `bmesh version`'s, which stamps the plugin dir this binary writes
 	Module   string // the module this binary was built from; "" = unknown, no upstream to read
 	Exe      string // the binary's path, which [update] replaces and the fixer start runs
 	Restart  func() // ends serve so the binary re-execs; called after an update drained
@@ -164,6 +165,7 @@ func Run(ctx context.Context, d Deps) error {
 		return errors.New("daemon: Client, Cfg, Runner and Host are required")
 	}
 	d.defaults()
+	writePlugin(d)
 	announce(ctx, d)
 	pending(ctx, d)
 	act := NewActivity()

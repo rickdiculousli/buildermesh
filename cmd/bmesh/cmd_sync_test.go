@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -89,7 +90,7 @@ func TestSyncLevelsEveryBoxAndHoldsOnASecureOne(t *testing.T) {
 	}
 
 	// Two repos on origin, checked out on both boxes: tools (a plugin
-	// marketplace, so mac holds it) and app (not).
+	// marketplace Claude Code reads, so mac holds it) and app (not).
 	root := t.TempDir()
 	clone := func(name, dir string) {
 		meshtest.Git(t, root, "clone", "-q", filepath.Join(root, name+".git"), dir)
@@ -118,6 +119,9 @@ func TestSyncLevelsEveryBoxAndHoldsOnASecureOne(t *testing.T) {
 	}
 	macDir := func(name string) string { return filepath.Join(root, "mac", name) }
 	k16Dir := func(name string) string { return filepath.Join(root, "k16", name) }
+	// Claude Code reads tools as a marketplace, on both boxes.
+	t.Setenv("FAKE_CLAUDE_MARKETPLACES", fmt.Sprintf(`[{"name":"tools","source":"directory","path":%q},{"name":"tools2","source":"directory","path":%q}]`,
+		macDir("tools"), k16Dir("tools")))
 
 	// k16 commits to both, an hour ago: old enough to push.
 	t.Setenv("GIT_COMMITTER_DATE", time.Now().Add(-time.Hour).Format(time.RFC3339))

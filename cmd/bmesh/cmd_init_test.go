@@ -29,6 +29,9 @@ func TestInitSingleBoxWritesConfigRepoAndFlag(t *testing.T) {
 	repo := filepath.Join(root, "app")
 	meshtest.Git(t, root, "init", "-b", "main", repo)
 	meshtest.Git(t, repo, "remote", "add", "origin", "git@github.com:owner/app.git")
+	// Claude Code is on the box: init points it at the plugin.
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Setenv("FAKE_CLAUDE_STATE", t.TempDir())
 	// Every answer is the default: single box, register the repo.
 	out, errs, code := runInit(t, cfg, repo, "", "init", "--runner", "claude")
 	if code != 0 {
@@ -48,7 +51,8 @@ func TestInitSingleBoxWritesConfigRepoAndFlag(t *testing.T) {
 	if _, err := os.Stat(config.SetupFlag(cfg)); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Single box", "wrote " + cfg, "wrote " + config.ReposPath(cfg), "bmesh serve", "bmesh repos"} {
+	for _, want := range []string{"Single box", "wrote " + cfg, "wrote " + config.ReposPath(cfg), "bmesh serve", "bmesh repos",
+		"plugin: installed buildermesh@buildermesh (user scope)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}

@@ -1,7 +1,6 @@
 package level
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,10 +8,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
-)
 
-const cmdTimeout = 2 * time.Minute
+	"github.com/rickdiculousli/buildermesh/internal/plugin"
+)
 
 // Refresh refreshes what this box loads from the checkout at dir and
 // returns one line per install it updated or re-copied.
@@ -29,12 +27,21 @@ func Refresh(ctx context.Context, dir string) ([]string, error) {
 }
 
 // LoadsPlugins reports whether sessions on this box load from the
-// checkout at dir: it carries .claude-plugin/marketplace.json or
-// .agents/plugins/marketplace.json, or a Codex install's marketplace
-// source is dir.
+// checkout at dir: a Claude Code marketplace reads it (or a dir inside it),
+// or a Codex install's marketplace source is it. A claude on PATH that
+// fails to answer counts as reading it, so a secure box holds what it
+// can't tell rather than move it.
 func LoadsPlugins(ctx context.Context, dir string) bool {
-	if fileExists(claudeMarketplace(dir)) || fileExists(filepath.Join(dir, ".agents", "plugins", "marketplace.json")) {
-		return true
+	if base := plugin.ClaudeCommand(); base != nil {
+		mks, err := plugin.Marketplaces(ctx, base)
+		if err != nil {
+			return true
+		}
+		for _, m := range mks {
+			if m.Reads(dir) {
+				return true
+			}
+		}
 	}
 	installs, err := codexInstalls(ctx, dir)
 	return err == nil && len(installs) > 0
@@ -42,36 +49,6 @@ func LoadsPlugins(ctx context.Context, dir string) bool {
 
 func claudeMarketplace(dir string) string {
 	return filepath.Join(dir, ".claude-plugin", "marketplace.json")
-}
-
-func fileExists(p string) bool {
-	st, err := os.Stat(p)
-	return err == nil && !st.IsDir()
-}
-
-// resolve returns p with symlinks resolved, or cleaned when it can't be.
-func resolve(p string) string {
-	if r, err := filepath.EvalSymlinks(p); err == nil {
-		return r
-	}
-	return filepath.Clean(p)
-}
-
-// within reports whether p is dir or inside it.
-func within(p, dir string) bool {
-	p, dir = resolve(p), resolve(dir)
-	if p == dir {
-		return true
-	}
-	rel, err := filepath.Rel(dir, p)
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-}
-
-func claudeCommand() []string {
-	if c := strings.Fields(os.Getenv("BMESH_CLAUDE_COMMAND")); len(c) > 0 {
-		return c
-	}
-	return []string{"claude"}
 }
 
 // codexCommand is nil when Codex isn't on this box.
@@ -85,28 +62,7 @@ func codexCommand() []string {
 	return nil
 }
 
-// run runs base plus args with a timeout and returns stdout; a failure
-// names the command and its trimmed stderr.
-func run(ctx context.Context, base []string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, cmdTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, base[0], append(append([]string{}, base[1:]...), args...)...)
-	cmd.WaitDelay = 5 * time.Second
-	var out, errb bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errb
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(errb.String())
-		if len(msg) > 200 {
-			msg = msg[:200]
-		}
-		name := strings.Join(append(append([]string{}, base...), args...), " ")
-		if msg == "" {
-			msg = err.Error()
-		}
-		return nil, fmt.Errorf("%s: %s", name, msg)
-	}
-	return out.Bytes(), nil
-}
+var run = plugin.Run
 
 type claudeEntry struct {
 	ID             string `json:"id"`
@@ -127,7 +83,10 @@ func refreshClaude(ctx context.Context, dir string) ([]string, error) {
 	if json.Unmarshal(raw, &mk) != nil || mk.Name == "" {
 		return nil, nil
 	}
-	base := claudeCommand()
+	base := plugin.ClaudeCommand()
+	if base == nil {
+		return nil, nil
+	}
 	out, err := run(ctx, base, "plugin", "list", "--json")
 	if err != nil {
 		return nil, err
@@ -141,7 +100,7 @@ func refreshClaude(ctx context.Context, dir string) ([]string, error) {
 		if !strings.HasSuffix(e.ID, "@"+mk.Name) || e.Scope != "user" {
 			continue
 		}
-		if e.ReadFromFolder != "" && !within(e.ReadFromFolder, dir) {
+		if e.ReadFromFolder != "" && !plugin.Within(e.ReadFromFolder, dir) {
 			continue
 		}
 		match = append(match, e)
@@ -193,7 +152,7 @@ func codexInstalls(ctx context.Context, dir string) ([]codexEntry, error) {
 	}
 	var match []codexEntry
 	for _, e := range res.Installed {
-		if e.Installed && e.MarketplaceSource.Source != "" && resolve(e.MarketplaceSource.Source) == resolve(dir) {
+		if e.Installed && e.MarketplaceSource.Source != "" && plugin.SamePath(e.MarketplaceSource.Source, dir) {
 			match = append(match, e)
 		}
 	}

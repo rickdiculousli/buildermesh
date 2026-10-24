@@ -48,17 +48,19 @@ func (h *hostsNode) secure() bool {
 	return ok && row.Secure
 }
 
-// held reports whether a move of repo waits for the operator: on a secure
-// box, a repo sessions load (a plugin marketplace, or the [update] repo).
-func (h *hostsNode) held(ctx context.Context, repo, path string) bool {
-	return h.secure() && (repo == h.d.Cfg.Update.Repo || level.LoadsPlugins(ctx, path))
+// held reports whether a move of the checkout at path waits for the
+// operator: on a secure box, one sessions load (a plugin marketplace reads
+// it). The [update] repo's checkout isn't one: an update builds from a
+// checkout of its own, and the binary carries its plugin.
+func (h *hostsNode) held(ctx context.Context, path string) bool {
+	return h.secure() && level.LoadsPlugins(ctx, path)
 }
 
 // request is a level of repo at path, as this box's config says.
 func (h *hostsNode) request(ctx context.Context, repo, path string) level.Request {
 	row := h.conf().Repos[repo]
 	return level.Request{Repo: repo, Path: path, Mode: row.Mode, Pin: row.Pin, StateDir: h.d.StateDir,
-		PushModes: h.d.Cfg.Hosts.PushModes, Hold: h.held(ctx, repo, path), Now: h.d.Now}
+		PushModes: h.d.Cfg.Hosts.PushModes, Hold: h.held(ctx, path), Now: h.d.Now}
 }
 
 // levelJob runs a received level: the box judges its own checkout against
@@ -168,20 +170,7 @@ func (h *hostsNode) hold(ctx context.Context, j *hosts.Job, self bool, o level.O
 		return
 	}
 	h.d.Log.Info(fmt.Sprintf("hosts: %s holds: %s +%d %s (%s)", h.d.Host, repo, o.N, plural(o.N, "commit"), x.From()), "id", x.ID)
-	h.publishHeld(ctx, x, h.changes(ctx, repo, path))
-}
-
-// changes is what moving repo's checkout at path would change on this
-// box: the sessions that load it, and the bmesh built from it.
-func (h *hostsNode) changes(ctx context.Context, repo, path string) string {
-	var out []string
-	if level.LoadsPlugins(ctx, path) {
-		out = append(out, fmt.Sprintf("New sessions on %s load its skills and plugins.", h.d.Host))
-	}
-	if repo == h.d.Cfg.Update.Repo {
-		out = append(out, fmt.Sprintf("%s's bmesh builds from it.", h.d.Host))
-	}
-	return strings.Join(out, " ")
+	h.publishHeld(ctx, x, fmt.Sprintf("New sessions on %s load its skills and plugins.", h.d.Host))
 }
 
 // publishHeld publishes bm.daemon.<host>.held for hold x: text the push's

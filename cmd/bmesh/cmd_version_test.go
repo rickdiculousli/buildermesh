@@ -305,7 +305,7 @@ func TestUpdateFromUpstreamWithoutRow(t *testing.T) {
 	}
 	withModuleInstall(t, "example.com/up", shas[0])
 	out, errOut, code := runCLI(t, nil, "update")
-	want := shas[0][:8] + " -> " + shas[1][:8] + "\n" + pluginLine + "\n"
+	want := shas[0][:8] + " -> " + shas[1][:8] + "\n"
 	if code != 0 || out != want {
 		t.Fatalf("code %d out %q err %q, want %q", code, out, errOut, want)
 	}
@@ -356,7 +356,7 @@ func TestUpdateNotice(t *testing.T) {
 	if out, errOut, code := runCLI(t, nil, "update", "--notice"); code != 0 || out != "" || errOut != "" {
 		t.Fatalf("no file: code %d out %q err %q", code, out, errOut)
 	}
-	line := "bmesh: 2 commits behind main; run bmesh update, then update the buildermesh plugin"
+	line := "bmesh: 2 commits behind main; run bmesh update"
 	if err := selfupdate.WriteNotice(config.StateDir(), line); err != nil {
 		t.Fatal(err)
 	}
@@ -371,7 +371,7 @@ func TestUpdateNotice(t *testing.T) {
 func TestMeshStatusClosesWithNotice(t *testing.T) {
 	setup(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	line := "bmesh: 2 commits behind main; run bmesh update, then update the buildermesh plugin"
+	line := "bmesh: 2 commits behind main; run bmesh update"
 	if err := selfupdate.WriteNotice(config.StateDir(), line); err != nil {
 		t.Fatal(err)
 	}
@@ -548,7 +548,7 @@ func TestUpdateTaggedModuleInstall(t *testing.T) {
 		t.Fatalf("version: code %d out %q", c, out)
 	}
 	out, errOut, c := runCLI(t, nil, "update")
-	if want := "v0.1.0 -> v0.2.0\n" + pluginLine + "\n"; c != 0 || out != want {
+	if want := "v0.1.0 -> v0.2.0\n"; c != 0 || out != want {
 		t.Fatalf("code %d out %q err %q, want %q", c, out, errOut, want)
 	}
 	if b, _ := os.ReadFile(goLog); strings.TrimSpace(string(b)) != "install example.com/up@v0.2.0" {

@@ -11,6 +11,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/notify"
+	"github.com/rickdiculousli/buildermesh/internal/plugin"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 )
 
@@ -21,6 +22,23 @@ func (d *Deps) revision() string {
 		return selfupdate.Unknown
 	}
 	return d.Revision
+}
+
+// writePlugin writes the plugin this binary carries to <state dir>/plugin
+// at start unless it is there already, so a daemon that updated itself, or
+// a binary installed by hand, brings its skills with it.
+func writePlugin(d Deps) {
+	if d.StateDir == "" {
+		return
+	}
+	dir := plugin.Dir(d.StateDir)
+	wrote, err := plugin.Ensure(dir, d.Label)
+	switch {
+	case err != nil:
+		d.Log.Warn("plugin: write", "dir", dir, "err", err)
+	case wrote:
+		d.Log.Info("plugin: wrote "+dir, "bmesh", d.Label)
+	}
 }
 
 // announce runs once on start: when this host's newest update has no

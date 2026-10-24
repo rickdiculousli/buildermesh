@@ -186,7 +186,7 @@ func (a *app) levelHere(ctx context.Context, b *hostsBox, repo, path string) lev
 	row := a.cfg.Repos[repo]
 	req := level.Request{Repo: repo, Path: path, Mode: row.Mode, Pin: row.Pin, StateDir: b.stateDir, Push: true,
 		PushModes: a.cfg.Hosts.PushModes}
-	req.Hold = b.secure() && (repo == a.cfg.Update.Repo || level.LoadsPlugins(ctx, path))
+	req.Hold = b.secure() && level.LoadsPlugins(ctx, path)
 	o := level.Level(ctx, req)
 	if o.Result != level.Held {
 		return o

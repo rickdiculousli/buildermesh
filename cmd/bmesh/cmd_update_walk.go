@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/plugin"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 	"github.com/rickdiculousli/buildermesh/internal/upgrade"
 )
@@ -188,6 +189,10 @@ func (a *app) walkGiven(w walkFlags) error {
 	phase := phaseAll
 	if w.preSwap {
 		phase = phaseAsks
+	} else if err := a.writePlugin(plugin.Dir(config.StateDir())); err != nil {
+		// After the swap, the new binary's skills go with it; the walk
+		// still runs when they can't be written.
+		fmt.Fprintf(a.stderr, "bmesh: %v\n", err)
 	}
 	return a.walk(r, w, phase)
 }

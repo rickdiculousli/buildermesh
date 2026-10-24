@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
+	"github.com/rickdiculousli/buildermesh/internal/plugin"
 	"github.com/rickdiculousli/buildermesh/internal/upgrade"
 )
 
@@ -312,5 +313,30 @@ func TestUpdatePendingNotes(t *testing.T) {
 	}
 	if out, _, _ := runCLI(t, nil, "update", "--notice"); out != "" {
 		t.Fatalf("after the walk: %q", out)
+	}
+}
+
+// The walk after a swap is the new binary's: it writes the plugin it
+// carries first, once; the walk before the swap writes nothing.
+func TestUpdateWalkWritesThePlugin(t *testing.T) {
+	_, repo, _, tags := notesBox(t)
+	withRevision(t, tags["v0.3.0"])
+	dir := plugin.Dir(filepath.Join(os.Getenv("XDG_STATE_HOME"), "bmesh"))
+	walk := []string{"update", "--walk", "--from", tags["v0.3.0"], "--dir", repo}
+	if _, errOut, code := runCLI(t, nil, append(walk, "--before-swap")...); code != 0 {
+		t.Fatalf("before the swap: code %d err %q", code, errOut)
+	}
+	if _, _, ok := plugin.Written(dir); ok {
+		t.Fatal("the walk before the swap wrote the plugin")
+	}
+	out, errOut, code := runCLI(t, nil, walk...)
+	if code != 0 || !strings.HasPrefix(out, "plugin: wrote "+dir+" (bmesh ") {
+		t.Fatalf("code %d out %q err %q", code, out, errOut)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "skills", "work", "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	if out, _, code := runCLI(t, nil, walk...); code != 0 || strings.Contains(out, "plugin:") {
+		t.Fatalf("second walk: code %d out %q", code, out)
 	}
 }

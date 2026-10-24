@@ -22,10 +22,6 @@ var (
 	executable   = os.Executable
 )
 
-// pluginLine is what update prints after an upstream swap: the plugin's
-// skills name commands only a matching binary has.
-const pluginLine = "update the buildermesh plugin too: claude plugin marketplace update buildermesh && claude plugin update buildermesh@buildermesh (then restart Claude Code)"
-
 const updateUsage = "usage: bmesh update [--repo R] [--latest] [--plan] [--answer KEY=VALUE]... [--defaults] [--apply [--yes]] | update --notice"
 
 // answers is --answer, repeatable: KEY=VALUE.
@@ -160,22 +156,22 @@ func (a *app) cmdUpdate(args []string) error {
 			return selfupdate.InstallModule(context.Background(), src.dir, src.module, exe, t, gate)
 		}
 	}
-	return a.updateTo(exe, src.dir, src.name, t, src.module != "", w, install)
+	return a.updateTo(exe, src.dir, src.name, t, w, install)
 }
 
 // updateTo compares this binary with t in dir and runs install when it is
 // behind (or of unknown commit, a tag dir doesn't know included), printing
 // `<old> -> <new>` (selfupdate.Label); the binary that is t prints `up to
 // date`, one with t in its history `ahead of <t>, up to date`, and one t
-// doesn't contain is refused. plugin adds the plugin line after a swap.
+// doesn't contain is refused.
 // The build is gated by its own walk of the notes' asks (`<new> update
 // --walk --before-swap`), which checks the config with the new binary and
 // keeps this one when it fails; after the swap the new binary walks the
-// rest. A current binary resumes a walk left unfinished, or walks the notes
+// rest, writing the plugin it carries first (cmdPlugin). A current binary resumes a walk left unfinished, or walks the notes
 // still pending since this box's record. --plan prints the walk instead.
 // It holds <state dir>/update.lock throughout, so the daemon never
 // restarts onto the binary mid-walk.
-func (a *app) updateTo(exe, dir, from string, t selfupdate.Target, plugin bool, w walkFlags, install func(selfupdate.Gate) error) error {
+func (a *app) updateTo(exe, dir, from string, t selfupdate.Target, w walkFlags, install func(selfupdate.Gate) error) error {
 	if !w.plan {
 		// Held from before the swap to the end of the walk, so the daemon
 		// restarts onto the new binary only once its walk is done.
@@ -235,9 +231,6 @@ func (a *app) updateTo(exe, dir, from string, t selfupdate.Target, plugin bool, 
 		_ = upgrade.WritePrevious(config.StateDir(), tagged)
 	}
 	fmt.Fprintf(a.stdout, "%s -> %s\n", label, selfupdate.Label(dir, t.Commit))
-	if plugin {
-		fmt.Fprintln(a.stdout, pluginLine)
-	}
 	if err := a.childWalk(exe, r, w, false); err != nil {
 		return err
 	}
