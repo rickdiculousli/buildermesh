@@ -1,6 +1,7 @@
 package mesh_test
 
 import (
+	"reflect"
 	"testing"
 
 	. "github.com/rickdiculousli/buildermesh/internal/mesh"
@@ -16,7 +17,7 @@ func TestPutGetListNodes(t *testing.T) {
 		}
 	}
 	got, ok, err := GetNode(ctx, c, "b")
-	if err != nil || !ok || got != b {
+	if err != nil || !ok || !reflect.DeepEqual(got, b) {
 		t.Fatal(got, ok, err)
 	}
 	if _, ok, _ := GetNode(ctx, c, "zz"); ok {
