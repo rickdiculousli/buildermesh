@@ -7,6 +7,7 @@ package session
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -23,6 +24,10 @@ type Reading struct {
 	Harness string // "claude"
 	ID      string // the harness's session id
 	Tokens  int    // the newest model call's input: the context it read
+	// Main is that the command runs on the session's own thread, not a
+	// subagent's: only then is the session told anything or its state
+	// changed.
+	Main bool
 }
 
 // Short is the session id's first eight characters, as `bmesh context`
@@ -52,11 +57,11 @@ func Measure(getenv func(string) string) (Reading, bool) {
 	if !ok {
 		return Reading{}, false
 	}
-	n, ok := claudeTokens(path)
+	t, ok := claudeTail(path)
 	if !ok {
 		return Reading{}, false
 	}
-	return Reading{Harness: "claude", ID: id, Tokens: n}, true
+	return Reading{Harness: "claude", ID: id, Tokens: t.tokens, Main: t.main}, true
 }
 
 // claudeTranscript is <dir>/projects/*/<id>.jsonl, the newest when two
@@ -81,27 +86,30 @@ const (
 	tailMax   = 16 << 20
 )
 
-// claudeTokens is the context of the newest assistant message on the
-// session's own thread: its usage's input_tokens + cache_read_input_tokens
-// + cache_creation_input_tokens. A compaction newer than any such message
-// measures nothing, as does a message whose usage sums to 0 (one Claude
-// Code makes up, not the model's).
-func claudeTokens(path string) (int, bool) {
+// tail is what the end of a transcript says.
+type tail struct {
+	tokens int  // the newest assistant message's context
+	main   bool // the session's own thread is in a tool call
+}
+
+// claudeTail reads the end of a Claude Code transcript (see scan); false
+// when no window up to tailMax holds an answer.
+func claudeTail(path string) (tail, bool) {
 	f, err := os.Open(path)
 	if err != nil {
-		return 0, false
+		return tail{}, false
 	}
 	defer f.Close()
 	st, err := f.Stat()
 	if err != nil {
-		return 0, false
+		return tail{}, false
 	}
 	size := st.Size()
 	for window := int64(tailFirst); ; window *= 4 {
 		start := max(0, size-window)
 		buf := make([]byte, size-start)
 		if _, err := f.ReadAt(buf, start); err != nil && err != io.EOF {
-			return 0, false
+			return tail{}, false
 		}
 		if start > 0 {
 			// The first line is cut: drop it.
@@ -112,22 +120,24 @@ func claudeTokens(path string) (int, bool) {
 				buf = buf[i+1:]
 			}
 		}
-		if n, found, ok := newestUsage(buf); found {
-			return n, ok
+		if t, found, ok := scan(buf); found {
+			return t, ok
 		}
 		if start == 0 || window >= tailMax {
-			return 0, false
+			return tail{}, false
 		}
 	}
 }
 
-// record is what claudeTokens reads of a transcript line.
+// record is what scan reads of a transcript line.
 type record struct {
 	Type        string `json:"type"`
 	Subtype     string `json:"subtype"`
 	IsSidechain bool   `json:"isSidechain"`
 	Message     *struct {
-		Usage *struct {
+		ID      string          `json:"id"`
+		Content json.RawMessage `json:"content"`
+		Usage   *struct {
 			Input       int `json:"input_tokens"`
 			CacheRead   int `json:"cache_read_input_tokens"`
 			CacheCreate int `json:"cache_creation_input_tokens"`
@@ -135,10 +145,39 @@ type record struct {
 	} `json:"message"`
 }
 
-// newestUsage scans buf's lines from the last: found once it reaches an
-// assistant message with usage (ok, its context) or a compaction (not
-// ok).
-func newestUsage(buf []byte) (n int, found, ok bool) {
+// block is a content block's type, a tool_use's id and name, and a
+// tool_result's tool_use_id.
+type block struct {
+	Type      string `json:"type"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	ToolUseID string `json:"tool_use_id"`
+}
+
+func (r record) blocks() []block {
+	var b []block
+	if r.Message != nil && len(r.Message.Content) > 0 && r.Message.Content[0] == '[' {
+		json.Unmarshal(r.Message.Content, &b)
+	}
+	return b
+}
+
+// scan reads buf's lines from the last, on the session's own thread (a
+// line marked isSidechain is a subagent's). It is found at the newest
+// assistant message whose usage sums above 0 (a message Claude Code makes
+// up has all zeros): ok, with its context, input_tokens +
+// cache_read_input_tokens + cache_creation_input_tokens. A compaction newer
+// than that is found, not ok. The thread is in a tool call (main) when a
+// model call newer than that message is in flight (an api-request line:
+// Claude Code writes a message a second or so after its tools start), or
+// when the message has a Bash call with no tool_result yet and no Agent or
+// Task call without one: a subagent runs while its parent waits on its
+// Agent call.
+func scan(buf []byte) (t tail, found, ok bool) {
+	results := map[string]bool{} // tool_use ids answered after the message
+	inflight := false
+	msg := ""
+	var calls []block
 	for len(buf) > 0 {
 		var line []byte
 		if i := bytes.LastIndexByte(bytes.TrimRight(buf, "\n"), '\n'); i >= 0 {
@@ -146,24 +185,63 @@ func newestUsage(buf []byte) (n int, found, ok bool) {
 		} else {
 			line, buf = buf, nil
 		}
-		if !bytes.Contains(line, []byte("assistant")) && !bytes.Contains(line, []byte("compact_boundary")) {
+		if !bytes.Contains(line, []byte(`"type"`)) {
 			continue
 		}
 		var r record
-		if json.Unmarshal(line, &r) != nil {
+		if json.Unmarshal(line, &r) != nil || r.IsSidechain {
 			continue
 		}
-		switch {
-		case r.Type == "system" && r.Subtype == "compact_boundary" && !r.IsSidechain:
-			return 0, true, false
-		case r.Type == "assistant" && !r.IsSidechain && r.Message != nil && r.Message.Usage != nil:
+		if msg != "" {
+			// Collecting the newest message's lines, one per content block,
+			// up to the turn before it.
+			if r.Type == "user" || r.Type == "system" || r.Type == "assistant" && (r.Message == nil || r.Message.ID != msg) {
+				break
+			}
+			if r.Type == "assistant" {
+				calls = append(calls, r.blocks()...)
+			}
+			continue
+		}
+		switch r.Type {
+		case "api-request":
+			inflight = true
+		case "user":
+			for _, b := range r.blocks() {
+				if b.Type == "tool_result" {
+					results[b.ToolUseID] = true
+				}
+			}
+		case "system":
+			if r.Subtype == "compact_boundary" {
+				return tail{}, true, false
+			}
+		case "assistant":
+			if r.Message == nil || r.Message.Usage == nil {
+				continue
+			}
 			u := r.Message.Usage
 			if sum := u.Input + u.CacheRead + u.CacheCreate; sum > 0 {
-				return sum, true, true
+				t.tokens, msg = sum, r.Message.ID
+				calls = r.blocks()
+				if msg == "" {
+					buf = nil // no id to group lines by: this line alone
+				}
 			}
 		}
 	}
-	return 0, false, false
+	if msg == "" && t.tokens == 0 {
+		return tail{}, false, false
+	}
+	bash, agent := false, false
+	for _, c := range calls {
+		if c.Type == "tool_use" && !results[c.ID] {
+			bash = bash || c.Name == "Bash"
+			agent = agent || c.Name == "Agent" || c.Name == "Task"
+		}
+	}
+	t.main = inflight || bash && !agent
+	return t, true, true
 }
 
 // Level is the highest nudge at or below tokens: nudge_from, every
@@ -211,33 +289,42 @@ func K(tokens int) string { return strconv.Itoa(tokens/1000) + "k" }
 // keep is how long a session's nudge state outlives its last change.
 const keep = 7 * 24 * time.Hour
 
-// Heard records that the session has heard r and returns the line it is
-// owed: "" unless r's level is above the one it last heard. A level below
-// the last (a compaction) is recorded silently, so each crossing is said
-// again after it. The state is <dir>/context/<session>, dir the state dir;
-// a level it can't record is never said, so a failing disk can't repeat it.
-func Heard(dir string, c config.ContextConfig, r Reading, now time.Time) string {
-	if c.NudgeFrom <= 0 {
-		return ""
+// state is <state dir>/context/<session>: the level the session last
+// heard and the context bmesh last read for it at or past nudge_from.
+type state struct{ level, tokens int }
+
+// Heard records r for its session and returns the line the session is
+// owed, "" for none. A level above the one it last heard is a nudge. A
+// level below it is a compaction (the harness's own included): the line
+// says so, once, and the levels are said again as the context grows back.
+// Nothing is said or recorded for a reading off the session's own thread,
+// or with nudge_from 0; a line bmesh can't record is never said, so a
+// failing disk can't repeat it. dir is the state dir.
+func Heard(dir string, c config.ContextConfig, r Reading, now time.Time) (line string, compacted bool) {
+	if c.NudgeFrom <= 0 || !r.Main {
+		return "", false
 	}
-	level := Level(c, r.Tokens)
 	d := filepath.Join(dir, "context")
 	p := filepath.Join(d, r.ID)
-	last := 0
+	var last state
 	if b, err := os.ReadFile(p); err == nil {
-		last, _ = strconv.Atoi(strings.TrimSpace(string(b)))
+		fmt.Sscan(string(b), &last.level, &last.tokens)
 	}
-	if level == last {
-		return ""
+	cur := state{Level(c, r.Tokens), r.Tokens}
+	if cur.level == 0 && last.level == 0 || cur == last {
+		return "", false
 	}
-	if os.MkdirAll(d, 0o755) != nil || writeAtomic(p, []byte(strconv.Itoa(level)+"\n")) != nil {
-		return ""
+	if os.MkdirAll(d, 0o755) != nil || writeAtomic(p, []byte(fmt.Sprintf("%d %d\n", cur.level, cur.tokens))) != nil {
+		return "", false
 	}
 	prune(d, now)
-	if level < last {
-		return ""
+	switch {
+	case cur.level > last.level:
+		return strings.TrimSpace("bmesh: this session's context is " + K(r.Tokens) + ". " + Advice(c, cur.level)), false
+	case cur.level < last.level:
+		return "bmesh: this session compacted (" + K(last.tokens) + " -> " + K(r.Tokens) + "); read your state file before going on.", true
 	}
-	return strings.TrimSpace("bmesh: this session's context is " + K(r.Tokens) + ". " + Advice(c, level))
+	return "", false
 }
 
 func writeAtomic(p string, b []byte) error {

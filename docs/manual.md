@@ -39,7 +39,7 @@ The three global flags are accepted before or after the command.
 
 A path that does not parse exits 2 with `node "<path>": <why>`. When nothing resolves, the command exits 2 with `no node for this directory; pass --node or set BMESH_NODE`. A command a person may run outside any node (`hold`, `unhold`, `node stop`, `result`, `lock-lease`) acts as this host's name instead.
 
-**The context line.** Run inside an agent session whose context bmesh can measure, any command but `context`, `serve`, `hub`, `hosts --here` and `update --notice` ends with at most one more line on stderr, after its own output and its exit message, when the session's context has crossed a nudge it hasn't heard: `bmesh: this session's context is 312k. <advice>` (see [`bmesh context`](#bmesh-context)). It is never on stdout, so `--json` output stays whole.
+**The context line.** Run on the main thread of an agent session whose context bmesh can measure, any command but `context`, `serve`, `hub`, `hosts --here` and `update --notice` ends with at most one more line on stderr, after its own output and its exit message, when the session's context has crossed a nudge it hasn't heard (`bmesh: this session's context is 312k. <advice>`) or has dropped since (`bmesh: this session compacted (412k -> 38k); read your state file before going on.`). See [`bmesh context`](#bmesh-context). It is never on stdout, so `--json` output stays whole.
 
 **The setup flag.** `<config dir>/.setup-complete` is the file [`bmesh init`](#bmesh-init) writes last. Any other command but `help`, `version`, `context`, `hosts --here` and `update --notice` checks for it, or for a `config.toml`, first. When it finds neither:
 
@@ -1217,12 +1217,17 @@ Prints the context of the agent session it runs in, with what to do about it. A 
 
 **Measuring.** One reader per harness, each reading only the tail of what the harness records:
 
-- **Claude Code** names the session it runs a command for in `CLAUDE_CODE_SESSION_ID`. Its transcript is `<CLAUDE_CONFIG_DIR, else ~/.claude>/projects/*/<id>.jsonl` (the newest when two match). The context is the newest assistant message on the session's own thread (not a subagent's sidechain, and not one Claude Code makes up, whose usage is all zeros): its `usage`'s `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`. A compaction newer than any such message measures nothing until the next message.
+- **Claude Code** names the session it runs a command for in `CLAUDE_CODE_SESSION_ID`. Its transcript is `<CLAUDE_CONFIG_DIR, else ~/.claude>/projects/*/<id>.jsonl` (the newest when two match). The context is the newest assistant message on the session's own thread (not a sidechain, and not one Claude Code makes up, whose usage is all zeros): its `usage`'s `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`. A compaction newer than any such message measures nothing until the next message.
 - **Any other harness** measures nothing: Codex gives a command no session id.
 
-A subagent's commands carry its parent's `CLAUDE_CODE_SESSION_ID`, so they read the parent's context. A transcript that has changed shape measures nothing rather than a wrong number; `bmesh context` saying there is no session is how that shows.
+A transcript that has changed shape measures nothing rather than a wrong number; `bmesh context` saying there is no session is how that shows.
 
-**The nudges** come from `[context]` (see [config.toml](#configtoml)). The levels are `nudge_from`, every `nudge_every` past it, `compact_from` and `compact_soon`; the advice at a level is:
+**Who hears it.** A subagent's commands carry its parent's environment, `CLAUDE_CODE_SESSION_ID` included, so they would read the parent's context. Only the session's main thread hears it:
+
+- A command acting as a node with a parent (an executor, a round's engineer, a routine instance: `--node`, `BMESH_NODE` or the node this checkout resolves to has a `.` in its path) says nothing and records nothing.
+- Any other command speaks only while the main thread is in a tool call of its own: the newest assistant message has a Bash call with no `tool_result` yet and no Agent or Task call without one, or a model call newer than that message is in flight (Claude Code writes a message a second or so after its tools start; a subagent's model calls go to its own transcript). A foreground subagent's parent waits on its Agent call, and an idle session has no call waiting, so neither hears anything, and its state is left alone.
+
+**The nudges** come from `[context]` (see [config.toml](#configtoml)). The levels are `nudge_from`, every `nudge_every` past it, `compact_from` and `compact_soon`; the advice at a level, a default the session judges, is:
 
 | Level | Advice |
 |---|---|
@@ -1230,15 +1235,22 @@ A subagent's commands carry its parent's `CLAUDE_CODE_SESSION_ID`, so they read 
 | from `compact_from` (300k) | `Compact at your next milestone, after updating your state file; never while exploring or investigating.` |
 | from `compact_soon` (400k) | `Compact at the next safe point, after updating your state file.` |
 
-With `nudge_every = 0` the first advice reads `You'll hear again at <the next level>.` The defaults suit a 1M-token window; `nudge_from = 0` turns the nudges off.
+With `nudge_every = 0` the first advice reads `You'll hear again at <the next level>.` The defaults suit a 1M-token window; `nudge_from = 0` turns the nudges off, the compaction line with them.
 
-**The line** (see [Synopsis](#synopsis)): a command ends with `bmesh: this session's context is <N>k. <advice>` when the session's level is above the last one it heard. Each level is said once per session; a jump past several says the highest once. A drop below the last level heard (what a compaction looks like) is recorded silently, so the levels are said again as the context grows back. The level last heard is `<state dir>/context/<session id>`; a session's file unchanged for 7 days is pruned. A level bmesh can't record is not said, so a failing disk never repeats it. `bmesh context` records the level it reports as heard.
+**The lines** (see [Synopsis](#synopsis)):
+
+- `bmesh: this session's context is <N>k. <advice>` when the session's level is above the last one it heard. Each level is said once per session; a jump past several says the highest once.
+- `bmesh: this session compacted (<before>k -> <now>k); read your state file before going on.` when the level is below the last one heard: a compaction, the harness's own auto-compaction included. `<before>` is the last context bmesh read for the session. It is said once, and the levels are said again as the context grows back.
+
+`<state dir>/context/<session id>` holds the level last heard and the last context read at or past `nudge_from`; a session's file unchanged for 7 days is pruned. A line bmesh can't record is not said, so a failing disk never repeats it. `bmesh context` records what it reports as heard.
 
 **Output.**
 
-- `context 312k (claude session ec03a02c): <advice>`: the session's first eight characters. Below `nudge_from` the advice is `Nothing to do before 250k.`; with the nudges off there is none, and the line ends at the `)`.
+- `context 312k (claude session ec03a02c): <advice>`: the session's first eight characters. Below `nudge_from` the advice is `Nothing to do before 250k.`; with the nudges off there is none, and the line ends at the `)`. A compaction's line goes to stderr.
+- Off the main thread: `context 312k (claude session ec03a02c, not on its own thread: its main thread acts on it)`, recording nothing.
+- From a node with a parent: `context: none for <path>, a node under another: its lead's session acts on the context`.
 - With no session it can measure: `context: no session bmesh can measure (Claude Code names its session in CLAUDE_CODE_SESSION_ID)`, exit 0.
-- `--json`: `{"measured":true,"harness":"claude","session":"<id>","tokens":312456,"advice":"..."}`, or `{"measured":false}`.
+- `--json`: `{"measured":true,"harness":"claude","session":"<id>","tokens":312456,"main":true,"advice":"..."}` (`main` and `advice` left out off the main thread), or `{"measured":false}`.
 
 **Refusals.**
 

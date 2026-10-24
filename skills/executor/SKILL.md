@@ -15,7 +15,7 @@ Work by the repo's `AGENTS.md`, its engineering rules included.
 
 ## 2. Checkpoints
 
-Run `bmesh --node <path> inbox` at every milestone and before you ask anything: your lead's corrections arrive there. Reading it acks it; a routine reply shows there as one line, and `routine wait <job id>` prints it whole whenever you run it. A `bmesh: this session's context is <N>k` line on a command is for your lead: never compact for it.
+Run `bmesh --node <path> inbox` at every milestone and before you ask anything: your lead's corrections arrive there. Reading it acks it; a routine reply shows there as one line, and `routine wait <job id>` prints it whole whenever you run it.
 
 ## 3. Routines
 

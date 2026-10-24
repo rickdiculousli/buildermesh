@@ -456,7 +456,15 @@ The map, `watch`, status, the push loop and the activity reader skip subjects wh
 
 [Manual: bmesh context](manual.md#bmesh-context)
 
-`internal/session` reads the transcript's last 64 KiB, and while that holds neither a usable assistant message nor a compaction, four times as much, up to 16 MiB; it never reads further. A window's first line, cut by the window, is dropped. From the last line back, a line naming neither `assistant` nor `compact_boundary` is skipped unparsed; a `{"type":"system","subtype":"compact_boundary"}` line ends the search with nothing; an `{"type":"assistant"}` line not `isSidechain`, whose `message.usage` input, cache-read and cache-creation tokens sum above 0, is the reading. `<state dir>/context/<session id>` holds the level last heard as decimal tokens and a newline, written through a temp file and a rename; each write also removes the dir's files unchanged for 7 days. Two commands of one session at once can both say a level.
+`internal/session` reads the transcript's last 64 KiB, and while that holds no answer, four times as much, up to 16 MiB; it never reads further. A window's first line, cut by the window, is dropped. From the last line back, skipping lines marked `isSidechain`:
+
+1. An `{"type":"api-request"}` line marks a model call in flight; a `{"type":"user"}` line's `tool_result` blocks mark their `tool_use_id`s answered.
+2. A `{"type":"system","subtype":"compact_boundary"}` line ends the search with nothing.
+3. The first `{"type":"assistant"}` line whose `message.usage` input, cache-read and cache-creation tokens sum above 0 is the reading. The lines before it with the same `message.id` (one per content block, up to a `user` or `system` line) add their `tool_use` blocks.
+
+The reading is the main thread's when a model call was in flight, or when a `tool_use` named `Bash` is unanswered and none named `Agent` or `Task` is.
+
+`<state dir>/context/<session id>` holds `<level> <tokens>` and a newline, written through a temp file and a rename whenever either changes (so once per main-thread command at or past `nudge_from`); each write also removes the dir's files unchanged for 7 days. Two commands of one session at once can both say a line.
 
 ## Config
 

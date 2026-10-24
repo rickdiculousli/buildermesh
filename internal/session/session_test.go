@@ -13,12 +13,30 @@ import (
 
 var defaults = config.ContextConfig{NudgeFrom: 250000, NudgeEvery: 50000, CompactFrom: 300000, CompactSoon: 400000}
 
-// assistant is a transcript line for an assistant message whose context
-// is tokens, split as Claude Code records it.
-func assistant(tokens int) string {
-	return fmt.Sprintf(`{"type":"assistant","isSidechain":false,"message":{"model":"claude-opus-5-5","role":"assistant","usage":{"input_tokens":2,"cache_creation_input_tokens":%d,"cache_read_input_tokens":%d,"output_tokens":300}}}`,
-		tokens/4, tokens-2-tokens/4)
+// assistant is a transcript line of an assistant message whose context is
+// tokens, split as Claude Code records it, its id msg_<tokens>, holding
+// blocks (none: a Bash call, toolu_<tokens>, waiting on its result).
+func assistant(tokens int, blocks ...string) string {
+	if blocks == nil {
+		blocks = []string{call("Bash", tokens)}
+	}
+	return fmt.Sprintf(`{"type":"assistant","isSidechain":false,"message":{"model":"claude-opus-5-5","id":"msg_%d","role":"assistant","content":[%s],"usage":{"input_tokens":2,"cache_creation_input_tokens":%d,"cache_read_input_tokens":%d,"output_tokens":300}}}`,
+		tokens, strings.Join(blocks, ","), tokens/4, tokens-2-tokens/4)
 }
+
+// call is a tool_use block of tool, id toolu_<n>; result its tool_result line.
+func call(tool string, n int) string {
+	return fmt.Sprintf(`{"type":"tool_use","id":"toolu_%d","name":%q,"input":{}}`, n, tool)
+}
+
+func result(n int) string {
+	return fmt.Sprintf(`{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_%d","content":"ok"}]}}`, n)
+}
+
+const thinking = `{"type":"thinking","thinking":"..."}`
+
+// apiRequest is the line Claude Code writes as it sends a model call.
+const apiRequest = `{"type":"api-request","sessionId":"s","querySource":"sdk"}`
 
 // transcript writes lines as session id's transcript under a fake Claude
 // config dir and returns a getenv naming both.
@@ -47,7 +65,7 @@ func TestMeasureReadsNewestMainThreadUsage(t *testing.T) {
 		`{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"the assistant said"}]}}`,
 		`{"type":"attachment","attachment":{}}`)
 	r, ok := Measure(getenv)
-	if !ok || r.Tokens != 312456 || r.Harness != "claude" || r.ID != "ec03a02c-1" || r.Short() != "ec03a02c" {
+	if !ok || r.Tokens != 312456 || r.Harness != "claude" || r.ID != "ec03a02c-1" || r.Short() != "ec03a02c" || !r.Main {
 		t.Fatalf("Measure = %+v, %v; want 312456 from claude session ec03a02c-1", r, ok)
 	}
 }
@@ -61,7 +79,7 @@ func TestMeasureSaysNothingItCantRead(t *testing.T) {
 		"a path for an id":     transcript(t, "x", assistant(300000)),
 		"no usage":             transcript(t, "s1", `{"type":"user","message":{}}`, `{"type":"assistant","message":{"content":[]}}`),
 		"not json":             transcript(t, "s2", `garbage "assistant"`),
-		"compacted since":      transcript(t, "s3", assistant(380000), `{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}`),
+		"compacted since":      transcript(t, "s3", assistant(380000), `{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}`, apiRequest),
 		"empty transcript":     transcript(t, "s4"),
 		"only synthetic":       transcript(t, "s5", `{"type":"assistant","message":{"model":"<synthetic>","usage":{"input_tokens":0}}}`),
 		"only a sidechain":     transcript(t, "s6", `{"type":"assistant","isSidechain":true,"message":{"usage":{"input_tokens":300000}}}`),
@@ -86,6 +104,36 @@ func TestMeasureSaysNothingItCantRead(t *testing.T) {
 		}
 		if r, ok := Measure(env); ok {
 			t.Errorf("%s: Measure = %+v; want nothing", name, r)
+		}
+	}
+}
+
+// TestMeasureMainThread: a reading is the main thread's while it is in a
+// tool call of its own: a Bash call waiting on its result and no Agent
+// call waiting, or a model call in flight whose message isn't written yet.
+// A subagent runs while its parent's Agent call waits, and a background
+// one while its parent is idle: neither is main.
+func TestMeasureMainThread(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		lines []string
+		main  bool
+	}{
+		{"a Bash call waiting", []string{assistant(300000)}, true},
+		{"a Bash call over two lines", []string{assistant(300000, thinking), assistant(300000)}, true},
+		{"a model call in flight", []string{assistant(300000), result(300000), apiRequest}, true},
+		{"a new turn in flight", []string{assistant(300000, `{"type":"text","text":"done"}`), `{"type":"user","message":{"role":"user","content":"next"}}`, apiRequest}, true},
+		{"an Agent call waiting", []string{assistant(300000, call("Agent", 1))}, false},
+		{"a Task call waiting", []string{assistant(300000, call("Task", 1))}, false},
+		{"a Bash and an Agent call waiting", []string{assistant(300000, call("Agent", 1)), assistant(300000, call("Bash", 2))}, false},
+		{"an Agent call answered, a Bash call waiting", []string{assistant(300000, call("Agent", 1)), assistant(300000, call("Bash", 2)), result(1)}, true},
+		{"every call answered: idle", []string{assistant(300000), result(300000)}, false},
+		{"a reply: idle", []string{assistant(300000, `{"type":"text","text":"done"}`)}, false},
+		{"a model call before the message", []string{apiRequest, assistant(300000, call("Agent", 1))}, false},
+	} {
+		r, ok := Measure(transcript(t, "m", tc.lines...))
+		if !ok || r.Tokens != 300000 || r.Main != tc.main {
+			t.Errorf("%s: Measure = %+v, %v; want 300000, main %v", tc.name, r, ok, tc.main)
 		}
 	}
 }
@@ -124,11 +172,11 @@ func TestMeasureReadsALargeTranscriptsTail(t *testing.T) {
 func TestHeardSaysEachCrossingOnceInOrder(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()
-	r := Reading{Harness: "claude", ID: "s"}
+	r := Reading{Harness: "claude", ID: "s", Main: true}
 	var said []string
 	for _, n := range []int{100000, 249999, 250000, 260000, 299000, 304000, 310000, 351000, 352000, 404000, 420000, 455000} {
 		r.Tokens = n
-		if l := Heard(dir, defaults, r, now); l != "" {
+		if l, _ := Heard(dir, defaults, r, now); l != "" {
 			said = append(said, l)
 		}
 	}
@@ -146,50 +194,73 @@ func TestHeardSaysEachCrossingOnceInOrder(t *testing.T) {
 
 func TestHeardJumpSaysTheHighestOnce(t *testing.T) {
 	dir := t.TempDir()
-	r := Reading{Harness: "claude", ID: "s", Tokens: 420000}
-	if l := Heard(dir, defaults, r, time.Now()); !strings.Contains(l, "420k. Compact at the next safe point") {
+	r := Reading{Harness: "claude", ID: "s", Tokens: 420000, Main: true}
+	if l, _ := Heard(dir, defaults, r, time.Now()); !strings.Contains(l, "420k. Compact at the next safe point") {
 		t.Fatalf("Heard = %q", l)
 	}
-	if l := Heard(dir, defaults, r, time.Now()); l != "" {
+	if l, _ := Heard(dir, defaults, r, time.Now()); l != "" {
 		t.Fatalf("again: %q; want nothing", l)
 	}
 }
 
-func TestHeardDropResets(t *testing.T) {
+func TestHeardDropSaysCompactedOnceAndResets(t *testing.T) {
 	dir := t.TempDir()
-	r := Reading{Harness: "claude", ID: "s", Tokens: 410000}
+	r := Reading{Harness: "claude", ID: "s", Tokens: 405000, Main: true}
 	Heard(dir, defaults, r, time.Now())
-	r.Tokens = 60000 // compacted
-	if l := Heard(dir, defaults, r, time.Now()); l != "" {
-		t.Fatalf("drop: %q; want nothing", l)
+	r.Tokens = 412345 // the last context bmesh read before the compaction
+	if l, _ := Heard(dir, defaults, r, time.Now()); l != "" {
+		t.Fatalf("412k: %q; want nothing", l)
+	}
+	r.Tokens = 38000
+	if l, compacted := Heard(dir, defaults, r, time.Now()); !compacted || l != "bmesh: this session compacted (412k -> 38k); read your state file before going on." {
+		t.Fatalf("drop: %q, %v", l, compacted)
+	}
+	if l, _ := Heard(dir, defaults, r, time.Now()); l != "" {
+		t.Fatalf("again after the drop: %q; want nothing", l)
 	}
 	r.Tokens = 251000
-	if l := Heard(dir, defaults, r, time.Now()); !strings.HasPrefix(l, "bmesh: this session's context is 251k.") {
+	if l, _ := Heard(dir, defaults, r, time.Now()); !strings.HasPrefix(l, "bmesh: this session's context is 251k.") {
 		t.Fatalf("after the drop: %q; want the 250k nudge again", l)
 	}
-	// A drop to a lower nudge says nothing, and the crossings past it are said again.
+	// A drop to a lower nudge says it compacted, and the crossings past it
+	// are said again.
 	r.Tokens = 405000
 	Heard(dir, defaults, r, time.Now())
 	r.Tokens = 310000
-	if l := Heard(dir, defaults, r, time.Now()); l != "" {
-		t.Fatalf("drop to 310k: %q; want nothing", l)
+	if l, compacted := Heard(dir, defaults, r, time.Now()); !compacted || !strings.Contains(l, "(405k -> 310k)") {
+		t.Fatalf("drop to 310k: %q", l)
 	}
 	r.Tokens = 352000
-	if l := Heard(dir, defaults, r, time.Now()); !strings.Contains(l, "352k") {
+	if l, _ := Heard(dir, defaults, r, time.Now()); !strings.Contains(l, "352k") {
 		t.Fatalf("after the drop to 310k: %q; want 350k said again", l)
+	}
+}
+
+func TestHeardOffTheMainThreadSaysAndRecordsNothing(t *testing.T) {
+	dir := t.TempDir()
+	r := Reading{Harness: "claude", ID: "s", Tokens: 304000}
+	if l, _ := Heard(dir, defaults, r, time.Now()); l != "" {
+		t.Fatalf("off the main thread: %q", l)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "context", "s")); !os.IsNotExist(err) {
+		t.Fatalf("off the main thread wrote state: %v", err)
+	}
+	r.Main = true
+	if l, _ := Heard(dir, defaults, r, time.Now()); !strings.Contains(l, "304k") {
+		t.Fatalf("the main thread still hears it: %q", l)
 	}
 }
 
 func TestHeardSessionsApartAndOff(t *testing.T) {
 	dir := t.TempDir()
-	a := Reading{Harness: "claude", ID: "a", Tokens: 260000}
-	b := Reading{Harness: "claude", ID: "b", Tokens: 260000}
-	if Heard(dir, defaults, a, time.Now()) == "" || Heard(dir, defaults, b, time.Now()) == "" {
-		t.Fatal("each session hears its own crossing")
+	for _, id := range []string{"a", "b"} {
+		if l, _ := Heard(dir, defaults, Reading{Harness: "claude", ID: id, Tokens: 260000, Main: true}, time.Now()); l == "" {
+			t.Fatalf("%s doesn't hear its own crossing", id)
+		}
 	}
 	off := defaults
 	off.NudgeFrom = 0
-	if l := Heard(dir, off, Reading{ID: "c", Tokens: 900000}, time.Now()); l != "" {
+	if l, _ := Heard(dir, off, Reading{ID: "c", Tokens: 900000, Main: true}, time.Now()); l != "" {
 		t.Fatalf("nudge_from = 0: %q; want nothing", l)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "context", "c")); !os.IsNotExist(err) {
@@ -199,13 +270,13 @@ func TestHeardSessionsApartAndOff(t *testing.T) {
 
 func TestHeardPrunesWeekOldSessions(t *testing.T) {
 	dir := t.TempDir()
-	Heard(dir, defaults, Reading{ID: "old", Tokens: 260000}, time.Now())
+	Heard(dir, defaults, Reading{ID: "old", Tokens: 260000, Main: true}, time.Now())
 	old := filepath.Join(dir, "context", "old")
 	week := time.Now().Add(-8 * 24 * time.Hour)
 	if err := os.Chtimes(old, week, week); err != nil {
 		t.Fatal(err)
 	}
-	Heard(dir, defaults, Reading{ID: "new", Tokens: 260000}, time.Now())
+	Heard(dir, defaults, Reading{ID: "new", Tokens: 260000, Main: true}, time.Now())
 	if _, err := os.Stat(old); !os.IsNotExist(err) {
 		t.Fatalf("a session unchanged 8 days is kept: %v", err)
 	}
