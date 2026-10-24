@@ -53,7 +53,7 @@ func Done(r config.Repo) string {
 		" If the rebase conflicts, resolve it: read your spec and the specs that landed since you branched, make every intent hold, " +
 		"widen your spec if a landed one changes what yours must look like, re-validate, then merge. " +
 		"Stop only when the widened scope can't be met from the specs alone; then report the block with `bmesh blocked` and the reason. " +
-		"End with one line: what's done (the commit on `main`), " + pushState(r) + ", and what, if anything, waits on the operator. " + brief.PlainWords
+		"End with one line: what's done (the commit on `main`), " + pushState(r) + ", what wasn't checked, and what, if anything, waits on the operator. " + brief.PlainWords
 }
 
 // pushState is what the done line says of the push, so the operator knows
