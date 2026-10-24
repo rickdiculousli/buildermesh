@@ -225,6 +225,11 @@ func (a *app) cmdBuild(args []string) error {
 	return nil
 }
 
+// watchNext is the watch that follows the nodes a command started (100).
+func watchNext(w io.Writer, paths []string) {
+	fmt.Fprintf(w, "next: bmesh watch --nodes %s --timeout 30m, under a Monitor where your harness has one, else in the background (never poll the runner); on exit 5, run it again with --since <its last line's time>\n", strings.Join(paths, ","))
+}
+
 // leadsNext is what the coordinator does with the leads a build started
 // (100): the watch that follows them, then how to relay, hold, stop and
 // wipe one, to stderr so stdout stays the command's result. paths are the
@@ -233,7 +238,7 @@ func leadsNext(w io.Writer, paths []string) {
 	if len(paths) == 0 {
 		return
 	}
-	fmt.Fprintf(w, "next: bmesh watch --nodes %s --timeout 30m, under a Monitor where your harness has one, else in the background (never poll the runner); on exit 5, run it again with --since <its last line's time>\n", strings.Join(paths, ","))
+	watchNext(w, paths)
 	fmt.Fprintln(w, `next: an ask goes to the operator in their words, and their answer back with bmesh --node operator send <path> "<answer>"; a blocked is reported with its reason, a done with its commit, a held or landing line only when asked`)
 	fmt.Fprintln(w, `next: to hold one, bmesh --node operator hold <path> --text "<why>" (before it lands; --gate now at once), released with bmesh --node operator unhold <path>; to stop one for good, bmesh --node operator node stop <path> --text "<why>", never a message; to wipe one, stop it, then bmesh node forget <path> --wipe (--dry-run first)`)
 }
