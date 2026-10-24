@@ -62,7 +62,7 @@ func score(s *State, k *Case) Row {
 	c := s.Cell
 	r := Row{Case: c.Case, Arm: c.Arm, Run: c.Run, Steers: c.Steers, OperatorTurns: len(c.Turns), Error: c.Error,
 		Commits: len(s.NewCommits()), Commands: []string{}, Skills: append([]string{}, s.Skills()...)}
-	r.Pass = true
+	r.Pass = c.Error == "" // a turn that failed proves nothing, whatever the state it left
 	for _, p := range k.Expect {
 		ok, why := p.Check(s)
 		r.Predicates = append(r.Predicates, PredResult{p.Name, ok, why})

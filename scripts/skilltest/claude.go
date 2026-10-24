@@ -123,7 +123,7 @@ func sessionEnv(base []string, dir string, h Host) []string {
 			continue
 		case keptEnv[k]:
 		case strings.HasPrefix(k, "CLAUDE"), strings.HasPrefix(k, "T3"), strings.HasPrefix(k, "BMESH_"),
-			strings.HasPrefix(k, "SKILLTEST_"), strings.HasPrefix(k, "GIT_"), strings.HasPrefix(k, "GO"),
+			strings.HasPrefix(k, "SKILLTEST_"), strings.HasPrefix(k, "GIT_"), strings.HasPrefix(k, "GO"), strings.HasPrefix(k, "TMUX"),
 			k == "XDG_CONFIG_HOME", k == "XDG_DATA_HOME", k == "XDG_CACHE_HOME", k == "XDG_STATE_HOME",
 			k == "AI_AGENT", k == "HOME", k == "SSH_AUTH_SOCK", k == "SSH_AGENT_PID", k == "TMPDIR", k == "BASH_ENV", k == "ENV":
 			continue
@@ -137,6 +137,7 @@ func sessionEnv(base []string, dir string, h Host) []string {
 		"CLAUDE_CODE_DISABLE_AUTO_MEMORY=1",
 		"DISABLE_AUTOUPDATER=1",
 		"TMPDIR="+filepath.Join(dir, "tmp"),
+		"TMUX_TMPDIR="+filepath.Join(dir, "tmp"), // tmux finds its server by this, not TMPDIR
 		"BMESH_CONFIG="+filepath.Join(dir, "bmesh-config", "config.toml"),
 		"SKILLTEST_LOG="+filepath.Join(dir, logFile),
 		"SKILLTEST_CELL="+dir,
@@ -222,6 +223,7 @@ func (r *runner) turn(ctx context.Context, dir string, c *Cell, words string, st
 			runErr = fmt.Errorf("stopped: %w", ctx.Err())
 		}
 		timer.Stop()
+		_ = proc.KillGroup(cmd) // what the session left running in the background ends with its turn
 	}
 	t.WallMS = time.Since(start).Milliseconds()
 	stdout.Close()
@@ -229,8 +231,11 @@ func (r *runner) turn(ctx context.Context, dir string, c *Cell, words string, st
 		fmt.Fprintf(stderr, "\n[skilltest: %v]\n", runErr)
 	}
 	stderr.Close()
-	res, perr := readResult(filepath.Join(dir, t.File))
+	res, init, perr := readTurn(filepath.Join(dir, t.File))
 	t.Session = res.SessionID
+	if t.Session == "" && init != nil {
+		t.Session = init.SessionID // a turn killed before its result still wrote a transcript to keep
+	}
 	switch {
 	case runErr != nil:
 		t.Error = runErr.Error()
@@ -324,6 +329,7 @@ func turnSpend(r Result, prev *Result) Spend {
 type Init struct {
 	Type       string            `json:"type"`
 	Subtype    string            `json:"subtype"`
+	SessionID  string            `json:"session_id"`
 	Plugins    []json.RawMessage `json:"plugins"`
 	Skills     []json.RawMessage `json:"skills"`
 	Tools      []json.RawMessage `json:"tools"`
@@ -397,11 +403,6 @@ func readTurn(file string) (Result, *Init, error) {
 		return last, init, fmt.Errorf("%s: no result in claude's output", filepath.Base(file))
 	}
 	return last, init, nil
-}
-
-func readResult(file string) (Result, error) {
-	r, _, err := readTurn(file)
-	return r, err
 }
 
 // claudeProjects is where claude writes its sessions' transcripts.

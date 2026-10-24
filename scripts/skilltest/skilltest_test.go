@@ -112,7 +112,7 @@ func TestFixture(t *testing.T) {
 	if want := []string{"012 proposed", "013 proposed", "014 proposed"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("ledger %v, want %v", got, want)
 	}
-	code, out, errs := run(fixture, 5*time.Minute, goEnv(), "go", "test", "./...")
+	code, out, errs := run(fixture, 5*time.Minute, append(os.Environ(), "GOTOOLCHAIN=local", "GOPROXY=off", "GOWORK=off", "GOFLAGS="), "go", "test", "./...")
 	if code != 0 {
 		t.Errorf("the fixture's tests fail:\n%s%s", out, errs)
 	}
@@ -341,23 +341,23 @@ func TestSessionShell(t *testing.T) {
 	env := sessionEnv(os.Environ(), dir, h)
 	bin := filepath.Join(dir, "bin")
 	for _, mode := range [][]string{{"-l", "-c"}, {"-i", "-c"}, {"-c"}} {
-		code, out, errs := run(dir, time.Minute, env, "bash", append(mode, `command -v bmesh claude ssh go git; echo "$HOME"; echo "$PATH"`)...)
+		code, out, errs := run(dir, time.Minute, env, "bash", append(mode, `command -v bmesh claude ssh tmux go git; echo "$HOME"; echo "$PATH"`)...)
 		got := strings.Fields(out)
-		if code != 0 || len(got) != 7 {
+		if code != 0 || len(got) != 8 {
 			t.Fatalf("bash %v: exit %d: %s%s", mode, code, out, errs)
 		}
-		for i, tool := range []string{"bmesh", "claude", "ssh"} {
+		for i, tool := range []string{"bmesh", "claude", "ssh", "tmux"} {
 			if got[i] != filepath.Join(bin, tool) {
 				t.Errorf("bash %v finds %s at %s", mode, tool, got[i])
 			}
 		}
-		if under(got[3], dir) || under(got[4], dir) {
-			t.Errorf("bash %v finds go at %s and git at %s", mode, got[3], got[4])
+		if under(got[4], dir) || under(got[5], dir) {
+			t.Errorf("bash %v finds go at %s and git at %s", mode, got[4], got[5])
 		}
-		if got[5] != filepath.Join(dir, "home") {
-			t.Errorf("bash %v has HOME %s", mode, got[5])
+		if got[6] != filepath.Join(dir, "home") {
+			t.Errorf("bash %v has HOME %s", mode, got[6])
 		}
-		for _, p := range filepath.SplitList(got[6]) {
+		for _, p := range filepath.SplitList(got[7]) {
 			if under(p, h.Home) && !under(p, dir) && !slices.Contains(h.Tools, p) {
 				t.Errorf("bash %v has %s of this box's home on PATH", mode, p)
 			}
@@ -516,7 +516,8 @@ func TestRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	parent := append(os.Environ(), "FAKE_CLAUDE_DIR="+tools, "CLAUDECODE=1", "CLAUDE_CODE_SESSION_ID=parent", "CLAUDE_CONFIG_DIR=/keep/me",
-		"T3_SERVICE_LAUNCHER_CONTEXT={}", "BMESH_NODE=shop-012", "GIT_DIR=/nowhere", "SSH_AUTH_SOCK=/agent", "AI_AGENT=x")
+		"T3_SERVICE_LAUNCHER_CONTEXT={}", "BMESH_NODE=shop-012", "GIT_DIR=/nowhere", "SSH_AUTH_SOCK=/agent", "AI_AGENT=x",
+		"TMUX=/tmp/tmux-1000/default,1,0", "TMUX_PANE=%1")
 	host := findHost()
 	host.Home = t.TempDir()
 	if err := os.Mkdir(filepath.Join(host.Home, ".claude"), 0o755); err != nil {
@@ -550,7 +551,7 @@ func TestRun(t *testing.T) {
 	}
 	env, _ := os.ReadFile(filepath.Join(tools, "env.1"))
 	cell := filepath.Join(out, "cells", "bug__cand__1")
-	for _, bad := range []string{"CLAUDECODE=", "CLAUDE_CODE_SESSION_ID=", "T3_SERVICE_LAUNCHER_CONTEXT=", "BMESH_NODE=", "GIT_DIR=", "SSH_AUTH_SOCK=", "AI_AGENT="} {
+	for _, bad := range []string{"CLAUDECODE=", "CLAUDE_CODE_SESSION_ID=", "T3_SERVICE_LAUNCHER_CONTEXT=", "BMESH_NODE=", "GIT_DIR=", "SSH_AUTH_SOCK=", "AI_AGENT=", "TMUX=", "TMUX_PANE="} {
 		if regexp.MustCompile(`(?m)^` + bad).Match(env) {
 			t.Errorf("the session's environment kept %s", bad)
 		}
@@ -559,6 +560,9 @@ func TestRun(t *testing.T) {
 		if !regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(good)).Match(env) {
 			t.Errorf("the session's environment has no %s", good)
 		}
+	}
+	if tm, tmp := regexp.MustCompile(`(?m)^TMUX_TMPDIR=(.+)$`).FindSubmatch(env), regexp.MustCompile(`(?m)^TMPDIR=(.+)$`).FindSubmatch(env); tm == nil || tmp == nil || string(tm[1]) != string(tmp[1]) {
+		t.Errorf("tmux's dir isn't the session's TMPDIR: %q, %q", tm, tmp)
 	}
 	if m := regexp.MustCompile(`(?m)^PATH=([^:\n]*)`).FindSubmatch(env); m == nil || filepath.Base(string(m[1])) != "bin" {
 		t.Errorf("PATH doesn't start with the cell's bin: %s", m)
@@ -597,13 +601,25 @@ func TestRun(t *testing.T) {
 	if !strings.Contains(string(md), "| bug | cand | 1 | 1/1 | 1 | 1 | $0.03 |") || !strings.Contains(string(md), "| cand | 1 | 100% | 1 | 1 |") {
 		t.Errorf("summary.md:\n%s", md)
 	}
+	// A cell whose turn failed passes nothing, whatever the state it left.
+	c, err := loadCell(cell)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Error = "claude: error_during_execution usage limit reached"
+	if err := c.save(cell); err != nil {
+		t.Fatal(err)
+	}
+	if failed, err := scoreCell(cell, findCase("bug")); err != nil || failed.Pass {
+		t.Errorf("a cell whose turn failed scored pass %v, %v", failed.Pass, err)
+	}
 }
 
 // A turn past its timeout is killed with its whole process group.
 func TestTurnTimeout(t *testing.T) {
 	dir, _ := fakeCell(t)
 	slow := filepath.Join(t.TempDir(), "claude")
-	if err := os.WriteFile(slow, []byte("#!/bin/sh\nsleep 60 &\nsleep 60\n"), 0o755); err != nil {
+	if err := os.WriteFile(slow, []byte("#!/bin/sh\necho '{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s0\"}'\nsleep 60 &\nsleep 60\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	r := &runner{claude: slow, model: "m", timeout: time.Second, env: os.Environ()}
@@ -613,7 +629,32 @@ func TestTurnTimeout(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "killed after 1s") || time.Since(start) > 20*time.Second {
 		t.Fatalf("turn: %v after %s", err, time.Since(start))
 	}
-	if len(c.Turns) != 1 || c.Turns[0].Error == "" {
+	if len(c.Turns) != 1 || c.Turns[0].Error == "" || c.Turns[0].Session != "s0" {
 		t.Errorf("turns %+v", c.Turns)
+	}
+}
+
+// What a session left running in the background ends with its turn.
+func TestTurnEndsItsGroup(t *testing.T) {
+	dir, _ := fakeCell(t)
+	tools := t.TempDir()
+	pid := filepath.Join(tools, "pid")
+	quick := filepath.Join(tools, "claude")
+	script := "#!/bin/sh\nsleep 60 &\necho $! > " + pid + "\necho '{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"ok\",\"session_id\":\"s1\"}'\n"
+	if err := os.WriteFile(quick, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := &runner{claude: quick, model: "m", timeout: time.Minute, env: os.Environ()}
+	if err := r.turn(context.Background(), dir, &Cell{Plugin: dir}, "hi", false); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for end := time.Now().Add(10 * time.Second); exec.Command("kill", "-0", strings.TrimSpace(string(b))).Run() == nil; time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatalf("the session's background sleep %s outlived its turn", b)
+		}
 	}
 }

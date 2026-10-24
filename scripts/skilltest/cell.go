@@ -31,9 +31,9 @@ const (
 
 // blocked are the tools a cell shadows with a stub: each reaches the real
 // mesh (nats, ssh to a box running the real bmesh, the previous bmesh),
-// threads (t3, claude and codex sessions of their own), real repos (gh) or
-// people (ntfy).
-var blocked = []string{"bmesh.prev", "claude", "codex", "gh", "nats", "ntfy", "scp", "ssh", "t3"}
+// threads (t3, claude and codex sessions of their own, tmux's windows),
+// real repos (gh) or people (ntfy).
+var blocked = []string{"bmesh.prev", "claude", "codex", "gh", "nats", "ntfy", "scp", "ssh", "t3", "tmux"}
 
 //go:embed fake/bmesh fake/stub
 var fakeFS embed.FS

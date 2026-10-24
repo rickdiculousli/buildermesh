@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -319,10 +320,28 @@ func (s *State) checkout() (string, error) {
 	return dir, nil
 }
 
-// goEnv is the environment Go runs in when scoring: offline, with this
-// box's toolchain and no workspace.
-func goEnv() []string {
-	return append(os.Environ(), "GOTOOLCHAIN=local", "GOPROXY=off", "GOWORK=off", "GOFLAGS=")
+// host is this box's, read once for every scoring.
+var host = sync.OnceValue(findHost)
+
+// goEnv is the environment scoring runs origin's main's code in, code a
+// session wrote: a session's, as sessionEnv makes it (the cell's fake bmesh
+// and stubs first on PATH, nothing of this box's home, offline), with its
+// home, tmp and the fake's log in this scoring's scratch, so the code
+// reaches nothing real and leaves nothing in the kept cell.
+func (s *State) goEnv() ([]string, error) {
+	root, err := s.scratchDir()
+	if err != nil {
+		return nil, err
+	}
+	home, tmp := filepath.Join(root, "home"), filepath.Join(root, "tmp")
+	for _, d := range []string{home, tmp} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			return nil, err
+		}
+	}
+	return append(sessionEnv(os.Environ(), s.Dir, host()),
+		"HOME="+home, "TMPDIR="+tmp, "TMUX_TMPDIR="+tmp, "GOPATH="+filepath.Join(home, "go"),
+		"SKILLTEST_LOG="+filepath.Join(root, logFile), "GOFLAGS="), nil
 }
 
 func run(dir string, timeout time.Duration, env []string, name string, args ...string) (int, string, string) {
@@ -363,7 +382,11 @@ func (s *State) TestsPass() (bool, string) {
 		if err != nil {
 			return false, err.Error()
 		}
-		code, out, errs := run(dir, 5*time.Minute, goEnv(), "go", "test", "./...")
+		env, err := s.goEnv()
+		if err != nil {
+			return false, err.Error()
+		}
+		code, out, errs := run(dir, 5*time.Minute, env, "go", "test", "./...")
 		if code != 0 {
 			return false, "go test ./... on origin's main: " + tail(out+errs, 6)
 		}
@@ -372,10 +395,15 @@ func (s *State) TestsPass() (bool, string) {
 }
 
 // Hidden runs one hidden test against origin's main: the files under
-// testdata/hidden/<pkg> are copied into the package first.
+// testdata/hidden/<pkg> are copied into the package for the run and taken
+// out after it, so the shared checkout holds only origin's main.
 func (s *State) Hidden(pkg, test string) (bool, string) {
 	return s.once("hidden "+test, func() (bool, string) {
 		dir, err := s.checkout()
+		if err != nil {
+			return false, err.Error()
+		}
+		env, err := s.goEnv()
 		if err != nil {
 			return false, err.Error()
 		}
@@ -388,11 +416,13 @@ func (s *State) Hidden(pkg, test string) (bool, string) {
 			if err != nil {
 				return false, err.Error()
 			}
-			if err := writeFile(filepath.Join(dir, pkg, f.Name()), string(b)); err != nil {
+			p := filepath.Join(dir, pkg, f.Name())
+			if err := writeFile(p, string(b)); err != nil {
 				return false, err.Error()
 			}
+			defer os.Remove(p)
 		}
-		code, out, errs := run(dir, 5*time.Minute, goEnv(), "go", "test", "-count=1", "-run", "^"+test+"$", "./"+pkg)
+		code, out, errs := run(dir, 5*time.Minute, env, "go", "test", "-count=1", "-run", "^"+test+"$", "./"+pkg)
 		if code != 0 {
 			return false, test + ": " + tail(out+errs, 4)
 		}
@@ -407,8 +437,12 @@ func (s *State) binary() (string, error) {
 		if err != nil {
 			return false, err.Error()
 		}
+		env, err := s.goEnv()
+		if err != nil {
+			return false, err.Error()
+		}
 		bin := filepath.Join(filepath.Dir(dir), "shop-bin")
-		code, out, errs := run(dir, 5*time.Minute, goEnv(), "go", "build", "-o", bin, "./cmd/shop")
+		code, out, errs := run(dir, 5*time.Minute, env, "go", "build", "-o", bin, "./cmd/shop")
 		if code != 0 {
 			return false, "go build ./cmd/shop: " + tail(out+errs, 4)
 		}
@@ -446,8 +480,12 @@ func (s *State) Shop(args ...string) (ShopRun, error) {
 	if err := writeFile(store, seedOrders); err != nil {
 		return ShopRun{}, err
 	}
+	env, err := s.goEnv()
+	if err != nil {
+		return ShopRun{}, err
+	}
 	var r ShopRun
-	r.Exit, r.Stdout, r.Stderr = run(dir, 30*time.Second, append(goEnv(), "SHOP_STORE="+store), bin, args...)
+	r.Exit, r.Stdout, r.Stderr = run(dir, 30*time.Second, append(env, "SHOP_STORE="+store), bin, args...)
 	r.Files = map[string]string{}
 	matches, _ := filepath.Glob(filepath.Join(dir, "*.csv"))
 	for _, m := range matches {
