@@ -1,5 +1,5 @@
-// Package gitwork is the git steps shared by ideate, choose-ideas, the
-// ledger edits and the daemon's rescaffold: the same moves the briefs ask a
+// Package gitwork is the git steps shared by ideate, build, the ledger
+// edits and the daemon's rescaffold: the same moves the briefs ask a
 // thread to make, so a checkout someone else is working in is never
 // switched, reset or stashed.
 package gitwork

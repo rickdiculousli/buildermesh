@@ -346,6 +346,23 @@ func Update(s *Spec, fields ...Field) (string, error) {
 	return b.String(), nil
 }
 
+// CheckFrom refuses a spec whose status is not one of allowedFrom (a
+// LedgerError naming its status); nil allows any.
+func CheckFrom(s *Spec, allowedFrom []string) error {
+	if allowedFrom == nil {
+		return nil
+	}
+	cur := s.Status()
+	for _, a := range allowedFrom {
+		if a == cur {
+			return nil
+		}
+	}
+	sorted := append([]string{}, allowedFrom...)
+	sort.Strings(sorted)
+	return ledgerErr("spec %03d is %s, not %s; left unchanged", s.ID, cur, strings.Join(sorted, " or "))
+}
+
 // SetStatus writes the new status (and fields) to the spec's file and
 // returns it re-read. With allowedFrom set, a spec whose status is not one
 // of them is left unchanged (a LedgerError naming its status). A write the
@@ -355,17 +372,8 @@ func SetStatus(s *Spec, status string, allowedFrom []string, fields ...Field) (*
 	if !ValidStatus(status) {
 		return nil, ledgerErr("unknown status %q; use one of %s", status, strings.Join(Statuses, ", "))
 	}
-	cur := s.Status()
-	if allowedFrom != nil {
-		ok := false
-		for _, a := range allowedFrom {
-			ok = ok || a == cur
-		}
-		if !ok {
-			sorted := append([]string{}, allowedFrom...)
-			sort.Strings(sorted)
-			return nil, ledgerErr("spec %03d is %s, not %s; left unchanged", s.ID, cur, strings.Join(sorted, " or "))
-		}
+	if err := CheckFrom(s, allowedFrom); err != nil {
+		return nil, err
 	}
 	text, err := Update(s, append([]Field{{"status", status}}, fields...)...)
 	if err != nil {

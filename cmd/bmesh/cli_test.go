@@ -358,6 +358,13 @@ func TestStatusAndUnreachable(t *testing.T) {
 	if _, _, code := runCLI(t, nil, "bogus"); code != 2 {
 		t.Fatalf("unknown command: %d", code)
 	}
+	// choose-ideas is gone: picking is build, declining is spec set --land.
+	if _, errs, code := runCLI(t, nil, "choose-ideas", "demo", "1 yes"); code != 2 || errs != "bmesh: unknown command \"choose-ideas\" (run `bmesh help`)\n" {
+		t.Fatalf("choose-ideas: %d %q", code, errs)
+	}
+	if out, _, _ := runCLI(t, nil, "help"); strings.Contains(out, "choose-ideas") || strings.Contains(out, "--accepted") {
+		t.Fatal("help still names choose-ideas or build --accepted")
+	}
 }
 
 func TestExecutorAskGoesToParent(t *testing.T) {

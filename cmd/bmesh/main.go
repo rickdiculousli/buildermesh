@@ -120,7 +120,6 @@ commands:
                                            bmesh worktree from main, as nodes <repo>-round-<N>.eng|ux; --context
                                            puts the operator's words in both briefs; --idea starts only the
                                            engineer, to write the one idea --context gives as its spec
-  choose-ideas <repo> "<reply>"            apply the operator's review to the proposed specs and land it on main
   build <repo> <NNN> [<NNN>...] [--model M] [--effort E] [--path P] [--family F] [--hold land|now] [--context <text|->] [--force]
                                            build the specs the operator picked (any not done or rejected): render
                                            each build brief and start its lead (as lead start), recording nothing
@@ -239,8 +238,9 @@ commands:
                                            the repo's specs, one row each (id, status, size, kind, lens, title)
   spec next-id [--repo R] [--count N] [--peek]
                                            claim the repo's next spec id (a block of N) on the mesh
-  spec set --id NNN --status S [--repo R] [--from A,B] [--field K=V]...
-                                           set a spec's status and fields (--from refuses another status)
+  spec set --id NNN[,NNN...] --status S [--repo R] [--from A,B] [--field K=V]... [--land]
+                                           set specs' status and fields (--from refuses another status); --land
+                                           lands the edit on main in one commit, from a bmesh worktree
   spec template [--repo R]                 print the half-pager (the repo's .bmesh/briefs/half-pager.md, else embedded)
   spec steps [<NNN>] [--repo R] [--tick N,N [--note W] | --check [--wait D]]
                                            a landed spec's steps for the operator, or with no id every open one;
@@ -366,8 +366,6 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdLead(rest)
 	case "ideate":
 		return a.cmdIdeate(rest)
-	case "choose-ideas":
-		return a.cmdChooseIdeas(rest)
 	case "build":
 		return a.cmdBuild(rest)
 	case "release":

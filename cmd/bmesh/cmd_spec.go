@@ -19,7 +19,7 @@ import (
 )
 
 const specUsage = "usage: bmesh spec list [--repo R] [--status S] [--json] | next-id [--repo R] [--count N] [--peek] | " +
-	"set --id NNN --status S [--repo R] [--from A,B] [--field K=V]... | template [--repo R] | " +
+	"set --id NNN[,NNN...] --status S [--repo R] [--from A,B] [--field K=V]... [--land] | template [--repo R] | " +
 	"verified [--commit C] | steps [<NNN>] [--repo R] [--tick N,N [--note W] | --check [--wait D]]"
 
 func (a *app) cmdSpec(args []string) error {
@@ -242,14 +242,18 @@ func (a *app) checkLedger(dir string) error {
 	return nil
 }
 
-// cmdSpecSet sets a spec's status and fields in its file; --from refuses a
-// spec whose status is not one of the listed ones, changing nothing.
+// cmdSpecSet sets the status and fields of one spec or several (--id
+// NNN,MMM) in their files; --from refuses a spec whose status is not one of
+// the listed ones, and any refusal changes none of them. It edits the
+// checkout --repo names, or with --land lands the edit on main in one
+// commit from a bmesh worktree.
 func (a *app) cmdSpecSet(args []string) error {
 	fs := a.flags("spec set")
 	repo := fs.String("repo", "", "repo name or path (default the current directory)")
-	id := fs.String("id", "", "spec id")
+	id := fs.String("id", "", "spec id, or a comma list")
 	status := fs.String("status", "", "the new status")
 	from := fs.String("from", "", "comma-separated statuses it may move from")
+	land := fs.Bool("land", false, "land the edit on main in one commit, from a bmesh worktree")
 	var extra fields
 	fs.Var(&extra, "field", "KEY=VALUE to set (repeatable)")
 	pos, err := parse(fs, args)
@@ -259,10 +263,17 @@ func (a *app) cmdSpecSet(args []string) error {
 	if len(pos) != 0 || *id == "" || *status == "" {
 		return fail(exitUsage, specUsage)
 	}
-	n, err := strconv.Atoi(*id)
-	if err != nil {
-		return fail(exitUsage, "--id %q is not a number", *id)
+	var ids []int
+	for _, x := range strings.Split(*id, ",") {
+		n, err := strconv.Atoi(strings.TrimSpace(x))
+		if err != nil {
+			return fail(exitUsage, "--id %q is not a number", x)
+		}
+		if !slices.Contains(ids, n) {
+			ids = append(ids, n)
+		}
 	}
+	slices.Sort(ids)
 	if !spec.ValidStatus(*status) {
 		return fail(exitUsage, "--status %q is not one of %s", *status, strings.Join(spec.Statuses, ", "))
 	}
@@ -274,20 +285,92 @@ func (a *app) cmdSpecSet(args []string) error {
 	if err != nil {
 		return err
 	}
-	specs, err := spec.Scan(repoPath, a.cfg.Spec.Glob)
+	set := func(dir, where string) ([]*spec.Spec, bool, error) {
+		return a.setSpecs(dir, where, ids, *status, allowed, extra)
+	}
+	if !*land {
+		updated, _, err := set(repoPath, "in "+filepath.Join(repoPath, spec.Dir(a.cfg.Spec.Glob)))
+		if err != nil {
+			return err
+		}
+		for _, u := range updated {
+			fmt.Fprintln(a.stdout, u.Row())
+		}
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	// A worktree's edit lands through its main checkout.
+	if common, err := gitIn(ctx, repoPath, "rev-parse", "--path-format=absolute", "--git-common-dir"); err == nil && filepath.Base(common) == ".git" {
+		repoPath = filepath.Dir(common)
+	}
+	name, _, err := a.cfg.RepoPath(repoPath)
 	if err != nil {
-		return landFail(err)
+		return fail(exitUsage, "%v", err)
 	}
-	s, ok := spec.Find(specs, n)
-	if !ok {
-		return fail(exitError, "no spec %03d in %s", n, filepath.Join(repoPath, spec.Dir(a.cfg.Spec.Glob)))
+	msg := fmt.Sprintf("Spec %03d: %s", ids[0], *status)
+	if len(ids) > 1 {
+		nums := make([]string, len(ids))
+		for i, n := range ids {
+			nums[i] = fmt.Sprintf("%03d", n)
+		}
+		msg = fmt.Sprintf("Specs %s: %s", strings.Join(nums, ", "), *status)
 	}
-	updated, err := spec.SetStatus(s, *status, allowed, extra...)
+	sha, err := a.editOnMain(ctx, name, repoPath, "spec", func(wt string) (string, error) {
+		updated, changed, err := set(wt, "on main in "+repoPath)
+		if err != nil {
+			return "", err
+		}
+		for _, u := range updated {
+			fmt.Fprintln(a.stdout, u.Row())
+		}
+		if !changed {
+			return "", nil
+		}
+		return msg, nil
+	})
 	if err != nil {
-		return ledgerFail(err)
+		return err
 	}
-	fmt.Fprintln(a.stdout, updated.Row())
+	if sha == "" {
+		fmt.Fprintln(a.stdout, "nothing to land")
+		return nil
+	}
+	fmt.Fprintf(a.stdout, "landed %s on main: %s\n", sha[:8], msg)
 	return nil
+}
+
+// setSpecs sets status and extra on the specs ids names in the ledger in
+// dir, all or none: a missing id (said with where) or a status --from does
+// not allow refuses before anything is written. It returns the specs as
+// written and whether any file changed.
+func (a *app) setSpecs(dir, where string, ids []int, status string, allowed []string, extra []spec.Field) ([]*spec.Spec, bool, error) {
+	specs, err := spec.Scan(dir, a.cfg.Spec.Glob)
+	if err != nil {
+		return nil, false, landFail(err)
+	}
+	var todo []*spec.Spec
+	for _, n := range ids {
+		s, ok := spec.Find(specs, n)
+		if !ok {
+			return nil, false, fail(exitError, "no spec %03d %s", n, where)
+		}
+		if err := spec.CheckFrom(s, allowed); err != nil {
+			return nil, false, ledgerFail(err)
+		}
+		todo = append(todo, s)
+	}
+	var out []*spec.Spec
+	changed := false
+	for _, s := range todo {
+		u, err := spec.SetStatus(s, status, allowed, extra...)
+		if err != nil {
+			return nil, false, ledgerFail(err)
+		}
+		changed = changed || u.Text != s.Text
+		out = append(out, u)
+	}
+	return out, changed, nil
 }
 
 // cmdSpecTemplate prints the half-pager: the repo's override when it has
@@ -325,55 +408,6 @@ func (a *app) cmdSpecTemplate(args []string) error {
 	return nil
 }
 
-// cmdChooseIdeas applies the operator's reply to a repo's proposed specs:
-// bmesh choose-ideas <repo> "<reply>". It levels main, makes a bmesh
-// worktree from it, applies each verdict with the ledger's refusals,
-// commits `Review: ...`, fast-forwards main, pushes, removes the worktree
-// and prints one line per spec and the unmatched items.
-func (a *app) cmdChooseIdeas(args []string) error {
-	fs := a.flags("choose-ideas")
-	pos, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
-	if len(pos) != 2 {
-		return fail(exitUsage, "usage: bmesh choose-ideas <repo> \"<reply>\"")
-	}
-	if err := a.loadConfig(); err != nil {
-		return err
-	}
-	name, repoPath, err := a.cfg.RepoPath(pos[0])
-	if err != nil {
-		return fail(exitUsage, "%v", err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-	var msg string
-	sha, err := a.editOnMain(ctx, name, repoPath, "review", func(wt string) (string, error) {
-		lines, changed, err := a.applyReview(ctx, wt, name, pos[1])
-		if err != nil {
-			return "", err
-		}
-		for _, l := range lines {
-			fmt.Fprintln(a.stdout, l)
-		}
-		if len(changed) == 0 {
-			return "", nil
-		}
-		msg = "Review: " + strings.Join(changed, ", ")
-		return msg, nil
-	})
-	if err != nil {
-		return err
-	}
-	if sha == "" {
-		fmt.Fprintln(a.stdout, "nothing to land")
-		return nil
-	}
-	fmt.Fprintf(a.stdout, "landed %s on main: %s\n", sha[:8], msg)
-	return nil
-}
-
 // editOnMain lands a ledger edit on main with gitwork.EditOnMain: a bmesh
 // worktree from levelled main on a one-off branch, `<repo token>-<what>-
 // <hex>`, where edit runs. When edit returns a commit message, the spec
@@ -394,148 +428,9 @@ func (a *app) editOnMain(ctx context.Context, name, repoPath, what string, edit 
 	})
 }
 
-// applyReview parses reply against the ledger in wt and applies it; it
-// returns the report lines and, for the commit message, what changed. The
-// ranks are the lines of the pitch the operator saw last (the newest
-// settled round's text on the mesh); without the mesh, or a settled round,
-// only ids count.
-func (a *app) applyReview(ctx context.Context, wt, repo, reply string) (lines, changed []string, err error) {
-	specs, err := spec.Scan(wt, a.cfg.Spec.Glob)
-	if err != nil {
-		return nil, nil, landFail(err)
-	}
-	ranks, err := a.latestRanks(ctx, repo, specs)
-	if err != nil {
-		lines = append(lines, "note: the mesh is unreachable, so numbers are spec ids only ("+err.Error()+")")
-	} else if len(ranks) == 0 {
-		lines = append(lines, "note: no settled round with a pitch, so numbers are spec ids only")
-	}
-	r := spec.ParseReply(reply, spec.IDSet(specs), ranks)
-	// One outcome per spec: the last clause with a move wins, any clause
-	// may set the judge, so "3 yes ... 3 on opus" is one accepted on opus.
-	type outcome struct {
-		move, note, judge string
-	}
-	merged := map[int]*outcome{}
-	var order []int
-	for _, v := range r.Verdicts {
-		o, ok := merged[v.ID]
-		if !ok {
-			o = &outcome{}
-			merged[v.ID] = o
-			order = append(order, v.ID)
-		}
-		if v.Move != "" {
-			o.move, o.note = v.Move, v.Note
-		}
-		if v.Judge != "" {
-			o.judge = v.Judge
-		}
-	}
-	date := time.Now().UTC().Format("2006-01-02")
-	accepted := map[int]bool{}
-	for _, id := range order {
-		o := merged[id]
-		s, _ := spec.Find(specs, id)
-		old := s.Status()
-		if !spec.IsReviewable(old) {
-			lines = append(lines, fmt.Sprintf("%03d %s: %s, left unchanged (not proposed, later or adjusting)", s.ID, s.Title(), old))
-			continue
-		}
-		var extra []spec.Field
-		if o.judge != "" {
-			extra = append(extra, spec.Field{Key: "judge", Value: o.judge})
-		}
-		to := o.move
-		if to == "" {
-			to = old
-		}
-		if to == "rejected" && o.note != "" {
-			extra = append(extra, spec.Field{Key: "reason", Value: o.note})
-		}
-		n, err := spec.SetStatus(s, to, spec.Reviewable, extra...)
-		if err != nil {
-			return nil, nil, ledgerFail(err)
-		}
-		if o.move == "adjusting" && o.note != "" {
-			if n, err = spec.WriteBody(n, spec.AdjustNote(n.Body, date, o.note)); err != nil {
-				return nil, nil, ledgerFail(err)
-			}
-		}
-		line := fmt.Sprintf("%03d %s: %s -> %s", n.ID, n.Title(), old, to)
-		if o.judge != "" {
-			line += " on " + o.judge
-		}
-		if o.note != "" {
-			line += " (" + o.note + ")"
-		}
-		lines = append(lines, line)
-		changed = append(changed, fmt.Sprintf("%03d %s", n.ID, to))
-		if to == "accepted" && old != "accepted" {
-			accepted[n.ID] = true
-		}
-	}
-	for _, u := range r.Unmatched {
-		lines = append(lines, "unmatched: "+u)
-	}
-	after, err := spec.Scan(wt, a.cfg.Spec.Glob)
-	if err != nil {
-		return nil, nil, ledgerFail(err)
-	}
-	for _, w := range acceptClashes(after, accepted) {
-		lines = append(lines, "warning: "+w)
-	}
-	return lines, changed, nil
-}
-
-// acceptClashes is the command clashes (spec.CommandClashes) of each spec
-// this review accepted, against main's commands and the ledger as the
-// review left it. Two specs accepted together that define one command
-// warn once, from the higher id, naming the lower.
-func acceptClashes(specs []*spec.Spec, accepted map[int]bool) []string {
-	var out []string
-	for _, s := range specs {
-		if !accepted[s.ID] {
-			continue
-		}
-		others := slices.DeleteFunc(slices.Clone(specs), func(o *spec.Spec) bool { return accepted[o.ID] && o.ID > s.ID })
-		out = append(out, spec.CommandClashes(s, others, mainCommands())...)
-	}
-	return out
-}
-
 // mainCommands is the commands this binary's `bmesh help` lists: main's,
 // on a box whose bmesh is up to date.
 func mainCommands() []string { return spec.UsageCommands(usage) }
-
-// latestRanks is the pitch the operator saw last, as ranks: the text of
-// the repo's newest settled round (state done or blocked, which is what was
-// pushed) that names any spec; a settled round whose text names none (one
-// blocked before a pitch) is passed over for an older one. An open round's
-// children, even a finished one, are not a pitch yet; nil when no settled
-// round has one.
-func (a *app) latestRanks(ctx context.Context, repo string, specs []*spec.Spec) ([]int, error) {
-	if err := a.connect(ctx, "choose-ideas"); err != nil {
-		return nil, err
-	}
-	n, err := nextRound(ctx, a.client, repo)
-	if err != nil {
-		return nil, err
-	}
-	for k := n - 1; k >= 1; k-- {
-		st, _, err := mesh.ReadState(ctx, a.client, fmt.Sprintf("%s-round-%d", mesh.RepoToken(repo), k))
-		if err != nil {
-			return nil, err
-		}
-		if st.State != "done" && st.State != "blocked" {
-			continue
-		}
-		if ranks := spec.PitchRanks(st.Text, specs); len(ranks) > 0 {
-			return ranks, nil
-		}
-	}
-	return nil, nil
-}
 
 // cmdSpecVerified prints the verified line composed from the results for
 // the cwd repo's HEAD tree, or --commit's. It writes nothing: land puts the

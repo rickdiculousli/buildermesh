@@ -460,57 +460,6 @@ func TestSpecStepsCheckTicksHereWhenOtherBoxesFail(t *testing.T) {
 	}
 }
 
-// writeProposal rewrites spec id's Proposal in repo as body, keeping its
-// frontmatter, commits and pushes it.
-func writeProposal(t *testing.T, repo, id, body string) {
-	t.Helper()
-	p := filepath.Join(repo, "docs", "proposals", id+"-thing.md")
-	b, err := os.ReadFile(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	head, _, _ := strings.Cut(string(b), "## Proposal\n")
-	if err := os.WriteFile(p, []byte(head+"## Proposal\n"+body+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	meshtest.Git(t, repo, "commit", "-qam", "proposal "+id)
-	meshtest.Git(t, repo, "push", "-q", "origin", "main")
-}
-
-func TestChooseIdeasWarnsOfCommandClashes(t *testing.T) {
-	_, _, repo := ledgerRepoSetup(t)
-	// 012 and 013 both define bmesh frob; 014 (building) defines land,
-	// which main has too; 013 only mentions bmesh land.
-	writeProposal(t, repo, "012", "- **`bmesh frob <repo> [--minor]`.** It frobs.")
-	writeProposal(t, repo, "013", "- **`bmesh frob <path>|--family F`** lifts a hold.\n- It runs before `bmesh land`, and **`bmesh land` keeps it**.")
-	writeProposal(t, repo, "014", "- **`bmesh land [--spec NNN]`**")
-	out, errs, code := runCLI(t, nil, "choose-ideas", "demo", "012 and 013 yes")
-	if code != 0 {
-		t.Fatalf("code %d out %q err %q", code, out, errs)
-	}
-	// Accepted together, the pair warns once, from the higher id.
-	if !strings.Contains(out, "013 Thing 013: proposed -> accepted\nwarning: 013 defines bmesh frob, which 012 (accepted) also defines\nlanded ") ||
-		strings.Count(out, "warning:") != 1 {
-		t.Fatalf("%q", out)
-	}
-	// A spec defining a command main has warns, and so does one another
-	// spec, building, defines; the reply still lands.
-	writeProposal(t, repo, "012", "- **`bmesh land [--spec NNN]`**\n- **`bmesh spec verified [--commit C]`** composes for C.")
-	runCLI(t, nil, "spec", "set", "--repo", repo, "--id", "012", "--status", "proposed")
-	meshtest.Git(t, repo, "commit", "-qam", "012 proposed")
-	meshtest.Git(t, repo, "push", "-q", "origin", "main")
-	out, errs, code = runCLI(t, nil, "choose-ideas", "demo", "012 yes")
-	want := "warning: 012 defines bmesh land, which main already has\n" +
-		"warning: 012 defines bmesh land, which 014 (building) also defines\n" +
-		"warning: 012 defines bmesh spec verified, which main already has\nlanded "
-	if code != 0 || !strings.Contains(out, want) {
-		t.Fatalf("code %d out %q err %q", code, out, errs)
-	}
-	if !strings.Contains(gitOut(t, "-C", repo, "show", "main:docs/proposals/012-thing.md"), "status: accepted\n") {
-		t.Fatal("012 not accepted on main")
-	}
-}
-
 // next-id claims on the mesh's counter: a claimed id is never handed out
 // again, --peek claims nothing, --count claims a block, and a counter
 // behind main catches up to it.

@@ -27,7 +27,7 @@
 
 **buildermesh** (`bmesh`) is one Go binary that runs Claude Code sessions on your own machines (boxes) and turns ideas into changes on `main`. You decide what gets built.
 
-Agents write half-page specs; you accept or reject them in plain words. A *lead* session builds an accepted spec in its own git worktree, with *executor* sessions on branches under it. *Routines* run the repo's checks and record each result against a commit's exact files, and `bmesh land` refuses to land a tree those checks haven't passed.
+Agents write half-page specs; you pick the ones to build and decline the rest. A *lead* session builds a picked spec in its own git worktree, with *executor* sessions on branches under it. *Routines* run the repo's checks and record each result against a commit's exact files, and `bmesh land` refuses to land a tree those checks haven't passed.
 
 ## One mesh, many boxes
 
@@ -143,12 +143,12 @@ Verified: review ok t:3f2a9c1e m:claude-opus-5-5 c:81d0b7a4; verify ok t:3f2a9c1
 </p>
 
 1. **Propose.** `bmesh ideate app` starts an engineer and a UI/UX engineer; each lands three to five ranked specs on `main`, and with an [ntfy](https://ntfy.sh) topic set the list reaches your phone.
-2. **Choose.** Reply in plain words: `bmesh choose-ideas app "1 and 3 yes, 2 smaller, 4 no, 5 later"`. The verdicts land on `main`; a word that isn't a verdict, like `smaller`, marks the spec `adjusting`, with your words kept for the rework.
-3. **Build.** `bmesh build app 012` checks that `main` passes its verify commands and starts a lead; it records nothing on `main`, where the spec reads `accepted` until its lead lands it.
+2. **Choose.** Picking is building: `bmesh build app 012 014` checks that `main` passes its verify commands and starts a lead for each, with `--context` for your words to them. A spec you don't want you decline with `bmesh spec set --repo app --id 013 --status rejected --field reason="covered by 012" --land`, or shelve with `--status later`; both land on `main`.
+3. **Build.** Each lead builds its spec in its own worktree. Nothing is recorded on `main`, where the spec reads `proposed` until its lead lands it `done`.
 4. **Verify.** Routines run `verify` (the repo's tests) and, for larger changes, `review` (Opus, in a session that never saw the change).
 5. **Land.** `bmesh land` verifies, queues the review the spec's size calls for and waits for it, then rebases onto `origin/main` (resolving the conflicts a rule can), requires a result for the tree it lands, rewords the last commit to carry the `Spec:` and `Verified:` trailers and fast-forwards `main`; the lead set the spec `done` on its branch, so it lands with the code. It waits out what clears by itself (a review running, `main` moving, someone's unpushed `main`, another lead landing) and stops only for what needs the lead. A lead usually hands this to its box's daemon instead: it runs `bmesh ready --text "<done line>"` and ends its turn, its state reads `landing`, and the daemon runs `land` and `done` for it. The daemon wakes the lead only when land refuses (a conflict, a failing check or review), and once at the end for its closing line. A hold waits for the release without waking it, and a message withdraws the request and wakes it.
 
-A lead reports problems outside its spec as feedback. When a batch started from a chat is done, the plugin's `build` skill makes the quick fixes itself without asking you, writes the rest up as proposed specs for your review and tags the next version with `bmesh release`. In a chat, say "proposals for app", "1 and 3 yes", "build what's accepted in app" or "what's building".
+A lead reports problems outside its spec as feedback. When a batch started from a chat is done, the plugin's `build` skill makes the quick fixes itself without asking you, writes the rest up as proposed specs for your review and tags the next version with `bmesh release`. In a chat, say "proposals for app", "build 1 and 3", "decline 2" or "what's building".
 
 A fix or a tweak skips all of this. Say "fix the login button in app", or just what's wrong with it, and the plugin's `quickfix` skill makes the change in the chat, runs `verify`, reviews its own diff with [ponytail](https://github.com/DietrichGebert/ponytail)'s review (plus an Opus review when it crosses modules), and pushes it to `main`: no spec, no lead. A change that alters an interface others depend on, it offers as a spec instead. Say you're QA-ing (or "hold off") and it lists each thing you report with its cause and fix, changing nothing until you say "go" or "fix 1 and 3".
 
@@ -229,7 +229,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 
 ## All commands and flags
 
-> **Honestly, you can mostly skip this.** With the plugin installed, just ask your agent to run the mesh for you: "proposals for app", "build what's accepted in app", "fix the typo in app's footer", "what's building", "sync my repos". The skills know these commands so you don't have to. This list is here for when you're curious or something needs a closer look.
+> **Honestly, you can mostly skip this.** With the plugin installed, just ask your agent to run the mesh for you: "proposals for app", "build 012 in app", "fix the typo in app's footer", "what's building", "sync my repos". The skills know these commands so you don't have to. This list is here for when you're curious or something needs a closer look.
 
 `--config FILE`, `--node PATH` and `--json` go before or after any command ([Synopsis](docs/manual.md#synopsis)). Each command links to its section of the [manual](docs/manual.md).
 
@@ -255,10 +255,9 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 | Command | Flags |
 |---|---|
 | [`bmesh ideate <repo>`](docs/manual.md#bmesh-ideate) | `[--idea] [--model M] [--effort E] [--context <text\|->] [--force]` |
-| [`bmesh choose-ideas <repo> "<reply>"`](docs/manual.md#bmesh-choose-ideas) |  |
 | [`bmesh spec list`](docs/manual.md#bmesh-spec-list) | `[--repo R] [--status S] [--json]` |
 | [`bmesh spec next-id`](docs/manual.md#bmesh-spec-next-id) | `[--repo R] [--count N] [--peek]` |
-| [`bmesh spec set`](docs/manual.md#bmesh-spec-set) | `--id NNN --status S [--repo R] [--from A,B] [--field K=V]...` |
+| [`bmesh spec set`](docs/manual.md#bmesh-spec-set) | `--id NNN[,NNN...] --status S [--repo R] [--from A,B] [--field K=V]... [--land]` |
 | [`bmesh spec template`](docs/manual.md#bmesh-spec-template) | `[--repo R]` |
 | [`bmesh spec steps [<NNN>]`](docs/manual.md#bmesh-spec-steps) | `[--repo R] [--tick N,N [--note W] \| --check [--wait D]]` |
 | [`bmesh spec verified`](docs/manual.md#bmesh-spec-verified) | `[--commit C]` |

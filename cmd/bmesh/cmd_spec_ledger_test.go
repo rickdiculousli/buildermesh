@@ -52,26 +52,6 @@ func ledgerRepoSetup(t *testing.T) (*mesh.Client, context.Context, string) {
 	return c, ctx, repo
 }
 
-// pitchRound registers a settled round for demo whose pitch was 013, 012,
-// 014 (so rank 2 is 012), a newer round still open whose engineer pitched
-// the other way round, which is not a pitch yet, and a newer one still
-// that blocked with no pitch.
-func pitchRound(t *testing.T, c *mesh.Client, ctx context.Context) {
-	t.Helper()
-	putNode(t, c, ctx, mesh.Node{Path: "demo-round-1", Role: "round", Repo: "demo"})
-	meshtest.ForceState(t, c, "demo-round-1", mesh.State{State: "done", By: "daemon",
-		Text: "013 Thing 013 (feature, S, sonnet): second\n012 Thing 012 (feature, S, sonnet): first\n014 Thing 014: building"})
-	putNode(t, c, ctx, mesh.Node{Path: "demo-round-2", Role: "round", Repo: "demo"})
-	putNode(t, c, ctx, mesh.Node{Path: "demo-round-2.eng", Role: "engineer", Parent: "demo-round-2", Repo: "demo"})
-	if _, err := mesh.WriteState(ctx, c, "demo-round-2", mesh.State{State: "working", By: "node"}); err != nil {
-		t.Fatal(err)
-	}
-	meshtest.ForceState(t, c, "demo-round-2.eng", mesh.State{State: "done", By: "node", Text: "012 first\n013 second"})
-	// A newer round that blocked before any pitch is passed over.
-	putNode(t, c, ctx, mesh.Node{Path: "demo-round-3", Role: "round", Repo: "demo"})
-	meshtest.ForceState(t, c, "demo-round-3", mesh.State{State: "blocked", By: "node", Text: "eng blocked: did not start: no route"})
-}
-
 func TestSpecListNextIDSetTemplate(t *testing.T) {
 	_, _, repo := ledgerRepoSetup(t)
 	out, errs, code := runCLI(t, nil, "spec", "list", "--repo", "demo")
@@ -136,115 +116,117 @@ func TestSpecListNextIDSetTemplate(t *testing.T) {
 	}
 }
 
-func TestSpecReviewLandsVerdictsOnMain(t *testing.T) {
-	c, ctx, repo := ledgerRepoSetup(t)
-	pitchRound(t, c, ctx)
+// spec set --land lands one commit for several ids on main from a bmesh
+// worktree, leaving the main checkout's branch alone, and removes the
+// worktree; without --land it edits the checkout and commits nothing.
+func TestSpecSetLandsOneCommitOnMain(t *testing.T) {
+	_, _, repo := ledgerRepoSetup(t)
 	// The main checkout is on another branch, so the landing fast-forwards
 	// main through `fetch . <branch>:main`.
 	meshtest.Git(t, repo, "checkout", "-q", "-b", "side")
-	out, errs, code := runCLI(t, nil, "choose-ideas", "demo", "012 yes on opus, 013 smaller, 014 no, 2 later, 99 yes, hmm")
+	out, errs, code := runCLI(t, nil, "spec", "set", "--repo", "demo", "--id", "013,012", "--status", "rejected", "--field", "reason=covered by 010", "--land")
 	if code != 0 {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	want := []string{
-		"012 Thing 012: proposed -> accepted on opus",
-		"013 Thing 013: proposed -> adjusting (smaller)",
-		"014 Thing 014: building, left unchanged (not proposed, later or adjusting)",
-		"unmatched: no position 99 in the pitch; a spec id has three digits (99 yes)",
-		"unmatched: hmm",
+	if len(lines) != 3 || lines[0] != "012  rejected   S   feature      eng  Thing 012" || lines[1] != "013  rejected   S   feature      eng  Thing 013" ||
+		!strings.HasPrefix(lines[2], "landed ") || !strings.HasSuffix(lines[2], " on main: Specs 012, 013: rejected") {
+		t.Fatalf("%q", out)
 	}
-	// "2 later": rank 2 of the latest round's pitch (013 then 012) is 012,
-	// which also said yes; the last move wins and the judge stays.
-	want[0] = "012 Thing 012: proposed -> later on opus"
-	for i, w := range want {
-		if i >= len(lines) || lines[i] != w {
-			t.Fatalf("line %d: %q, want %q\n%s", i, lines[min(i, len(lines)-1)], w, out)
-		}
-	}
-	if !strings.HasPrefix(lines[len(lines)-1], "landed ") || !strings.HasSuffix(lines[len(lines)-1], ": Review: 012 later, 013 adjusting") {
-		t.Fatalf("last line %q", lines[len(lines)-1])
-	}
-	// main moved and was pushed; the side checkout was not touched.
 	if gitOut(t, "-C", repo, "rev-parse", "main") != gitOut(t, "-C", repo, "rev-parse", "origin/main") {
 		t.Fatal("main not pushed")
 	}
-	if msg := gitOut(t, "-C", repo, "log", "-1", "--format=%s", "main"); msg != "Review: 012 later, 013 adjusting" {
+	if msg := gitOut(t, "-C", repo, "log", "-1", "--format=%s %an", "main"); msg != "Specs 012, 013: rejected bmesh" {
 		t.Fatalf("main's commit: %q", msg)
+	}
+	if n := gitOut(t, "-C", repo, "rev-list", "--count", "side..main"); n != "1" {
+		t.Fatalf("%s commits landed", n)
+	}
+	if files := gitOut(t, "-C", repo, "show", "--name-only", "--format=", "main"); files != "docs/proposals/012-thing.md\ndocs/proposals/013-thing.md" {
+		t.Fatalf("files %q", files)
 	}
 	if b := gitOut(t, "-C", repo, "rev-parse", "--abbrev-ref", "HEAD"); b != "side" {
 		t.Fatalf("checkout moved to %s", b)
 	}
-	spec12 := gitOut(t, "-C", repo, "show", "main:docs/proposals/012-thing.md")
-	if !strings.Contains(spec12, "status: later\n") || !strings.Contains(spec12, "judge: opus\n") || strings.Contains(spec12, "Adjust (") {
+	if spec12 := gitOut(t, "-C", repo, "show", "main:docs/proposals/012-thing.md"); !strings.Contains(spec12, "status: rejected\n") || !strings.Contains(spec12, "reason: covered by 010\n") {
 		t.Fatalf("012:\n%s", spec12)
 	}
-	spec13 := gitOut(t, "-C", repo, "show", "main:docs/proposals/013-thing.md")
-	if !strings.Contains(spec13, "status: adjusting\n") || !strings.Contains(spec13, "## Proposal\nAdjust (20") || !strings.Contains(spec13, "): smaller\nThe change.") {
-		t.Fatalf("013:\n%s", spec13)
-	}
-	if wts := gitOut(t, "-C", repo, "worktree", "list"); strings.Contains(wts, "review-") {
+	if wts := gitOut(t, "-C", repo, "worktree", "list"); strings.Contains(wts, "spec-") {
 		t.Fatalf("worktree left: %s", wts)
 	}
-	if br := gitOut(t, "-C", repo, "branch", "--list", "demo-review-*"); br != "" {
+	if br := gitOut(t, "-C", repo, "branch", "--list", "demo-spec-*"); br != "" {
 		t.Fatalf("branch left: %s", br)
 	}
-	// A second review: a rejection carries its reason; a second instruction
-	// adds a second note; a number beyond the pitch and the ledger is reported.
-	out, errs, code = runCLI(t, nil, "choose-ideas", repo, "013 only the CLI part; 012 no too broad, 4 yes")
-	if code != 0 {
-		t.Fatalf("code %d out %q err %q", code, out, errs)
+	meshtest.Git(t, repo, "checkout", "-q", "main")
+	// One id; a refusal of any id lands none; an edit that changes nothing
+	// lands nothing.
+	out, _, code = runCLI(t, nil, "spec", "set", "--repo", repo, "--id", "14", "--status", "later", "--land")
+	if code != 0 || !strings.HasSuffix(out, " on main: Spec 014: later\n") {
+		t.Fatalf("one: %d %q", code, out)
 	}
-	if !strings.Contains(out, "013 Thing 013: adjusting -> adjusting (only the CLI part)\n") || !strings.Contains(out, "012 Thing 012: later -> rejected (too broad)\n") ||
-		!strings.Contains(out, "unmatched: no position 4 in the pitch; a spec id has three digits (4 yes)\n") {
-		t.Fatalf("%q", out)
-	}
-	spec13 = gitOut(t, "-C", repo, "show", "main:docs/proposals/013-thing.md")
-	if strings.Count(spec13, "Adjust (") != 2 || !strings.Contains(spec13, "): only the CLI part\nAdjust (") {
-		t.Fatalf("013:\n%s", spec13)
-	}
-	if spec12 := gitOut(t, "-C", repo, "show", "main:docs/proposals/012-thing.md"); !strings.Contains(spec12, "status: rejected\nreason: too broad\n") &&
-		!strings.Contains(spec12, "reason: too broad\n") {
-		t.Fatalf("012:\n%s", spec12)
-	}
-	// Positions stay what the pitch said after specs move: 1 is still 013.
-	out, _, code = runCLI(t, nil, "choose-ideas", "demo", "1 on opus, 3 yes")
-	if code != 0 || !strings.Contains(out, "013 Thing 013: adjusting -> adjusting on opus\n") || !strings.Contains(out, "014 Thing 014: building, left unchanged") {
-		t.Fatalf("%d %q", code, out)
-	}
-	// A judge note alone on an adjusting spec sets the judge and adds no note.
-	out, _, code = runCLI(t, nil, "choose-ideas", "demo", "013 on fable")
-	if code != 0 || !strings.Contains(out, "013 Thing 013: adjusting -> adjusting on fable\n") {
-		t.Fatalf("%d %q", code, out)
-	}
-	spec13 = gitOut(t, "-C", repo, "show", "main:docs/proposals/013-thing.md")
-	if !strings.Contains(spec13, "judge: fable\n") || strings.Count(spec13, "Adjust (") != 2 {
-		t.Fatalf("013:\n%s", spec13)
-	}
-	// Nothing matched: nothing to land, no commit.
 	before := gitOut(t, "-C", repo, "rev-parse", "main")
-	out, _, code = runCLI(t, nil, "choose-ideas", "demo", "99 yes")
-	if code != 0 || !strings.HasSuffix(out, "nothing to land\n") || gitOut(t, "-C", repo, "rev-parse", "main") != before {
-		t.Fatalf("%d %q", code, out)
+	if _, errs, code := runCLI(t, nil, "spec", "set", "--repo", "demo", "--id", "012,014", "--status", "proposed", "--from", "later", "--land"); code != 1 ||
+		errs != "bmesh: spec 012 is rejected, not later; left unchanged\n" {
+		t.Fatalf("--from: %d %q", code, errs)
 	}
-	if _, _, code := runCLI(t, nil, "choose-ideas", "demo"); code != 2 {
-		t.Fatalf("usage: %d", code)
+	if _, errs, code := runCLI(t, nil, "spec", "set", "--repo", "demo", "--id", "014,099", "--status", "proposed", "--land"); code != 1 ||
+		errs != "bmesh: no spec 099 on main in "+repo+"\n" {
+		t.Fatalf("missing: %d %q", code, errs)
+	}
+	if out, _, code := runCLI(t, nil, "spec", "set", "--repo", "demo", "--id", "014", "--status", "later", "--land"); code != 0 || out != "014  later      S   feature      eng  Thing 014\nnothing to land\n" {
+		t.Fatalf("no change: %d %q", code, out)
+	}
+	if gitOut(t, "-C", repo, "rev-parse", "main") != before || gitOut(t, "-C", repo, "status", "--porcelain") != "" {
+		t.Fatal("a refused or empty edit landed or left changes")
+	}
+	// Without --land, several ids are edited in the checkout, all or none.
+	if _, _, code := runCLI(t, nil, "spec", "set", "--repo", "demo", "--id", "012,014", "--status", "proposed", "--from", "later"); code != 1 ||
+		gitOut(t, "-C", repo, "status", "--porcelain") != "" {
+		t.Fatalf("--from wrote: %d", code)
+	}
+	if out, _, code := runCLI(t, nil, "spec", "set", "--repo", "demo", "--id", "012,014", "--status", "proposed"); code != 0 ||
+		out != "012  proposed   S   feature      eng  Thing 012\n014  proposed   S   feature      eng  Thing 014\n" ||
+		gitOut(t, "-C", repo, "rev-parse", "main") != before {
+		t.Fatalf("checkout: %d %q", code, out)
+	}
+	if _, _, code := runCLI(t, nil, "spec", "set", "--repo", "demo", "--id", "012,x", "--status", "proposed"); code != 2 {
+		t.Fatalf("bad id: %d", code)
 	}
 }
 
-func TestSpecReviewOnMainCheckoutMergesFastForward(t *testing.T) {
+// spec set --land refuses a main it can't level and a push origin refuses,
+// keeping that commit on its branch.
+func TestSpecSetLandRefusals(t *testing.T) {
 	_, _, repo := ledgerRepoSetup(t)
-	out, errs, code := runCLI(t, nil, "choose-ideas", "demo", "012 reject: dup, 1 yes")
-	if code != 0 || !strings.Contains(out, "012 Thing 012: proposed -> rejected (dup)\n") || !strings.HasPrefix(out, "note: no settled round with a pitch, so numbers are spec ids only\n") ||
-		!strings.Contains(out, "unmatched: no spec 1 (1 yes)\n") {
-		t.Fatalf("code %d out %q err %q", code, out, errs)
+	origin := gitOut(t, "-C", repo, "remote", "get-url", "origin")
+	hook := filepath.Join(origin, "hooks", "pre-receive")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\necho no pushes today >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if b, _ := os.ReadFile(filepath.Join(repo, "docs", "proposals", "012-thing.md")); !strings.Contains(string(b), "status: rejected\nreason: dup\n") &&
-		!strings.Contains(string(b), "reason: dup\n") {
-		t.Fatalf("checkout not fast-forwarded:\n%s", b)
+	head := gitOut(t, "-C", repo, "rev-parse", "main")
+	_, errs, code := runCLI(t, nil, "spec", "set", "--repo", "demo", "--id", "012", "--status", "later", "--land")
+	if code != 3 || !strings.HasPrefix(errs, "bmesh: refused: push main: git push: ") || !strings.Contains(errs, "no pushes today") ||
+		!strings.Contains(errs, "; the spec is committed on branch demo-spec-") {
+		t.Fatalf("push: %d %q", code, errs)
 	}
-	if gitOut(t, "-C", repo, "rev-parse", "main") != gitOut(t, "-C", repo, "rev-parse", "origin/main") {
-		t.Fatal("main not pushed")
+	branch := gitOut(t, "-C", repo, "branch", "--list", "--format=%(refname:short)", "demo-spec-*")
+	if branch == "" || gitOut(t, "-C", repo, "log", "-1", "--format=%s", branch) != "Spec 012: later" || gitOut(t, "-C", repo, "rev-parse", "main") != head {
+		t.Fatalf("branch %q, main moved: %v", branch, gitOut(t, "-C", repo, "rev-parse", "main") != head)
+	}
+	if err := os.Remove(hook); err != nil {
+		t.Fatal(err)
+	}
+	// Main has a commit origin hasn't, and origin one main hasn't.
+	commitFile(t, repo, "b.txt", "b\n", "pushed")
+	meshtest.Git(t, repo, "reset", "-q", "--hard", "HEAD~1")
+	if err := os.WriteFile(filepath.Join(repo, "c.txt"), []byte("c\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-qm", "local")
+	_, errs, code = runCLI(t, nil, "spec", "set", "--repo", "demo", "--id", "012", "--status", "later", "--land")
+	if code != 3 || !strings.HasPrefix(errs, "bmesh: refused: main in "+repo+" is not level with origin: ") {
+		t.Fatalf("not level: %d %q", code, errs)
 	}
 }
 
@@ -264,13 +246,13 @@ func pushDuplicate(t *testing.T, repo string) string {
 
 const dupRefusal = "refused: 013-other.md and 013-thing.md share id 013; renumber the newer with bmesh spec next-id"
 
-// choose-ideas and spec set refuse a ledger with a duplicate id before
-// anything is pushed.
+// spec set, with --land or without, refuses a ledger with a duplicate id
+// before anything is pushed.
 func TestLedgerWritersRefuseADuplicateID(t *testing.T) {
 	_, _, repo := ledgerRepoSetup(t)
 	head := pushDuplicate(t, repo)
-	if _, errs, code := runCLI(t, nil, "choose-ideas", "demo", "12 yes"); code != 3 || !strings.Contains(errs, dupRefusal) {
-		t.Fatalf("choose-ideas: %d %q", code, errs)
+	if _, errs, code := runCLI(t, nil, "spec", "set", "--repo", "demo", "--id", "12", "--status", "rejected", "--land"); code != 3 || !strings.Contains(errs, dupRefusal) {
+		t.Fatalf("spec set --land: %d %q", code, errs)
 	}
 	if _, errs, code := runCLI(t, nil, "spec", "set", "--repo", "demo", "--id", "12", "--status", "accepted"); code != 3 || !strings.Contains(errs, dupRefusal) {
 		t.Fatalf("spec set: %d %q", code, errs)

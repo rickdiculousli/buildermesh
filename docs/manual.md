@@ -6,7 +6,7 @@ Every `bmesh` command with its flags, output and refusals, then the model behind
 
 - [Synopsis](#synopsis)
 - [Setup and updates](#setup-and-updates): [`bmesh init`](#bmesh-init) · [`bmesh serve`](#bmesh-serve) · [`bmesh hub`](#bmesh-hub) · [`bmesh config check`](#bmesh-config-check) · [`bmesh t3 login`](#bmesh-t3-login) · [`bmesh version`](#bmesh-version) · [`bmesh update`](#bmesh-update)
-- [Proposals and builds](#proposals-and-builds): [`bmesh ideate`](#bmesh-ideate) · [`bmesh choose-ideas`](#bmesh-choose-ideas) · [`bmesh spec`](#bmesh-spec) · [`bmesh build`](#bmesh-build) · [`bmesh lead start`](#bmesh-lead-start) · [`bmesh hold`, `unhold`, `held`](#bmesh-hold-unhold-held) · [`bmesh feedback`](#bmesh-feedback) · [`bmesh fix`](#bmesh-fix) · [`bmesh release`](#bmesh-release) · [`bmesh scaffold`](#bmesh-scaffold)
+- [Proposals and builds](#proposals-and-builds): [`bmesh ideate`](#bmesh-ideate) · [`bmesh spec`](#bmesh-spec) · [`bmesh build`](#bmesh-build) · [`bmesh lead start`](#bmesh-lead-start) · [`bmesh hold`, `unhold`, `held`](#bmesh-hold-unhold-held) · [`bmesh feedback`](#bmesh-feedback) · [`bmesh fix`](#bmesh-fix) · [`bmesh release`](#bmesh-release) · [`bmesh scaffold`](#bmesh-scaffold)
 - [Nodes](#nodes): [`bmesh whoami`](#bmesh-whoami) · [`bmesh started`, `progress`, `blocked`, `ask`, `done`](#bmesh-started-progress-blocked-ask-done) · [`bmesh send`](#bmesh-send) · [`bmesh inbox`](#bmesh-inbox) · [`bmesh thread-status`](#bmesh-thread-status) · [`bmesh mesh-status`](#bmesh-mesh-status) · [`bmesh watch`](#bmesh-watch) · [`bmesh executor`](#bmesh-executor) · [`bmesh node`](#bmesh-node)
 - [Checks and landing](#checks-and-landing): [`bmesh routine`](#bmesh-routine) · [`bmesh result`](#bmesh-result) · [`bmesh lock-lease`](#bmesh-lock-lease) · [`bmesh setup`](#bmesh-setup) · [`bmesh land`](#bmesh-land) · [`bmesh ready`](#bmesh-ready)
 - [Boxes](#boxes): [`bmesh hosts`](#bmesh-hosts) · [`bmesh sync`](#bmesh-sync) · [`bmesh prune`](#bmesh-prune) · [`bmesh repos`](#bmesh-repos)
@@ -193,7 +193,7 @@ The Windows path message: `init --service: "<path>" cannot be passed through cmd
 go install github.com/rickdiculousli/buildermesh/cmd/bmesh@latest   # or, from a checkout, GOBIN=~/.local/bin go install ./cmd/bmesh
 cd ~/repos/your-repo && bmesh init     # asks single or multi-box, writes config.toml, registers this repo, picks the claude runner, says what it set
 bmesh serve                            # the hub (embedded on a single box), the daemon and the map at http://127.0.0.1:3774/; keep it running
-bmesh repos                            # the registry; then bmesh scaffold your-repo, bmesh ideate your-repo, bmesh choose-ideas, bmesh build your-repo 001, bmesh mesh-status
+bmesh repos                            # the registry; then bmesh scaffold your-repo, bmesh ideate your-repo, bmesh build your-repo 001, bmesh mesh-status
 ```
 
 - **On Windows**, `bmesh init --service` ends with three lines for `cmd` (not PowerShell, which reads the quotes differently):
@@ -473,7 +473,7 @@ See also: [Updates](#updates), [Upgrading](#upgrading), [Upgrade notes](#upgrade
 
 ## Proposals and builds
 
-Propose specs, answer them, build them, and release what landed.
+Propose specs, pick the ones to build or decline them, build them, and release what landed.
 
 ### `bmesh ideate`
 
@@ -546,93 +546,16 @@ The daemon rechecks a blocked round each minute. When the other child's pitch ar
 
 **Pushes.** The round's `done` pushes as `<repo> round N proposed` (priority default, tag `memo`, the pitch as body). Its `blocked` pushes as `<repo> round N blocked` (high, `no_entry`). Each push opens the engineer's thread on a tap when `[console]` resolves it and, like a lead's push, needs the event in `[notify] push`. An engineer's `ask` pushes like a lead's (`<path> asks`, with its thread's link). Its `done` and `blocked` reach you through the round.
 
-See also: [`bmesh choose-ideas`](#bmesh-choose-ideas), [The ledger](#the-ledger), [Pushes](#pushes), [Briefs](#briefs).
+See also: [`bmesh build`](#bmesh-build) (to pick specs), [`bmesh spec set`](#bmesh-spec-set) (to decline or shelve them), [The ledger](#the-ledger), [Pushes](#pushes), [Briefs](#briefs).
 
 Internals: [internals](internals.md#proposal-rounds)
-
-### `bmesh choose-ideas`
-
-```
-bmesh choose-ideas <repo> "<reply>"
-```
-
-Applies your reply to a round to the repo's specs and lands it on `main`. You type the reply in plain words: `"1 and 3 yes, 2 smaller, 4 no, 5 later, 3 on opus"`.
-
-**Clauses.** The reply splits into clauses at commas, semicolons and line breaks. Once a clause's phrase has begun, it also splits at a number followed by a spoken verdict: `3 yes and 4 no` and `11 smaller and 12 no` are two clauses each; `4 no because 5 covers it` is one. A clause is its leading numbers (joined by `and` or the like), which name specs, and the phrase after them.
-
-**Numbers.**
-
-- Three or more digits (`012`, as ids are written) name that spec.
-- One or two digits are a position in the pitch when there is one, else a spec id. `1 and 3 yes` to a pitch of 012 to 016 means its first and third items. `45 yes` to a five-item pitch is reported as no position, so the spec is `045`. `6` to a pitch of 001 to 003 and 006 to 010 is both a pitched id and the sixth item, and is reported as ambiguous.
-- `all` among the numbers names every spec of the pitch (`all yes`, `all later on opus`); with no pitch it is reported.
-
-**The pitch** is the text of the repo's newest settled round (`done` or `blocked`) on the mesh, the one you saw last. The command reads it whole, line by line, so a position means the same spec in every reply. A line whose spec has moved on is reported as left unchanged.
-
-- A line is the id it starts with. A line holding two or more items of the shape `NNN title (kind, size, judge):` after sentence ends (a `.;!?` before a space; `v1.2` is fine), with the title free of sentence ends, is a list typed on one line and yields them all. An id cited inside a why is not an item.
-- An open round, even with a finished child, is not a pitch yet. A settled round whose text names no spec (one blocked before a pitch) is passed over for an older one.
-- With no mesh, or no settled round with a pitch, only ids count, and the output's first line says so.
-
-**The phrase's first word decides.**
-
-| First word | Moves the spec to |
-|---|---|
-| `yes`, `accept`, `ok` | `accepted` |
-| `no`, `reject` | `rejected`, the rest of the phrase as `reason` |
-| `later` | `later` |
-| `on fable\|opus\|sonnet` alone | nothing: it sets `judge` |
-| any other | `adjusting`: the whole phrase is an instruction, recorded as `Adjust (<date>): <phrase>` under its Proposal heading, for the thread that reworks the body |
-
-Reasons and instructions are kept as written, so a verdict word or number inside one is just a word (`2 make it work with no network` adjusts 002). `on <judge>` right after `yes` or `later` sets the judge as well. Any further words after `yes`, `later` or `on <judge>` (`yes but smaller`) make the phrase an adjustment.
-
-**A verdict said first** is `yes`, `accept`, `build`, `go`, `approve`, `no`, `reject` or `later` (optionally followed by `to`), or `work on`, then its numbers and, for `reject`, the reason (`accept 012`, `reject 2 too big`, `work on 1, 2 and 3`, `yes to all`).
-
-- It carries to the clauses of bare numbers after it.
-- A phrase after its numbers that is itself a verdict said first is a clause of its own (`accept 012 and reject 013`).
-- After two or more numbers, a phrase that is not the verdict's own belongs to the last number, and the verdict covers the others. After `reject`, that is a phrase starting with a spoken verdict; after `yes` or `later`, anything but `on <judge>`. So `reject 2 and 3 yes` and `accept 012 and 3 smaller` split, while `reject 2 and 3 too big` rejects both and `yes 1 and 3 on opus` accepts both on opus.
-
-**What moves.**
-
-- A clause of bare numbers that no verdict said first reaches takes the verdict of the clause right after it (`1, 2 and 3 yes`). A clause with no number in between leaves them unmatched.
-- A spec named in several clauses gets the last move and every judge.
-- Only `proposed`, `later` and `adjusting` specs move. A spec in another status is reported and left alone.
-- A clause with no number, no phrase, or a number matching nothing is printed as `unmatched: ...`, never guessed at.
-
-**What it does**, in order:
-
-1. levels `main` (as [`bmesh ideate`](#bmesh-ideate) does);
-2. makes a worktree `<[runner] worktrees>/<repo>/<repo>-review-<hex8>` from it and applies the verdicts there;
-3. checks the commands accepted specs define (below);
-4. commits `Review: 012 accepted, 013 later`;
-5. pushes the commit to origin's `main` (`git push origin HEAD:refs/heads/main`, as [`bmesh land`](#bmesh-land) does), then fast-forwards `main` (`merge --ff-only` in the main checkout when it is on `main`, else `fetch . <branch>:main`); a checkout that can't follow is named on stderr and the landing stands. Without an origin it only fast-forwards `main`;
-6. removes the worktree and its branch.
-
-**Commands an accepted spec defines.** Before the commit, the command checks these for each spec turned `accepted`.
-
-- A spec defines a command where its Proposal has a bold run that is a bmesh synopsis and nothing else: ``**`bmesh release <repo> [--minor]`**``, optionally closed inside the bold by `.`, `:`, `,` or `;`. The command is the synopsis's leading bare words: `bmesh spec verified [--commit C]` defines `spec verified`.
-- A bold run that goes on in words (``**`bmesh build` repeats the warning**``), a plain code span, and a bold run with a backtick right outside it (a quote inside a code span) define nothing.
-- A synopsis going straight to a flag (`bmesh build --hold land|now`) adds a flag; flags aren't checked.
-
-Each command is compared with the commands this binary's `bmesh help` lists (`main`'s, on an up-to-date box) and with every other spec `accepted`, `adjusting` or `building` after the review. A match prints `warning: 048 defines bmesh release, which 046 (accepted) also defines` or `warning: 046 defines bmesh version, which main already has` after the unmatched items. Two specs accepted in one reply that define one command warn once, from the higher id. The reply still lands, and you decide. A spec that changes a command on purpose warns at every accept, naming `main`. `build` repeats the warnings at dispatch (see [`bmesh build`](#bmesh-build)).
-
-**Output.** One line per spec (`NNN title: old -> new [on judge] [(note)]`), then the unmatched items, then the warnings below, then `landed <sha8> on main: Review: ...` (or `nothing to land`).
-
-**Refusals.**
-
-| When | Exit | Message |
-|---|---|---|
-| `main` can't be levelled with origin | 3 | `refused: main in <path> is not level with origin: <git error>` |
-| origin refuses the push (its `main` moved); the review is kept on its branch | 3 | `refused: push main: <git error>; the review is committed on branch <branch>` |
-| Without an origin, `main` won't fast-forward; the review is kept on its branch | 3 | `refused: main in <path> did not fast-forward: <git error>; the review is committed on branch <branch>` |
-| Two specs share an id, on `main` or in the commit about to land | 3 | `refused: <file> and <file> share id NNN; renumber the newer with bmesh spec next-id` |
-
-See also: [`bmesh ideate`](#bmesh-ideate), [The ledger](#the-ledger), [`bmesh spec set`](#bmesh-spec-set).
 
 ### `bmesh spec`
 
 ```
 bmesh spec list [--repo R] [--status S] [--json]
 bmesh spec next-id [--repo R] [--count N] [--peek]
-bmesh spec set --id NNN --status S [--repo R] [--from A,B] [--field K=V]...
+bmesh spec set --id NNN[,NNN...] --status S [--repo R] [--from A,B] [--field K=V]... [--land]
 bmesh spec template [--repo R]
 bmesh spec verified [--commit C]
 bmesh spec steps [<NNN>] [--repo R] [--tick N,N [--note W] | --check [--wait D]]
@@ -684,32 +607,46 @@ A claimed id that is never landed is a gap; nothing hands it out again.
 #### `bmesh spec set`
 
 ```
-bmesh spec set --id NNN --status S [--repo R] [--from A,B] [--field K=V]...
+bmesh spec set --id NNN[,NNN...] --status S [--repo R] [--from A,B] [--field K=V]... [--land]
 ```
 
-Sets a spec's status and fields in its file.
+Sets the status and fields of one spec or several in their files: in the checkout `--repo` names, or with `--land` on `main`, in one commit. This is how you decline a spec (`--status rejected --field reason=...`) or shelve it (`--status later`); picking one to build is [`bmesh build`](#bmesh-build).
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--id NNN` | required | The spec. |
+| `--id NNN[,NNN...]` | required | The spec, or a comma list of specs, edited together. |
 | `--status S` | required | The new status. |
 | `--repo R` | the current directory | The repo. |
-| `--from A,B` | any status | The statuses the spec may move from. |
+| `--from A,B` | any status | The statuses each spec may move from. |
 | `--field K=V` | none | A field to set; repeatable. |
+| `--land` | off | Land the edit on `main` in one commit (see **Landing**). |
 
-**What it does.** It rewrites the status and the given fields in place: an existing key keeps its line, a new one is added last, and every other byte stays. Then it prints the row.
+**What it does.** It checks every id first: a missing spec, or one whose status `--from` doesn't list, refuses with nothing written. Then for each spec it rewrites the status and the given fields in place: an existing key keeps its line, a new one is added last, and every other byte stays. It prints each spec's row, in id order. Without `--land` it commits nothing.
+
+**Landing.** With `--land`, the edit lands on `main` as a ledger edit does:
+
+1. under the repo's lock (see [Levelling](#levelling)), it levels `main` (as [`bmesh ideate`](#bmesh-ideate) does); a worktree's `--repo` counts as its main checkout;
+2. makes a worktree `<[runner] worktrees>/<repo>/<repo>-spec-<hex8>` from it and edits the specs there;
+3. commits as `bmesh`, `Spec 012: rejected`, or `Specs 012, 013: rejected` for several;
+4. pushes the commit to origin's `main` (`git push origin HEAD:refs/heads/main`, as [`bmesh land`](#bmesh-land) does), then fast-forwards `main` (`merge --ff-only` in the main checkout when it is on `main`, else `fetch . <branch>:main`); a checkout that can't follow is named on stderr and the landing stands. Without an origin it only fast-forwards `main`;
+5. removes the worktree and its branch.
+
+It prints the rows, then `landed <sha8> on main: Specs 012, 013: rejected`, or `nothing to land` when no file changed (no commit).
 
 **Refusals.** A refusal with exit 1 changes nothing.
 
 | When | Exit | Message |
 |---|---|---|
-| `--id` is not a number | 2 | `--id "<x>" is not a number` |
+| `--id` holds something not a number | 2 | `--id "<x>" is not a number` |
 | `--status` is outside the ledger's statuses | 2 | `--status "<s>" is not one of ...` |
-| No spec with that id | 1 | `no spec NNN in <dir>` |
-| Two specs share an id | 3 | `refused: <file> and <file> share id NNN; renumber the newer with bmesh spec next-id` |
+| No spec with that id | 1 | `no spec NNN in <dir>` (`no spec NNN on main in <path>` with `--land`) |
+| Two specs share an id, in the checkout or in the commit about to land | 3 | `refused: <file> and <file> share id NNN; renumber the newer with bmesh spec next-id` |
 | With `--from`, a status not listed (named) | 1 | `spec NNN is <status>, not <A or B>; left unchanged` |
 | A write the ledger would read back differently (a duplicated `status:` key) | 1 | `spec NNN: writing status <S> would read back as <X>; left unchanged` |
 | A key that isn't a word, or a value with a line break | 1 | `can't set "<key>" to "<value>": keys are words and values are one line` |
+| `--land`: `main` can't be levelled with origin | 3 | `refused: main in <path> is not level with origin: <git error>` |
+| `--land`: origin refuses the push (its `main` moved); the edit is kept on its branch | 3 | `refused: push main: <git error>; the spec is committed on branch <branch>` |
+| `--land` without an origin: `main` won't fast-forward; the edit is kept on its branch | 3 | `refused: main in <path> did not fast-forward: <git error>; the spec is committed on branch <branch>` |
 
 #### `bmesh spec template`
 
@@ -2081,7 +2018,7 @@ The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander b
 5. `verified: ...`: the verified line, as `spec verified` composes it, from the entries of step 4. A line that wouldn't read back as the same entries (a model with a `;` or a space) exits 1. A spec whose `## Needs from the operator` section has steps prints `operator steps: N (bmesh spec steps NNN)`; land copies nothing into the spec, and the steps are read from the landed spec (see [`bmesh spec steps`](#bmesh-spec-steps)).
 6. `trailers <sha8>: Spec NNN, Verified`: HEAD reworded so its message ends with two trailers, `Spec: NNN` and `Verified: <the line>` (`git interpret-trailers --if-exists replace`, then `git commit --amend --no-verify --allow-empty`), replacing any a pass before wrote, never doubling them. Rewording changes no file, so the tree, and every result recorded for it, still match: `land` checks the tree is unchanged and, if not, puts HEAD back and exits 1. `<sha8>` is the reworded commit.
 7. `push origin main <sha8>`: `git push origin HEAD:refs/heads/main`, a fast-forward or nothing. When the push is refused because `origin/main` moved, `land` takes the reword back (`git reset --keep` to the commit before it), prints `main moved; again from the fetch` and restarts at step 1, as often as `main` moves while `--wait` lasts (past it, exit 5, `timed out waiting for main to stop moving; nothing is pushed`). Step 4 then carries the verify it just ran when what moved `main` is outside the code (a coordinator's commit, or, with `code` set, a README commit). Any other failure takes the reword back and exits 1.
-8. `main <sha8>`: the main checkout's `main` fast-forwarded as `choose-ideas` does (`merge --ff-only` when it is on `main`, else `fetch . <branch>:main`). When it can't, `land` says so on stderr and the landing stands, `origin/main` holding the commit. Without an origin this step is the landing, and a `main` that moved is retried as a refused push is.
+8. `main <sha8>`: the main checkout's `main` fast-forwarded as `spec set --land` does (`merge --ff-only` when it is on `main`, else `fetch . <branch>:main`). When it can't, `land` says so on stderr and the landing stands, `origin/main` holding the commit. Without an origin this step is the landing, and a `main` that moved is retried as a refused push is.
 
 **Output.** It ends `released land.<repo>` and `landed <sha8>`, the reworded commit that carries the trailers: the one `bmesh done --commit` names.
 
@@ -2929,7 +2866,7 @@ Internals: [internals](internals.md#the-fixer)
 
 ### The ledger
 
-A repo's specs live in `docs/proposals/NNN-slug.md` (`[spec] glob`). Each spec is a flat `key: value` frontmatter between `---` fences (lines starting with `#` are ignored) over a half-page body. `README.md` is not a spec. [`bmesh spec`](#bmesh-spec) reads and writes the ledger, and [`bmesh choose-ideas`](#bmesh-choose-ideas) lands your verdicts in it.
+A repo's specs live in `docs/proposals/NNN-slug.md` (`[spec] glob`). Each spec is a flat `key: value` frontmatter between `---` fences (lines starting with `#` are ignored) over a half-page body. `README.md` is not a spec. [`bmesh spec`](#bmesh-spec) reads and writes the ledger: [`bmesh spec set --land`](#bmesh-spec-set) lands your declines and shelvings in it, and picking a spec to build ([`bmesh build`](#bmesh-build)) writes nothing there.
 
 What stays in git is content: a spec's text, its status as decided (`proposed`, `accepted`, `adjusting`, `later`, `rejected`) and, once it lands, `done`, set by its lead on its own branch so it lands with the code. What is in flight lives on the mesh, never in git:
 
@@ -2950,7 +2887,7 @@ Specs landed before keep the fields their landing wrote and still read: a status
 - missing fences, or a line that is not `key: value`;
 - two files sharing an id.
 
-**Ids are claimed.** A writer claims a spec's id with [`bmesh spec next-id`](#bmesh-spec-next-id) before it lands the spec, and [`bmesh ideate`](#bmesh-ideate) claims a block per child: the counter on the mesh (`bm-specids`, one key per repo) never hands out a number twice. A spec written by plain git without a claim can still take a number another writer holds, so the commands that land the ledger (`choose-ideas`, `spec set` and `land`) refuse, before any push, a ledger in which two files share an id: `refused: <file> and <file> share id NNN; renumber the newer with bmesh spec next-id`. Renumbering is yours.
+**Ids are claimed.** A writer claims a spec's id with [`bmesh spec next-id`](#bmesh-spec-next-id) before it lands the spec, and [`bmesh ideate`](#bmesh-ideate) claims a block per child: the counter on the mesh (`bm-specids`, one key per repo) never hands out a number twice. A spec written by plain git without a claim can still take a number another writer holds, so the commands that write the ledger (`spec set`, with `--land` or without, and `land`) refuse, before any push, a ledger in which two files share an id: `refused: <file> and <file> share id NNN; renumber the newer with bmesh spec next-id`. Renumbering is yours.
 
 With no id, `bmesh spec steps` passes over a repo whose ledger can't be read.
 
@@ -3118,7 +3055,7 @@ bmesh reads `[setup]` from the commit being worked on (the worktree's file, or t
 - **Inline kinds** ([`bmesh routine run`](#bmesh-routine-run), [`bmesh land`](#bmesh-land)): before a command kind runs, when not current. The tree must be clean after it (`git status --porcelain`): a setup that leaves tracked changes or untracked, unignored files fails with `setup dirtied the tree: <paths>`.
 - **Routine jobs** ([Jobs](#jobs)): a command kind's, after the checkout moves to the job's commit and before its slots are leased; with no `inputs`, on every job. The tree must be clean after it, as inline.
 - **Agent worktrees** (leads, executors, proposal threads, on every runner): the brief's first step is [`bmesh setup`](#bmesh-setup), and the agent reads its own failure (see [Briefs](#briefs)).
-- **Never** in a model kind's run (a review reads diffs under its `allow` list), a ledger edit's worktree (`choose-ideas`, `spec set`, a dispatch's record), the daemon's `main` read checkout or an update's checkouts.
+- **Never** in a model kind's run (a review reads diffs under its `allow` list), a ledger edit's worktree (`spec set --land`), the daemon's `main` read checkout or an update's checkouts.
 
 **Failure.** A setup that fails, times out or dirties the tree records nothing: the build of `main` is refused with the tail of its output (so a registry flake costs a retry, never a red `main`), an inline run is refused (exit 3), and a job is answered `ok=false` with the reason. Concurrent setups in two worktrees share the package manager's cache (npm's, pnpm's, uv's and Go's are built for that); bmesh keeps no store of its own.
 
@@ -3297,7 +3234,7 @@ A daemon detects a wake when two of its minute ticks are 3 minutes or more apart
 
 Levelling keeps every box's checkout of a repo level with origin. On a secure box, code the operator hasn't seen waits for approval.
 
-A level, the daemon's routine fetch, and the fast-forward of `main` in the main checkout by `bmesh land`, `build` or `choose-ideas` take one lock per repo (the repo's lock), so they never collide. With `[hosts]` off nothing takes it.
+A level, the daemon's routine fetch, and the fast-forward of `main` in the main checkout by `bmesh land` or `spec set --land` take one lock per repo (the repo's lock), so they never collide. With `[hosts]` off nothing takes it.
 
 **The `level` op.** `level` is a built-in op: `repo` the registry name, `args` `[<sha>, <branch>, <until>]`. These are origin's head after the sender levelled, the sender's branch (`""` for a pinned row), and when the sender stops waiting. The receiving box judges it against the checkout of its own registry row, which must exist (else `refused: no checkout of <repo> here`):
 
@@ -3439,7 +3376,7 @@ The repo is a Claude Code plugin, `buildermesh`, with fourteen skills. The binar
 | Skill | Run by | What it covers |
 |---|---|---|
 | `ideate` | the operator, from a chat | a proposal round ([`bmesh ideate`](#bmesh-ideate)) |
-| `choose-ideas` | the operator, from a chat | the verdicts on a pitch ([`bmesh choose-ideas`](#bmesh-choose-ideas)) |
+| `choose-ideas` | the operator, from a chat | the verdicts on a pitch |
 | `build` | the operator, from a chat | dispatch, watch, holds and stops ([`bmesh build`](#bmesh-build)) |
 | `quickfix` | the operator, from a chat | a change asked to be made, made in the chat and landed by the definition of done, with no spec or lead (below) |
 | `ponytail-review` | the operator, from a chat, and every quick fix (`quickfix`, `build`'s and the fixer's) | a review of a change, ponytail's own (copied whole, as `third_party/ponytail/PIN` says): bugs, risks, load, missing tests, speed and what to cut, each finding numbered; it changes no code |
@@ -3450,7 +3387,7 @@ The repo is a Claude Code plugin, `buildermesh`, with fourteen skills. The binar
 | `fix` | the fixer | the fixer's pass (see [The fixer](#the-fixer)) |
 | `lead` | a lead | one spec, its executors, one `review` pass, landing, feedback |
 | `executor` | an executor | its own worktree and branch only; it reports and asks through the lead and never merges or pushes, except its own branch to queue a kind of another OS |
-| `ideate-engineer` | a round's engineer | a round's method, from reading the repo to the pitch the operator answers with `bmesh choose-ideas` |
+| `ideate-engineer` | a round's engineer | a round's method, from reading the repo to the pitch the operator answers |
 | `ideate-ux` | a round's UI/UX engineer | the same, for how the app looks and feels |
 
 Nine are the operator's chat entry points: `ideate`, `choose-ideas`, `build`, `scaffold` and `mesh-status` for the lifecycle; `quickfix` for a change made without it; `ponytail-review` for a review of a change; `sync` and `prune` across boxes. The nodes the lifecycle starts follow the other five.
@@ -3496,7 +3433,7 @@ or from a checkout: `claude plugin marketplace add <path to the checkout> && cla
 - Its first token is never `inbox`, `daemon`, `feedback`, `host` or `hostreply`, which start the subjects that are not a node's events. `routine` is the routine pool's (`routine.<kind>`, `routine.<kind>.<instance>`).
 - No token contains `--`: the inbox consumer name maps `.` to `--`, so `a--b` and `a.b` would collide.
 
-**Node token.** A registry name may hold capitals, `_` and `.` (see [repos.toml](#repostoml)); a path token can't. So every path, family and branch made from a repo's name starts with its node token. These include `<repo>-round-<N>` and its children's branches, `<repo>-<NNN>`, `<repo>-build-<N>`, and the branches `build` and `choose-ideas` record on `main` through.
+**Node token.** A registry name may hold capitals, `_` and `.` (see [repos.toml](#repostoml)); a path token can't. So every path, family and branch made from a repo's name starts with its node token. These include `<repo>-round-<N>` and its children's branches, `<repo>-<NNN>`, `<repo>-build-<N>`, and the branch `spec set --land` records on `main` through (`<repo>-spec-<hex8>`).
 
 The node token is the name in lower case, with `.` and `_` as `-`, runs of `-` collapsed, and a trailing `-` trimmed: `MapleMarketScanner` gives `maplemarketscanner`, `my_repo.js` gives `my-repo-js`. A node's `repo` and the worktree directories keep the registry name.
 
