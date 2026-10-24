@@ -52,12 +52,15 @@ func ListHolds(ctx context.Context, c *Client, kindName string) ([]Holds, error)
 	if kindName != "" {
 		filter = kindName + ".>"
 	}
-	keys, err := kv.ListKeysFiltered(ctx, filter)
+	keys, err := listKeys(ctx, c, kv, filter)
+	if errors.Is(err, jetstream.ErrNoKeysFound) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
 	var out []Holds
-	for key := range keys.Keys() {
+	for _, key := range keys {
 		e, err := kv.Get(ctx, key)
 		if errors.Is(err, jetstream.ErrKeyNotFound) {
 			continue

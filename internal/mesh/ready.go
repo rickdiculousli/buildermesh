@@ -154,7 +154,7 @@ func ListReady(ctx context.Context, c *Client) ([]Ready, error) {
 	if err != nil || kv == nil {
 		return nil, err
 	}
-	keys, err := kv.Keys(ctx)
+	keys, err := listKeys(ctx, c, kv, ">")
 	if errors.Is(err, jetstream.ErrNoKeysFound) {
 		return nil, nil
 	}

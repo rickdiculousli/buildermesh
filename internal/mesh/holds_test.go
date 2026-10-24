@@ -1,9 +1,11 @@
 package mesh_test
 
 import (
+	"context"
 	"os/exec"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -126,5 +128,39 @@ func TestKindJobsWaitingHeldAndAnswered(t *testing.T) {
 	}
 	if got, err := KindJobs(ctx, c, "absent"); err != nil || got != nil {
 		t.Fatalf("no consumer %+v %v", got, err)
+	}
+}
+
+// Every daemon's entry is listed while the daemons rewrite theirs, as each
+// does on every in-progress beat: a list read through a KV watcher missed a
+// key rewritten mid-read, so a running job read as waiting.
+func TestListHoldsWhileEntriesAreRewritten(t *testing.T) {
+	c, ctx := connect(t)
+	hosts := []string{"box-a", "box-b", "box-c"}
+	for _, h := range hosts {
+		if err := PutHolds(ctx, c, Holds{Kind: "slow", Host: h, At: "1"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wctx, stop := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	for _, h := range hosts {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for wctx.Err() == nil {
+				PutHolds(wctx, c, Holds{Kind: "slow", Host: h, At: "1"})
+			}
+		}()
+	}
+	defer func() { stop(); wg.Wait() }()
+	for i := range 1000 {
+		all, err := ListHolds(ctx, c, "slow")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(all) != len(hosts) {
+			t.Fatalf("list %d: %d entries, want %d: %+v", i, len(all), len(hosts), all)
+		}
 	}
 }

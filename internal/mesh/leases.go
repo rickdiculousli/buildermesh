@@ -153,7 +153,7 @@ func ListLeases(ctx context.Context, c *Client) ([]Lease, error) {
 	if err != nil {
 		return nil, err
 	}
-	keys, err := kv.Keys(ctx)
+	keys, err := listKeys(ctx, c, kv, ">")
 	if errors.Is(err, jetstream.ErrNoKeysFound) {
 		return nil, nil
 	}

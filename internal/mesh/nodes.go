@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -60,6 +61,34 @@ type RunnerUpdate struct {
 
 func bucket(ctx context.Context, c *Client, name string) (jetstream.KeyValue, error) {
 	return c.JS.KeyValue(ctx, name)
+}
+
+// listKeys lists kv's keys matching filter (">" for every key) as the
+// server's count of the bucket stream's subjects reads them, in no order; a
+// deleted key is listed too, so callers skip a key their read doesn't find.
+// jetstream.ErrNoKeysFound when there are none. kv.Keys and ListKeys are
+// not used: they read the keys through a watcher whose end-of-initial-
+// values marker can come before a key rewritten during the read is
+// delivered, so a key that changes often (a daemon's holds, beaten every
+// in-progress tick) is missed.
+func listKeys(ctx context.Context, c *Client, kv jetstream.KeyValue, filter string) ([]string, error) {
+	st, err := c.JS.Stream(ctx, "KV_"+kv.Bucket())
+	if err != nil {
+		return nil, err
+	}
+	prefix := "$KV." + kv.Bucket() + "."
+	info, err := st.Info(ctx, jetstream.WithSubjectFilter(prefix+filter))
+	if err != nil {
+		return nil, err
+	}
+	if len(info.State.Subjects) == 0 {
+		return nil, jetstream.ErrNoKeysFound
+	}
+	out := make([]string, 0, len(info.State.Subjects))
+	for subj := range info.State.Subjects {
+		out = append(out, strings.TrimPrefix(subj, prefix))
+	}
+	return out, nil
 }
 
 func put(ctx context.Context, c *Client, name, key string, v any) error {
@@ -141,7 +170,7 @@ func ListNodes(ctx context.Context, c *Client) ([]Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	keys, err := kv.Keys(ctx)
+	keys, err := listKeys(ctx, c, kv, ">")
 	if errors.Is(err, jetstream.ErrNoKeysFound) {
 		return nil, nil
 	}

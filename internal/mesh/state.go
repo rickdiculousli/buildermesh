@@ -117,7 +117,7 @@ func ReadAllStates(ctx context.Context, c *Client) (map[string]State, error) {
 	if err != nil {
 		return nil, err
 	}
-	keys, err := kv.Keys(ctx)
+	keys, err := listKeys(ctx, c, kv, ">")
 	if errors.Is(err, jetstream.ErrNoKeysFound) {
 		return map[string]State{}, nil
 	}
