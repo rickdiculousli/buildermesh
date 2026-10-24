@@ -359,7 +359,7 @@ Signs bmesh in to this box's T3 as an MCP client, for the `t3` runner. Only T3's
 
 A lapsed sign-in stops new leads on that box, not running ones, though the daemon's poll of them fails until the next login.
 
-**Expiry warnings.** The daemon of the box holding the token pushes `T3 sign-in on <host> expires in N days: bmesh t3 login` (tag `key`) 7, 3 and 1 days before expiry, once each across restarts. It checks hourly with `[notify] ntfy` or `command` set, whatever `push` lists (see [Pushes](#pushes)). A daemon down past a mark sends only the nearest, and a new login starts over. `bmesh mesh-status` closes with a line for it under 7 days, or `expired` (see [`bmesh mesh-status`](#bmesh-mesh-status)).
+**Expiry warnings.** The daemon of the box holding the token pushes `🔑 Expiring • T3 sign-in on <host> in N days` (`1 day` in the singular), its body opening `Run bmesh t3 login on <host>.`, 7, 3 and 1 days before expiry, once each across restarts. It checks hourly with `[notify] ntfy` or `command` set, whatever `push` lists (see [Pushes](#pushes)). A daemon down past a mark sends only the nearest, and a new login starts over. `bmesh mesh-status` closes with a line for it under 7 days, or `expired` (see [`bmesh mesh-status`](#bmesh-mesh-status)).
 
 See also: [Runners](#runners).
 
@@ -378,7 +378,7 @@ Prints the commit the binary was built from: `bmesh <rev8> <vcs.time> [modified]
 - A tagged module install (`go install …/cmd/bmesh@v0.2.0`, or `@latest` once the module has a release, which go resolves to its tag) prints the release alone, `bmesh v0.2.0`.
 - A self-update at or past a release tag (see [`bmesh release`](#bmesh-release)) prints the release first: `bmesh v0.1.0 (9a5e181a 2026-10-16T22:38:04Z)` on the tagged commit, `bmesh v0.1.0+3 (<rev8> <time>)` three past it.
 
-**Details.** `version` reaches no hub and never runs `init`. Each daemon's digest title carries its revision (`bmesh <host> <rev8>: …`).
+**Details.** `version` reaches no hub and never runs `init`.
 
 See also: [Updates](#updates).
 
@@ -612,7 +612,7 @@ To level `main`, `ideate` runs `fetch origin +refs/heads/main:refs/remotes/origi
 
 The daemon rechecks a blocked round each minute. When the other child's pitch arrives, the daemon publishes `blocked` again with it. When a blocked child is unblocked and every child is `done`, the round goes `done` after all. A round started before rounds recorded their children (an older `bmesh`) settles as it started: on `eng` for an idea round, on `eng` and `ux` for any other.
 
-**Pushes.** The round's `done` pushes as `<repo> round N proposed` (priority default, tag `memo`, the pitch as body). Its `blocked` pushes as `<repo> round N blocked` (high, `no_entry`). Each push opens the engineer's thread on a tap when `[console]` resolves it and, like a lead's push, needs the event in `[notify] push`. An engineer's `ask` pushes like a lead's (`<path> asks`, with its thread's link). Its `done` and `blocked` reach you through the round.
+**Pushes.** The round's `done` pushes as `📝 Proposed • <repo> round N` (priority default, the pitch as body). Its `blocked` pushes as `⛔ Blocked • <repo> round N` (high). Each push opens the engineer's thread on a tap when `[console]` resolves it and, like a lead's push, needs the event in `[notify] push`. An engineer's `ask` pushes like a lead's (`❓ Asks • <path>`, with its thread's link). Its `done` and `blocked` reach you through the round.
 
 See also: [`bmesh build`](#bmesh-build) (to pick specs), [`bmesh spec set`](#bmesh-spec-set) (to decline or shelve them), [The ledger](#the-ledger), [Pushes](#pushes), [Briefs](#briefs).
 
@@ -2879,7 +2879,7 @@ A box on `release` restarts once per release, on `latest` once per code landing.
 - A failed build is logged once per target; the daemon runs on.
 - On Windows, a `bmesh.prev` that can't be removed (the supervisor's own image) is moved to `bmesh.prev.old` first, so you may see that file beside the binary.
 - A binary with neither a revision nor a release tag never updates.
-- A daemon that finds its last update never started (the new build crashed at start; `bmesh.prev` was put back by hand) logs it and pushes `bmesh update failed on <host>` (priority `high`) through `[notify]` (see [Pushes](#pushes)).
+- A daemon that finds its last update never started (the new build crashed at start; `bmesh.prev` was put back by hand) logs it and pushes `⚠️ Update failed • <host>` (priority `high`) through `[notify]` (see [Pushes](#pushes)).
 - A Windows daemon not under `serve --restart` refuses `[update] repo`, since its exit would stop it for good. It logs once at start `update: [update] repo needs bmesh serve --restart on Windows, which starts the new binary (init --service sets it up); off`. The notice still runs from the row.
 
 **The hint.** When this box's daemon (another box's, if this box runs none) runs a revision other than this binary's, every command that connects to the hub ends with one stderr line, after its output and error. The exit code is unchanged.
@@ -2947,7 +2947,7 @@ That `update`, finding the binary current, walks the pending notes from the reco
 
 **The daemon's self-update** (`[update] repo`, or `upstream`) never walks. Before the swap it runs the new binary's config check and plans the walk, from where this box last walked to: the running binary, or, while notes are still pending, the recorded release (else the revision a swap replaced), so a second release swapped in before `bmesh update` keeps the first one's steps.
 
-- The daemon logs and pushes a refused config (`update to v0.2.0: config check failed: ...; keeping this binary`) and a walk with an ask or `confirm` step (`update to v0.2.0 waits on bmesh update (2 asks)`), titled `bmesh update waits on <host>`. The push's body is the line, then what to run: `In a terminal on <host>: bmesh update shows the same refusal; fix what it names, then run it again.` for the config, `In a terminal on <host>: bmesh update, which asks you them.` for the walk. The daemon answers no ask itself. Either keeps the running binary, is written as the notice (`bmesh update --notice`), and is acted on once per target until `bmesh update` takes it.
+- The daemon logs and pushes a refused config (`update to v0.2.0: config check failed: ...; keeping this binary`) and a walk with an ask or `confirm` step (`update to v0.2.0 waits on bmesh update (2 asks)`), titled `⏳ Update waits • <host>`. The push's body is the line, then what to run: `In a terminal on <host>: bmesh update shows the same refusal; fix what it names, then run it again.` for the config, `In a terminal on <host>: bmesh update, which asks you them.` for the walk. The daemon answers no ask itself. Either keeps the running binary, is written as the notice (`bmesh update --notice`), and is acted on once per target until `bmesh update` takes it.
 - A walk with only plain steps is swapped in and left pending for the new binary to report.
 - One with nothing to do records the new binary's release. While notes are pending, neither the record nor the revision a swap replaced moves, and an ask or `confirm` step still owed holds the next swap.
 
@@ -3021,7 +3021,7 @@ Ages are to the minute, whole days as `1d3h`.
 |---|---|
 | `mesh-status` | The state, and after the table one line per hold, `<path> held before land by operator 3m ago: <why>`; `--json`: the row's `hold`. |
 | `watch` | The `held` event, `<at> <path> held <text>`; it goes on watching. |
-| The hourly digest | Once per whole day of its age, `<path>: held before land by operator 1d0h ago: <why>`, in the pass whose window holds that mark. |
+| The Stuck report ([Pushes](#pushes)) | Once per whole day of its age, `<path>: held before land by operator 1d0h ago: <why>`, in the pass whose window holds that mark. |
 
 Internals: [internals](internals.md#holds)
 
@@ -3455,7 +3455,7 @@ Every job, reply, approval, roster, registry and presence entry is signed with i
 
 A refused job never runs. A job delivered again after it ran gets its stored reply again, never a re-run. A job delivered again after a crash or sleep mid-run is resumed when its op is idempotent (`ping`, `level`, `prune`, `stop-thread`, `check-step`), else answered `interrupted`.
 
-Any daemon with `[notify]` and `[hosts]` pushes roster, signature, `to` and replay failures once (title `<host> refused <sender>: <check>`, priority `high`), at most once per sender and check every 10 minutes (see [Pushes](#pushes)).
+Any daemon with `[notify]` and `[hosts]` pushes roster, signature, `to` and replay failures once (title `⚠️ Refused • <host> refused <sender>: <check>`, priority `high`), at most once per sender and check every 10 minutes (see [Pushes](#pushes)).
 
 The caller checks a reply likewise: it must be signed by the box the job went to and name the job. [`bmesh hosts replies`](#bmesh-hosts-replies) lists the replies.
 
@@ -3717,10 +3717,10 @@ checkouts = "~/.bmesh/checkouts"            # routine instances' checkouts; "" =
 claude = "claude"                           # claude command for model routines and the claude runner, split on spaces
 max_leads = 0                               # leads at once on this host; 0 = no cap
 [notify]
-ntfy = ""                                   # "" = no digest; else "http://k16:2586/bmesh"
+ntfy = ""                                   # "" = no pushes or Stuck report; else "http://k16:2586/bmesh"
 command = ""                                # test hook instead of HTTP: run through the platform shell, POST body on stdin, title in $BMESH_TITLE (and $NTFY_TITLE)
-digest_every = "1h"
-push = ["ask", "blocked", "done"]           # lead (and round) events pushed at once; only these three (another is a config error); [] = none
+digest_every = "1h"                          # how often the Stuck report looks (see Pushes)
+push = ["ask", "blocked", "done"]           # lead (and round) events pushed at once (a lead's done as its batch's end); only these three (another is a config error); [] = none
 map_url = ""                                # map URL for a push's click-through (<map_url>#/lead/<path>); "" = none
 catch_up = "1h"                             # on start, push missed events no older than this
 [liveness]
@@ -3740,7 +3740,7 @@ keep_done = "24h"                           # mesh-status hides nodes done longe
 keep_results = "30d"                        # bm-results' age limit, applied by serve; "0" = none
 [quota]
 command = ""                                # the map's quota strip; "" = none. Run through the platform shell, at most every 5m (30s timeout); prints a JSON array of {"reading":{"provider","five_hour","week","five_reset","week_reset"}}
-remind_topic = ""                           # ntfy topic for a used 5-hour window's reset reminder; "" = none; needs command and [notify] ntfy (see Quota reminders)
+remind_topic = ""                           # ntfy topic for the weekly quota alerts at 50%, 25% and 10% left; "" = none; needs command and [notify] ntfy (see Quota reminders)
 [console]
 thread_url = ""                             # the map's thread link for leads here; {thread} = the runner thread, path-escaped (mcp:x is mcp%3Ax); "" = this host's [console.hosts] entry, else no link
 [console.hosts]                             # host = template, for leads on other hosts (e.g. k16 = "http://k16:3773/…/{thread}")
@@ -3844,25 +3844,52 @@ The commands that read and publish it: [`bmesh repos`](#bmesh-repos).
 
 ### Pushes
 
-With `[notify] ntfy` or `command` set, a daemon also pushes a lead's events named in `push` to the same topic as they happen:
+With `[notify] ntfy` or `command` set, a daemon also pushes the events named in `push` to the same topic as they happen. Every notification bmesh posts, these and the others below, is titled status first, `<emoji> <status> • <subject>`, so a phone reads it at a glance; the emoji is in the title's text, not an ntfy tag, so `command` gets it too. The body opens with the key detail.
 
-| Event | Title | Priority | Tag |
-|---|---|---|---|
-| ask | `<path> asks` | `high` | `question` |
-| blocked | `<path> is blocked` | `high` | `no_entry` |
-| done | `<path> is done` | `default` | `white_check_mark` |
+| Event | Title | Priority |
+|---|---|---|
+| a lead's ask | `❓ Asks • <path>` | `high` |
+| a lead's blocked | `⛔ Blocked • <path>` | `high` |
+| a batch's end | `✅ Landed • <family>: x/y` | `default` |
 
-- **Body:** the event's text, cut to 3 KB; done adds `commit <sha8>`.
+- **A batch's end.** A lead's `done` never pushes on its own. Its batch is its [build family](#build-families) (a lead with no family is a batch of one), and the batch ends when a lead's `done` or stop (see [`bmesh node stop`](#bmesh-node-stop)) leaves every lead in it done or stopped. That push is titled `✅ Landed • <family>: x/y`, `x` the leads done of the `y` in the family (a batch of one is titled `✅ Landed • <path>`); a batch whose every lead you stopped pushes nothing. A batch that ends again (a stopped lead woken with `bmesh send` lands, or a later build joins the family) pushes again. The body's first line names the specs landed, then `; stopped <specs>` (`093 094 095; stopped 096`); then comes a line per lead done, the start of its done text cut to 120 characters with `…` (a batch of one has that line alone). The tap opens the map (`map_url`). It needs `done` in `push`; a stop ends a batch whether or not `blocked` is listed.
+- **A stop** (a `blocked` whose text starts `stopped by ` or `stopped in `) never pushes: you made it.
+- **Body:** the event's text, cut to 3 KB; a fixer's done adds `commit <sha8>`.
 - **Tap (`Click`):** the lead's thread when `[console]` resolves it, with an `Open map` action for its map page when `map_url` is set; else the map page. The phone must reach both, so on a tailnet `map_url` and the `[console]` templates use the full MagicDNS name (`http://<host>.<tailnet>.ts.net:3773/…`), not the short host name.
-- **`command`** gets the body on stdin and the headers in `$NTFY_TITLE`, `$NTFY_PRIORITY`, `$NTFY_TAGS`, `$NTFY_CLICK` and `$NTFY_ACTIONS`.
+- **`command`** gets the body on stdin and the headers in `$NTFY_TITLE`, `$NTFY_PRIORITY`, `$NTFY_CLICK` and `$NTFY_ACTIONS`.
 
 **Other nodes.**
 
-- A fixer (see [The fixer](#the-fixer)) pushes like a lead. Its `done` is titled `<repo> fixes: N fixed, M wait on you` (`waits` for one): `N` counts its report's `<seq>: fixed by` lines, `M` its `<seq>: proposed` ones. The body puts the proposed lines first, the rest after as written. A fix lead (a `<repo>-fix-<N>` family) never pushes; its fixer reports it.
+- A fixer (see [The fixer](#the-fixer)) pushes its ask and blocked like a lead. Its `done` is titled `🔧 Fixed • <repo>: N fixed, M wait on you` (`waits` for one): `N` counts its report's `<seq>: fixed by` lines, `M` its `<seq>: proposed` ones. The body puts the proposed lines first, the rest after as written. A fix lead (a `<repo>-fix-<N>` family) never pushes; its fixer reports it.
 - A round's `done` and `blocked` and an engineer's `ask` push as [`bmesh ideate`](#bmesh-ideate) says; the T3 sign-in's expiry pushes as [`bmesh t3 login`](#bmesh-t3-login) says; with `[hosts] enabled`, a box's refusals and rescaffolds push as [Hosts](#hosts) says (even with `push = []`).
 - Executors' and routines' events never push.
 
-**Once only.** An event is pushed once, across restarts and daemons. On start a daemon pushes, in order, the listed events no older than `catch_up` that nobody pushed yet, then follows live. A push that still fails after retries at 5 s and 30 s is logged and never repeated. At shutdown the push being posted gets 10 s.
+**The Stuck report.** Every `digest_every` (default `1h`) the daemon posts what is stuck, when anything is: what no push names, or whose push went unanswered. It names each thing once, in the pass whose window holds the moment it became stuck:
+
+- a node that went silent (see [Silence](#silence); routines aside): `<path> silent: quiet for 25m`;
+- an ask or block still open an hour after it was pushed (a lead's, not a fix lead's; a fixer's; a round's block; an engineer's ask), never a stop: `<path> asks, open 1h10m: <text>`, `<path> blocked 1h30m: <text>`;
+- a lead hold a whole number of days old: `<path>: held before land by operator 1d0h ago: <why>` (see [Holds](#holds));
+- a family whose every node is done or stopped and whose feedback is still pending an hour after its last finished, leaving out the issues naming bmesh's own repo, which its fixer takes: `<family>: 2 feedback pending 1h5m after it finished: bmesh feedback list <family>`.
+
+It is titled `👀 Stuck • <host>: <first thing>` (`a.x silent`, `b ask open 1h10m`, `d blocked 1h30m`, `a-001 held 1d`, `<family> feedback waits`), with `, +N more` when there are more, and its body has a line per thing. With nothing stuck it posts nothing. A failed post is tried again at the next pass, with what it held.
+
+**The other notifications.**
+
+| What | Title | Body opens with |
+|---|---|---|
+| a box holds a level ([Hosts](#hosts)) | `⏳ Held • <host>: <repo> waits for your approval (+N commits)` | the approve command and where to run it |
+| a box refuses a job | `⚠️ Refused • <host> refused <sender>: <check>` | the refusal |
+| a level's late refusal or failure | `⚠️ Level • <host>: <repo> <answer> (job from <sender>)` | the step, when there is one |
+| a registry the box can't read | `⚠️ Registry • <host>: refused: <why>` | the step |
+| a rescaffold | `✅ Scaffolded • <text>`, `⚠️ Scaffold failed • <text>` | the text |
+| an update that never started ([Updates](#updates)) | `⚠️ Update failed • <host>` | `update <old> -> <new> did not start; this is <rev8>` |
+| an update the new binary holds | `⏳ Update waits • <host>` | the refusal, then what to run |
+| upgrade notes pending ([Upgrading](#upgrading)) | `⚠️ Notes pending • <host>` | `upgrade notes pending since vX.Y.Z: run bmesh update` |
+| the T3 sign-in expiring | `🔑 Expiring • T3 sign-in on <host> in N days` | `Run bmesh t3 login on <host>.` |
+| weekly quota ([Quota reminders](#quota-reminders)) | `🔋 50% left • Claude weekly` | `resets in 2d 4h` |
+| a T3 thread ([t3-done](#t3-done)) | `✅ Done • <thread title>` | the reply |
+
+**Once only.** An event is pushed once, across restarts and daemons, and a batch's end once though two of its leads end together. On start a daemon pushes, in order, the listed events no older than `catch_up` that nobody pushed yet, then follows live. A push that still fails after retries at 5 s and 30 s is logged and never repeated. At shutdown the push being posted gets 10 s.
 
 Internals: [internals](internals.md#pushes)
 
@@ -3870,14 +3897,15 @@ Internals: [internals](internals.md#pushes)
 
 With `[quota] remind_topic` set (an ntfy topic name: 1 to 64 of `A-Z`, `a-z`, `0-9`, `_` and `-`, else the config is refused), the daemon reads quota on start and then hourly. It reads through the map strip's gate, so `[quota] command` still runs at most every 5 minutes, whichever reader triggers it.
 
-A provider gets a reminder when it has usage in its 5-hour window (`five_hour` above 0) and its `five_reset`, rounded to the minute, is still ahead. The daemon then posts one message per window to the `[notify] ntfy` URL with its last path segment replaced by the topic (`http://127.0.0.1:2586/bmesh` and `quota-reset` give `http://127.0.0.1:2586/quota-reset`):
+A provider gets an alert when its weekly usage (`week`) reaches 50%, 75% or 90%, once per mark per week (the week named by its `week_reset`, rounded to the minute, while that is still ahead). A reading that has passed two marks since the last alert posts only the higher. The daemon posts it at once to the `[notify] ntfy` URL with its last path segment replaced by the topic (`http://127.0.0.1:2586/bmesh` and `quota-reset` give `http://127.0.0.1:2586/quota-reset`):
 
-- title `Claude 5-hour quota reset` (the provider's name, capitalised);
-- body `Claude's 5-hour window is fresh. Weekly was 41% used.`;
-- tag `hourglass`;
-- an `At` header of the rounded reset, so ntfy delivers it then; none when the reset is under 30 s away (bmesh's margin over ntfy's 10 s minimum delay), so it posts at once.
+| Weekly used | Title |
+|---|---|
+| 50% | `🔋 50% left • Claude weekly` (the provider's name, capitalised) |
+| 75% | `🪫 25% left • Claude weekly` |
+| 90% | `🪫 10% left • Claude weekly` |
 
-The daemon logs a failed post and retries it at the next reading.
+The body is how long until the week resets, from the post: `resets in 2d 4h`, under a day `resets in 3h 10m`, under an hour `resets in 25m`. A reading without a weekly reset is skipped. The daemon logs a failed post and retries it at the next reading.
 
 Internals: [internals](internals.md#quota-reminders)
 
@@ -3900,17 +3928,17 @@ min_busy = "5m"                             # the default; "0s" posts every done
 
 Turning it on never starts the `[notify]` digest or pushes. It reads this box's T3 database, `~/.t3/userdata/statev2.sqlite`, read-only. Each tick (`every`) it compares the database file's and its `-wal` file's modification time and size with the last read, and reads only when either changed, so an idle T3 costs one file check per tick.
 
-| What happens | Posts | Tag |
-|---|---|---|
-| A run ends `completed`, the thread has no background task pending, and it was busy at least `min_busy` | done | `white_check_mark` |
-| A run ends `failed` | failed | `x` |
-| A runtime request (a question to you) turns `pending` | asking for input | `raising_hand` |
+| What happens | Title |
+|---|---|
+| A run ends `completed`, the thread has no background task pending, and it was busy at least `min_busy` | `✅ Done • <thread title>` |
+| A run ends `failed` | `❌ Failed • <thread title>` |
+| A runtime request (a question to you) turns `pending` | `🙋 Asks • <thread title>` |
 
 - **Not posted:** a run that ends `interrupted`, `cancelled` or `rolled_back`, and a run that ends `completed` while a background task (a monitor, a background command) is still pending. That run is a wake-up, not the end: a coordinator waiting on `bmesh watch` posts nothing until its watch ends and it reports. A thread whose background task ends without a new run stays silent until its next turn.
 - **Busy long enough:** a done posts only when the thread was busy at least `min_busy` (default `5m`), so a quick back-and-forth you're watching never pushes. Busy runs from your last message to the end of the run, so a turn a background task woke counts from the ask that armed the task, wait included. Time between turns counts too: a background task's wake-up after a done that already posted is measured from the same ask, so it posts a second done. With t3-done enabled, a negative `min_busy` is a config error. Failed and asking post however short.
 - **Which threads:** top-level threads a person started. Threads with a parent (a delegated child) and threads an agent created (bmesh's leads and rounds, which push on their own) never post.
-- **Title:** the thread's title.
-- **Body:** `done in <project> on <box>: <the start of the last assistant reply>`, likewise `failed in …` and `asking for input in …`. The reply is put on one line and cut to 140 characters with `…`. There's no `in <project>` without a project and no `: …` without a reply.
+- **Title:** the status, then the thread's title on one line.
+- **Body:** the start of the last assistant reply, then `· <project> on <box>`: `The buzzer fixed. Tests pass. · party-buzzer on k16`. The reply loses its markdown (heading, list and quote markers, `**` and backticks; a link keeps its text), is put on one line and cut to 140 characters with `…`. There's no `<project> on` without a project, and the body is `<project> on <box>` alone without a reply.
 - **Tap (`Click`):** the thread, through `[console] thread_url`, when that is set; else none.
 - **Once each:** a mark per kind (the run's end, the request's creation) lives in `<state dir>/addons/t3-done/` (`runs`, `requests`). Every row read moves it, posted or not, so a wake-up skipped never posts later when its task ends. A fresh start begins at the current time. A post that fails isn't marked, so the next tick posts it again.
 - **Idle on a mismatch:** before each read it checks that the tables and columns it reads exist, and that the newest rows carry the payload fields it reads. When one is missing (a T3 update changed it), it logs one line naming it, `t3-done: idle: T3's database has no column orchestration_v2_projection_runs.completed_at (a T3 update changed it); nothing is posted until it does`, posts nothing, and checks again when the database next changes. Without a database it logs `t3-done: no T3 database at <path>` once. When a read works again it logs `t3-done: reading again`.

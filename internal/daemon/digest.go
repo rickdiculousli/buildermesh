@@ -3,134 +3,73 @@ package daemon
 import (
 	"context"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/notify"
-	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 )
 
-// Digest summarises the mesh for a notification. It takes host and now in
-// addition to the plan's (states, nodes, since): the title names the host
-// (the daemon passes "<host> <rev8>", so the title carries its revision) and
-// the ages are measured to now. states is the source of truth (a state with
-// no registered node still counts); nodes is reserved for enrichment.
+// openAfter is how long an ask, a block or a finished family's feedback
+// waits before the Stuck report names it, once.
+const openAfter = time.Hour
+
+// stuckItem is one thing the Stuck report names: short in the title, line
+// in the body.
+type stuckItem struct{ short, line string }
+
+// Stuck is the digest: what is stuck, which no push names, or whose push
+// has gone unanswered. Each thing is named once, in the pass whose window
+// (since, now] holds the moment it became stuck; one after now waits for
+// the next pass, so none is lost between passes:
 //
-// The body has one line per lead that entered asking, silent or blocked in
-// the window (since, now], then one per lead done in that window. Nodes in a
-// lead's tree (executors) are nested under their lead's line, "  └ <name>:
-// <state>: <text>", which is added as "<lead>: <state>" when the lead itself
-// is not news; the operator reads only leads' asks, so the title's asking
-// count covers leads alone. A state is listed only in the pass whose window
-// holds its At, so a standing state is posted once rather than every pass;
-// one stamped after now waits for the next pass, so none is lost between
-// passes. The title's working and silent counts cover every node. changed is
-// false when there are no such lines.
-func Digest(host string, states map[string]mesh.State, nodes []mesh.Node, since, now time.Time) (title, body string, changed bool) {
-	paths := make([]string, 0, len(states))
-	for p := range states {
-		paths = append(paths, p)
-	}
-	sort.Strings(paths)
-	var working, asking, silent int
-	type entry struct {
-		attention, finished []string // the lead's own lines
-		nested              []string // its tree's lines, in path order
-	}
-	entries := map[string]*entry{}
-	var leads []string
-	at := func(lead string) *entry {
-		e, ok := entries[lead]
-		if !ok {
-			e = &entry{}
-			entries[lead] = e
-			leads = append(leads, lead)
+//   - a node that went silent (not a routine), at its silent's At;
+//   - an ask or block still open openAfter after it was pushed (a lead's,
+//     not a fix lead's, a fixer's or a round's; an engineer's ask), not a
+//     stop;
+//   - a lead hold a whole number of days old;
+//   - a family whose every node is done or stopped with feedback pending
+//     (feedback, by family, leaves out what bmesh's own fixer takes)
+//     openAfter after its last node finished.
+//
+// The title is `👀 Stuck • <host>: <first item>` with `, +N more`, the body
+// a line per item. changed is false when there is nothing.
+func Stuck(host string, states map[string]mesh.State, nodes []mesh.Node, holds []mesh.LeadHold, feedback map[string]int, since, now time.Time) (title, body string, changed bool) {
+	byPath := map[string]mesh.Node{}
+	families := map[string][]string{}
+	for _, n := range nodes {
+		byPath[n.Path] = n
+		if n.Family != "" {
+			families[n.Family] = append(families[n.Family], n.Path)
 		}
-		return e
 	}
-	for _, p := range paths {
+	var items []stuckItem
+	for _, p := range slices.Sorted(maps.Keys(states)) {
 		st := states[p]
-		stAt, _ := time.Parse(time.RFC3339, st.At)
-		lead, name, inTree := treeMember(p)
-		switch st.State {
-		case "working":
-			working++
-		case "silent":
-			silent++
-		case "asking":
-			if !inTree {
-				asking++
-			}
-		}
-		if !inWindow(stAt, since, now) {
+		at, err := time.Parse(time.RFC3339, st.At)
+		if err != nil || strings.HasPrefix(p, "routine.") {
 			continue
 		}
-		switch st.State {
-		case "asking", "silent", "blocked":
-			if inTree {
-				word := st.State
-				if word == "asking" {
-					word = "ask"
-				}
-				line := "  └ " + name + ": " + word
-				if st.Text != "" {
-					line += ": " + st.Text
-				}
-				e := at(lead)
-				e.nested = append(e.nested, line)
-				continue
-			}
-			line := fmt.Sprintf("%s: %s since %s", p, st.State, age(now.Sub(stAt)))
+		with := func(line string) string {
 			if st.Text != "" {
 				line += ": " + st.Text
 			}
-			e := at(lead)
-			e.attention = append(e.attention, line)
-		case "done":
-			e := at(lead)
-			if inTree {
-				e.nested = append(e.nested, "  └ "+name+": done")
-			} else {
-				e.finished = append(e.finished, p+": done")
-			}
+			return line
 		}
-	}
-	title = fmt.Sprintf("bmesh %s: %d working, %d asking, %d silent", host, working, asking, silent)
-	var attention, finished []string
-	for _, lead := range leads {
-		e := entries[lead]
+		n := byPath[p]
 		switch {
-		case len(e.attention) > 0:
-			attention = append(attention, e.attention...)
-			attention = append(attention, e.nested...)
-		case len(e.finished) > 0:
-			finished = append(finished, e.finished...)
-			finished = append(finished, e.nested...)
-		case len(e.nested) > 0:
-			// The lead itself is not news: head its tree's lines with its state.
-			st := states[lead].State
-			if st == "" {
-				st = "idle"
-			}
-			head := lead + ": " + st
-			if stAt, err := time.Parse(time.RFC3339, states[lead].At); err == nil && !stAt.IsZero() {
-				head += " since " + age(now.Sub(stAt))
-			}
-			attention = append(attention, head)
-			attention = append(attention, e.nested...)
+		case st.State == "silent" && inWindow(at, since, now):
+			items = append(items, stuckItem{p + " silent", with(p + " silent")})
+		case st.State == "asking" && reachesOperator(n, "ask") && inWindow(at.Add(openAfter), since, now):
+			open := age(now.Sub(at))
+			items = append(items, stuckItem{p + " ask open " + open, with(p + " asks, open " + open)})
+		case st.State == "blocked" && !mesh.Stopped(st) && reachesOperator(n, "blocked") && inWindow(at.Add(openAfter), since, now):
+			open := age(now.Sub(at))
+			items = append(items, stuckItem{p + " blocked " + open, with(p + " blocked " + open)})
 		}
 	}
-	lines := append(attention, finished...)
-	return title, strings.Join(lines, "\n"), len(lines) > 0
-}
-
-// HoldLines names each hold at least a day old whose age reached a whole
-// number of days in the window (since, now], "<path>: held before land by
-// operator 1d0h ago: <why>", so a forgotten hold is named once a day.
-func HoldLines(holds []mesh.LeadHold, since, now time.Time) []string {
-	var out []string
 	for _, h := range holds {
 		at, err := time.Parse(time.RFC3339, h.At)
 		if err != nil {
@@ -138,22 +77,59 @@ func HoldLines(holds []mesh.LeadHold, since, now time.Time) []string {
 		}
 		for t := at.Add(24 * time.Hour); !t.After(now); t = t.Add(24 * time.Hour) {
 			if inWindow(t, since, now) {
-				out = append(out, h.Path+": "+h.Line(now))
+				items = append(items, stuckItem{fmt.Sprintf("%s held %dd", h.Path, int(now.Sub(at)/(24*time.Hour))), h.Path + ": " + h.Line(now)})
 				break
 			}
 		}
 	}
-	return out
+	for _, f := range slices.Sorted(maps.Keys(feedback)) {
+		members := families[f]
+		var last time.Time
+		finished := len(members) > 0 && feedback[f] > 0
+		for _, p := range members {
+			st := states[p]
+			if st.State != "done" && !mesh.Stopped(st) {
+				finished = false
+			}
+			if at, err := time.Parse(time.RFC3339, st.At); err == nil && at.After(last) {
+				last = at
+			}
+		}
+		if finished && inWindow(last.Add(openAfter), since, now) {
+			items = append(items, stuckItem{f + " feedback waits", fmt.Sprintf("%s: %d feedback pending %s after it finished: bmesh feedback list %s",
+				f, feedback[f], age(now.Sub(last)), f)})
+		}
+	}
+	if len(items) == 0 {
+		return "", "", false
+	}
+	subject := host + ": " + items[0].short
+	if len(items) > 1 {
+		subject += fmt.Sprintf(", +%d more", len(items)-1)
+	}
+	lines := make([]string, len(items))
+	for i, it := range items {
+		lines[i] = it.line
+	}
+	return notify.Title("👀", "Stuck", subject), strings.Join(lines, "\n"), true
 }
 
-// treeMember splits a path under a lead (an executor, "a.x") into the lead
-// and the rest; routine instances and leads themselves are not members.
-func treeMember(p string) (lead, name string, ok bool) {
-	lead, name, found := strings.Cut(p, ".")
-	if !found || lead == "routine" {
-		return p, "", false
+// reachesOperator reports whether node n's event (ask or blocked) is pushed
+// to the operator: a lead's (not a fix lead's), a fixer's, a round's
+// blocked or an engineer's ask.
+func reachesOperator(n mesh.Node, event string) bool {
+	switch n.Role {
+	case "lead":
+		_, _, fix := mesh.FixFamily(n.Family)
+		return !fix
+	case "fixer":
+		return true
+	case "round":
+		return event == "blocked"
+	case "engineer":
+		return event == "ask"
 	}
-	return lead, name, true
+	return false
 }
 
 // inWindow reports whether at is in (since, now].
@@ -167,9 +143,8 @@ func age(d time.Duration) string {
 	return shortDuration(d)
 }
 
-// digestOnce sends one digest if anything needs attention or newly finished,
-// or a hold turned a whole number of days old (HoldLines), then moves
-// *since to now. A failed delivery leaves *since alone so the next
+// digestOnce sends the Stuck report when anything is stuck (Stuck), then
+// moves *since to now. A failed delivery leaves *since alone so the next
 // pass reports the same things again.
 func digestOnce(ctx context.Context, d Deps, since *time.Time) {
 	now := d.Now() // before the read, so the window (since, now] has no gap
@@ -183,19 +158,23 @@ func digestOnce(ctx context.Context, d Deps, since *time.Time) {
 		d.Log.Warn("digest: list nodes", "err", err)
 		return
 	}
-	label := d.Host
-	if d.Revision != "" {
-		label += " " + selfupdate.Short(d.Revision)
-	}
-	title, body, changed := Digest(label, states, nodes, *since, now)
 	holds, err := mesh.ListLeadHolds(ctx, d.Client)
 	if err != nil {
 		d.Log.Warn("digest: list holds", "err", err)
 	}
-	if lines := HoldLines(holds, *since, now); len(lines) > 0 {
-		body = strings.TrimPrefix(body+"\n"+strings.Join(lines, "\n"), "\n")
-		changed = true
+	all, err := mesh.ListAllFeedback(ctx, d.Client)
+	if err != nil {
+		d.Log.Warn("digest: list feedback", "err", err)
+		return // a pass without it would move since past a family's one line
 	}
+	own := d.Cfg.ModuleRepo(d.Module)
+	feedback := map[string]int{}
+	for _, f := range all {
+		if own == "" || f.Repo != own {
+			feedback[f.Family]++
+		}
+	}
+	title, body, changed := Stuck(d.Host, states, nodes, holds, feedback, *since, now)
 	if !changed {
 		return
 	}

@@ -134,7 +134,7 @@ func (r *routineSet) hold(h *held) {
 	if d.Cfg.Notify.Ntfy != "" || d.Cfg.Notify.Command != "" {
 		ctx, cancel := r.settleCtx()
 		defer cancel()
-		if err := deliver(ctx, d, notify.Headers{Title: "bmesh update waits on " + d.Host, Tags: "warning"}, strings.TrimSpace(h.line+". "+h.step)); err != nil {
+		if err := deliver(ctx, d, notify.Headers{Title: notify.Title("⏳", "Update waits", d.Host)}, strings.TrimSpace(h.line+". "+h.step)); err != nil {
 			d.Log.Warn("update: push held update", "err", err)
 		}
 	}
@@ -184,7 +184,7 @@ func pending(ctx context.Context, d Deps) {
 	if d.Cfg.Notify.Ntfy == "" && d.Cfg.Notify.Command == "" {
 		return
 	}
-	if err := deliver(ctx, d, notify.Headers{Title: "bmesh on " + d.Host + ": upgrade notes pending", Tags: "warning"}, line); err != nil {
+	if err := deliver(ctx, d, notify.Headers{Title: notify.Title("⚠️", "Notes pending", d.Host)}, line); err != nil {
 		d.Log.Warn("update: push pending notes", "err", err)
 		return
 	}

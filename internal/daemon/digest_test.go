@@ -14,51 +14,90 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/notify"
 )
 
-func TestDigestTextAndChanged(t *testing.T) {
+// The Stuck report names each stuck thing once, in the pass whose window
+// holds the moment it became stuck, and nothing else.
+func TestStuckNamesEachThingOnce(t *testing.T) {
 	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
 	at := func(ago time.Duration) string { return now.Add(-ago).Format(time.RFC3339) }
-	states := map[string]mesh.State{
-		"a":   {State: "working", At: at(time.Minute)},
-		"b":   {State: "asking", At: at(5 * time.Minute), Text: "which db?"},
-		"c":   {State: "silent", At: at(2*time.Hour + 10*time.Minute)},
-		"d":   {State: "done", At: at(time.Minute)},
-		"e":   {State: "blocked", At: at(20 * time.Minute)},
-		"old": {State: "done", At: at(3 * time.Hour)},
-	}
 	since := now.Add(-time.Hour)
-	title, body, changed := Digest("h", states, nil, since, now)
-	if title != "bmesh h: 1 working, 1 asking, 1 silent" {
-		t.Errorf("title = %q", title)
+	nodes := []mesh.Node{
+		{Path: "a", Role: "lead"}, {Path: "a.x", Role: "executor"}, {Path: "a.y", Role: "executor"},
+		{Path: "b", Role: "lead"}, {Path: "c", Role: "lead"}, {Path: "d", Role: "lead"}, {Path: "e", Role: "lead"},
+		{Path: "old", Role: "lead"}, {Path: "fl", Role: "lead", Family: "demo-fix-1"},
+		{Path: "f1a", Role: "lead", Family: "demo-build-1"}, {Path: "f1b", Role: "lead", Family: "demo-build-1"},
+		{Path: "f2a", Role: "lead", Family: "demo-build-2"}, {Path: "f3a", Role: "lead", Family: "demo-build-3"},
 	}
-	if !changed {
-		t.Error("changed = false")
+	states := map[string]mesh.State{
+		"a":                  {State: "working", At: at(30 * time.Minute)},
+		"a.x":                {State: "silent", At: at(5 * time.Minute), Text: "quiet for 25m"},
+		"a.y":                {State: "asking", At: at(70 * time.Minute), Text: "the lead's to answer"},
+		"b":                  {State: "asking", At: at(70 * time.Minute), Text: "which db?"},
+		"c":                  {State: "asking", At: at(30 * time.Minute), Text: "not yet an hour"},
+		"d":                  {State: "blocked", At: at(90 * time.Minute), Text: "no key"},
+		"e":                  {State: "blocked", At: at(90 * time.Minute), Text: mesh.StoppedBy("operator", "")},
+		"old":                {State: "asking", At: at(3 * time.Hour), Text: "reminded before"},
+		"fl":                 {State: "asking", At: at(70 * time.Minute), Text: "the fixer's to answer"},
+		"f1a":                {State: "done", At: at(65 * time.Minute)},
+		"f1b":                {State: "blocked", At: at(80 * time.Minute), Text: mesh.StoppedBy("operator", "")},
+		"f2a":                {State: "working", At: at(80 * time.Minute)},
+		"f3a":                {State: "done", At: at(30 * time.Minute)},
+		"routine.verify.c-1": {State: "silent", At: at(time.Minute)},
 	}
-	for _, want := range []string{"b: asking since 5m: which db?", "e: blocked since 20m\n", "d: done"} {
-		if !strings.Contains(body+"\n", want) {
-			t.Errorf("body missing %q:\n%s", want, body)
-		}
+	held := now.Add(-24*time.Hour - 30*time.Minute)
+	holds := []mesh.LeadHold{
+		{Path: "a-001", Gate: "land", Text: "hub move first", By: "operator", At: held.Format(time.RFC3339)},
+		{Path: "a-002", Gate: "now", Text: "fresh", By: "operator", At: at(4 * time.Hour)},
 	}
-	// c has been silent since before the window: posted then, not again.
-	if strings.Contains(body, "old") || strings.Contains(body, "a: ") || strings.Contains(body, "c: ") {
-		t.Errorf("body has unrelated lines:\n%s", body)
+	feedback := map[string]int{"demo-build-1": 2, "demo-build-2": 1, "demo-build-3": 1}
+	title, body, changed := Stuck("h", states, nodes, holds, feedback, since, now)
+	if !changed || title != "👀 Stuck • h: a.x silent, +4 more" {
+		t.Errorf("title %q changed %v", title, changed)
 	}
-	// A window that holds c's At lists it, with the hours form of the age.
-	if _, body, _ := Digest("h", states, nil, now.Add(-3*time.Hour), now); !strings.Contains(body+"\n", "c: silent since 2h10m\n") {
-		t.Errorf("wide window missing c:\n%s", body)
+	want := "a.x silent: quiet for 25m\n" +
+		"b asks, open 1h10m: which db?\n" +
+		"d blocked 1h30m: no key\n" +
+		"a-001: held before land by operator 1d0h ago: hub move first\n" +
+		"demo-build-1: 2 feedback pending 1h5m after it finished: bmesh feedback list demo-build-1"
+	if body != want {
+		t.Errorf("body =\n%s\nwant\n%s", body, want)
 	}
-
-	calm := map[string]mesh.State{"a": {State: "working", At: at(time.Minute)}, "b": {State: "idle"}}
-	if _, _, changed := Digest("h", calm, nil, since, now); changed {
-		t.Error("all working: changed = true")
+	// The next pass names none of them again, only c's ask and the
+	// feedback of demo-build-3, whose hour comes in it.
+	if _, body, _ := Stuck("h", states, nodes, holds, feedback, now, now.Add(time.Hour)); body !=
+		"c asks, open 1h30m: not yet an hour\ndemo-build-3: 1 feedback pending 1h30m after it finished: bmesh feedback list demo-build-3" {
+		t.Errorf("next pass:\n%s", body)
 	}
-	standing := map[string]mesh.State{"x": {State: "asking", At: at(2 * time.Hour)}}
-	if _, _, changed := Digest("h", standing, nil, since, now); changed {
-		t.Error("asking since before the window: changed = true")
+	// One item has no "+N more".
+	one := map[string]mesh.State{"a": {State: "silent", At: at(time.Minute)}}
+	if title, _, _ := Stuck("h", one, nil, nil, nil, since, now); title != "👀 Stuck • h: a silent" {
+		t.Errorf("one item: %q", title)
 	}
 }
 
-func TestDigestLoopPostsOnlyWhenChanged(t *testing.T) {
-	f := setup(t)
+// The window is (since, now]: a mark at since was named last pass, one
+// after now waits for the next.
+func TestStuckWindow(t *testing.T) {
+	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
+	since := now.Add(-time.Hour)
+	st := func(at time.Time) map[string]mesh.State {
+		return map[string]mesh.State{"x": {State: "silent", At: at.Format(time.RFC3339)}}
+	}
+	if _, _, ch := Stuck("h", st(since), nil, nil, nil, since, now); ch {
+		t.Error("silent exactly at since was named again")
+	}
+	if _, _, ch := Stuck("h", st(now), nil, nil, nil, since, now); !ch {
+		t.Error("silent at now was not named")
+	}
+	if _, _, ch := Stuck("h", st(now.Add(time.Second)), nil, nil, nil, since, now); ch {
+		t.Error("silent after now was named early")
+	}
+	if _, _, ch := Stuck("h", st(now.Add(time.Second)), nil, nil, nil, now, now.Add(time.Hour)); !ch {
+		t.Error("silent just after the previous now was lost")
+	}
+}
+
+func TestDigestLoopPostsOnlyWhenStuck(t *testing.T) {
+	f := fixerSetup(t, "", &starts{}) // bm is bmesh's own repo
 	fake, err := filepath.Abs(filepath.Join("..", "..", "testdata", "fake-ntfy.sh"))
 	if err != nil {
 		t.Fatal(err)
@@ -82,81 +121,58 @@ func TestDigestLoopPostsOnlyWhenChanged(t *testing.T) {
 		}
 	}
 
-	f.lead(t, "a", "t1", "asking")
-	f.now = f.now.Add(time.Minute) // the state's At (wall clock, whole seconds) is inside the window
+	f.lead(t, "a", "t1", "working")
+	stamp("a", "asking")
+	// A fresh ask is its own push's: the report is quiet.
 	since := f.now.Add(-time.Hour)
+	digestOnce(f.ctx, f.d, &since)
+	if n := records(); n != 0 {
+		t.Fatalf("records = %d, want 0", n)
+	}
+	// An hour on, it is named once.
+	f.now = f.now.Add(time.Hour + time.Minute)
 	digestOnce(f.ctx, f.d, &since)
 	if n := records(); n != 1 {
 		t.Fatalf("records = %d, want 1", n)
 	}
-	if b := read(); !strings.HasPrefix(b, "bmesh "+testHost+": 0 working, 1 asking, 0 silent\n") {
+	if b := read(); !strings.HasPrefix(b, "👀 Stuck • "+testHost+": a ask open 1h1m\na asks, open 1h1m\n") {
 		t.Errorf("log = %q", b)
 	}
-	if evs := f.daemonEvents(t, "digest"); len(evs) != 1 || evs[0].From != "daemon."+testHost ||
-		!strings.HasPrefix(evs[0].Body, "a: asking since ") {
+	if evs := f.daemonEvents(t, "digest"); len(evs) != 1 || evs[0].From != "daemon."+testHost || evs[0].Body != "a asks, open 1h1m" {
 		t.Errorf("digest events = %+v", evs)
 	}
 	if !since.Equal(f.now) {
 		t.Errorf("since = %v, want %v", since, f.now)
 	}
-
-	// a is still asking: a standing state was posted once and is not news.
-	f.now = f.now.Add(time.Minute)
+	f.now = f.now.Add(time.Hour)
 	digestOnce(f.ctx, f.d, &since)
 	if n := records(); n != 1 {
-		t.Fatalf("records after standing tick = %d, want 1", n)
+		t.Fatalf("records after a standing ask = %d, want 1", n)
 	}
 
-	// b enters blocked after since: posted, and a is not repeated.
-	f.now = f.now.Add(time.Minute)
-	f.lead(t, "b", "t2", "working")
-	stamp("b", "blocked")
-	digestOnce(f.ctx, f.d, &since)
-	if n := records(); n != 2 {
-		t.Fatalf("records after blocked = %d, want 2", n)
+	// A finished family's feedback is named an hour on; bmesh's own repo's
+	// is the fixer's and left out.
+	if err := mesh.PutNode(f.ctx, f.c, mesh.Node{Path: "b", Role: "lead", Host: testHost, Family: "demo-build-1"}); err != nil {
+		t.Fatal(err)
 	}
-	parts := strings.Split(read(), "---\n")
-	last := parts[len(parts)-2]
-	if !strings.Contains(last, "b: blocked since 0m") || strings.Contains(last, "a: asking") {
-		t.Errorf("blocked post = %q", last)
-	}
-
-	f.now = f.now.Add(time.Minute)
+	stamp("b", "working")
 	stamp("b", "done")
+	for _, repo := range []string{"bm", "demo"} {
+		if _, err := mesh.PublishFeedback(f.ctx, f.c, mesh.Feedback{From: "b", Family: "demo-build-1", Repo: repo, Text: "x"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.now = f.now.Add(time.Hour + time.Minute)
 	digestOnce(f.ctx, f.d, &since)
-	if n := records(); n != 3 {
-		t.Fatalf("records after done = %d, want 3", n)
-	}
-}
-
-func TestDigestDoneWindow(t *testing.T) {
-	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
-	since := now.Add(-time.Hour)
-	st := func(at time.Time) map[string]mesh.State {
-		return map[string]mesh.State{"x": {State: "done", At: at.Format(time.RFC3339)}}
-	}
-	if _, _, ch := Digest("h", st(since), nil, since, now); ch {
-		t.Error("done exactly at since was reported again")
-	}
-	if _, _, ch := Digest("h", st(now), nil, since, now); !ch {
-		t.Error("done at now was not reported")
-	}
-	if _, _, ch := Digest("h", st(now.Add(time.Second)), nil, since, now); ch {
-		t.Error("done after now was reported early")
-	}
-	// Next pass: since = old now, so the late done is reported and the one at old now is not.
-	next := now.Add(time.Hour)
-	if _, _, ch := Digest("h", st(now), nil, now, next); ch {
-		t.Error("done at the previous now was reported twice")
-	}
-	if _, _, ch := Digest("h", st(now.Add(time.Second)), nil, now, next); !ch {
-		t.Error("done just after the previous now was lost")
+	parts := strings.Split(read(), "---\n")
+	if last := parts[len(parts)-2]; !strings.Contains(last, "demo-build-1: 1 feedback pending 1h1m after it finished") {
+		t.Errorf("feedback post = %q", last)
 	}
 }
 
 func TestDigestFailedDeliveryKeepsSince(t *testing.T) {
 	f := setup(t)
-	f.lead(t, "a", "t1", "asking")
+	f.lead(t, "a", "t1", "silent")
 	f.now = f.now.Add(time.Minute) // the state's At is inside the window
 	orig := f.now.Add(-time.Hour)
 
@@ -184,7 +200,7 @@ func TestDigestFailedDeliveryKeepsSince(t *testing.T) {
 	if !since.Equal(orig) {
 		t.Errorf("non-2xx moved since to %v", since)
 	}
-	if gotTitle != "bmesh "+testHost+": 0 working, 1 asking, 0 silent" || !strings.HasPrefix(gotBody, "a: asking since") {
+	if gotTitle != "👀 Stuck • "+testHost+": a silent" || gotBody != "a silent" {
 		t.Errorf("request: title %q body %q", gotTitle, gotBody)
 	}
 	if err := deliver(f.ctx, f.d, notify.Headers{Title: "t"}, "b"); err == nil {
@@ -195,58 +211,5 @@ func TestDigestFailedDeliveryKeepsSince(t *testing.T) {
 	digestOnce(f.ctx, f.d, &since)
 	if !since.Equal(f.now) {
 		t.Errorf("success left since at %v", since)
-	}
-}
-
-func TestDigestNestsExecutorAsks(t *testing.T) {
-	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
-	at := func(ago time.Duration) string { return now.Add(-ago).Format(time.RFC3339) }
-	since := now.Add(-time.Hour)
-	states := map[string]mesh.State{
-		"a":                  {State: "working", At: at(30 * time.Minute)},
-		"a.x":                {State: "asking", At: at(5 * time.Minute), Text: "which db?"},
-		"a.y":                {State: "done", At: at(2 * time.Minute)},
-		"b":                  {State: "asking", At: at(10 * time.Minute), Text: "ship it?"},
-		"b.z":                {State: "silent", At: at(3 * time.Minute), Text: "quiet for 25m"},
-		"c":                  {State: "working", At: at(time.Minute)},
-		"routine.verify.c-1": {State: "working", At: at(time.Minute)},
-	}
-	title, body, changed := Digest("h", states, nil, since, now)
-	if title != "bmesh h: 3 working, 1 asking, 1 silent" {
-		t.Errorf("title = %q", title)
-	}
-	if !changed {
-		t.Error("changed = false")
-	}
-	want := "a: working since 30m\n  └ x: ask: which db?\n  └ y: done\nb: asking since 10m: ship it?\n  └ z: silent: quiet for 25m"
-	if body != want {
-		t.Errorf("body =\n%s\nwant\n%s", body, want)
-	}
-	// An executor asking outside the window is not news; its lead has no line.
-	old := map[string]mesh.State{"a": {State: "working", At: at(3 * time.Hour)}, "a.x": {State: "asking", At: at(2 * time.Hour), Text: "q"}}
-	if _, body, changed := Digest("h", old, nil, since, now); changed || body != "" {
-		t.Errorf("old ask: changed %v body %q", changed, body)
-	}
-}
-
-// A hold is named once per whole day of its age: in the pass whose window
-// holds its 24h (or 48h) mark, and in no other.
-func TestDigestNamesDayOldHoldsOnceADay(t *testing.T) {
-	at := time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC)
-	holds := []mesh.LeadHold{
-		{Path: "a-001", Gate: "land", Text: "hub move first", By: "operator", At: at.Format(time.RFC3339)},
-		{Path: "a-002", Gate: "now", Text: "fresh", By: "operator", At: at.Add(20 * time.Hour).Format(time.RFC3339)},
-	}
-	now := at.Add(24*time.Hour + 30*time.Minute)
-	got := HoldLines(holds, now.Add(-time.Hour), now)
-	if len(got) != 1 || got[0] != "a-001: held before land by operator 1d0h ago: hub move first" {
-		t.Fatalf("first day %q", got)
-	}
-	if got := HoldLines(holds, now, now.Add(time.Hour)); len(got) != 0 {
-		t.Fatalf("next pass %q", got)
-	}
-	later := at.Add(48*time.Hour + 10*time.Minute)
-	if got := HoldLines(holds, later.Add(-time.Hour), later); len(got) != 1 || !strings.HasPrefix(got[0], "a-001: held before land by operator 2d0h ago") {
-		t.Fatalf("second day %q", got)
 	}
 }

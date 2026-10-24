@@ -66,10 +66,10 @@ func t3LoginOnce(ctx context.Context, d Deps) {
 	if n == 1 {
 		unit = "day"
 	}
-	title := fmt.Sprintf("T3 sign-in on %s expires in %d %s: bmesh t3 login", d.Host, n, unit)
-	body := fmt.Sprintf("The T3 sign-in for %s expires at %s. Run bmesh t3 login on %s.",
-		tok.Server, tok.ExpiresAt.UTC().Format(time.RFC3339), d.Host)
-	if err := deliver(ctx, d, notify.Headers{Title: title, Tags: "key"}, body); err != nil {
+	title := notify.Title("🔑", "Expiring", fmt.Sprintf("T3 sign-in on %s in %d %s", d.Host, n, unit))
+	body := fmt.Sprintf("Run bmesh t3 login on %s. The sign-in for %s expires at %s.",
+		d.Host, tok.Server, tok.ExpiresAt.UTC().Format(time.RFC3339))
+	if err := deliver(ctx, d, notify.Headers{Title: title}, body); err != nil {
 		d.Log.Warn("t3 login: push failed", "err", err)
 		return
 	}

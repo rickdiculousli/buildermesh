@@ -31,47 +31,53 @@ type PushRequest struct {
 	Body string
 }
 
-var pushKinds = map[string]struct{ title, priority, tags string }{
-	"ask":     {"%s asks", "high", "question"},
-	"blocked": {"%s is blocked", "high", "no_entry"},
-	"done":    {"%s is done", "default", "white_check_mark"},
+var pushKinds = map[string]struct{ emoji, status, priority string }{
+	"ask":     {"❓", "Asks", "high"},
+	"blocked": {"⛔", "Blocked", "high"},
+	"done":    {"✅", "Done", "default"},
 }
 
 // Push builds the push for node event ev of node n (ev.From is n's path).
-// ok is false unless n is a lead, a fixer, a round or (for ask) an engineer, and
-// ev.Event is listed in cfg.Push. console is the thread link (""= none):
-// the lead's or engineer's, or for a round its eng child's. The tap opens
-// the thread, and an Open map action the map page (leads and engineers,
-// with cfg.MapURL); without a thread the tap opens the map. A round's done
-// is titled `<repo> round N proposed` and carries the merged pitch; its
-// blocked, `<repo> round N blocked`. A lead of a fixer's family pushes
-// nothing: its ask, blocked and done go to the fixer, which reports them.
-// The fixer's done is titled `<repo> fixes: N fixed, M wait(s) on you`,
-// its proposed specs first in the body (FixerReport).
+// ok is false unless n is a fixer, a round, a lead (its ask and blocked) or
+// an engineer (its ask), and ev.Event is listed in cfg.Push. A stop (a
+// blocked mesh.Stopped reads) never pushes: the operator made it. A lead's
+// done pushes only as its batch's end (Batch). console is the thread link
+// (""= none): the lead's or engineer's, or for a round its eng child's. The
+// tap opens the thread, and an Open map action the map page (leads and
+// engineers, with cfg.MapURL); without a thread the tap opens the map. A
+// round's done is titled `📝 Proposed • <repo> round N` and carries the
+// merged pitch; its blocked, `⛔ Blocked • <repo> round N`. A lead of a
+// fixer's family pushes nothing: its ask, blocked and done go to the fixer,
+// which reports them. The fixer's done is titled `🔧 Fixed • <repo>: N
+// fixed, M wait(s) on you`, its proposed specs first in the body
+// (FixerReport).
 func Push(ev mesh.Event, n mesh.Node, cfg config.NotifyConfig, console string) (req PushRequest, ok bool) {
 	k, known := pushKinds[ev.Event]
 	if (n.Role != "lead" && n.Role != "fixer" && n.Role != "round" && n.Role != "engineer") || !known || !slices.Contains(cfg.Push, ev.Event) {
 		return PushRequest{}, false
 	}
+	if ev.Event == "blocked" && mesh.Stopped(mesh.State{State: "blocked", Text: ev.Text}) {
+		return PushRequest{}, false
+	}
 	if n.Role == "engineer" && ev.Event != "ask" {
 		return PushRequest{}, false // its done and blocked reach the operator through the round
+	}
+	if n.Role == "lead" && ev.Event == "done" {
+		return PushRequest{}, false // its batch's end pushes (Batch)
 	}
 	if _, _, fix := mesh.FixFamily(n.Family); n.Role == "lead" && fix {
 		return PushRequest{}, false
 	}
-	req.Title = fmt.Sprintf(k.title, ev.From)
-	req.Priority, req.Tags = k.priority, k.tags
+	req.Title = notify.Title(k.emoji, k.status, ev.From)
+	req.Priority = k.priority
 	if n.Role == "round" {
 		if ev.Event != "done" && ev.Event != "blocked" {
 			return PushRequest{}, false
 		}
-		word := "proposed"
-		if ev.Event == "blocked" {
-			word = "blocked"
-		}
-		req.Title = fmt.Sprintf("%s round %s %s", n.Repo, roundNumber(n.Path), word)
+		subject := fmt.Sprintf("%s round %s", n.Repo, roundNumber(n.Path))
+		req.Title = notify.Title(k.emoji, k.status, subject)
 		if ev.Event == "done" {
-			req.Tags = "memo"
+			req.Title = notify.Title("📝", "Proposed", subject)
 		}
 	}
 	text := ev.Text
@@ -107,8 +113,95 @@ func Push(ev mesh.Event, n mesh.Node, cfg config.NotifyConfig, console string) (
 	return req, true
 }
 
-// FixerReport is the push of a fixer's done text: the title `<repo> fixes:
-// N fixed, M wait(s) on you`, N its `<seq>: fixed by` lines and M its
+// batchLineMax is how much of each lead's done text a batch's push carries,
+// in runes: about two lines on a phone.
+const batchLineMax = 120
+
+// Batch is the push for the end of lead n's batch, its build family (a lead
+// with no family is a batch of one), once ev, n's done or stop, leaves
+// every lead in it done or stopped. ev counts as n's state, which is
+// written after the event. The title is `✅ Landed • <family>: x/y`, x the
+// leads done of y (a batch of one is titled with the lead's path alone);
+// the body's first line names the specs landed and stopped, then a line per
+// lead done with the start of its text. key is the batch's claim, so two
+// leads finishing together push it once; it carries both counts, so a batch
+// that ends again (a stopped lead woken and landed, a lead joining) pushes
+// again. ok is false while a lead of the batch is still going, when none is
+// done (the operator stopped them all), for a fix lead (its fixer reports),
+// and unless done is listed in cfg.Push.
+func Batch(ev mesh.Event, n mesh.Node, nodes []mesh.Node, states map[string]mesh.State, cfg config.NotifyConfig) (req PushRequest, key string, ok bool) {
+	ended := mesh.State{State: ev.Event, Text: ev.Text}
+	if n.Role != "lead" || !slices.Contains(cfg.Push, "done") || (ev.Event != "done" && !mesh.Stopped(ended)) {
+		return PushRequest{}, "", false
+	}
+	if _, _, fix := mesh.FixFamily(n.Family); fix {
+		return PushRequest{}, "", false
+	}
+	unit := SettleUnit(n)
+	members := []mesh.Node{n}
+	for _, m := range nodes {
+		if m.Role == "lead" && m.Path != n.Path && SettleUnit(m) == unit {
+			members = append(members, m)
+		}
+	}
+	slices.SortFunc(members, func(a, b mesh.Node) int { return cmp.Compare(a.Path, b.Path) })
+	all := map[string]mesh.State{n.Path: ended}
+	for p, st := range states {
+		if p != n.Path {
+			all[p] = st
+		}
+	}
+	states = all
+	if !unitFinished(unit, members, nil, states, nil) {
+		return PushRequest{}, "", false
+	}
+	var landed, stopped, lines []string
+	for _, m := range members {
+		name := cmp.Or(m.Spec, m.Path)
+		s := states[m.Path]
+		if s.State != "done" {
+			stopped = append(stopped, name)
+			continue
+		}
+		landed = append(landed, name)
+		text := strings.Join(strings.Fields(s.Text), " ")
+		if !strings.HasPrefix(text, name) {
+			text = name + ": " + text
+		}
+		lines = append(lines, cutRunes(text, batchLineMax))
+	}
+	if len(landed) == 0 {
+		return PushRequest{}, "", false
+	}
+	subject := unit
+	if n.Family != "" {
+		subject = fmt.Sprintf("%s: %d/%d", unit, len(landed), len(members))
+	}
+	var head []string
+	if len(landed) > 0 {
+		head = append(head, strings.Join(landed, " "))
+	}
+	if len(stopped) > 0 {
+		head = append(head, "stopped "+strings.Join(stopped, " "))
+	}
+	if len(members) > 1 {
+		lines = append([]string{strings.Join(head, "; ")}, lines...)
+	}
+	req = PushRequest{Headers: notify.Headers{Title: notify.Title("✅", "Landed", subject), Priority: "default", Click: cfg.MapURL},
+		Body: cutUTF8(strings.Join(lines, "\n"), pushBodyMax)}
+	return req, fmt.Sprintf("push.batch.%s.%d.%d", unit, len(members), len(landed)), true
+}
+
+// cutRunes is s cut to n runes, with an ellipsis when cut.
+func cutRunes(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n-1]) + "…"
+}
+
+// FixerReport is the push of a fixer's done text: the title `🔧 Fixed •
+// <repo>: N fixed, M wait(s) on you`, N its `<seq>: fixed by` lines and M its
 // `<seq>: proposed` ones, and the text with the proposed lines first, the
 // rest after them as written.
 func FixerReport(repo, text string) (title, body string) {
@@ -128,7 +221,7 @@ func FixerReport(repo, text string) (title, body string) {
 	if len(proposed) == 1 {
 		verb = "waits"
 	}
-	title = fmt.Sprintf("%s fixes: %d fixed, %d %s on you", repo, fixed, len(proposed), verb)
+	title = notify.Title("🔧", "Fixed", fmt.Sprintf("%s: %d fixed, %d %s on you", repo, fixed, len(proposed), verb))
 	return title, strings.TrimSpace(strings.Join(append(proposed, rest...), "\n"))
 }
 
@@ -301,14 +394,16 @@ func pushLive(ctx context.Context, d Deps, s mesh.Stored, jobs chan<- pushJob) {
 }
 
 // pushable reports a subject the loop pushes: a node event listed in
-// [notify] push, or (with [hosts] enabled) a daemon's refused, held or
-// level, whose path is daemon.<host>.
+// [notify] push (a blocked too when done is, since a stop can end a batch),
+// or (with [hosts] enabled) a daemon's refused, held or level, whose path
+// is daemon.<host>.
 func pushable(d Deps, subject string) (path, event string, ok bool) {
 	if host, event, ok := hostsEvent(subject); ok {
 		return "daemon." + host, event, d.Cfg.Hosts.Enabled
 	}
 	path, event, ok = nodeEvent(subject)
-	return path, event, ok && slices.Contains(d.Cfg.Notify.Push, event)
+	push := d.Cfg.Notify.Push
+	return path, event, ok && (slices.Contains(push, event) || event == "blocked" && slices.Contains(push, "done"))
 }
 
 // hostsEvents are the daemon events of the hosts layer the phone hears:
@@ -351,8 +446,8 @@ func pushRefused(ctx context.Context, d Deps, s mesh.Stored, path string, jobs c
 	}
 	host := strings.TrimPrefix(path, "daemon.")
 	who, check, _ := strings.Cut(ev.Body, " ")
-	req := PushRequest{Headers: notify.Headers{Title: fmt.Sprintf("%s refused %s: %s", host, who, check), Priority: "high",
-		Tags: "warning", Click: d.Cfg.Notify.MapURL}, Body: cutUTF8(ev.Text, pushBodyMax)}
+	req := PushRequest{Headers: notify.Headers{Title: notify.Title("⚠️", "Refused", fmt.Sprintf("%s refused %s: %s", host, who, check)),
+		Priority: "high", Click: d.Cfg.Notify.MapURL}, Body: cutUTF8(ev.Text, pushBodyMax)}
 	claim := mesh.Event{From: d.from(), Event: "push", Text: req.Title, Seq: s.Seq, Body: key,
 		At: d.Now().UTC().Format(time.RFC3339)}
 	dup, err := mesh.PublishEventID(ctx, d.Client, claim, fmt.Sprintf("push-%d", s.Seq))
@@ -371,12 +466,17 @@ func pushRefused(ctx context.Context, d Deps, s mesh.Stored, path string, jobs c
 	}
 }
 
+// hostsStatus is the status word of a hosts event's push title.
+var hostsStatus = map[string]string{"held": "Held", "level": "Level", "registry": "Registry", "scaffold": "Scaffold failed"}
+
 // pushHostsEvent claims a daemon's held, level, registry or scaffold event
 // s, once: a hold (`ricks-macbook: pstack-claude waits for your approval
 // (+3 commits)`), a level's refusal or failure no caller waited for, a
 // registry the box refused, or a rescaffold's outcome (a failure only the
 // first time for its registry version: a retry's body ends ` again`). The
-// title is the event's text, the body its detail, else the text again.
+// title is the event's text after its status (`⏳ Held • `, `⚠️ Level • `,
+// `⚠️ Registry • `, `✅ Scaffolded • ` or `⚠️ Scaffold failed • `), the body
+// its detail, else the text again.
 func pushHostsEvent(ctx context.Context, d Deps, s mesh.Stored, path, event string, jobs chan<- pushJob) {
 	ev, err := decodeEvent(s.Data)
 	if err != nil || ev.Text == "" {
@@ -385,13 +485,14 @@ func pushHostsEvent(ctx context.Context, d Deps, s mesh.Stored, path, event stri
 	if event == "scaffold" && strings.HasSuffix(ev.Body, " again") {
 		return
 	}
-	h := notify.Headers{Title: cutUTF8(ev.Text, 200), Priority: "default", Tags: "hourglass", Click: d.Cfg.Notify.MapURL}
+	emoji, status, priority := "⚠️", hostsStatus[event], "high"
 	switch {
+	case event == "held":
+		emoji, priority = "⏳", "default"
 	case event == "scaffold" && strings.HasPrefix(ev.Body, "ok "):
-		h.Tags = "white_check_mark"
-	case event == "level" || event == "registry" || event == "scaffold":
-		h.Priority, h.Tags = "high", "warning"
+		emoji, status, priority = "✅", "Scaffolded", "default"
 	}
+	h := notify.Headers{Title: notify.Title(emoji, status, cutUTF8(ev.Text, 200)), Priority: priority, Click: d.Cfg.Notify.MapURL}
 	req := PushRequest{Headers: h, Body: cutUTF8(cmp.Or(ev.Detail, ev.Text), pushBodyMax)}
 	claim := mesh.Event{From: d.from(), Event: "push", To: path, Text: req.Title, Seq: s.Seq,
 		At: d.Now().UTC().Format(time.RFC3339)}
@@ -498,15 +599,23 @@ func pushClaim(ctx context.Context, d Deps, s mesh.Stored, path, event string, j
 			linked = eng
 		}
 	}
+	batch := ""
 	req, ok := Push(ev, n, d.Cfg.Notify, web.ConsoleURL(d.Cfg.Console, d.Host, linked))
 	if !ok {
-		return
+		if req, batch, ok = pushBatch(ctx, d, ev, n); !ok {
+			return
+		}
 	}
 	claim := mesh.Event{From: d.from(), Event: "push", To: path, Text: req.Title, Seq: s.Seq,
 		At: d.Now().UTC().Format(time.RFC3339)}
 	dup, err := mesh.PublishEventID(ctx, d.Client, claim, fmt.Sprintf("push-%d", s.Seq))
 	if err != nil {
 		d.Log.Warn("push: claim", "path", path, "seq", s.Seq, "err", err)
+		if batch != "" { // give the batch back, so the next catch-up pushes it
+			if err := mesh.Unclaim(ctx, d.Client, batch); err != nil {
+				d.Log.Warn("push: unclaim batch", "key", batch, "err", err)
+			}
+		}
 		return
 	}
 	if dup {
@@ -518,6 +627,35 @@ func pushClaim(ctx context.Context, d Deps, s mesh.Stored, path, event string, j
 	case <-ctx.Done():
 		pushShutdown(d, j)
 	}
+}
+
+// pushBatch is the push of the batch lead n's done or stop ev ends
+// (Batch), once: the batch's bm-claims key goes to the first daemon to
+// claim it, so two of its leads ending together push it once. key is the
+// claim won.
+func pushBatch(ctx context.Context, d Deps, ev mesh.Event, n mesh.Node) (req PushRequest, key string, ok bool) {
+	if n.Role != "lead" || (ev.Event != "done" && ev.Event != "blocked") {
+		return PushRequest{}, "", false
+	}
+	nodes, err := mesh.ListNodes(ctx, d.Client)
+	if err != nil {
+		d.Log.Warn("push: list nodes", "path", n.Path, "err", err)
+		return PushRequest{}, "", false
+	}
+	states, err := mesh.ReadAllStates(ctx, d.Client)
+	if err != nil {
+		d.Log.Warn("push: read states", "path", n.Path, "err", err)
+		return PushRequest{}, "", false
+	}
+	if req, key, ok = Batch(ev, n, nodes, states, d.Cfg.Notify); !ok {
+		return PushRequest{}, "", false
+	}
+	won, err := mesh.Claim(ctx, d.Client, key, d.from())
+	if err != nil {
+		d.Log.Warn("push: claim batch", "key", key, "err", err)
+		return PushRequest{}, "", false
+	}
+	return req, key, won
 }
 
 // pushDeliver delivers j under dctx, retrying after each of d.PushRetry

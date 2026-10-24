@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
@@ -19,7 +20,7 @@ import (
 
 // ntfyReq is one request the fake ntfy server received.
 type ntfyReq struct {
-	Method, Title, Priority, Tags, Click, Actions, Body string
+	Method, Title, Priority, Click, Actions, Body string
 }
 
 // fakeNtfy is an httptest.Server standing in for ntfy: it records every
@@ -39,7 +40,7 @@ func newFakeNtfy(t *testing.T) *fakeNtfy {
 		h := r.Header
 		n.mu.Lock()
 		n.reqs = append(n.reqs, ntfyReq{Method: r.Method, Title: h.Get("Title"), Priority: h.Get("Priority"),
-			Tags: h.Get("Tags"), Click: h.Get("Click"), Actions: h.Get("Actions"), Body: string(b)})
+			Click: h.Get("Click"), Actions: h.Get("Actions"), Body: string(b)})
 		status := n.status
 		n.mu.Unlock()
 		w.WriteHeader(status)
@@ -160,10 +161,11 @@ func TestPushLeadAskBlockedDone(t *testing.T) {
 	f.event(t, mesh.Event{From: "a", Event: "blocked", Text: "no creds"})
 	f.event(t, mesh.Event{From: "a", Event: "done", Text: "shipped", Commit: "0123456789abcdef"})
 	got := n.waitRequests(t, 3)
+	// a has no family, so its done ends a batch of one.
 	want := []ntfyReq{
-		{"POST", "a asks", "high", "question", "http://t3.test/t/th-a", "view, Open map, http://map.test/#/lead/a", "which colour?"},
-		{"POST", "a is blocked", "high", "no_entry", "http://t3.test/t/th-a", "view, Open map, http://map.test/#/lead/a", "no creds"},
-		{"POST", "a is done", "default", "white_check_mark", "http://t3.test/t/th-a", "view, Open map, http://map.test/#/lead/a", "shipped\ncommit 01234567"},
+		{"POST", "❓ Asks • a", "high", "http://t3.test/t/th-a", "view, Open map, http://map.test/#/lead/a", "which colour?"},
+		{"POST", "⛔ Blocked • a", "high", "http://t3.test/t/th-a", "view, Open map, http://map.test/#/lead/a", "no creds"},
+		{"POST", "✅ Landed • a", "default", "http://map.test/", "", "a: shipped"},
 	}
 	for i := range want {
 		if got[i] != want[i] {
@@ -185,12 +187,18 @@ func TestPushRequest(t *testing.T) {
 	cfg := config.NotifyConfig{Push: []string{"ask", "blocked", "done"}}
 	lead := mesh.Node{Path: "a", Role: "lead"}
 	req, ok := Push(mesh.Event{From: "a", Event: "ask", Text: "q"}, lead, cfg, "")
-	if !ok || req.Title != "a asks" || req.Click != "" || req.Actions != "" || req.Body != "q" {
+	if !ok || req.Title != "❓ Asks • a" || req.Click != "" || req.Actions != "" || req.Body != "q" {
 		t.Errorf("no map_url, no console: %+v %v", req, ok)
 	}
 	cfg.MapURL = "http://map.test"
-	if req, _ := Push(mesh.Event{From: "a", Event: "done", Text: "x"}, lead, cfg, ""); req.Click != "http://map.test#/lead/a" || req.Body != "x" {
-		t.Errorf("done without commit: %+v", req)
+	if req, _ := Push(mesh.Event{From: "a", Event: "blocked", Text: "x"}, lead, cfg, ""); req.Click != "http://map.test#/lead/a" || req.Body != "x" {
+		t.Errorf("blocked: %+v", req)
+	}
+	if _, ok := Push(mesh.Event{From: "a", Event: "done", Text: "x"}, lead, cfg, ""); ok {
+		t.Error("a lead's done pushed alone: its batch's end pushes it")
+	}
+	if _, ok := Push(mesh.Event{From: "a", Event: "blocked", Text: mesh.StoppedBy("operator", "")}, lead, cfg, ""); ok {
+		t.Error("a stop pushed")
 	}
 	if req, _ := Push(mesh.Event{From: "a", Event: "ask"}, lead, cfg, "http://t3.test/t/th-a"); req.Click != "http://t3.test/t/th-a" ||
 		req.Actions != "view, Open map, http://map.test#/lead/a" {
@@ -206,10 +214,10 @@ func TestPushRequest(t *testing.T) {
 	}
 	fixer := mesh.Node{Path: "bm-fix-1", Role: "fixer", Repo: "bm", Family: "bm-fix-1"}
 	if req, ok := Push(mesh.Event{From: "bm-fix-1", Event: "done", Text: "1779: proposed 060", Commit: "abc"}, fixer, cfg, ""); !ok ||
-		req.Title != "bm fixes: 0 fixed, 1 waits on you" || req.Body != "1779: proposed 060\ncommit abc" {
+		req.Title != "🔧 Fixed • bm: 0 fixed, 1 waits on you" || req.Body != "1779: proposed 060\ncommit abc" {
 		t.Errorf("fixer done: %+v %v", req, ok)
 	}
-	if req, ok := Push(mesh.Event{From: "bm-fix-1", Event: "ask", Text: "which?"}, fixer, cfg, ""); !ok || req.Title != "bm-fix-1 asks" {
+	if req, ok := Push(mesh.Event{From: "bm-fix-1", Event: "ask", Text: "which?"}, fixer, cfg, ""); !ok || req.Title != "❓ Asks • bm-fix-1" {
 		t.Errorf("fixer ask: %+v %v", req, ok)
 	}
 	// A fix lead reports to its fixer, never to the operator.
@@ -234,7 +242,8 @@ func TestPushRequest(t *testing.T) {
 	}
 	// The text is cut to 3 KB on a rune boundary.
 	long := strings.Repeat("é", 2000) // 4000 bytes
-	req, _ = Push(mesh.Event{From: "a", Event: "done", Text: long, Commit: "abc"}, lead, cfg, "")
+	fixer = mesh.Node{Path: "bm-fix-1", Role: "fixer", Repo: "bm"}
+	req, _ = Push(mesh.Event{From: "bm-fix-1", Event: "done", Text: long, Commit: "abc"}, fixer, cfg, "")
 	text, commit, _ := strings.Cut(req.Body, "\n")
 	if len(text) > 3<<10 || len(text) < 3<<10-1 || !strings.HasPrefix(long, text) || commit != "commit abc" {
 		t.Errorf("cut body: %d bytes, commit line %q", len(text), commit)
@@ -245,7 +254,7 @@ func TestFixerReport(t *testing.T) {
 	text := "Waits on you: 1781 names pstack-claude\n1786: fixed by 061 (structure, failing-first)\n1779: proposed 060 (no-new-surface: adds bmesh spec steps)\n" +
 		"1790, 1791: fixed by 062 (root)\n- 1795: proposed 063 (reversible: L)\n1800: dropped (drop: 044 covers it)\nreleased bm v0.4.1"
 	title, body := FixerReport("bm", text)
-	if title != "bm fixes: 2 fixed, 2 wait on you" {
+	if title != "🔧 Fixed • bm: 2 fixed, 2 wait on you" {
 		t.Errorf("title %q", title)
 	}
 	want := "1779: proposed 060 (no-new-surface: adds bmesh spec steps)\n- 1795: proposed 063 (reversible: L)\nWaits on you: 1781 names pstack-claude\n" +
@@ -253,7 +262,7 @@ func TestFixerReport(t *testing.T) {
 	if body != want {
 		t.Errorf("body\n%s\nwant\n%s", body, want)
 	}
-	if title, body := FixerReport("bm", "nothing to rule on"); title != "bm fixes: 0 fixed, 0 wait on you" || body != "nothing to rule on" {
+	if title, body := FixerReport("bm", "nothing to rule on"); title != "🔧 Fixed • bm: 0 fixed, 0 wait on you" || body != "nothing to rule on" {
 		t.Errorf("empty pass: %q %q", title, body)
 	}
 }
@@ -274,7 +283,7 @@ func TestPushFixLeadQuietFixerDone(t *testing.T) {
 	f.event(t, mesh.Event{From: "bm-061", Event: "done", Text: "fixed", Commit: "abc"})
 	f.event(t, mesh.Event{From: "bm-fix-1", Event: "done", Text: "1786: fixed by 061 (root)\n1779: proposed 060 (no-new-surface)", Commit: "def"})
 	got := n.waitRequests(t, 1)
-	if got[0].Title != "bm fixes: 1 fixed, 1 waits on you" || got[0].Body != "1779: proposed 060 (no-new-surface)\n1786: fixed by 061 (root)\ncommit def" {
+	if got[0].Title != "🔧 Fixed • bm: 1 fixed, 1 waits on you" || got[0].Body != "1779: proposed 060 (no-new-surface)\n1786: fixed by 061 (root)\ncommit def" {
 		t.Errorf("request = %+v", got[0])
 	}
 }
@@ -293,7 +302,7 @@ func TestNoPushForExecutorsOrUnlistedEvents(t *testing.T) {
 	f.event(t, mesh.Event{From: "a", Event: "started"})
 	f.event(t, mesh.Event{From: "a", Event: "held", Text: "before land by operator: hub move first"}) // the coordinator put it there
 	f.event(t, mesh.Event{From: "b", Event: "ask", Text: "sentinel"})                                 // processed after the rest
-	if got := n.waitRequests(t, 1); got[0].Title != "b asks" {
+	if got := n.waitRequests(t, 1); got[0].Title != "❓ Asks • b" {
 		t.Errorf("request = %+v", got[0])
 	}
 }
@@ -312,7 +321,7 @@ func TestPushOncePerEventAcrossRestart(t *testing.T) {
 	startPush(t, f.d)
 	f.event(t, mesh.Event{From: "b", Event: "ask", Text: "sentinel"})
 	got := n.waitRequests(t, 2)
-	if got[0].Title != "a asks" || got[1].Title != "b asks" {
+	if got[0].Title != "❓ Asks • a" || got[1].Title != "❓ Asks • b" {
 		t.Errorf("requests = %+v", got)
 	}
 	if c := f.daemonEvents(t, "push"); len(c) != 2 {
@@ -340,7 +349,7 @@ func TestTwoDaemonsPushOnce(t *testing.T) {
 	for _, r := range got {
 		titles[r.Title]++
 	}
-	if titles["a asks"] != 1 || titles["b is blocked"] != 1 {
+	if titles["❓ Asks • a"] != 1 || titles["⛔ Blocked • b"] != 1 {
 		t.Errorf("requests = %+v", got)
 	}
 	if c := f.claims(t, "push"); len(c) != 2 {
@@ -359,7 +368,7 @@ func TestPushCatchUpSkipsStale(t *testing.T) {
 	startPush(t, f.d)
 	f.event(t, mesh.Event{From: "c", Event: "ask", Text: "sentinel"})
 	got := n.waitRequests(t, 2)
-	if got[0].Title != "a asks" || got[1].Title != "c asks" {
+	if got[0].Title != "❓ Asks • a" || got[1].Title != "❓ Asks • c" {
 		t.Errorf("requests = %+v", got)
 	}
 }
@@ -401,7 +410,7 @@ func TestPushLiveBacklogUsesCatchUpRules(t *testing.T) {
 	f.event(t, mesh.Event{From: "a", Event: "ask", Text: "claimed elsewhere"})
 	a := f.stored(t, "bm.a.ask")
 	if _, err := mesh.PublishEventID(f.ctx, f.c, mesh.Event{From: "daemon.otherhost", Event: "push", To: "a",
-		Text: "a asks", Seq: a.Seq}, fmt.Sprintf("push-%d", a.Seq)); err != nil {
+		Text: "❓ Asks • a", Seq: a.Seq}, fmt.Sprintf("push-%d", a.Seq)); err != nil {
 		t.Fatal(err)
 	}
 	f.event(t, mesh.Event{From: "b", Event: "ask", Text: "too old", At: f.now.Add(-2 * time.Hour).UTC().Format(time.RFC3339)})
@@ -420,7 +429,7 @@ func TestPushLiveBacklogUsesCatchUpRules(t *testing.T) {
 	for j := range jobs {
 		pushDeliver(f.ctx, f.ctx, f.d, j)
 	}
-	if got := n.waitRequests(t, 1); got[0].Title != "c asks" {
+	if got := n.waitRequests(t, 1); got[0].Title != "❓ Asks • c" {
 		t.Errorf("requests = %+v", got)
 	}
 	if c := f.claims(t, "push"); len(c) != 2 {
@@ -445,7 +454,7 @@ func TestPushCatchUpStoredTimeFallback(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	f.event(t, mesh.Event{From: "b", Event: "ask", Text: "sentinel", At: f.now.UTC().Format(time.RFC3339)})
-	if got := n.waitRequests(t, 1); got[0].Title != "b asks" {
+	if got := n.waitRequests(t, 1); got[0].Title != "❓ Asks • b" {
 		t.Errorf("requests = %+v", got)
 	}
 	// The live path falls back to the stored time the same way.
@@ -471,7 +480,7 @@ func TestPushFailureRecordedNotRepeated(t *testing.T) {
 		failed = f.daemonEvents(t, "push-failed")
 		time.Sleep(20 * time.Millisecond)
 	}
-	if len(failed) != 1 || failed[0].To != "a" || failed[0].Text != "a asks" || failed[0].Seq == 0 {
+	if len(failed) != 1 || failed[0].To != "a" || failed[0].Text != "❓ Asks • a" || failed[0].Seq == 0 {
 		t.Fatalf("push-failed events = %+v", failed)
 	}
 	stop()
@@ -481,7 +490,7 @@ func TestPushFailureRecordedNotRepeated(t *testing.T) {
 	startPush(t, f.d)
 	f.event(t, mesh.Event{From: "b", Event: "ask", Text: "sentinel"})
 	got := n.waitRequests(t, 4)
-	if got[3].Title != "b asks" {
+	if got[3].Title != "❓ Asks • b" {
 		t.Errorf("after restart: %+v", got[3])
 	}
 	if c := f.daemonEvents(t, "push-failed"); len(c) != 1 {
@@ -511,7 +520,7 @@ func TestPushShutdownRecordsFailed(t *testing.T) {
 	n.setStatus(http.StatusOK)
 	startPush(t, f.d)
 	f.event(t, mesh.Event{From: "b", Event: "ask", Text: "sentinel"})
-	if got := n.waitRequests(t, 2); got[1].Title != "b asks" {
+	if got := n.waitRequests(t, 2); got[1].Title != "❓ Asks • b" {
 		t.Errorf("after restart: %+v", got)
 	}
 }
@@ -527,9 +536,9 @@ func TestPushCommandGetsHeadersInEnv(t *testing.T) {
 	f.d.Cfg.Notify.Command = "sh " + fake
 	f.lead(t, "a", "th-a", "")
 	startPush(t, f.d)
-	f.event(t, mesh.Event{From: "a", Event: "done", Text: "shipped", Commit: "0123456789abcdef"})
-	want := "a is done\nshipped\ncommit 01234567\nNTFY_TITLE=a is done\nNTFY_PRIORITY=default\n" +
-		"NTFY_TAGS=white_check_mark\nNTFY_CLICK=http://t3.test/t/th-a\n" +
+	f.event(t, mesh.Event{From: "a", Event: "ask", Text: "which?"})
+	want := "❓ Asks • a\nwhich?\nNTFY_TITLE=❓ Asks • a\nNTFY_PRIORITY=high\n" +
+		"NTFY_CLICK=http://t3.test/t/th-a\n" +
 		"NTFY_ACTIONS=view, Open map, http://map.test/#/lead/a\n---\n"
 	var got string
 	deadline := time.Now().Add(10 * time.Second)
@@ -585,5 +594,106 @@ func TestNodeEventRefusesMeshInternal(t *testing.T) {
 	}
 	if p, e, ok := nodeEvent("bm.app.x.done"); !ok || p != "app.x" || e != "done" {
 		t.Fatalf("bm.app.x.done: %q %q %v", p, e, ok)
+	}
+}
+
+func TestBatch(t *testing.T) {
+	cfg := config.NotifyConfig{Push: []string{"ask", "blocked", "done"}, MapURL: "http://map.test/"}
+	lead := func(path, spec, family string) mesh.Node {
+		return mesh.Node{Path: path, Role: "lead", Spec: spec, Family: family}
+	}
+	a, b, c := lead("demo-001", "001", "F"), lead("demo-002", "002", "F"), lead("demo-003", "003", "F")
+	nodes := []mesh.Node{a, b, c, lead("x", "", ""), lead("fl", "009", "demo-fix-1"), {Path: "demo-001.e", Role: "executor"}}
+	stop := mesh.State{State: "blocked", Text: mesh.StoppedBy("operator", "")}
+	done := func(text string) mesh.State { return mesh.State{State: "done", Text: text} }
+	ev := func(n mesh.Node, event, text string) mesh.Event {
+		return mesh.Event{From: n.Path, Event: event, Text: text}
+	}
+
+	// A lead still going holds the batch.
+	if _, _, ok := Batch(ev(a, "done", "x"), a, nodes, map[string]mesh.State{"demo-002": done("y"), "demo-003": {State: "working"}}, cfg); ok {
+		t.Error("pushed while 003 works")
+	}
+	// The last lead's event ends it, its own state not yet written.
+	long := "002 landed: " + strings.Repeat("word ", 40)
+	req, key, ok := Batch(ev(a, "done", "001 landed:  a\nb"), a, nodes, map[string]mesh.State{"demo-001": {State: "landing"}, "demo-002": done(long), "demo-003": stop}, cfg)
+	if !ok || key != "push.batch.F.3.2" || req.Title != "✅ Landed • F: 2/3" || req.Priority != "default" || req.Click != "http://map.test/" {
+		t.Fatalf("%+v %q %v", req, key, ok)
+	}
+	if want := "001 002; stopped 003\n001 landed: a b\n" + cutRunes(strings.TrimSpace(strings.Join(strings.Fields(long), " ")), batchLineMax); req.Body != want {
+		t.Errorf("body\n%s\nwant\n%s", req.Body, want)
+	}
+	if line := strings.Split(req.Body, "\n")[2]; utf8.RuneCountInString(line) != batchLineMax || !strings.HasSuffix(line, "…") {
+		t.Errorf("long line %q", line)
+	}
+	// Every lead stopped: the operator did it, nothing pushes.
+	if req, _, ok := Batch(ev(c, "blocked", mesh.StoppedBy("operator", "")), c, nodes, map[string]mesh.State{"demo-001": stop, "demo-002": stop}, cfg); ok {
+		t.Errorf("all stopped pushed: %+v", req)
+	}
+	// The stopped 003 woken and landed ends the batch again, under a key of its own.
+	if req, key, ok := Batch(ev(c, "done", "003 landed"), c, nodes, map[string]mesh.State{"demo-001": done("a"), "demo-002": done("b")}, cfg); !ok ||
+		key != "push.batch.F.3.3" || req.Title != "✅ Landed • F: 3/3" {
+		t.Errorf("ended again: %+v %q %v", req, key, ok)
+	}
+	// A lead with no family is a batch of one.
+	if req, key, ok := Batch(ev(nodes[3], "done", "shipped"), nodes[3], nodes, nil, cfg); !ok || req.Title != "✅ Landed • x" || req.Body != "x: shipped" || key != "push.batch.x.1.1" {
+		t.Errorf("one: %+v %q %v", req, key, ok)
+	}
+	// A blocked that isn't a stop, a fix lead and an unlisted done end nothing.
+	if _, _, ok := Batch(ev(nodes[3], "blocked", "no key"), nodes[3], nodes, nil, cfg); ok {
+		t.Error("a block ended a batch")
+	}
+	if _, _, ok := Batch(ev(nodes[4], "done", "x"), nodes[4], nodes, nil, cfg); ok {
+		t.Error("a fix lead's done pushed")
+	}
+	cfg.Push = []string{"ask", "blocked"}
+	if _, _, ok := Batch(ev(nodes[3], "done", "x"), nodes[3], nodes, nil, cfg); ok {
+		t.Error("pushed with done unlisted")
+	}
+}
+
+// A batch pushes once, when its last lead ends: never a lead's own done,
+// and once though two daemons follow it.
+func TestPushBatchEndOnce(t *testing.T) {
+	f, n := pushSetup(t)
+	for _, p := range []string{"demo-001", "demo-002"} {
+		if err := mesh.PutNode(f.ctx, f.c, mesh.Node{Path: p, Role: "lead", Spec: strings.TrimPrefix(p, "demo-"), Family: "demo-build-1", Host: testHost}); err != nil {
+			t.Fatal(err)
+		}
+		f.setState(t, p, "working")
+	}
+	other := f.d
+	other.Host = "box-b"
+	startPush(t, f.d)
+	startPush(t, other)
+	f.event(t, mesh.Event{From: "demo-001", Event: "done", Text: "001 landed: a"})
+	f.setState(t, "demo-001", "done")
+	time.Sleep(300 * time.Millisecond)
+	if r := n.requests(); len(r) != 0 {
+		t.Fatalf("a lead's own done pushed: %+v", r)
+	}
+	f.event(t, mesh.Event{From: "demo-002", Event: "done", Text: "002 landed: b"})
+	got := n.waitRequests(t, 1)
+	if got[0].Title != "✅ Landed • demo-build-1: 2/2" || !strings.HasPrefix(got[0].Body, "001 002\n") {
+		t.Fatalf("%+v", got)
+	}
+}
+
+// A stop ends a batch though blocked isn't listed: done is.
+func TestPushBatchEndedByStopWithDoneOnly(t *testing.T) {
+	f, n := pushSetup(t)
+	f.d.Cfg.Notify.Push = []string{"done"}
+	for _, p := range []string{"demo-001", "demo-002"} {
+		if err := mesh.PutNode(f.ctx, f.c, mesh.Node{Path: p, Role: "lead", Spec: strings.TrimPrefix(p, "demo-"), Family: "demo-build-1", Host: testHost}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.setState(t, "demo-001", "done")
+	f.setState(t, "demo-002", "working")
+	startPush(t, f.d)
+	time.Sleep(200 * time.Millisecond)
+	f.event(t, mesh.Event{From: "demo-002", Event: "blocked", Text: mesh.StoppedBy("operator", "")})
+	if got := n.waitRequests(t, 1); got[0].Title != "✅ Landed • demo-build-1: 1/2" || !strings.HasPrefix(got[0].Body, "001; stopped 002\n") {
+		t.Fatalf("%+v", got)
 	}
 }

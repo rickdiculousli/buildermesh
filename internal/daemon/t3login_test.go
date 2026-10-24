@@ -59,10 +59,10 @@ func TestT3LoginPushesOncePerThreshold(t *testing.T) {
 	}
 	at(6*day + 12*time.Hour)
 	t3LoginOnce(f.ctx, f.d)
-	if records() != 1 || !strings.HasPrefix(last(), "T3 sign-in on "+testHost+" expires in 7 days: bmesh t3 login\n") {
+	if records() != 1 || !strings.HasPrefix(last(), "🔑 Expiring • T3 sign-in on "+testHost+" in 7 days\nRun bmesh t3 login on "+testHost+". ") {
 		t.Fatalf("6.5 days: %d %q", records(), last())
 	}
-	if !strings.Contains(last(), "NTFY_TAGS=key") || !strings.Contains(last(), "http://t3") {
+	if !strings.Contains(last(), "http://t3") {
 		t.Errorf("log %q", last())
 	}
 	t3LoginOnce(f.ctx, f.d)
@@ -73,12 +73,12 @@ func TestT3LoginPushesOncePerThreshold(t *testing.T) {
 	}
 	at(2*day + 12*time.Hour)
 	t3LoginOnce(f.ctx, f.d)
-	if records() != 2 || !strings.Contains(last(), "expires in 3 days: bmesh t3 login\n") {
+	if records() != 2 || !strings.Contains(last(), "T3 sign-in on "+testHost+" in 3 days\n") {
 		t.Fatalf("2.5 days: %d", records())
 	}
 	at(12 * time.Hour)
 	t3LoginOnce(f.ctx, f.d)
-	if records() != 3 || !strings.Contains(last(), "expires in 1 day: bmesh t3 login\n") {
+	if records() != 3 || !strings.Contains(last(), "T3 sign-in on "+testHost+" in 1 day\n") {
 		t.Fatalf("0.5 days: %d %q", records(), last())
 	}
 	at(-time.Hour)

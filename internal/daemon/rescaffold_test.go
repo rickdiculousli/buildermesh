@@ -336,8 +336,8 @@ func TestPushScaffoldFailureOncePerVersion(t *testing.T) {
 	f.event(t, mesh.Event{From: "daemon.k16", Event: "scaffold", Body: "failed v2 again", Text: "k16: scaffold app for registry v2 failed: x"})
 	f.event(t, mesh.Event{From: "daemon.k16", Event: "scaffold", Body: "ok v2", Text: "k16: scaffolded app for registry v2 at 1234abcd (.bmesh/config.toml)"})
 	got := n.waitRequests(t, 2)
-	if got[0].Title != "k16: scaffold app for registry v2 failed: x" || got[0].Priority != "high" ||
-		got[1].Title != "k16: scaffolded app for registry v2 at 1234abcd (.bmesh/config.toml)" || got[1].Priority != "default" {
+	if got[0].Title != "⚠️ Scaffold failed • k16: scaffold app for registry v2 failed: x" || got[0].Priority != "high" ||
+		got[1].Title != "✅ Scaffolded • k16: scaffolded app for registry v2 at 1234abcd (.bmesh/config.toml)" || got[1].Priority != "default" {
 		t.Fatalf("pushes %+v", got)
 	}
 }

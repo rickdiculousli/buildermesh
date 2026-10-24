@@ -403,10 +403,10 @@ func TestPushHoldsAndUnansweredLevels(t *testing.T) {
 	// An older box's hold has no detail: its text is the body too.
 	f.event(t, mesh.Event{From: "daemon.pi", Event: "held", Body: "job2", Text: "pi holds: plug +1 commit (k16)"})
 	got := n.waitRequests(t, 3)
-	if got[0].Title != "mac: pstack-claude waits for your approval (+3 commits)" ||
+	if got[0].Title != "⏳ Held • mac: pstack-claude waits for your approval (+3 commits)" ||
 		got[0].Body != "New sessions on mac load its skills and plugins. In a terminal on mac: bmesh hosts approve job1 ..." ||
-		got[1].Title != "mac: plug refused: diverged (job from k16)" || got[1].Body != got[1].Title || got[1].Priority != "high" ||
-		got[2].Title != "pi holds: plug +1 commit (k16)" || got[2].Body != got[2].Title {
+		got[1].Title != "⚠️ Level • mac: plug refused: diverged (job from k16)" || got[1].Body != "mac: plug refused: diverged (job from k16)" ||
+		got[1].Priority != "high" || got[2].Title != "⏳ Held • pi holds: plug +1 commit (k16)" || got[2].Body != "pi holds: plug +1 commit (k16)" {
 		t.Fatalf("pushes %+v", got)
 	}
 }

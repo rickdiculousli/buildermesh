@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -372,27 +373,44 @@ func (w *watcher) setMark(kind, at string) error {
 // excerptMax is how much of the last reply the body carries, in runes.
 const excerptMax = 140
 
-var says = map[string]struct{ words, tag string }{
-	"done":   {"done", "white_check_mark"},
-	"failed": {"failed", "x"},
-	"asking": {"asking for input", "raising_hand"},
+var says = map[string]struct{ emoji, status string }{
+	"done":   {"✅", "Done"},
+	"failed": {"❌", "Failed"},
+	"asking": {"🙋", "Asks"},
 }
 
 // Message is the post for kind (done, failed or asking) in a thread titled
-// title: the title, the body `<words> in <project> on <host>: <the start
-// of reply>` (no `in` part without a project, no excerpt without a reply)
-// and kind's tag.
+// title: the title `<emoji> <status> • <thread title>` (notify.Title), and
+// the body the start of reply with its markdown taken out, then `· <project>
+// on <host>` (no project part without a project; the place alone without a
+// reply).
 func Message(kind, title, project, host, reply string) (notify.Headers, string) {
 	s := says[kind]
-	body := s.words
+	where := host
 	if project != "" {
-		body += " in " + project
+		where = project + " on " + host
 	}
-	body += " on " + host
-	if r := excerpt(reply); r != "" {
-		body += ": " + r
+	body := where
+	if r := excerpt(plain(reply)); r != "" {
+		body = r + " · " + where
 	}
-	return notify.Headers{Title: strings.Join(strings.Fields(title), " "), Tags: s.tag}, body
+	return notify.Headers{Title: notify.Title(s.emoji, s.status, strings.Join(strings.Fields(title), " "))}, body
+}
+
+// mdLead is a markdown line's heading, list or quote marker; mdInline its
+// emphasis and code marks; mdLink a link, whose text stays.
+var (
+	mdLead   = regexp.MustCompile(`(?m)^\s*(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s*)`)
+	mdInline = regexp.MustCompile("\\*\\*|`")
+	mdLink   = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
+)
+
+// plain is markdown s as a phone shows it best: no heading, list or quote
+// markers, ** or code marks, and links as their text.
+func plain(s string) string {
+	s = mdLead.ReplaceAllString(s, "")
+	s = mdLink.ReplaceAllString(s, "$1")
+	return mdInline.ReplaceAllString(s, "")
 }
 
 // excerpt is s on one line, cut to excerptMax runes with an ellipsis.

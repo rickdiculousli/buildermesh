@@ -58,11 +58,11 @@ func announce(ctx context.Context, d Deps) {
 	}
 	if okU && (!okS || upd.Seq > st.Seq) {
 		if ev, err := decodeEvent(upd.Data); err == nil && !selfupdate.Same(ev.Commit, d.revision()) {
-			title := "bmesh update failed on " + d.Host
+			title := notify.Title("⚠️", "Update failed", d.Host)
 			body := fmt.Sprintf("update %s did not start; this is %s", ev.Text, selfupdate.Short(d.Revision))
 			d.Log.Warn("update: failed", "update", ev.Text, "running", selfupdate.Short(d.Revision))
 			if d.Cfg.Notify.Ntfy != "" || d.Cfg.Notify.Command != "" {
-				if err := deliver(ctx, d, notify.Headers{Title: title, Priority: "high", Tags: "warning"}, body); err != nil {
+				if err := deliver(ctx, d, notify.Headers{Title: title, Priority: "high"}, body); err != nil {
 					d.Log.Warn("update: push failed update", "err", err)
 				}
 			}

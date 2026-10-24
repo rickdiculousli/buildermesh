@@ -7,19 +7,15 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/notify"
 	"github.com/rickdiculousli/buildermesh/internal/web"
 )
 
-// minAt is the shortest delay a post is scheduled with: ntfy refuses an At
-// under 10 s ahead, so a reset closer than this is posted at once.
-const minAt = 30 * time.Second
-
-// remindEvery is how often the daemon reads quota for the reset reminders;
+// remindEvery is how often the daemon reads quota for the weekly alerts;
 // the reading goes through the map's 5-minute gate, so the upstream page is
 // never asked more often than the map alone would ask it.
 const remindEvery = time.Hour
@@ -27,30 +23,40 @@ const remindEvery = time.Hour
 // providerRE is a provider name that can stand in a bm-claims key.
 var providerRE = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
-// Reminder is one used 5-hour window's reset post: At is the reset rounded
-// to the minute (Claude's reset jitters by fractions of a second between
-// readings), which also names the window in its claim.
+// weekLevels are the weekly usage marks an alert is posted at, highest
+// first: the share used, and what the title says is left.
+var weekLevels = []struct {
+	used        float64
+	emoji, left string
+}{{90, "🪫", "10% left"}, {75, "🪫", "25% left"}, {50, "🔋", "50% left"}}
+
+// Reminder is one weekly quota alert: a provider's week, named by its reset
+// rounded to the minute (Claude's reset jitters by fractions of a second
+// between readings), and the mark its usage reached.
 type Reminder struct {
 	Provider    string
-	At          time.Time
+	Reset       time.Time
+	Used        int
 	Title, Body string
 }
 
-// Key is the window's bm-claims key: quota.<provider>.<At unix>.
+// Key is the alert's bm-claims key: quota.<provider>.week.<reset unix>.<used>.
 func (r Reminder) Key() string {
-	return "quota." + r.Provider + "." + strconv.FormatInt(r.At.Unix(), 10)
+	return fmt.Sprintf("quota.%s.week.%d.%d", r.Provider, r.Reset.Unix(), r.Used)
 }
 
-// Reminders is one reminder per reading whose 5-hour window has usage and
-// whose rounded reset is still ahead of now; a reading without a parseable
-// reset, or whose provider can't name a key, is skipped.
+// Reminders is one alert per reading whose weekly usage reached a mark of
+// weekLevels, the highest it reached, while its rounded reset is still
+// ahead of now: `🔋 50% left • Claude weekly`, body `resets in 2d 4h`. A
+// reading without a parseable weekly reset, or whose provider can't name a
+// key, is skipped.
 func Reminders(rs []web.Reading, now time.Time) []Reminder {
 	var out []Reminder
 	for _, r := range rs {
-		if r.FiveHour <= 0 || !providerRE.MatchString(r.Provider) {
+		if !providerRE.MatchString(r.Provider) {
 			continue
 		}
-		reset, err := time.Parse(time.RFC3339, r.FiveReset)
+		reset, err := time.Parse(time.RFC3339, r.WeekReset)
 		if err != nil {
 			continue
 		}
@@ -59,11 +65,27 @@ func Reminders(rs []web.Reading, now time.Time) []Reminder {
 			continue
 		}
 		name := strings.ToUpper(r.Provider[:1]) + r.Provider[1:]
-		out = append(out, Reminder{Provider: r.Provider, At: at,
-			Title: name + " 5-hour quota reset",
-			Body:  fmt.Sprintf("%s's 5-hour window is fresh. Weekly was %.0f%% used.", name, r.Week)})
+		for _, l := range weekLevels {
+			if r.Week >= l.used {
+				out = append(out, Reminder{Provider: r.Provider, Reset: at, Used: int(l.used),
+					Title: notify.Title(l.emoji, l.left, name+" weekly"), Body: "resets in " + resetsIn(at.Sub(now))})
+				break
+			}
+		}
 	}
 	return out
+}
+
+// resetsIn renders d as 2d 4h from a day up, else 3h 10m, else 25m.
+func resetsIn(d time.Duration) string {
+	d = d.Round(time.Minute)
+	switch {
+	case d >= 24*time.Hour:
+		return fmt.Sprintf("%dd %dh", int(d/(24*time.Hour)), int(d%(24*time.Hour)/time.Hour))
+	case d >= time.Hour:
+		return fmt.Sprintf("%dh %dm", int(d/time.Hour), int(d%time.Hour/time.Minute))
+	}
+	return fmt.Sprintf("%dm", int(d/time.Minute))
 }
 
 // TopicURL is the ntfy URL with its last path segment replaced by topic
@@ -85,11 +107,9 @@ func TopicURL(ntfy, topic string) (string, error) {
 	return u.String(), nil
 }
 
-// remindOnce reads quota through q and, for each used window no daemon has
-// claimed, claims it in bm-claims and posts its reminder to [quota]
-// remind_topic, scheduled for the reset with ntfy's At header (at once when
-// the reset is under minAt away). A post that
-// fails gives the claim back, so the next reading tries again.
+// remindOnce reads quota through q and, for each weekly alert no daemon has
+// claimed, claims it in bm-claims and posts it to [quota] remind_topic. A
+// post that fails gives the claim back, so the next reading tries again.
 func remindOnce(ctx context.Context, d Deps, q *web.Quota) {
 	now := d.Now()
 	target, err := TopicURL(d.Cfg.Notify.Ntfy, d.Cfg.Quota.RemindTopic)
@@ -106,7 +126,7 @@ func remindOnce(ctx context.Context, d Deps, q *web.Quota) {
 		if !won {
 			continue
 		}
-		if err := postReminder(ctx, target, r, now); err != nil {
+		if err := postReminder(ctx, target, r); err != nil {
 			d.Log.Warn("remind: post", "key", r.Key(), "err", err)
 			uctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), deliverTimeout)
 			err := mesh.Unclaim(uctx, d.Client, r.Key())
@@ -116,16 +136,15 @@ func remindOnce(ctx context.Context, d Deps, q *web.Quota) {
 			}
 			continue
 		}
-		d.Log.Info("remind: scheduled", "provider", r.Provider, "at", r.At.UTC().Format(time.RFC3339))
+		d.Log.Info("remind: posted", "provider", r.Provider, "used", r.Used)
 	}
 }
 
 // deliverTimeout is a reminder post's cap.
 const deliverTimeout = 10 * time.Second
 
-// postReminder posts r, scheduled for r.At unless that is under minAt from
-// now.
-func postReminder(ctx context.Context, target string, r Reminder, now time.Time) error {
+// postReminder posts r.
+func postReminder(ctx context.Context, target string, r Reminder) error {
 	ctx, cancel := context.WithTimeout(ctx, deliverTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader([]byte(r.Body)))
@@ -133,10 +152,6 @@ func postReminder(ctx context.Context, target string, r Reminder, now time.Time)
 		return err
 	}
 	req.Header.Set("Title", r.Title)
-	if r.At.Sub(now) >= minAt {
-		req.Header.Set("At", strconv.FormatInt(r.At.Unix(), 10))
-	}
-	req.Header.Set("Tags", "hourglass")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err

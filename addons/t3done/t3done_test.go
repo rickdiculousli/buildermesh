@@ -166,8 +166,8 @@ func TestCompletedRunWithNothingPendingPostsOnce(t *testing.T) {
 	f.tick()
 	f.tick()
 	got := f.wantPosts(1)[0]
-	want := "Fix the buzzer\ndone in party-buzzer on k16: The buzzer fixed. Tests pass.\n" +
-		"NTFY_TITLE=Fix the buzzer\nNTFY_PRIORITY=\nNTFY_TAGS=white_check_mark\nNTFY_CLICK=http://k16:3773/t1\nNTFY_ACTIONS=\n"
+	want := "✅ Done • Fix the buzzer\nThe buzzer fixed. Tests pass. · party-buzzer on k16\n" +
+		"NTFY_TITLE=✅ Done • Fix the buzzer\nNTFY_PRIORITY=\nNTFY_CLICK=http://k16:3773/t1\nNTFY_ACTIONS=\n"
 	if got != want {
 		t.Fatalf("post:\n%s\nwant:\n%s", got, want)
 	}
@@ -188,7 +188,7 @@ func TestRunWithAPendingMonitorIsAWakeUp(t *testing.T) {
 	// The run after it, with nothing pending, is the done.
 	f.run("t1", 2, "completed", 9, "085 landed.")
 	f.tick()
-	if p := f.wantPosts(1)[0]; !strings.HasPrefix(p, "Build 085\ndone in party-buzzer on k16: 085 landed.\n") {
+	if p := f.wantPosts(1)[0]; !strings.HasPrefix(p, "✅ Done • Build 085\n085 landed. · party-buzzer on k16\n") {
 		t.Fatalf("post %q", p)
 	}
 }
@@ -203,7 +203,7 @@ func TestADoneUnderMinBusyIsQuiet(t *testing.T) {
 	f.wantPosts(0)
 	f.turn("t1", 2, "completed", 20, 320, "long", false)
 	f.tick()
-	if p := f.wantPosts(1)[0]; !strings.HasPrefix(p, "One\ndone in party-buzzer on k16: long\n") {
+	if p := f.wantPosts(1)[0]; !strings.HasPrefix(p, "✅ Done • One\nlong · party-buzzer on k16\n") {
 		t.Fatalf("post %q", p)
 	}
 	// A person's ask that armed a monitor, then a quick wake-up: busy from
@@ -214,7 +214,7 @@ func TestADoneUnderMinBusyIsQuiet(t *testing.T) {
 	f.pending("t1", `[]`)
 	f.turn("t1", 4, "completed", 700, 710, "landed", true)
 	f.tick()
-	if p := f.wantPosts(2)[1]; !strings.HasPrefix(p, "One\ndone in party-buzzer on k16: landed\n") {
+	if p := f.wantPosts(2)[1]; !strings.HasPrefix(p, "✅ Done • One\nlanded · party-buzzer on k16\n") {
 		t.Fatalf("post %q", p)
 	}
 	// Failures and questions post however short.
@@ -242,10 +242,10 @@ func TestFailedPostsInterruptedDoesntRequestAsks(t *testing.T) {
 	f.request("t2", "r2", "resolved", 9)
 	f.tick()
 	p := f.wantPosts(2)
-	if !strings.HasPrefix(p[0], "One\nfailed in party-buzzer on k16\n") || !strings.Contains(p[0], "NTFY_TAGS=x\n") {
+	if !strings.HasPrefix(p[0], "❌ Failed • One\nparty-buzzer on k16\n") {
 		t.Errorf("failed: %q", p[0])
 	}
-	if !strings.HasPrefix(p[1], "Two\nasking for input in party-buzzer on k16: stopped\n") || !strings.Contains(p[1], "NTFY_TAGS=raising_hand\n") ||
+	if !strings.HasPrefix(p[1], "🙋 Asks • Two\nstopped · party-buzzer on k16\n") ||
 		!strings.Contains(p[1], "NTFY_CLICK=\n") {
 		t.Errorf("asking: %q", p[1])
 	}
@@ -351,10 +351,15 @@ func TestAFailedPostIsRetried(t *testing.T) {
 func TestMessageExcerpt(t *testing.T) {
 	long := strings.Repeat("é", 200)
 	h, body := Message("done", "  A\ntitle ", "", "k16", long)
-	if h.Title != "A title" || h.Tags != "white_check_mark" {
+	if h.Title != "✅ Done • A title" {
 		t.Errorf("headers %+v", h)
 	}
-	if want := "done on k16: " + strings.Repeat("é", excerptMax-1) + "…"; body != want {
+	if want := strings.Repeat("é", excerptMax-1) + "… · k16"; body != want {
 		t.Errorf("body %q", body)
+	}
+	// Markdown is taken out: a phone shows it raw.
+	md := "# Landed\n\n**This needs your ok**, see `bmesh status` and [the spec](http://x/1).\n- one\n2. two\n> quoted"
+	if _, body := Message("done", "T", "demo", "k16", md); body != "Landed This needs your ok, see bmesh status and the spec. one two quoted · demo on k16" {
+		t.Errorf("markdown body %q", body)
 	}
 }

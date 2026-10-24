@@ -345,7 +345,7 @@ func TestPushRefusedOncePerSenderAndCheck(t *testing.T) {
 	refuse("mac signature") // within ten minutes: quiet
 	refuse("mac to")
 	got := n.waitRequests(t, 2)
-	if got[0].Title != "k16 refused mac: signature" || got[1].Title != "k16 refused mac: to" {
+	if got[0].Title != "⚠️ Refused • k16 refused mac: signature" || got[1].Title != "⚠️ Refused • k16 refused mac: to" {
 		t.Fatalf("pushes %+v", got)
 	}
 }

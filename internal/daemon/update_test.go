@@ -272,7 +272,7 @@ func TestAnnounceStartedAndFailedUpdate(t *testing.T) {
 	}
 	publishUpdate()
 	announce(f.ctx, f.d)
-	if got := read(); !strings.HasPrefix(got, "bmesh update failed on "+testHost+"\nupdate aaaaaaaa -> bbbbbbbb did not start; this is aaaaaaaa\n") ||
+	if got := read(); !strings.HasPrefix(got, "⚠️ Update failed • "+testHost+"\nupdate aaaaaaaa -> bbbbbbbb did not start; this is aaaaaaaa\n") ||
 		!strings.Contains(got, "NTFY_PRIORITY=high") {
 		t.Fatalf("push %q", got)
 	}
@@ -295,19 +295,6 @@ func TestAnnounceStartedAndFailedUpdate(t *testing.T) {
 	announce(f.ctx, f.d)
 	if evs := f.daemonEvents(t, "started"); evs[len(evs)-1].Text != "unknown" {
 		t.Fatalf("started %+v", evs[len(evs)-1])
-	}
-}
-
-func TestDigestTitleCarriesRevision(t *testing.T) {
-	f := setup(t)
-	f.d.Cfg.Notify.Command = "cat > /dev/null"
-	f.d.Revision = "1a2b3c4d5e6f"
-	f.lead(t, "a", "t1", "asking")
-	f.now = f.now.Add(time.Minute)
-	since := f.now.Add(-time.Hour)
-	digestOnce(f.ctx, f.d, &since)
-	if evs := f.daemonEvents(t, "digest"); len(evs) != 1 || evs[0].Text != "bmesh "+testHost+" 1a2b3c4d: 0 working, 1 asking, 0 silent" {
-		t.Fatalf("digest %+v", evs)
 	}
 }
 
@@ -721,7 +708,7 @@ func TestUpdateHeldByTheNewBinary(t *testing.T) {
 				t.Fatalf("notice %q", got)
 			}
 			// The push says what to run, and where.
-			if got := ntfy.waitRequests(t, 1); got[0].Title != "bmesh update waits on "+testHost ||
+			if got := ntfy.waitRequests(t, 1); got[0].Title != "⏳ Update waits • "+testHost ||
 				!strings.Contains(got[0].Body, tc.want+". "+tc.step) {
 				t.Fatalf("push %+v", got)
 			}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -47,7 +48,7 @@ func quotaCommand(t *testing.T, readings string) string {
 	return "cat " + p
 }
 
-func TestRemindOncePerWindowAcrossDaemons(t *testing.T) {
+func TestRemindOncePerWeekMarkAcrossDaemons(t *testing.T) {
 	f := setup(t)
 	rec := &ntfyRecorder{}
 	srv := httptest.NewServer(rec)
@@ -55,31 +56,37 @@ func TestRemindOncePerWindowAcrossDaemons(t *testing.T) {
 	f.now = time.Date(2026, 10, 16, 9, 0, 0, 0, time.UTC)
 	f.d.Cfg.Notify.Ntfy = srv.URL + "/bmesh"
 	f.d.Cfg.Quota.RemindTopic = "quota-reset"
-
-	// Two daemons read the same window a few seconds apart: Claude's reset
-	// jitters across the minute, codex has no usage.
-	a, b := f.d, f.d
-	a.Host, b.Host = "box-a", "box-b"
-	qa := &web.Quota{Command: quotaCommand(t, `[{"reading":{"provider":"claude","five_hour":12,"week":41,"five_reset":"2026-10-16T10:59:59.734Z","week_reset":"2026-10-20T00:00:00Z"}},
-		{"reading":{"provider":"codex","five_hour":0,"week":3,"five_reset":"2026-10-16T12:00:00Z","week_reset":"2026-10-20T00:00:00Z"}}]`)}
-	qb := &web.Quota{Command: quotaCommand(t, `[{"reading":{"provider":"claude","five_hour":13,"week":41,"five_reset":"2026-10-16T11:00:00.212+00:00","week_reset":"2026-10-20T00:00:00Z"}}]`)}
-	remindOnce(f.ctx, a, qa)
-	remindOnce(f.ctx, b, qb)
-	f.now = f.now.Add(time.Hour)
-	remindOnce(f.ctx, a, qa)
-	remindOnce(f.ctx, b, qb)
-
-	if len(rec.posts) != 1 {
-		t.Fatalf("posts = %d, want 1 across two daemons and two readings", len(rec.posts))
+	reading := func(week, jitter string) string {
+		return `[{"reading":{"provider":"claude","five_hour":12,"week":` + week + `,"five_reset":"2026-10-16T11:00:00Z","week_reset":"2026-10-20T00:00:` + jitter + `"}},
+			{"reading":{"provider":"codex","five_hour":40,"week":3,"five_reset":"2026-10-16T12:00:00Z","week_reset":"2026-10-20T00:00:00Z"}}]`
 	}
-	p := rec.posts[0]
-	reset := time.Date(2026, 10, 16, 11, 0, 0, 0, time.UTC)
-	if p.URL.Path != "/quota-reset" || p.Header.Get("At") != strconv.FormatInt(reset.Unix(), 10) ||
-		p.Header.Get("Title") != "Claude 5-hour quota reset" || p.Header.Get("Tags") != "hourglass" {
-		t.Fatalf("post %s At=%s Title=%q Tags=%q", p.URL.Path, p.Header.Get("At"), p.Header.Get("Title"), p.Header.Get("Tags"))
+	// Two daemons read the same week, Claude's reset jittering in the minute.
+	pass := func(week string) {
+		a, b := f.d, f.d
+		a.Host, b.Host = "box-a", "box-b"
+		remindOnce(f.ctx, a, &web.Quota{Command: quotaCommand(t, reading(week, "00.734Z"))})
+		remindOnce(f.ctx, b, &web.Quota{Command: quotaCommand(t, reading(week, "29.2Z"))})
+		f.now = f.now.Add(time.Hour)
 	}
-	if rec.body[0] != "Claude's 5-hour window is fresh. Weekly was 41% used." {
-		t.Fatalf("body %q", rec.body[0])
+	pass("41")
+	if len(rec.posts) != 0 {
+		t.Fatalf("posts at 41%% used = %d", len(rec.posts))
+	}
+	pass("55")
+	pass("60")
+	pass("80")
+	pass("80")
+	if len(rec.posts) != 2 {
+		t.Fatalf("posts = %d, want one at 50%% used and one at 75%%, across two daemons", len(rec.posts))
+	}
+	for i, want := range []struct{ title, body string }{
+		{"🔋 50% left • Claude weekly", "resets in 3d 14h"},
+		{"🪫 25% left • Claude weekly", "resets in 3d 12h"},
+	} {
+		p := rec.posts[i]
+		if p.URL.Path != "/quota-reset" || p.Header.Get("At") != "" || p.Header.Get("Title") != want.title || rec.body[i] != want.body {
+			t.Errorf("post %d: %s At=%q Title=%q body %q", i, p.URL.Path, p.Header.Get("At"), p.Header.Get("Title"), rec.body[i])
+		}
 	}
 }
 
@@ -91,7 +98,7 @@ func TestRemindFailedPostGivesClaimBack(t *testing.T) {
 	f.now = time.Date(2026, 10, 16, 9, 0, 0, 0, time.UTC)
 	f.d.Cfg.Notify.Ntfy = srv.URL + "/bmesh"
 	f.d.Cfg.Quota.RemindTopic = "quota-reset"
-	q := &web.Quota{Command: quotaCommand(t, `[{"reading":{"provider":"claude","five_hour":5,"week":1,"five_reset":"2026-10-16T11:00:00Z","week_reset":"2026-10-20T00:00:00Z"}}]`)}
+	q := &web.Quota{Command: quotaCommand(t, `[{"reading":{"provider":"claude","five_hour":5,"week":60,"five_reset":"2026-10-16T11:00:00Z","week_reset":"2026-10-20T00:00:00Z"}}]`)}
 	remindOnce(f.ctx, f.d, q)
 	remindOnce(f.ctx, f.d, q)
 	remindOnce(f.ctx, f.d, q)
@@ -100,33 +107,31 @@ func TestRemindFailedPostGivesClaimBack(t *testing.T) {
 	}
 }
 
-func TestRemindCloseToTheResetPostsAtOnce(t *testing.T) {
-	f := setup(t)
-	rec := &ntfyRecorder{}
-	srv := httptest.NewServer(rec)
-	defer srv.Close()
-	f.now = time.Date(2026, 10, 16, 10, 59, 55, 0, time.UTC)
-	f.d.Cfg.Notify.Ntfy = srv.URL + "/bmesh"
-	f.d.Cfg.Quota.RemindTopic = "quota-reset"
-	q := &web.Quota{Command: quotaCommand(t, `[{"reading":{"provider":"claude","five_hour":5,"week":1,"five_reset":"2026-10-16T11:00:00.2Z","week_reset":"2026-10-20T00:00:00Z"}}]`)}
-	remindOnce(f.ctx, f.d, q)
-	if len(rec.posts) != 1 || rec.posts[0].Header.Get("At") != "" {
-		t.Fatalf("posts = %d, want one without At (ntfy refuses one under 10s ahead)", len(rec.posts))
-	}
-}
-
-func TestRemindersSkipUnusedAndPast(t *testing.T) {
+func TestRemindersWeekMarks(t *testing.T) {
 	now := time.Date(2026, 10, 16, 11, 0, 0, 0, time.UTC)
 	rs := Reminders([]web.Reading{
-		{Provider: "claude", FiveHour: 10, FiveReset: "2026-10-16T10:59:40Z"}, // rounds to now: past
-		{Provider: "codex", FiveHour: 0, FiveReset: "2026-10-16T13:00:00Z"},   // unused
-		{Provider: "bad.name", FiveHour: 10, FiveReset: "2026-10-16T13:00:00Z"},
-		{Provider: "codex", FiveHour: 1, FiveReset: ""},
-		{Provider: "codex", FiveHour: 1, Week: 9.6, FiveReset: "2026-10-16T13:00:31Z"},
+		{Provider: "claude", Week: 99, WeekReset: "2026-10-16T10:59:40Z"},  // rounds to now: past
+		{Provider: "codex", Week: 49.9, WeekReset: "2026-10-18T13:00:00Z"}, // under every mark
+		{Provider: "bad.name", Week: 80, WeekReset: "2026-10-18T13:00:00Z"},
+		{Provider: "codex", Week: 80, WeekReset: ""},
+		{Provider: "a", Week: 50, WeekReset: "2026-10-18T13:00:31Z"},
+		{Provider: "b", Week: 75, WeekReset: "2026-10-16T13:05:00Z"},
+		{Provider: "c", Week: 97, WeekReset: "2026-10-16T11:25:00Z"},
 	}, now)
-	if len(rs) != 1 || rs[0].Key() != "quota.codex."+strconv.FormatInt(time.Date(2026, 10, 16, 13, 1, 0, 0, time.UTC).Unix(), 10) ||
-		rs[0].Body != "Codex's 5-hour window is fresh. Weekly was 10% used." {
-		t.Fatalf("%+v", rs)
+	var got []string
+	for _, r := range rs {
+		got = append(got, r.Key()+" | "+r.Title+" | "+r.Body)
+	}
+	unix := func(h, m int) string {
+		return strconv.FormatInt(time.Date(2026, 10, 16, h, m, 0, 0, time.UTC).Unix(), 10)
+	}
+	want := []string{
+		"quota.a.week." + strconv.FormatInt(time.Date(2026, 10, 18, 13, 1, 0, 0, time.UTC).Unix(), 10) + ".50 | 🔋 50% left • A weekly | resets in 2d 2h",
+		"quota.b.week." + unix(13, 5) + ".75 | 🪫 25% left • B weekly | resets in 2h 5m",
+		"quota.c.week." + unix(11, 25) + ".90 | 🪫 10% left • C weekly | resets in 25m",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("got\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
 

@@ -10,7 +10,6 @@ if [ -n "$FAKE_NTFY_LOG" ]; then
       echo
       echo "NTFY_TITLE=$NTFY_TITLE"
       echo "NTFY_PRIORITY=$NTFY_PRIORITY"
-      echo "NTFY_TAGS=$NTFY_TAGS"
       echo "NTFY_CLICK=$NTFY_CLICK"
       echo "NTFY_ACTIONS=$NTFY_ACTIONS"
     fi

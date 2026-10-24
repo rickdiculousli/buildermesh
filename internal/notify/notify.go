@@ -18,15 +18,22 @@ const timeout = 10 * time.Second
 
 // Headers are a notification's ntfy headers; empty ones are not sent.
 type Headers struct {
-	Title, Priority, Tags, Click, Actions string
+	Title, Priority, Click, Actions string
+}
+
+// Title is a notification's title, status first so a phone reads it at a
+// glance: `<emoji> <status> • <subject>` (`✅ Landed • demo-build-3: 2/2`).
+// The emoji is in the text, not an ntfy tag, so the command hook gets it too.
+func Title(emoji, status, subject string) string {
+	return emoji + " " + status + " • " + subject
 }
 
 // Target is where a notification goes: Command when set, else Ntfy.
 type Target struct{ Ntfy, Command string }
 
 // Post pipes body to t.Command when set, the headers in its environment
-// ($BMESH_TITLE and $NTFY_TITLE, $NTFY_PRIORITY, $NTFY_TAGS, $NTFY_CLICK,
-// $NTFY_ACTIONS, empty when unset), else POSTs it to t.Ntfy with the
+// ($BMESH_TITLE and $NTFY_TITLE, $NTFY_PRIORITY, $NTFY_CLICK, $NTFY_ACTIONS,
+// empty when unset), else POSTs it to t.Ntfy with the
 // non-empty headers. Either gets 10 s.
 func (t Target) Post(ctx context.Context, h Headers, body string) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -36,7 +43,7 @@ func (t Target) Post(ctx context.Context, h Headers, body string) error {
 		c.Stdin = strings.NewReader(body)
 		c.WaitDelay = 2 * time.Second // a child holding the pipes can't block Wait past the timeout
 		c.Env = append(os.Environ(), "BMESH_TITLE="+h.Title, "NTFY_TITLE="+h.Title, "NTFY_PRIORITY="+h.Priority,
-			"NTFY_TAGS="+h.Tags, "NTFY_CLICK="+h.Click, "NTFY_ACTIONS="+h.Actions)
+			"NTFY_CLICK="+h.Click, "NTFY_ACTIONS="+h.Actions)
 		if out, err := c.CombinedOutput(); err != nil {
 			return fmt.Errorf("notify command: %w: %s", err, strings.TrimSpace(string(out)))
 		}
@@ -46,7 +53,7 @@ func (t Target) Post(ctx context.Context, h Headers, body string) error {
 	if err != nil {
 		return err
 	}
-	for k, v := range map[string]string{"Title": h.Title, "Priority": h.Priority, "Tags": h.Tags,
+	for k, v := range map[string]string{"Title": h.Title, "Priority": h.Priority,
 		"Click": h.Click, "Actions": h.Actions} {
 		if v != "" {
 			req.Header.Set(k, v)

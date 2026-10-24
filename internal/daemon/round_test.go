@@ -207,13 +207,13 @@ func TestPushRoundProposed(t *testing.T) {
 	got := n.waitRequests(t, 1)
 	stop()
 	r := got[0]
-	if r.Title != "demo round 3 proposed" || r.Priority != "default" || r.Tags != "memo" || r.Body != "013 A: why\n018 B: look" ||
+	if r.Title != "📝 Proposed • demo round 3" || r.Priority != "default" || r.Body != "013 A: why\n018 B: look" ||
 		r.Click != "http://t3.test/t/th-eng" || r.Actions != "" {
 		t.Fatalf("%+v", r)
 	}
 	req, ok := Push(mesh.Event{From: "demo-round-3", Event: "blocked", Text: "ux blocked: x"}, mesh.Node{Path: "demo-round-3", Role: "round", Repo: "demo"},
 		f.d.Cfg.Notify, "")
-	if !ok || req.Title != "demo round 3 blocked" || req.Priority != "high" || req.Tags != "no_entry" || req.Body != "ux blocked: x" {
+	if !ok || req.Title != "⛔ Blocked • demo round 3" || req.Priority != "high" || req.Body != "ux blocked: x" {
 		t.Fatalf("%+v %v", req, ok)
 	}
 	if _, ok := Push(mesh.Event{From: "demo-round-3", Event: "ask"}, mesh.Node{Path: "demo-round-3", Role: "round"}, f.d.Cfg.Notify, ""); ok {
@@ -224,7 +224,7 @@ func TestPushRoundProposed(t *testing.T) {
 	}
 	req, ok = Push(mesh.Event{From: "demo-round-3.eng", Event: "ask", Text: "which?"}, mesh.Node{Path: "demo-round-3.eng", Role: "engineer"},
 		f.d.Cfg.Notify, "http://t3.test/t/th-eng")
-	if !ok || req.Title != "demo-round-3.eng asks" || req.Body != "which?" || req.Click != "http://t3.test/t/th-eng" {
+	if !ok || req.Title != "❓ Asks • demo-round-3.eng" || req.Body != "which?" || req.Click != "http://t3.test/t/th-eng" {
 		t.Fatalf("an engineer's ask: %+v %v", req, ok)
 	}
 }
