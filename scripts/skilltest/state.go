@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -200,6 +201,7 @@ type State struct {
 	Cell    *Cell
 	Calls   []Call
 	Replies []string
+	Texts   [][]string // each turn's main-thread texts, its reply last
 	Results []Result
 	Inits   []*Init // each turn's init event, nil where its output had none
 
@@ -227,6 +229,11 @@ func loadState(dir string) (*State, error) {
 		s.Results = append(s.Results, r)
 		s.Inits = append(s.Inits, init)
 		s.Replies = append(s.Replies, r.Result)
+		texts := r.Texts
+		if r.Result != "" && (len(texts) == 0 || texts[len(texts)-1] != r.Result) {
+			texts = append(texts, r.Result)
+		}
+		s.Texts = append(s.Texts, texts)
 	}
 	return s, nil
 }
@@ -267,6 +274,23 @@ func (s *State) NewCommits() []string {
 		return nil
 	}
 	return strings.Fields(out)
+}
+
+// AddedSpecs are the files under docs/proposals/ that origin's main added
+// since the base.
+func (s *State) AddedSpecs() []string {
+	out, err := s.git("diff", "--name-only", "--diff-filter=A", s.Cell.Base, "refs/heads/main", "--", "docs/proposals/")
+	if err != nil {
+		return nil
+	}
+	return strings.Fields(out)
+}
+
+// ArmHas reports whether the cell's arm documents the command, as the
+// fake reads its commands.txt.
+func (s *State) ArmHas(cmd string) bool {
+	b, _ := os.ReadFile(filepath.Join(s.Dir, "commands.txt"))
+	return slices.Contains(strings.Split(string(b), "\n"), cmd)
 }
 
 // Changed are the files origin's main changed since the base.

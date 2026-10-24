@@ -593,9 +593,10 @@ func drainCase() *Case {
 			return out
 		},
 		Expect: []Pred{quick, hidden("typo_fixed", "cart", "TestSkilltestHiddenReceiptSaysTotal"), testsPass(), left,
-			specFrom("larger_proposed", drainLarger, "proposed"), drainsExactly(drainXS, drainLarger)},
+			specFrom("larger_proposed", drainLarger, "proposed"), drainsExactly(drainXS, drainLarger), rungNamed()},
 		Refs: []Ref{
 			{Name: "drained", Play: func(r *Rehearsal) {
+				r.Say("Starting leads for 013")
 				begin(r)
 				quickFix(r, typoSubject)
 				propose(r, "proposed")
@@ -608,7 +609,7 @@ func drainCase() *Case {
 				r.Call("feedback", "drain", "--seq", "51")
 				propose(r, "proposed")
 				r.Call("feedback", "drain", "--seq", "53")
-				r.Reply("013 landed; 51 fixed, 53 proposed as 015, 52 to the fixer.")
+				r.Reply("Starting leads for 013: it landed; 51 fixed, 53 proposed as 015, 52 to the fixer.")
 			}},
 			{Name: "never fixed", Fails: "typo_fixed", Play: func(r *Rehearsal) {
 				begin(r)

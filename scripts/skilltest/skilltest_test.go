@@ -472,6 +472,30 @@ func TestFake(t *testing.T) {
 	}
 }
 
+// The fake answers audit on an arm whose manual documents it, as the
+// binary does for a session it can't read, or the case's canned audit.
+func TestFakeAudit(t *testing.T) {
+	manual, err := os.ReadFile(filepath.Join(repoRoot(t), "docs", "manual.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, _ := caseCell(t, "bug", string(manual)+"\n### `bmesh audit`\n")
+	sandbox := filepath.Join(dir, sandboxDir)
+	if code, out, _ := fake(t, dir, sandbox, "audit"); code != 0 || out != "audit: no session bmesh can read (Claude Code names its session in CLAUDE_CODE_SESSION_ID)\n" {
+		t.Errorf("audit: exit %d, %q", code, out)
+	}
+	if err := writeFile(filepath.Join(dir, "canned", "audit"), "said: here\n"); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, _ := fake(t, dir, sandbox, "audit", "--session", "s1"); code != 0 || out != "said: here\n" {
+		t.Errorf("canned audit: exit %d, %q", code, out)
+	}
+	old, _ := caseCell(t, "bug", "### `bmesh build`\n")
+	if code, _, errs := fake(t, old, filepath.Join(old, sandboxDir), "audit"); code != 2 || !strings.Contains(errs, `unknown command "audit"`) {
+		t.Errorf("audit on an arm without it: exit %d, %q", code, errs)
+	}
+}
+
 // A round's cell: the session runs in the round's eng worktree, its one
 // turn is the round brief from the arm's own engineer template (an arm
 // from before 097 gets the values its template was written for), the
@@ -756,10 +780,14 @@ func TestReadTurn(t *testing.T) {
 	}
 	stream := `{"type":"system","subtype":"init","plugins":[{"name":"buildermesh","path":"/p"}],"skills":["buildermesh:quickfix","simplify"],"mcp_servers":[]}` + "\n" +
 		"not json\n" + `{"type":"assistant","message":{}}` + "\n" +
+		`{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"text","text":"Making it here, XS: one line"},{"type":"tool_use","name":"Bash"}]}}` + "\n" +
+		`{"type":"assistant","parent_tool_use_id":"toolu_1","message":{"content":[{"type":"text","text":"a subagent's"}]}}` + "\n" +
+		`{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"text","text":"last"}]}}` + "\n" +
 		`{"type":"result","result":"last","total_cost_usd":0.3,"modelUsage":{"a":{"inputTokens":1,"outputTokens":1,"costUSD":0.1},"b":{"cacheReadInputTokens":5,"costUSD":0.2}}}` + "\n"
 	r, init, err = readTurn(write("stream.json", stream))
 	if err != nil || r.Result != "last" || turnSpend(r, nil).Tokens() != 7 || init == nil ||
-		!reflect.DeepEqual(names(init.Plugins), []string{"buildermesh"}) || len(names(init.Skills)) != 2 || len(init.MCPServers) != 0 {
+		!reflect.DeepEqual(names(init.Plugins), []string{"buildermesh"}) || len(names(init.Skills)) != 2 || len(init.MCPServers) != 0 ||
+		!reflect.DeepEqual(r.Texts, []string{"Making it here, XS: one line", "last"}) {
 		t.Errorf("stream: %+v, %+v, %v", r, init, err)
 	}
 	// A resumed session's result states its own spend in a stream; in a
