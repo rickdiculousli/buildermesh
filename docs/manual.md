@@ -1224,7 +1224,7 @@ A transcript that has changed shape measures nothing rather than a wrong number;
 
 **Who hears it.** A subagent's commands carry its parent's environment, `CLAUDE_CODE_SESSION_ID` included, so they would read the parent's context. Only the session's main thread hears it:
 
-- A command acting as a node with a parent (an executor, a round's engineer, a routine instance: `--node`, `BMESH_NODE` or the node this checkout resolves to has a `.` in its path) says nothing and records nothing.
+- A command acting as a node with a parent (an executor, a round's engineer, a routine instance: `--node`, `BMESH_NODE`, or the node a command that acts as one resolved from this checkout, has a `.` in its path) says nothing and records nothing. A command that resolves no node (`context`, `repos`, `version`, ...) run in a child's checkout without `--node` or `BMESH_NODE` is judged by the rule below alone.
 - Any other command speaks only while the main thread is in a tool call of its own: the newest assistant message has a Bash call with no `tool_result` yet and no Agent or Task call without one, or a model call newer than that message is in flight (Claude Code writes a message a second or so after its tools start; a subagent's model calls go to its own transcript). A foreground subagent's parent waits on its Agent call, and an idle session has no call waiting, so neither hears anything, and its state is left alone.
 
 **The nudges** come from `[context]` (see [config.toml](#configtoml)). The levels are `nudge_from`, every `nudge_every` past it, `compact_from` and `compact_soon`; the advice at a level, a default the session judges, is:
@@ -1240,7 +1240,7 @@ With `nudge_every = 0` the first advice reads `You'll hear again at <the next le
 **The lines** (see [Synopsis](#synopsis)):
 
 - `bmesh: this session's context is <N>k. <advice>` when the session's level is above the last one it heard. Each level is said once per session; a jump past several says the highest once.
-- `bmesh: this session compacted (<before>k -> <now>k); read your state file before going on.` when the level is below the last one heard: a compaction, the harness's own auto-compaction included. `<before>` is the last context bmesh read for the session. It is said once, and the levels are said again as the context grows back.
+- `bmesh: this session compacted (<before>k -> <now>k); read your state file before going on.` when the level is below the last one heard and the context is below the last one read: a compaction, the harness's own auto-compaction included. `<before>` is the last context bmesh read for the session. It is said once, and the levels are said again as the context grows back. A level below the last one heard on a context that didn't drop (a `[context]` changed since) is recorded with no line.
 
 `<state dir>/context/<session id>` holds the level last heard and the last context read at or past `nudge_from`; a session's file unchanged for 7 days is pruned. A line bmesh can't record is not said, so a failing disk never repeats it. `bmesh context` records what it reports as heard.
 

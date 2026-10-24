@@ -295,8 +295,10 @@ type state struct{ level, tokens int }
 
 // Heard records r for its session and returns the line the session is
 // owed, "" for none. A level above the one it last heard is a nudge. A
-// level below it is a compaction (the harness's own included): the line
-// says so, once, and the levels are said again as the context grows back.
+// level below it on fewer tokens is a compaction (the harness's own
+// included): the line says so, once, and the levels are said again as the
+// context grows back. A level below it on as many tokens or more is a
+// [context] changed since, recorded silently.
 // Nothing is said or recorded for a reading off the session's own thread,
 // or with nudge_from 0; a line bmesh can't record is never said, so a
 // failing disk can't repeat it. dir is the state dir.
@@ -321,7 +323,7 @@ func Heard(dir string, c config.ContextConfig, r Reading, now time.Time) (line s
 	switch {
 	case cur.level > last.level:
 		return strings.TrimSpace("bmesh: this session's context is " + K(r.Tokens) + ". " + Advice(c, cur.level)), false
-	case cur.level < last.level:
+	case cur.level < last.level && r.Tokens < last.tokens:
 		return "bmesh: this session compacted (" + K(last.tokens) + " -> " + K(r.Tokens) + "); read your state file before going on.", true
 	}
 	return "", false

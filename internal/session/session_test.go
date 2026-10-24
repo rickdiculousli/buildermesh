@@ -307,3 +307,19 @@ func TestLevelAndAdvice(t *testing.T) {
 		}
 	}
 }
+
+func TestHeardConfigChangeIsNoCompaction(t *testing.T) {
+	dir := t.TempDir()
+	r := Reading{Harness: "claude", ID: "s", Tokens: 358000, Main: true}
+	Heard(dir, defaults, r, time.Now())
+	raised := defaults
+	raised.NudgeFrom = 400000
+	r.Tokens = 360000
+	if l, compacted := Heard(dir, raised, r, time.Now()); l != "" || compacted {
+		t.Fatalf("nudge_from raised past the context: %q, %v; want nothing", l, compacted)
+	}
+	r.Tokens = 401000
+	if l, _ := Heard(dir, raised, r, time.Now()); !strings.Contains(l, "401k") {
+		t.Fatalf("the raised nudge: %q", l)
+	}
+}
