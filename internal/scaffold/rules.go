@@ -18,7 +18,7 @@ const RulesBlock = "rules"
 var DefaultRules = []string{"core"}
 
 // RuleSets are the embedded sets' names, in the order a refusal lists them.
-var RuleSets = []string{"core", "design", "tests", "tdd", "prose"}
+var RuleSets = []string{"core", "design", "tests", "tdd", "prose", "ponytail"}
 
 // Customized is the opening marker's word for a block whose body differs
 // from what scaffold last wrote; such a block is never rewritten.

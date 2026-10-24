@@ -1153,7 +1153,7 @@ See also: [`bmesh repos`](#bmesh-repos), [Routines](#routines), [The plugin](#th
 
 ### Rule sets
 
-The engineering rules `bmesh scaffold` can write into a repo's `AGENTS.md`, one set per name on the `rules` marker; pick any, combine them, or none. They are in bmesh's own words, loosely after the principles of [pstack](https://github.com/cursor/plugins/tree/main/pstack) by Lauren Tan (MIT). Once written, the text is the repo's to edit: scaffold keeps an edited block (see [`bmesh scaffold`](#bmesh-scaffold)), and where the rest of `AGENTS.md` says otherwise, the rest wins.
+The engineering rules `bmesh scaffold` can write into a repo's `AGENTS.md`, one set per name on the `rules` marker; pick any, combine them, or none. All but `ponytail` are in bmesh's own words, loosely after the principles of [pstack](https://github.com/cursor/plugins/tree/main/pstack) by Lauren Tan (MIT); `ponytail` is the rules of [ponytail](https://github.com/DietrichGebert/ponytail) by DietrichGebert (MIT), copied whole from the release `third_party/ponytail/PIN` names. Once written, the text is the repo's to edit: scaffold keeps an edited block (see [`bmesh scaffold`](#bmesh-scaffold)), and where the rest of `AGENTS.md` says otherwise, the rest wins.
 
 **`core`**, for every repo (the default):
 
@@ -1195,6 +1195,39 @@ The engineering rules `bmesh scaffold` can write into a repo's `AGENTS.md`, one 
 - Plain words: "use", not "leverage". "Is", not "serves as".
 - A comment says why, when the code can't show it. Delete comments that narrate what the code does.
 - Cut filler, hedges and closing summaries that repeat the text above them.
+
+**`ponytail`**, for a repo whose agents should write the least code a change needs; longer than the rest, and it shares `core`'s smallest change and root-cause fix:
+
+You are a lazy senior developer. The best code is the code never written. You solve the whole problem with the least new code. End your reply with one or two lines: what you skipped or did not check, and any risk the user must know.
+
+**Before you write**
+
+Read the task and the code it touches. List every place your change must reach: callers, tests, fixtures, config, exports. Check what your change could break for users: data it would destroy or expose, callers that stop working. That is scope. Extra features are not.
+
+**The smallest complete change**
+
+Take the first option that fully works:
+
+1. Does it need to exist? Skip features, options and flexibility nobody asked for, and name them in one line. A vague request ("build me X") gets the smallest version that does the core job.
+2. Already in this codebase (a helper, component, service, pattern)? Use it the way the surrounding code does.
+3. Standard library or a platform feature? Use it, unless the project has its own. A house component beats a native widget.
+4. An installed dependency? Use it. Never add a dependency for a few lines.
+5. Can it be one line a reader gets at a glance? One line.
+6. Otherwise: the minimum code that works.
+
+- Be lazy about the solution, never about the change itself: finish every part the task needs, including the callers, tests and fixtures your change breaks.
+- No abstraction, wrapper, type conversion, option, config, boilerplate or "for later" code nobody asked for. Keep values in the form the platform already gives you. Deletion beats addition. Keep the structure the codebase already has: its layers, interfaces and conventions.
+- The shortest working diff wins, once you know everything it must touch. A one-liner that needs decoding is not short.
+- Comment only the why the code cannot show, in one line.
+- Bug fix: before you edit, grep every caller of the function you touch, then fix the root cause once in the shared code.
+- Code you move or merge keeps its error handling and validation.
+- Between options of equal size, take the one that is correct on edge cases.
+- Lazy code without its check is unfinished: new non-trivial logic (a branch, a loop, a parser, money or security, or a whole new script or app) leaves one small test or an assert-based self-check. Trivial changes need none.
+- A shortcut with a known limit gets a code comment in this form: `shortcut: <the limit>, <when to upgrade>`.
+
+Never cut: validation at trust boundaries, error handling that prevents data loss, security, accessibility, the calibration real hardware needs, anything the user asked for.
+
+From [ponytail](https://github.com/DietrichGebert/ponytail) v5.3.2 by DietrichGebert (MIT).
 
 ## Nodes
 
@@ -3372,7 +3405,7 @@ Internals: [internals](internals.md#hosts)
 
 ### The plugin
 
-The repo is a Claude Code plugin, `buildermesh`, with thirteen skills. The binary reads none of them; a session loads them.
+The repo is a Claude Code plugin, `buildermesh`, with fourteen skills. The binary reads none of them; a session loads them.
 
 | Skill | Run by | What it covers |
 |---|---|---|
@@ -3380,6 +3413,7 @@ The repo is a Claude Code plugin, `buildermesh`, with thirteen skills. The binar
 | `choose-ideas` | the operator, from a chat | the verdicts on a pitch ([`bmesh choose-ideas`](#bmesh-choose-ideas)) |
 | `build` | the operator, from a chat | dispatch, watch, holds and stops ([`bmesh build`](#bmesh-build)) |
 | `quickfix` | the operator, from a chat | a change asked to be made, made in the chat and landed by the definition of done, with no spec or lead (below) |
+| `ponytail-review` | the operator, from a chat, and `quickfix` | a review of a change, ponytail's own (copied whole, as `third_party/ponytail/PIN` says): bugs, risks, load, missing tests, speed and what to cut, each finding numbered; it changes no code |
 | `scaffold` | the operator, from a chat | a ship repo's shared sections and its rule sets ([`bmesh scaffold`](#bmesh-scaffold)) |
 | `mesh-status` | the operator, from a chat | what's building ([`bmesh mesh-status`](#bmesh-mesh-status)) |
 | `sync` | the operator, from a chat | levelling repos across boxes (below) |
@@ -3390,7 +3424,7 @@ The repo is a Claude Code plugin, `buildermesh`, with thirteen skills. The binar
 | `ideate-engineer` | a round's engineer | a round's method, from reading the repo to the pitch the operator answers with `bmesh choose-ideas` |
 | `ideate-ux` | a round's UI/UX engineer | the same, for how the app looks and feels |
 
-Eight are the operator's chat entry points: `ideate`, `choose-ideas`, `build`, `scaffold` and `mesh-status` for the lifecycle; `quickfix` for a change made without it; `sync` and `prune` across boxes. The nodes the lifecycle starts follow the other five.
+Nine are the operator's chat entry points: `ideate`, `choose-ideas`, `build`, `scaffold` and `mesh-status` for the lifecycle; `quickfix` for a change made without it; `ponytail-review` for a review of a change; `sync` and `prune` across boxes. The nodes the lifecycle starts follow the other five.
 
 #### From a chat
 
@@ -3399,8 +3433,8 @@ From a chat (a phone, or a session with the plugin and no command typed), the op
 - **`buildermesh:ideate`** ("proposals for X", "run a round on X") runs `ideate` on the row's `host` (locally, else over ssh), with what was asked beyond the repo's name as `--context`; watches with `bmesh watch --nodes <repo>-round-<N>`, relaying an engineer's `ask`; and reports the round proposed (its ranked pitch) or blocked. For one idea of the operator's own to be specced (by what was asked, not the words) it starts no two-thread round: `ideate --idea` (one engineer thread, on the row's `host`) when a thread, a model or an effort is asked for, or the idea needs the repo read and measured at length; otherwise it writes the spec itself (one half-pager, or two or three in build order for an idea too big for one lead, `proposed_by: operator`) and lands it on `main` as `proposed`.
 - **`buildermesh:choose-ideas`** (the reply to a pitch, in plain words) runs `choose-ideas`.
 - **`buildermesh:build`** ("build X 3", "build what's accepted in X") runs `build` on the row's `host`, building specs that edit the same files one after another in one family; after a `held` refusal it drains its own family, waits with `bmesh watch` on the named nodes and runs `build` again; a hold by another coordinator's family, or a red `main`, it reports. It watches the leads with `bmesh watch --nodes <paths>`, relays each `ask` and answers it with `bmesh --node operator send`, reports a lead reaching its gate as one line, holds and releases with `hold` and `unhold` ("hold X", "hold land on X", "release X"; see [Holds](#holds)) and stops with `node stop` ("stop X"; see [`bmesh node stop`](#bmesh-node-stop)), never with free text. Once the family's watch is done it names the fixer started for the issues naming bmesh's own repo (see [The fixer](#the-fixer)), makes the quick fixes among the rest itself, as `quickfix` does, writes the others up as proposed specs and drains them (see [`bmesh feedback`](#bmesh-feedback)).
-- **`buildermesh:quickfix`** ("fix X", "hotfix X", "tweak X", "make X do Y") makes a change the operator asks to have made in the chat itself, with no spec, spec id, lead, executor, round or ledger commit. It sizes the change as the definition of done sizes work with no spec (XS one file, S one module, M crosses modules, L changes an interface others depend on) and offers one sized L or larger as a spec instead. It works in a worktree of its own from `origin/main`, never the repo's checkout, whose unpushed commit would hold every lead's `land` (step 8 of [`bmesh land`](#bmesh-land)). It commits and runs `routine run verify`, which needs no node and records the result for the tree; for an M, Opus at medium effort reviews it once in a fresh session and the findings are fixed. Then it rebases onto `origin/main`, verifies again when the rebase brought in commits, and pushes `HEAD:main`. It cuts a release only when the operator wants the change running now and the repo is released by tag. A change the operator asks to have specced is `ideate`'s. A finding reported with no ask to change it ("the label overlaps") is answered with its cause and the fix it would make, and nothing changes. While the operator QAs or says to hold ("I'm QA-ing", "hold off", "don't fix yet"), it keeps a numbered list of findings, each with its cause, fix and size, edits, restarts, commits and starts nothing, and puts a "fix X" on the list unless told now; the release ("go", "fix 1 and 3") makes the picked ones as one quick fix, a commit per finding, with one verify, one review sized by the batch and one push.
-- **`buildermesh:scaffold`** ("scaffold X", "change X's rules") runs `scaffold --check` and shows the diff. When the repo's `AGENTS.md` has no `rules` block, or the operator asked to change its rules, it interviews the operator first: it shows each of the [rule sets](#rule-sets) and asks which to pick (several, or none), recommending `core`, plus `tests` when the repo has tests and `design` when it holds stateful or concurrent code, each with the evidence it saw; it writes the pick as an empty block (`<!-- bmesh:rules <sets> -->` and its closing marker) at the end of `AGENTS.md`, or rewrites the existing opening marker, and runs `scaffold` to fill it; on a `customized` block it asks whether to keep it (the default) or go back to bmesh's sets. Then, on the filled block, it clears conflicts out of the repo's own prose: it reads `AGENTS.md` outside bmesh's markers, `CLAUDE.md` and any file `AGENTS.md` says to read at the start for lines that restate a picked rule (deleted, since the block carries it), contradict one (the operator says which wins: the repo's line, with the rule cut or reworded in the block, which marks it customized, or the rule), or rest on a set not picked (asked the same), and changes only what the operator answers, running `scaffold` again after an edit to the block so its marker reads `customized`. Then it runs the row's verify, commits `Scaffold the shared definition of done, proposals and rules` with those files, and pushes.
+- **`buildermesh:quickfix`** ("fix X", "hotfix X", "tweak X", "make X do Y", or a problem reported, "this 500s") makes a change the operator asks to have made in the chat itself, with no spec, spec id, lead, executor, round or ledger commit. It sizes the change as the definition of done sizes work with no spec (XS one file, S one module, M crosses modules, L changes an interface others depend on) and offers one sized L or larger as a spec instead. It works in a worktree of its own from `origin/main`, never the repo's checkout, whose unpushed commit would hold every lead's `land` (step 8 of [`bmesh land`](#bmesh-land)). It commits and runs `routine run verify`, which needs no node and records the result for the tree. Then it reviews its own diff by the `ponytail-review` skill, in the same session at its own effort, and fixes what that finds in the change; for an M, Opus at medium effort reviews it once more in a fresh session, by the same skill, and the findings are fixed. Then it rebases onto `origin/main`, verifies again when the rebase brought in commits, and pushes `HEAD:main`. It cuts a release only when the operator wants the change running now and the repo is released by tag. A change the operator asks to have specced is `ideate`'s. A problem reported ("the label overlaps") is a change to make, unless the operator is QA-ing. While the operator QAs or says to hold ("I'm QA-ing", "hold off", "don't fix yet"), it keeps a numbered list of findings, each with its cause, fix and size, edits, restarts, commits and starts nothing, and puts a "fix X" on the list unless told now; the release ("go", "fix 1 and 3") makes the picked ones as one quick fix, a commit per finding, with one verify, one review sized by the batch and one push.
+- **`buildermesh:scaffold`** ("scaffold X", "change X's rules") runs `scaffold --check` and shows the diff. When the repo's `AGENTS.md` has no `rules` block, or the operator asked to change its rules, it interviews the operator first: it shows each of the [rule sets](#rule-sets) and asks which to pick (several, or none), recommending `core`, plus `tests` when the repo has tests, `design` when it holds stateful or concurrent code and `ponytail` when the operator wants agents to write the least code a change needs, each with the evidence it saw; it writes the pick as an empty block (`<!-- bmesh:rules <sets> -->` and its closing marker) at the end of `AGENTS.md`, or rewrites the existing opening marker, and runs `scaffold` to fill it; on a `customized` block it asks whether to keep it (the default) or go back to bmesh's sets. Then, on the filled block, it clears conflicts out of the repo's own prose: it reads `AGENTS.md` outside bmesh's markers, `CLAUDE.md` and any file `AGENTS.md` says to read at the start for lines that restate a picked rule (deleted, since the block carries it), contradict one (the operator says which wins: the repo's line, with the rule cut or reworded in the block, which marks it customized, or the rule), or rest on a set not picked (asked the same), and changes only what the operator answers, running `scaffold` again after an edit to the block so its marker reads `customized`. Then it runs the row's verify, commits `Scaffold the shared definition of done, proposals and rules` with those files, and pushes.
 - **`buildermesh:mesh-status`** ("what's building", "where is X") summarises `mesh-status` (and `spec list` for a named repo) as working, asking, silent, stopped and done since the last look.
 
 `ideate` and `mesh-status` also run "stop X" as `node stop`, never as a message, which would wake the node. `ideate` and `build` add the Fable fallback the binary lacks: a Fable model the runner rejects runs once more with `--model claude-opus-5-5`, and the skill reports what the runner said.

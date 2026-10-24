@@ -149,7 +149,7 @@ verified: review ok t:3f2a9c1e m:claude-opus-5-5 c:81d0b7a4; verify ok t:3f2a9c1
 
 A lead reports problems outside its spec as feedback. When a batch started from a chat is done, the plugin's `build` skill makes the quick fixes itself without asking you, writes the rest up as proposed specs for your review and tags the next version with `bmesh release`. In a chat, say "proposals for app", "1 and 3 yes", "build what's accepted in app" or "what's building".
 
-A fix or a tweak skips all of this. Say "fix the login button in app" and the plugin's `quickfix` skill makes the change in the chat, runs `verify`, has it reviewed only when it crosses modules, and pushes it to `main`: no spec, no lead. A change that alters an interface others depend on, it offers as a spec instead. Say you're QA-ing (or "hold off") and it lists each thing you report with its cause and fix, changing nothing until you say "go" or "fix 1 and 3".
+A fix or a tweak skips all of this. Say "fix the login button in app", or just what's wrong with it, and the plugin's `quickfix` skill makes the change in the chat, runs `verify`, reviews its own diff with [ponytail](https://github.com/DietrichGebert/ponytail)'s review (plus an Opus review when it crosses modules), and pushes it to `main`: no spec, no lead. A change that alters an interface others depend on, it offers as a spec instead. Say you're QA-ing (or "hold off") and it lists each thing you report with its cause and fix, changing nothing until you say "go" or "fix 1 and 3".
 
 ## Quickstart (single box)
 
@@ -331,7 +331,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 
 - **`bmesh`**: the CLI, daemon, map server and NATS hub in one binary.
 - **Runners**: `t3` (a T3 Code thread), `claude` (headless `claude -p` turns) or `tmux` runs each session.
-- **The plugin**: thirteen Claude Code skills, eight for your chat and five that the sessions bmesh starts follow.
+- **The plugin**: fourteen Claude Code skills, nine for your chat and five that the sessions bmesh starts follow.
 - **Specs**: `docs/proposals/NNN-slug.md` in each repo, with status, builder, merged commit and `verified` line in the frontmatter.
 
 The [manual](docs/manual.md) covers every command, flag, config key, output and refusal, and the concepts behind them. [Internals](docs/internals.md) covers NATS subjects, buckets, record shapes and signing.

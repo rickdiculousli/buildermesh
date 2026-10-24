@@ -8,7 +8,7 @@
     {
       "name": "buildermesh",
       "version": "0.7.4",
-      "description": "The operator skills (ideate, choose-ideas, build, scaffold, mesh-status: the chat entry points to the build lifecycle; sync and prune across boxes) and the lead, executor, ideate-engineer and ideate-ux skills for nodes on a buildermesh mesh: delegation shape, checkpoints, branch hand-back, the verified line and the proposal round, over the bmesh CLI; and a session hook that says which box a session runs on (bmesh hosts --here) and when this box's bmesh is behind main (bmesh update --notice).",
+      "description": "The operator skills (ideate, choose-ideas, build, scaffold, mesh-status: the chat entry points to the build lifecycle; quickfix for a change made in the chat; ponytail-review, ponytail's review of a change; sync and prune across boxes) and the lead, executor, fix, ideate-engineer and ideate-ux skills for nodes on a buildermesh mesh: delegation shape, checkpoints, branch hand-back, the verified line and the proposal round, over the bmesh CLI; and a session hook that says which box a session runs on (bmesh hosts --here) and when this box's bmesh is behind main (bmesh update --notice).",
       "author": {
         "name": "Rick Li"
       },

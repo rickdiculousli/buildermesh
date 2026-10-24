@@ -107,16 +107,23 @@ func TestApplyRulesEmptyMarkerStaysOff(t *testing.T) {
 
 func TestApplyRulesRefusesAnUnknownSet(t *testing.T) {
 	_, _, err := ApplyRules("<!-- bmesh:rules core style -->\n<!-- /bmesh:rules -->\n")
-	if err == nil || err.Error() != "AGENTS.md: unknown rule set style; bmesh has core, design, tests, tdd, prose" {
+	if err == nil || err.Error() != "AGENTS.md: unknown rule set style; bmesh has core, design, tests, tdd, prose, ponytail" {
 		t.Fatal(err)
 	}
 }
 
+// Every set is embedded, and none holds a heading: one would end its
+// "### <name>" section in AGENTS.md early.
 func TestEveryRuleSetIsEmbedded(t *testing.T) {
 	for _, n := range RuleSets {
 		text, ok := RuleSet(n)
-		if !ok || !strings.HasPrefix(text, "- ") {
+		if !ok || text == "" {
 			t.Errorf("%s: %v %q", n, ok, text)
+		}
+		for _, line := range strings.Split(text, "\n") {
+			if strings.HasPrefix(line, "#") {
+				t.Errorf("%s holds a heading: %q", n, line)
+			}
 		}
 	}
 	if _, ok := RuleSet("rules"); ok {

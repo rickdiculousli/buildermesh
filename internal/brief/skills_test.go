@@ -54,7 +54,7 @@ func TestEverySkillFrontmatterParses(t *testing.T) {
 		if dir := filepath.Base(filepath.Dir(f)); name != dir {
 			t.Errorf("%s: name %q, want %q", f, name, dir)
 		}
-		if strings.Contains(desc, "\n") {
+		if strings.Contains(strings.TrimSuffix(desc, "\n"), "\n") {
 			t.Errorf("%s: description spans lines: %q", f, desc)
 		}
 	}
@@ -69,12 +69,13 @@ func TestSkillFrontmatterRefusesAPlainColon(t *testing.T) {
 
 // The skills name no pstack moment (none was ever listed), restate no
 // engineering rule (the repo's AGENTS.md carries those), and the scaffold
-// skill asks which rule sets a repo gets.
+// skill asks which rule sets a repo gets. Ponytail's copies are its own text.
 func TestSkillsLeaveRulesToAgentsMD(t *testing.T) {
+	copies := ponytailCopies(t)
 	var files []string
 	for _, dir := range []string{filepath.Join("..", "..", "skills"), "templates"} {
 		err := filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
-			if err == nil && !d.IsDir() {
+			if err == nil && !d.IsDir() && !copies[filepath.ToSlash(p)] {
 				files = append(files, p)
 			}
 			return err
@@ -110,4 +111,23 @@ func TestSkillsLeaveRulesToAgentsMD(t *testing.T) {
 			t.Errorf("the scaffold skill lacks %q", w)
 		}
 	}
+}
+
+// ponytailCopies is the files third_party/ponytail/PIN names as copied
+// verbatim (its `copy <upstream> <ours>` lines), as paths from this package.
+func ponytailCopies(t *testing.T) map[string]bool {
+	b, err := os.ReadFile(filepath.Join("..", "..", "third_party", "ponytail", "PIN"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	copies := map[string]bool{}
+	for _, line := range strings.Split(string(b), "\n") {
+		if f := strings.Fields(line); len(f) == 3 && f[0] == "copy" {
+			copies["../../"+f[2]] = true
+		}
+	}
+	if len(copies) == 0 {
+		t.Fatal("PIN names no copy")
+	}
+	return copies
 }
