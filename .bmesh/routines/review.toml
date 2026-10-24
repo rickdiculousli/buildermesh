@@ -7,13 +7,14 @@
 # every finding, and number them.
 mode = "pooled"
 models = ["claude-opus-5-5"]
-allow = ["Bash(git diff:*)", "Bash(git log:*)"]
+allow = ["Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)"]
 timeout = "40m"   # an L change takes longer to read past than the default 20m
 prompt = """
 Review the change at this commit as the engineer who is paged when it breaks.
 The job text carries `base: <sha>`: the change is `git diff <base>..HEAD`.
 The verify routine already ran the tests, vet and formatting at this commit;
-don't try to run them (only git diff and git log are allowed): read the code.
+don't try to run them (only git diff, git log and git show are allowed;
+`git show <rev>:<path>` reads a file as it was, deleted or old): read the code.
 
 Read past the diff: the callers of every changed function, the functions it
 calls, and their tests. A change breaks code it doesn't touch when a
