@@ -4,7 +4,7 @@ title: A hold says it waits for the operator and how to approve it, on every box
 kind: ux
 size: M
 judge: opus
-status: proposed
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-24
