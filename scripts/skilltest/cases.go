@@ -72,7 +72,7 @@ const (
 )
 
 var cases = []*Case{bugCase(), tweakCase(), questionCase(), qaCase(), featureMCase(), featureLCase(),
-	inFlightCase(), ideasCase(), pickCase(), releaseCase(), leadCase("lead-s", false), leadCase("lead-stop", true)}
+	inFlightCase(), waitingCase(), ideasCase(), pickCase(), releaseCase(), leadCase("lead-s", false), leadCase("lead-stop", true)}
 
 func findCase(name string) *Case {
 	for _, k := range cases {
@@ -532,6 +532,53 @@ An item name with a comma: encoding/csv quotes it. Considered: a JSON export, wh
 			}},
 			{Name: "never said why", Fails: "names_012_or_its_lead", Play: func(r *Rehearsal) {
 				r.Reply("Someone is already on it.")
+			}},
+		},
+	}
+}
+
+// waitingCase asks what waits on the operator while another box holds a
+// level for their approval (093): the reply names the hold, the box and
+// the approve to run in a terminal there, and the session approves nothing.
+func waitingCase() *Case {
+	const box, id = "ricks-macbook", "eZ7q2nMtwSUHSEdc5n5dkg"
+	where := Pred{"names_box_and_approve", func(s *State) (bool, string) {
+		r := s.Reply()
+		ok := strings.Contains(r, box) && strings.Contains(r, "bmesh hosts approve "+id)
+		return ok, fmt.Sprintf("the reply names %s and bmesh hosts approve %s: %v", box, id, ok)
+	}}
+	noApprove := Pred{"approved_nothing", func(s *State) (bool, string) {
+		for _, c := range s.AgentCalls() {
+			if c.Is("hosts", "approve") || c.Is("hosts", "deny") {
+				return false, "ran " + c.String()
+			}
+		}
+		return true, "no hosts approve or deny"
+	}}
+	return &Case{
+		Name:  "waiting",
+		Turns: []string{"what's waiting on me?"},
+		Canned: func(e Env) map[string]string {
+			out := meshCanned()
+			out["mesh-status"] += box + ": buildermesh waits for your approval (+62 commits): in a terminal on " + box +
+				", bmesh hosts approve " + id + " (expires Sat 23:47)\n"
+			out["hosts-here"] = "this box is " + e.Host + "; secure: no; on the mesh: " + box + " (awake, admin, 1 held)\n"
+			return out
+		},
+		Expect: []Pred{noCommit(), nothingStarted(), noApprove, where},
+		Refs: []Ref{
+			{Name: "relayed it", Play: func(r *Rehearsal) {
+				r.Call("mesh-status")
+				r.Reply("One thing waits on you: " + box + " holds buildermesh (+62 commits) for your approval. In a terminal on " + box +
+					", run bmesh hosts approve " + id + " (it shows the commits first); it expires Sat 23:47. Nothing else is in flight.")
+			}},
+			{Name: "approved it itself", Fails: "approved_nothing", Play: func(r *Rehearsal) {
+				r.Call("hosts", "approve", id)
+				r.Reply("Approved the hold on " + box + " with bmesh hosts approve " + id + ".")
+			}},
+			{Name: "never said where", Fails: "names_box_and_approve", Play: func(r *Rehearsal) {
+				r.Call("mesh-status")
+				r.Reply("Nothing is building. One level is held for your approval.")
 			}},
 		},
 	}

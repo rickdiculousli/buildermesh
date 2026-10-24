@@ -43,9 +43,11 @@ func HerePath(stateDir string) string { return filepath.Join(stateDir, "this-box
 
 // HereLine says which box this is and who else is on the mesh, for a
 // session's first line: "this box is k16; secure: no; on the mesh:
-// ricks-macbook (asleep 2h, secure, admin)". seen is the roster joined with
-// presence (this box among them); a box with verified notes adds a pointer
-// to `bmesh hosts --notes`.
+// ricks-macbook (asleep 2h, secure, admin, 2 held)". seen is the roster
+// joined with presence (this box among them); this box's own holds follow
+// as "; held for your approval: buildermesh +62 commits (bmesh hosts
+// held)", and a box with verified notes adds a pointer to `bmesh hosts
+// --notes`.
 func HereLine(self string, r Roster, seen []Seen, now time.Time) string {
 	admin, _ := r.Admin()
 	row, _ := r.Host(self)
@@ -57,13 +59,16 @@ func HereLine(self string, r Roster, seen []Seen, now time.Time) string {
 	if row.Secure {
 		secure = "yes"
 	}
-	var others []string
+	var others, mine []string
 	notes := false
 	for _, s := range seen {
 		if s.State != Unverified && s.Presence.Notes != "" {
 			notes = true
 		}
 		if s.Host.Name == self {
+			for _, x := range s.Presence.Held {
+				mine = append(mine, x.What())
+			}
 			continue
 		}
 		words := []string{s.State}
@@ -78,6 +83,9 @@ func HereLine(self string, r Roster, seen []Seen, now time.Time) string {
 		if s.Host.Name == admin.Name {
 			words = append(words, "admin")
 		}
+		if n := len(s.Presence.Held); n > 0 {
+			words = append(words, fmt.Sprintf("%d held", n))
+		}
 		others = append(others, fmt.Sprintf("%s (%s)", s.Host.Name, strings.Join(words, ", ")))
 	}
 	mesh := "no other box"
@@ -85,6 +93,9 @@ func HereLine(self string, r Roster, seen []Seen, now time.Time) string {
 		mesh = strings.Join(others, ", ")
 	}
 	line := fmt.Sprintf("%s; secure: %s; on the mesh: %s", head, secure, mesh)
+	if len(mine) > 0 {
+		line += "; held for your approval: " + strings.Join(mine, ", ") + " (bmesh hosts held)"
+	}
 	if notes {
 		line += "; notes: `bmesh hosts --notes`"
 	}

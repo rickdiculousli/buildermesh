@@ -197,3 +197,72 @@ func TestPresence(t *testing.T) {
 		t.Errorf("k16 four minutes on: %s", got)
 	}
 }
+
+// A box's holds travel in its presence under their own signature: an
+// expired one is dropped on read, a box on an older release (which checks
+// only sig) still verifies the entry, and holds signed by another key make
+// it unverified.
+func TestPresenceHolds(t *testing.T) {
+	ctx, c := hub(t)
+	kv, err := Bucket(ctx, c.JS, BucketHosts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := testRoster(2)
+	now := time.Now()
+	live := PresenceHold{Repo: "buildermesh", Commits: 62, ID: "j1", Expires: Stamp(now.Add(time.Hour))}
+	gone := PresenceHold{Kind: HeldRegistry, From: "k16", Commits: 2, ID: "j0", Expires: Stamp(now.Add(-time.Minute))}
+	p := Presence{Host: "mac", Rev: "abc", OS: "darwin", TS: Stamp(now), Held: []PresenceHold{gone, live}}
+	p.Sign(keyFor("mac"))
+	if err := verify(pubFor("mac"), p.Sig, p.Bytes()); err != nil {
+		t.Fatalf("an older release's check of the entry: %v", err)
+	}
+	if err := PutPresence(ctx, kv, p); err != nil {
+		t.Fatal(err)
+	}
+	forged := Presence{Host: "k16", Rev: "x", OS: "linux", TS: Stamp(now)}
+	forged.Sign(keyFor("k16"))
+	forged.Held = []PresenceHold{live}
+	other := forged
+	other.Sign(keyFor("mac"))
+	forged.HeldSig = other.HeldSig
+	if err := PutPresence(ctx, kv, forged); err != nil {
+		t.Fatal(err)
+	}
+	seen, err := ReadPresence(ctx, kv, r, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range seen {
+		switch s.Host.Name {
+		case "mac":
+			if s.State != Awake || len(s.Presence.Held) != 1 || s.Presence.Held[0] != live {
+				t.Errorf("mac: %+v", s)
+			}
+		case "k16":
+			if s.State != Unverified || len(s.Presence.Held) != 0 {
+				t.Errorf("k16 (holds signed by mac): %+v", s)
+			}
+		}
+	}
+}
+
+func TestPresenceHoldWords(t *testing.T) {
+	exp := time.Date(2026, 10, 24, 23, 47, 0, 0, time.Local)
+	level := PresenceHold{Repo: "buildermesh", Commits: 62, ID: "eZ7q", Expires: Stamp(exp)}
+	reg := PresenceHold{Kind: HeldRegistry, From: "k16", Commits: 1, ID: "Ab9", Expires: Stamp(exp)}
+	for _, tc := range []struct{ got, want string }{
+		{level.What(), "buildermesh +62 commits"},
+		{level.Waits("ricks-macbook"), "ricks-macbook: buildermesh waits for your approval (+62 commits)"},
+		{level.Step("ricks-macbook"), "In a terminal on ricks-macbook: bmesh hosts approve eZ7q (it shows the commits first), " +
+			"or bmesh hosts deny eZ7q to leave it as it is. Expires Sat 23:47."},
+		{reg.What(), "a registry proposal from k16 (1 row change)"},
+		{reg.Waits("mac"), "mac: a registry proposal from k16 waits for your approval (1 row change)"},
+		{reg.Step("mac"), "In a terminal on mac: bmesh hosts approve Ab9 (it shows the diff first), " +
+			"or bmesh hosts deny Ab9 to leave it as it is. Expires Sat 23:47."},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("got  %q\nwant %q", tc.got, tc.want)
+		}
+	}
+}

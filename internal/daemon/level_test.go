@@ -154,7 +154,9 @@ func TestLevelJobFastForwardsAndRefuses(t *testing.T) {
 	l.send(t, j)
 	l.reply(t, j, 1)
 	got := l.claims(t, "level")
-	if len(got) != 1 || got[0].Text != "testhost: plug refused: dirty (job from mac)" {
+	if len(got) != 1 || got[0].Text != "testhost: plug refused: dirty (job from mac)" ||
+		got[0].Detail != "testhost: plug refused: dirty (job from mac). testhost's checkout of plug stays where it is until you settle it. "+
+			"In a terminal on testhost: git -C "+l.box+" status, then bmesh sync --repo plug." {
 		t.Fatalf("level events %+v", got)
 	}
 }
@@ -260,9 +262,18 @@ func TestHoldApproveAndMovedTarget(t *testing.T) {
 	if got := meshtest.Git(t, l.box, "rev-parse", "HEAD"); got != before {
 		t.Fatal("a held level moved the box")
 	}
-	if ev := l.claims(t, "held"); len(ev) != 1 || ev[0].Text != "testhost holds: plug +1 commit (mac)" {
+	exp, _ := hosts.ParseStamp(j.Expires)
+	at := exp.Local().Format("Mon 15:04")
+	ev := l.claims(t, "held")
+	if len(ev) != 1 || ev[0].Text != "testhost: plug waits for your approval (+1 commit)" || ev[0].Body != j.ID ||
+		ev[0].Detail != "New sessions on testhost load its skills and plugins. In a terminal on testhost: bmesh hosts approve "+j.ID+
+			" (it shows the commits first), or bmesh hosts deny "+j.ID+" to leave it as it is. Expires "+at+"." {
 		t.Fatalf("held events %+v", ev)
 	}
+	// Presence carries it, and the session line names it.
+	want := hosts.PresenceHold{Repo: "plug", Commits: 1, ID: j.ID, Expires: j.Expires}
+	l.waitPresence(t, func(p []hosts.PresenceHold) bool { return len(p) == 1 && p[0] == want })
+	l.waitHere(t, "; held for your approval: plug +1 commit (bmesh hosts held)")
 	// Signed by another key: refused, still held.
 	if ans := l.approve(t, all[0], "mac"); ans.OK || !strings.Contains(ans.Text, "approve key") {
 		t.Fatalf("a forged approval: %+v", ans)
@@ -289,6 +300,42 @@ func TestHoldApproveAndMovedTarget(t *testing.T) {
 	if len(l.held(t)) != 0 {
 		t.Fatal("the hold outlived its approval")
 	}
+	l.waitPresence(t, func(p []hosts.PresenceHold) bool { return len(p) == 0 })
+}
+
+// waitPresence waits until the test host's verified presence on the hub
+// carries holds ok accepts.
+func (l *levelFixture) waitPresence(t *testing.T, ok func([]hosts.PresenceHold) bool) {
+	t.Helper()
+	ctx := context.Background()
+	kv, err := hosts.Bucket(ctx, l.c.JS, hosts.BucketHosts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var last []hosts.Seen
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		if last, err = hosts.ReadPresence(ctx, kv, l.roster, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range last {
+			if s.Host.Name == testHost && s.State == hosts.Awake && ok(s.Presence.Held) {
+				return
+			}
+		}
+	}
+	t.Fatalf("presence %+v", last)
+}
+
+// waitHere waits until this-box.txt holds s.
+func (l *levelFixture) waitHere(t *testing.T, s string) {
+	t.Helper()
+	var b []byte
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		if b, _ = os.ReadFile(hosts.HerePath(l.d.StateDir)); strings.Contains(string(b), s) {
+			return
+		}
+	}
+	t.Fatalf("this-box.txt %q, want %q in it", b, s)
 }
 
 func TestHoldExpiresWithItsJob(t *testing.T) {
@@ -322,7 +369,8 @@ func TestSelfLevelIsHeldOnASecureBox(t *testing.T) {
 	if len(all) != 1 || !all[0].Self || all[0].Target != top || all[0].Job.By != testHost {
 		t.Fatalf("holds %+v", all)
 	}
-	if ev := l.claims(t, "held"); len(ev) != 1 || ev[0].Text != "testhost holds: plug +1 commit (self-level)" {
+	if ev := l.claims(t, "held"); len(ev) != 1 || ev[0].Text != "testhost: plug waits for your approval (+1 commit)" ||
+		!strings.Contains(ev[0].Detail, "bmesh hosts approve "+all[0].ID+" (it shows the commits first)") {
 		t.Fatalf("held events %+v", ev)
 	}
 	// A wake doesn't hold it twice.
@@ -345,11 +393,16 @@ func TestPushHoldsAndUnansweredLevels(t *testing.T) {
 	f.d.Cfg.Hosts.Enabled = true
 	startPush(t, f.d)
 	time.Sleep(200 * time.Millisecond)
-	f.event(t, mesh.Event{From: "daemon.mac", Event: "held", Body: "job1", Text: "mac holds: pstack-claude +3 commits (k16)"})
+	f.event(t, mesh.Event{From: "daemon.mac", Event: "held", Body: "job1", Text: "mac: pstack-claude waits for your approval (+3 commits)",
+		Detail: "New sessions on mac load its skills and plugins. In a terminal on mac: bmesh hosts approve job1 ..."})
 	f.event(t, mesh.Event{From: "daemon.mac", Event: "level", Body: "plug", Text: "mac: plug refused: diverged (job from k16)"})
-	got := n.waitRequests(t, 2)
-	if got[0].Title != "mac holds: pstack-claude +3 commits (k16)" || got[1].Title != "mac: plug refused: diverged (job from k16)" ||
-		got[1].Priority != "high" {
+	// An older box's hold has no detail: its text is the body too.
+	f.event(t, mesh.Event{From: "daemon.pi", Event: "held", Body: "job2", Text: "pi holds: plug +1 commit (k16)"})
+	got := n.waitRequests(t, 3)
+	if got[0].Title != "mac: pstack-claude waits for your approval (+3 commits)" ||
+		got[0].Body != "New sessions on mac load its skills and plugins. In a terminal on mac: bmesh hosts approve job1 ..." ||
+		got[1].Title != "mac: plug refused: diverged (job from k16)" || got[1].Body != got[1].Title || got[1].Priority != "high" ||
+		got[2].Title != "pi holds: plug +1 commit (k16)" || got[2].Body != got[2].Title {
 		t.Fatalf("pushes %+v", got)
 	}
 }

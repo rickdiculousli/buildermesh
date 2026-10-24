@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"regexp"
@@ -371,10 +372,11 @@ func pushRefused(ctx context.Context, d Deps, s mesh.Stored, path string, jobs c
 }
 
 // pushHostsEvent claims a daemon's held, level, registry or scaffold event
-// s, once: a hold (title its text, `ricks-macbook holds: pstack-claude +3
-// commits (k16)`), a level's refusal or failure no caller waited for, a
+// s, once: a hold (`ricks-macbook: pstack-claude waits for your approval
+// (+3 commits)`), a level's refusal or failure no caller waited for, a
 // registry the box refused, or a rescaffold's outcome (a failure only the
-// first time for its registry version: a retry's body ends ` again`).
+// first time for its registry version: a retry's body ends ` again`). The
+// title is the event's text, the body its detail, else the text again.
 func pushHostsEvent(ctx context.Context, d Deps, s mesh.Stored, path, event string, jobs chan<- pushJob) {
 	ev, err := decodeEvent(s.Data)
 	if err != nil || ev.Text == "" {
@@ -390,7 +392,7 @@ func pushHostsEvent(ctx context.Context, d Deps, s mesh.Stored, path, event stri
 	case event == "level" || event == "registry" || event == "scaffold":
 		h.Priority, h.Tags = "high", "warning"
 	}
-	req := PushRequest{Headers: h, Body: cutUTF8(ev.Text, pushBodyMax)}
+	req := PushRequest{Headers: h, Body: cutUTF8(cmp.Or(ev.Detail, ev.Text), pushBodyMax)}
 	claim := mesh.Event{From: d.from(), Event: "push", To: path, Text: req.Title, Seq: s.Seq,
 		At: d.Now().UTC().Format(time.RFC3339)}
 	dup, err := mesh.PublishEventID(ctx, d.Client, claim, fmt.Sprintf("push-%d", s.Seq))

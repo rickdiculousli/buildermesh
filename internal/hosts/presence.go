@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -42,7 +43,9 @@ type Seen struct {
 	Presence Presence `json:"presence"`
 }
 
-// ReadPresence joins each roster box with its presence entry.
+// ReadPresence joins each roster box with its presence entry. A verified
+// entry keeps only its holds that haven't expired by now (an asleep box's
+// entry is as old as its last minute awake).
 func ReadPresence(ctx context.Context, kv jetstream.KeyValue, r Roster, now time.Time) ([]Seen, error) {
 	var out []Seen
 	for _, h := range r.Hosts {
@@ -63,6 +66,10 @@ func ReadPresence(ctx context.Context, kv jetstream.KeyValue, r Roster, now time
 			default:
 				s.State = Awake
 			}
+			if s.State == Unverified {
+				p.Held = nil
+			}
+			p.Held = slices.DeleteFunc(p.Held, func(x PresenceHold) bool { return x.Expired(now) })
 			s.Presence = p
 		}
 		out = append(out, s)

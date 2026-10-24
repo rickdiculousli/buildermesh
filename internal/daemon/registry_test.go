@@ -73,7 +73,8 @@ func TestDaemonTakesARegistryAndRefusesOneItCantRead(t *testing.T) {
 	waitTrue(t, "the refusal is published", func() bool { return len(h.claims(t, "registry")) > 0 })
 	time.Sleep(500 * time.Millisecond) // several ticks
 	evs := h.claims(t, "registry")
-	if len(evs) != 1 || !strings.Contains(evs[0].Text, testHost+": refused: registry v2 needs a newer bmesh (unknown key repos.app.agent)") {
+	if len(evs) != 1 || !strings.Contains(evs[0].Text, testHost+": refused: registry v2 needs a newer bmesh (unknown key repos.app.agent)") ||
+		!strings.HasSuffix(evs[0].Detail, ". "+testHost+" keeps the rows it has until its bmesh can read v2. In a terminal on "+testHost+": bmesh update.") {
 		t.Fatalf("registry events: %+v", evs)
 	}
 	if b, _ := os.ReadFile(repos); string(b) != v1 {
@@ -150,8 +151,16 @@ func TestProposeHoldsTheDiffOnTheAdminBox(t *testing.T) {
 	if r, _, _ := hosts.LoadRegistry(f.d.StateDir, hostPub("admin")); r.Version != 1 {
 		t.Fatalf("a held proposal moved the registry to v%d", r.Version)
 	}
-	if len(h.claims(t, "held")) != 2 {
-		t.Fatalf("held events: %+v", h.claims(t, "held"))
+	evs := h.claims(t, "held")
+	if len(evs) != 2 {
+		t.Fatalf("held events: %+v", evs)
+	}
+	x := held[0].Presence()
+	if ev := evs[1]; ev.Text != testHost+": a registry proposal from k16 waits for your approval (1 row change)" ||
+		ev.Detail != "Approving publishes its rows as the next registry, which every box takes. In a terminal on "+testHost+
+			": bmesh hosts approve "+x.ID+" (it shows the diff first), or bmesh hosts deny "+x.ID+" to leave it as it is. Expires "+
+			x.ExpiresAt()+"." {
+		t.Fatalf("held event: %+v", ev)
 	}
 }
 

@@ -512,7 +512,7 @@ help) usage ;;
 version) echo "bmesh (skilltest's fake)" ;;
 hosts)
 	if has here "$@"; then
-		echo "this box is $host; secure: no; on the mesh: no other box"
+		out hosts-here || echo "this box is $host; secure: no; on the mesh: no other box"
 	elif has notes "$@"; then
 		echo "$host: no notes"
 	else

@@ -1371,12 +1371,13 @@ Then, in order:
 
 1. `<path> held before land by <by> <age> ago: <why>` per hold (see [Holds](#holds));
 2. `<path> landing <age>: <text>` per ready request, its age since `bmesh ready` and the lead's `landing` text (`: held, waiting for the release` while held; `landed <sha8> (ready <age> ago); the final wake is pending` or `land refused (ready <age> ago): <refusal>; the wake carrying it is pending` while the daemon owes the lead its wake; see [`bmesh ready`](#bmesh-ready));
-3. `fixes: N pending for <repo> (<fixer> <state>)`, the open issues naming bmesh's own repo (see [The fixer](#the-fixer)): the parentheses read `(<fixer> <state>)` while a fixer has them (`fixes: N pending for <repo> (<fixer> working)`), `(starts within a minute)` when the daemon starts one on its next pass, `(<fixer> blocked)` while the newest fixer's block waits on the operator, and `(<fixer> done; they wait on you)` when the fixer had them and left them;
-4. `feedback: N pending in <family>` per family with other feedback pending (see [`bmesh feedback`](#bmesh-feedback));
-5. `t3 sign-in on <host>: expires in N days (bmesh t3 login)` with the `t3` runner and this box's T3 sign-in under 7 days from expiry (`expires in 1 day` in the singular, and `t3 sign-in on <host>: expired (bmesh t3 login)` once it has expired; see [`bmesh t3 login`](#bmesh-t3-login));
-6. the behind-main notice (see [Updates](#updates));
-7. the hub line when this box's `bmesh hub` runs an older binary than its `bmesh serve` (see [Several boxes](#several-boxes));
-8. the `operator: ...` lines `bmesh spec steps` prints with no id (see [`bmesh spec steps`](#bmesh-spec-steps) and [The ledger](#the-ledger)).
+3. `<host>: <repo> waits for your approval (+<N> commits): in a terminal on <host>, bmesh hosts approve <id> (expires <day hh:mm>)` per hold any box's presence carries (`<host>: a registry proposal from <box> waits for your approval (<N> row changes): ...` for a registry proposal), this box's own among them; none with `[hosts]` off (see [Hosts: The hold](#levelling));
+4. `fixes: N pending for <repo> (<fixer> <state>)`, the open issues naming bmesh's own repo (see [The fixer](#the-fixer)): the parentheses read `(<fixer> <state>)` while a fixer has them (`fixes: N pending for <repo> (<fixer> working)`), `(starts within a minute)` when the daemon starts one on its next pass, `(<fixer> blocked)` while the newest fixer's block waits on the operator, and `(<fixer> done; they wait on you)` when the fixer had them and left them;
+5. `feedback: N pending in <family>` per family with other feedback pending (see [`bmesh feedback`](#bmesh-feedback));
+6. `t3 sign-in on <host>: expires in N days (bmesh t3 login)` with the `t3` runner and this box's T3 sign-in under 7 days from expiry (`expires in 1 day` in the singular, and `t3 sign-in on <host>: expired (bmesh t3 login)` once it has expired; see [`bmesh t3 login`](#bmesh-t3-login));
+7. the behind-main notice (see [Updates](#updates));
+8. the hub line when this box's `bmesh hub` runs an older binary than its `bmesh serve` (see [Several boxes](#several-boxes));
+9. the `operator: ...` lines `bmesh spec steps` prints with no id (see [`bmesh spec steps`](#bmesh-spec-steps) and [The ledger](#the-ledger)).
 
 `--all` lists every node; `--json` carries every node whatever the flag, as the map's `/api/nodes` does: an array of `{"node","state","runner","unread"}`, a held node's with `hold`, a node with a ready request with `ready` (`{"phase","head","at"}`). `--json` prints only the array, none of the lines after the table.
 
@@ -2533,7 +2534,7 @@ On any box but the admin, with `[hosts]` on, sends this box's `repos.toml` to th
 2. It prints the same diff as `publish`, against the registry it has: `proposed against registry v<N>:`. An unchanged file prints `no change against registry v<N>` and stops.
 3. It sends the box's `repos.toml` to the admin box as a `propose` job (args `[<base version>, <rows>]`). The admin box's row must accept `propose`.
 4. The admin's daemon refuses rows it can't read, and a proposal against an older version than its registry: `refused: proposed against registry v<N>; it is v<M> now: propose again`.
-5. Otherwise the admin's daemon holds the proposal with its row diff, pushes `<admin> holds: registry proposal from <box>, <N> row changes` and answers `held for approval as <id> (<N> row changes against registry v<base>)`. A newer proposal from the same box supersedes it.
+5. Otherwise the admin's daemon holds the proposal with its row diff, pushes `<admin>: a registry proposal from <box> waits for your approval (<N> row changes)` (body `Approving publishes its rows as the next registry, which every box takes. In a terminal on <admin>: bmesh hosts approve <id> (it shows the diff first), or bmesh hosts deny <id> to leave it as it is. Expires <day hh:mm>.`) and answers `held for approval as <id> (<N> row changes against registry v<base>)`. A newer proposal from the same box supersedes it.
 
 Nothing changes until the operator approves it with [`bmesh hosts approve`](#bmesh-hosts-approve) on the admin box. [`bmesh hosts held`](#bmesh-hosts-held) lists it. A proposal the registry has moved past, or past its job's expiry, is dropped and its proposer told so. [`bmesh hosts deny`](#bmesh-hosts-deny) drops it too.
 
@@ -2671,7 +2672,7 @@ There is no hint for a binary or daemon of unknown revision, for commands that r
 
 - History is read where `bmesh update` reads it: `[update] repo`'s main checkout, else the row of the daemon's own module, else the module's `main` fetched into `<user cache dir>/bmesh/update/upstream` (once per binary whose commit it lacks).
 - It waits while `bmesh update` holds `<state dir>/update.lock`, from before its swap to the end of its walk, and tries again at the next rescan. On Windows the lock does nothing, so a Windows daemon may restart while the steps run.
-- It refuses a binary whose walk isn't finished (notes pending for its release; see [Upgrading](#upgrading)) or whose `config check` fails against this box's config: `update: v0.3.3 is at <path> but its walk is unfinished (upgrade notes pending since v0.3.2: run bmesh update); not restarting onto it`, or `... but its config check failed: <why>; ...`. That is logged, written as the notice and pushed through `[notify]` once per binary, walk record and config, and checked again when any of them changes (a new binary, a finished walk, an edited `config.toml` or `repos.toml`).
+- It refuses a binary whose walk isn't finished (notes pending for its release; see [Upgrading](#upgrading)) or whose `config check` fails against this box's config: `update: v0.3.3 is at <path> but its walk is unfinished (upgrade notes pending since v0.3.2: run bmesh update); not restarting onto it`, or `... but its config check failed: <why>; ...`. That is logged, written as the notice and pushed through `[notify]` once per binary, walk record and config (titled `bmesh update waits on <host>`, the body going on `In a terminal on <host>: bmesh update, which finishes the walk.` or `Fix what it names in <host>'s config: the daemon checks again when the config changes.`), and checked again when any of them changes (a new binary, a finished walk, an edited `config.toml` or `repos.toml`).
 - A binary with no revision (`go install` from a worktree), an older one (a rollback by hand) or one on another line is left alone, as is every binary on a daemon with no history to read, no state dir, or (on Windows) no `serve --restart`. The restart line and the hint then still name the command.
 - A daemon from before this rule doesn't restart itself, so the update that brings it in still needs the restart command once.
 
@@ -2725,7 +2726,7 @@ That `update`, finding the binary current, walks the pending notes from the reco
 
 **The daemon's self-update** (`[update] repo`, or `upstream`) never walks. Before the swap it runs the new binary's config check and plans the walk, from where this box last walked to: the running binary, or, while notes are still pending, the recorded release (else the revision a swap replaced), so a second release swapped in before `bmesh update` keeps the first one's steps.
 
-- The daemon logs and pushes a refused config (`update to v0.2.0: config check failed: ...; keeping this binary`) and a walk with an ask or `confirm` step (`update to v0.2.0 waits on bmesh update (2 asks)`). The daemon answers no ask itself. Either keeps the running binary, is written as the notice (`bmesh update --notice`), and is acted on once per target until `bmesh update` takes it.
+- The daemon logs and pushes a refused config (`update to v0.2.0: config check failed: ...; keeping this binary`) and a walk with an ask or `confirm` step (`update to v0.2.0 waits on bmesh update (2 asks)`), titled `bmesh update waits on <host>`. The push's body is the line, then what to run: `In a terminal on <host>: bmesh update shows the same refusal; fix what it names, then run it again.` for the config, `In a terminal on <host>: bmesh update, which asks you them.` for the walk. The daemon answers no ask itself. Either keeps the running binary, is written as the notice (`bmesh update --notice`), and is acted on once per target until `bmesh update` takes it.
 - A walk with only plain steps is swapped in and left pending for the new binary to report.
 - One with nothing to do records the new binary's release. While notes are pending, neither the record nor the revision a swap replaced moves, and an ask or `confirm` step still owed holds the next swap.
 
@@ -3191,9 +3192,10 @@ Each daemon publishes its presence each minute, signed with its host key. Presen
 - its OS and revision;
 - whether it runs routines;
 - the registered repos it has checked out, each with its path and `origin` (the checkout's `origin` URL, else the row's `remote`);
-- its notes.
+- its notes;
+- its holds not yet expired (see [Levelling](#levelling)): for each, the repo (or, for a registry proposal, the box that proposed it), the commits (or row changes), the id and the expiry.
 
-The notes are `<config dir>/notes.md`, the box's session guidance (see [Several boxes](#several-boxes)). The daemon reads the file each minute, drops invalid UTF-8, cuts it to 16 KB on a character boundary (logged once) and trims it. Without the file the notes are `""`. bmesh never takes a path or a decision from presence.
+The notes are `<config dir>/notes.md`, the box's session guidance (see [Several boxes](#several-boxes)). The daemon reads the file each minute, drops invalid UTF-8, cuts it to 16 KB on a character boundary (logged once) and trims it. Without the file the notes are `""`. bmesh never takes a path or a decision from presence. The holds are signed apart from the rest, so a box on an older release still verifies the entry and shows nothing of others' holds; a reader drops a hold whose expiry has passed (an asleep box's entry is as old as its last minute awake).
 
 [`bmesh hosts`](#bmesh-hosts) shows presence; [`bmesh hosts --notes`](#bmesh-hosts---notes) shows the notes.
 
@@ -3201,9 +3203,9 @@ The notes are `<config dir>/notes.md`, the box's session guidance (see [Several 
 
 Each minute, after presence, the daemon writes `<state dir>/this-box.txt`, through a temporary file and a rename:
 
-`this box is <host>[ (admin)]; secure: yes|no; on the mesh: <host> (<state>[ <age>][, secure][, admin]), …`
+`this box is <host>[ (admin)]; secure: yes|no; on the mesh: <host> (<state>[ <age>][, secure][, admin][, <N> held]), …[; held for your approval: <hold>, … (bmesh hosts held)]`
 
-It lists every other roster box with its presence state. An asleep box shows how long ago it was seen, `asleep 2h`: in minutes, hours, or days past two days. With no other box it says `no other box`. When any verified box has notes, it ends with ``; notes: `bmesh hosts --notes` ``. [`bmesh hosts --here`](#bmesh-hosts---here) prints the file.
+It lists every other roster box with its presence state, and `<N> held` when its presence carries holds. This box's own holds follow the list, each as `buildermesh +62 commits` or `a registry proposal from k16 (2 row changes)`. An asleep box shows how long ago it was seen, `asleep 2h`: in minutes, hours, or days past two days. With no other box it says `no other box`. When any verified box has notes, it ends with ``; notes: `bmesh hosts --notes` ``. [`bmesh hosts --here`](#bmesh-hosts---here) prints the file.
 
 #### Jobs and replies
 
@@ -3265,14 +3267,15 @@ A level, the daemon's routine fetch, and the fast-forward of `main` in the main 
 
 - The hold keeps the job, the repo, its head and target, and `git log --stat HEAD..<target>`. The job is answered `held for approval (+<N> commits)`.
 - A repo has one hold. A newer job's hold replaces it, and the older job's sender gets the reply `hold superseded by job <id>`. A self-level leaves an existing hold as it is.
-- The box pushes the hold once (with `[notify]`; title `<host> holds: <repo> +<N> commits (<sender or self-level>)`, priority `default`).
+- The box pushes the hold once (with `[notify]`, priority `default`). The title is `<host>: <repo> waits for your approval (+<N> commits)`. The body says what the move would change, `New sessions on <host> load its skills and plugins.` for a plugin marketplace and `<host>'s bmesh builds from it.` for the `[update] repo` (both for a repo that is both), then `In a terminal on <host>: bmesh hosts approve <id> (it shows the commits first), or bmesh hosts deny <id> to leave it as it is. Expires <day hh:mm>.` in the holding box's time zone.
+- The box's presence carries the hold until it is approved, denied or expires, so every box's session line and [`bmesh mesh-status`](#bmesh-mesh-status) show it as waiting on the operator (see [Presence](#presence)).
 - A hold expires with its job (24h, a self-level's too) and is dropped, logged only.
 
 [`bmesh hosts held`](#bmesh-hosts-held) lists the holds, [`bmesh hosts approve`](#bmesh-hosts-approve) approves one and [`bmesh hosts deny`](#bmesh-hosts-deny) drops one.
 
 **Self-level.** Each daemon with `[hosts] enabled` levels every registered repo it has a checkout of, on start and on each wake, as a fast-forward only, never a push. Refusals are logged, not pushed. Holds apply as above.
 
-**Pushes.** A refusal or failure of a received `level` whose sender stopped waiting (its `until` has passed) is pushed once (title `<host>: <repo> <answer> (job from <sender>)`, priority `high`). So when two boxes are ahead at once, the second's push is refused as not a fast-forward and the phone gets `diverged`.
+**Pushes.** A refusal or failure of a received `level` whose sender stopped waiting (its `until` has passed) is pushed once (title `<host>: <repo> <answer> (job from <sender>)`, priority `high`). The body repeats the title; for a refusal of the checkout's own (`in progress`, `dirty`, `other branch`, `diverged`) it goes on: `<host>'s checkout of <repo> stays where it is until you settle it. In a terminal on <host>: git -C <path> status, then bmesh sync --repo <repo>.` So when two boxes are ahead at once, the second's push is refused as not a fast-forward and the phone gets `diverged`.
 
 [`bmesh sync`](#bmesh-sync) levels a repo on demand.
 
@@ -3283,7 +3286,7 @@ With `[hosts]` on, `repos.toml` is the admin's signed document. A row's `verify`
 - The admin publishes its `repos.toml` as written, comments and all.
 - A box takes a registry only when its pinned admin key signed it, its `version` is higher than the box's own, and the box's own loader reads the rows (with `repos.toml`'s refusals, an unknown key among them).
 - The box writes the rows as its `repos.toml` (through a rename, the old file kept as `repos.toml.prev`). Its hosts layer (presence, levels, prune and nix) reads the new rows at once; the routine loop reads them at start.
-- A box that can't read a registry leaves its file alone, and the newer registry stays on the hub for the boxes that can. The box pushes this once per version (with `[notify]`): `<host>: refused: registry v<N> needs a newer bmesh (<error>)`, priority `high`.
+- A box that can't read a registry leaves its file alone, and the newer registry stays on the hub for the boxes that can. The box pushes this once per version (with `[notify]`): `<host>: refused: registry v<N> needs a newer bmesh (<error>)`, priority `high`, its body going on `<host> keeps the rows it has until its bmesh can read v<N>. In a terminal on <host>: bmesh update.`
 - Every daemon watches the hub's registry key, so a box takes a registry when it is published (or a proposal is approved), and re-reads it each minute (so at start and on wake). It puts its own back when the hub's copy is missing, unsigned or lower, as with the roster.
 - **A published row change reaches the repo by itself.** When a box takes a registry that changes a row's `verify`, `setup`, `setup_inputs` or `setup_timeout` (against the rows it had), the daemon of the row's `host` box rescaffolds the repo's `main`. Only a `ship` row with a checkout on that box whose `AGENTS.md` has a `<!-- bmesh:` marker is touched; a row new in the registry, a repo never scaffolded and a `fork` or other row are left to [`bmesh scaffold`](#bmesh-scaffold). The trigger is the row's fields changing, not the files differing, so a publish that changes another row, or this row's other keys, writes nothing, and a deliberate edit on `main` stays until the row's own fields change again.
   - **What it writes.** In a bmesh worktree from levelled `main`, holding the repo's lock (so never at once with a lead's `land` or a level), it rewrites the verify kind's `command` when `verify` changed and `.bmesh/config.toml`'s `[setup]` when a setup key did, as `bmesh scaffold` does, and nothing else. It commits them as `bmesh` with `Scaffold: <repo> follows registry v<N>` (the body each changed field's new value), pushes to `origin`'s `main` and fast-forwards the checkout's. It runs no verify: the next build's verify-main judges the new commands. When `main` already reads so (someone ran `bmesh scaffold`), nothing is committed. A missing file, and `AGENTS.md` (its done block wraps the commands in the binary's wording, which an older daemon would roll back), stay with `bmesh scaffold`.

@@ -690,15 +690,19 @@ func fakeNew(t *testing.T, config int, plan string) {
 // with an ask; the daemon logs it once and leaves it as the notice.
 func TestUpdateHeldByTheNewBinary(t *testing.T) {
 	for _, tc := range []struct {
-		name, plan, want string
-		config           int
+		name, plan, want, step string
+		config                 int
 	}{
-		{"config", `{}`, "config check failed: config x: [runner] t3_server is empty; keeping this binary", 3},
-		{"asks", `{"asks":2,"steps":1,"confirm":1}`, "waits on bmesh update (2 asks, 1 step that asks first)", 0},
+		{"config", `{}`, "config check failed: config x: [runner] t3_server is empty; keeping this binary",
+			"In a terminal on " + testHost + ": bmesh update shows the same refusal; fix what it names, then run it again.", 3},
+		{"asks", `{"asks":2,"steps":1,"confirm":1}`, "waits on bmesh update (2 asks, 1 step that asks first)",
+			"In a terminal on " + testHost + ": bmesh update, which asks you them.", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			u := updateSetup(t, map[string]string{})
 			u.d.StateDir = t.TempDir()
+			ntfy := newFakeNtfy(t)
+			u.d.Cfg.Notify.Ntfy = ntfy.URL
 			fakeNew(t, tc.config, tc.plan)
 			u.start(t)
 			next := u.land(t, "a.txt")
@@ -715,6 +719,11 @@ func TestUpdateHeldByTheNewBinary(t *testing.T) {
 			}
 			if got := selfupdate.ReadNotice(u.d.StateDir); !strings.Contains(got, next[:8]) || !strings.Contains(got, tc.want) {
 				t.Fatalf("notice %q", got)
+			}
+			// The push says what to run, and where.
+			if got := ntfy.waitRequests(t, 1); got[0].Title != "bmesh update waits on "+testHost ||
+				!strings.Contains(got[0].Body, tc.want+". "+tc.step) {
+				t.Fatalf("push %+v", got)
 			}
 		})
 	}

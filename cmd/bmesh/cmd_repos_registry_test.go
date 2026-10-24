@@ -106,6 +106,22 @@ func TestRegistryPublishProposeAndRemoveWithCheckouts(t *testing.T) {
 	if readFile(t, repos(mac)) != reg1 || registryVersion(mac) != 1 {
 		t.Fatal("a held proposal changed the registry")
 	}
+	// Every box's sessions and mesh-status say it waits on the operator:
+	// the Mac's line names it, k16's counts it in the Mac's entry, and
+	// mesh-status on k16 says where to approve it.
+	waitFor(t, "the session lines show the hold", func() bool {
+		m, _, _ := mac.run(t, "", "hosts", "--here")
+		k, _, _ := k16.run(t, "", "hosts", "--here")
+		return strings.Contains(m, "; held for your approval: a registry proposal from k16 (1 row change) (bmesh hosts held)") &&
+			regexp.MustCompile(`on the mesh: mac \(awake, [a-z, ]*1 held\)`).MatchString(k)
+	})
+	for _, b := range []box{k16, mac} {
+		out, errs, code := b.run(t, "", "mesh-status")
+		if want := "\nmac: a registry proposal from k16 waits for your approval (1 row change): in a terminal on mac, bmesh hosts approve " +
+			id + " (expires "; code != 0 || !strings.Contains(out, want) {
+			t.Fatalf("mesh-status on %s: %d %s %s", b.name, code, out, errs)
+		}
+	}
 	// Unpublished edits on the admin box would be overwritten: refused.
 	if err := os.WriteFile(repos(mac), []byte(reg1+"# wip\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -126,6 +142,11 @@ func TestRegistryPublishProposeAndRemoveWithCheckouts(t *testing.T) {
 	waitFor(t, "k16 hears the approval and takes v2", func() bool {
 		out, _, _ := k16.run(t, "", "hosts", "replies")
 		return strings.Contains(out, "approved: registry v2") && registryVersion(k16) == 2
+	})
+	waitFor(t, "the approved hold leaves the session lines", func() bool {
+		m, _, _ := mac.run(t, "", "hosts", "--here")
+		k, _, _ := k16.run(t, "", "hosts", "--here")
+		return m != "" && k != "" && !strings.Contains(m+k, "held")
 	})
 	waitFor(t, "k16's presence lists nixrepo", func() bool {
 		out, _, _ := mac.run(t, "", "hosts", "--json")
