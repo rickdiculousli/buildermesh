@@ -359,6 +359,10 @@ func scoreNow(dir string, c *Cell, k *Case) (bool, string, error) {
 // results.json and summary.md; no session runs.
 func rescore(dir string) (Results, error) {
 	var res Results
+	dir, err := filepath.Abs(dir) // scoring runs git and the shop from other cwds
+	if err != nil {
+		return res, err
+	}
 	if b, err := os.ReadFile(filepath.Join(dir, "results.json")); err == nil {
 		if err := json.Unmarshal(b, &res); err != nil {
 			return res, fmt.Errorf("%s: %w", filepath.Join(dir, "results.json"), err)

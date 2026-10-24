@@ -905,7 +905,8 @@ func TestRun(t *testing.T) {
 	if err := writeResults(out, Results{Date: "test", Model: r.model, Arms: []Arm{arm}, Rows: []Row{row}}); err != nil {
 		t.Fatal(err)
 	}
-	res, err := rescore(out)
+	t.Chdir(filepath.Dir(out)) // a dir named from where the operator stands scores as the run did
+	res, err := rescore(filepath.Base(out))
 	if err != nil {
 		t.Fatal(err)
 	}
