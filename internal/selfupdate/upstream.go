@@ -114,32 +114,29 @@ func Installed(ctx context.Context, exe string) string {
 
 var hex8 = regexp.MustCompile(`^[0-9a-f]{8}$`)
 
-// doneAt matches a landing's `NNN: done at <sha8>` subject.
-var doneAt = regexp.MustCompile(`^([0-9]{3,}): done at ([0-9a-f]{7,40})`)
-
 // Notice is the line a binary at own (a commit in dir) reads when it is
 // behind t, read on ref (main): for a release, `bmesh: v0.2.0 is out (you
 // run v0.1.0: 046, 047); run bmesh update, then update the buildermesh
 // plugin`; for a code head, `bmesh: N commits behind main (landed since:
 // NNN <title>, …); run …`, N the commits in own..t that change code
 // (pathspecs as CodePaths gives them) and each spec titled from its file on ref. The specs are
-// those whose `NNN: done at <sha8>` landings in own..ref name a merged
-// commit t has and own hasn't (or one dir doesn't know), oldest first. It
+// those landed in own..ref (Landed) at a commit t has and own hasn't (or
+// one dir doesn't know), oldest first. It
 // is "" when own is not behind t (Stand): current, ahead, or not in its
 // history.
 func Notice(dir, own, ref string, t Target, code []string) (string, error) {
 	if Stand(dir, own, t.Commit) != Behind {
 		return "", nil
 	}
-	all, err := landings(dir, own+".."+ref)
+	all, err := Landed(dir, own+".."+ref)
 	if err != nil {
 		return "", err
 	}
 	var ids []string
 	for _, l := range all {
-		if _, err := git(dir, "rev-parse", "--verify", "-q", "--end-of-options", l.at+"^{commit}"); err != nil ||
-			(Contains(dir, l.at, t.Commit) && !Contains(dir, l.at, own)) {
-			ids = append(ids, l.id)
+		if _, err := git(dir, "rev-parse", "--verify", "-q", "--end-of-options", l.At+"^{commit}"); err != nil ||
+			(Contains(dir, l.At, t.Commit) && !Contains(dir, l.At, own)) {
+			ids = append(ids, l.ID)
 		}
 	}
 	tail := "; run bmesh update, then update the buildermesh plugin"
@@ -172,40 +169,11 @@ func Notice(dir, own, ref string, t Target, code []string) (string, error) {
 	return line + tail, nil
 }
 
-// Landed is the ids of the specs whose `NNN: done at` subjects are in
-// revs (a git revision range, or a commit and its history), oldest first,
-// each once.
-func Landed(dir, revs string) ([]string, error) {
-	all, err := landings(dir, revs)
-	var ids []string
-	for _, l := range all {
-		ids = append(ids, l.id)
-	}
-	return ids, err
-}
-
-// landing is a spec's `NNN: done at <sha8>` subject: its id and the merged
-// commit it names.
-type landing struct{ id, at string }
-
-// landings is the `NNN: done at` subjects in revs, oldest first, each id
-// once.
-func landings(dir, revs string) ([]landing, error) {
-	subjects, err := git(dir, "log", "--reverse", "--format=%s", "--end-of-options", revs)
-	if err != nil {
-		return nil, err
-	}
-	var out []landing
-	seen := map[string]bool{}
-	for _, s := range strings.Split(subjects, "\n") {
-		m := doneAt.FindStringSubmatch(s)
-		if m == nil || seen[m[1]] {
-			continue
-		}
-		seen[m[1]] = true
-		out = append(out, landing{id: m[1], at: m[2]})
-	}
-	return out, nil
+// Landed is the specs landed in revs (a git revision range, or a commit
+// and its history), oldest first, each once: a commit's `Spec: NNN`
+// trailer, or an old `NNN: done at <sha8>` subject (Legacy).
+func Landed(dir, revs string) ([]spec.Landing, error) {
+	return spec.Landings(context.Background(), dir, revs)
 }
 
 // specTitle is `NNN <title>` from docs/proposals/NNN-*.md on head, or the

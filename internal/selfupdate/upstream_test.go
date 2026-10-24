@@ -67,9 +67,10 @@ func TestSameComparesByPrefix(t *testing.T) {
 }
 
 // history is a repo whose main has two landed specs, a fix between them,
-// and a landing whose commit it doesn't know, each spec's code commit
-// followed by its `done at` ledger commit. It returns the repo and its
-// commits by name: base, c030, fix, c031 (the code head) and main.
+// and a landing whose commit it doesn't know: 030's code commit followed
+// by its old `done at` ledger commit, 031's landed with its trailers. It
+// returns the repo and its commits by name: base, c030, fix, c031 (the
+// code head) and main.
 func history(t *testing.T) (string, map[string]string) {
 	t.Helper()
 	dir, shas := repo(t, "base")
@@ -90,8 +91,8 @@ func history(t *testing.T) (string, map[string]string) {
 	commit("c030", "A quieter map", map[string]string{"q": "q"})
 	commit("", "030: done at "+at["c030"][:8], map[string]string{"docs/proposals/030-quiet.md": "---\nid: 030\ntitle: A quieter map\nstatus: done\n---\n"})
 	commit("fix", "A fix", map[string]string{"f": "fix"})
-	commit("c031", "The notice", map[string]string{"n": "n"})
-	commit("", "031: done at "+at["c031"][:8], map[string]string{"docs/proposals/031-notice.md": "---\nid: 031\ntitle: The notice\n---\n"})
+	commit("c031", "The notice\n\nSpec: 031\nVerified: verify ok t:00000000", map[string]string{"n": "n",
+		"docs/proposals/031-notice.md": "---\nid: 031\ntitle: The notice\nstatus: done\n---\n"})
 	commit("main", "099: done at 00000000", nil) // a commit this repo doesn't know
 	return dir, at
 }

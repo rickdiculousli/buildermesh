@@ -41,6 +41,25 @@ func landReleaseWith(t *testing.T, repo, id, kind, more string) string {
 	return code
 }
 
+// landTrailers lands spec id of kind as land does now: one commit with
+// file (the code, or anything else) and the spec reading done, its message
+// ending with the Spec and Verified trailers, pushed. It returns the
+// commit.
+func landTrailers(t *testing.T, repo, id, kind, file string) string {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(repo, file), []byte(id), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	text := "---\nid: " + id + "\ntitle: Spec " + id + "\nkind: " + kind + "\nsize: S\nstatus: done\n---\n\n## Proposal\nx\n"
+	if err := os.WriteFile(filepath.Join(repo, "docs", "proposals", id+"-spec.md"), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-qm", "build "+id+"\n\nSpec: "+id+"\nVerified: verify ok t:00000000")
+	meshtest.Git(t, repo, "push", "-q", "origin", "main")
+	return gitOut(t, "-C", repo, "rev-parse", "HEAD")
+}
+
 func TestRelease(t *testing.T) {
 	c, repo, _ := proposeSetup(t, "")
 	ctx := t.Context()
@@ -116,7 +135,7 @@ func TestRelease(t *testing.T) {
 	if out, errs, exit := runCLI(t, nil, "release", "demo"); exit != 0 || !strings.HasPrefix(out, "released demo v0.1.1 at ") || !strings.HasSuffix(out, " (021)\n") {
 		t.Fatalf("refinement: %d %q %q", exit, out, errs)
 	}
-	landRelease(t, repo, "022", "feature")
+	landTrailers(t, repo, "022", "feature", "code-022.txt") // landed with trailers, beside old landings
 	landRelease(t, repo, "023", "refinement")
 	if out, _, exit := runCLI(t, nil, "release", "demo", "--dry-run", "--patch"); exit != 0 || !strings.HasPrefix(out, "would release demo v0.1.2 at ") {
 		t.Fatalf("--patch: %d %q", exit, out)
@@ -202,6 +221,17 @@ func TestReleaseTagsTheCodeHeadUnderTheRowsCode(t *testing.T) {
 	commitFile(t, repo, "art/logo.svg", "<svg/>\n", "Add the logo")
 	if out, errs, exit := runCLI(t, nil, "release", "demo"); exit != 0 || out != "already released demo v0.1.0 at "+code[:8]+"\n" {
 		t.Fatalf("again: %d %q %q", exit, out, errs)
+	}
+	// A landing with trailers that changed no code, after the code head,
+	// is in the release that first tags past it, once.
+	head := landTrailers(t, repo, "021", "refinement", "code-021.txt")
+	landTrailers(t, repo, "022", "refinement", "README.md")
+	if out, errs, exit := runCLI(t, nil, "release", "demo"); exit != 0 || out != "released demo v0.1.1 at "+head[:8]+" (021)\n" {
+		t.Fatalf("code head before a docs landing: %d %q %q", exit, out, errs)
+	}
+	head = landTrailers(t, repo, "023", "refinement", "code-023.txt")
+	if out, errs, exit := runCLI(t, nil, "release", "demo"); exit != 0 || out != "released demo v0.1.2 at "+head[:8]+" (022, 023)\n" {
+		t.Fatalf("past it: %d %q %q", exit, out, errs)
 	}
 }
 

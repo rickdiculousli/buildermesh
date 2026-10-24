@@ -137,7 +137,7 @@ func (a *app) cmdRelease(args []string) error {
 			return fail(exitRefused, "nothing to release since %s: nothing under code changed", last)
 		}
 	}
-	ids, err := selfupdate.Landed(repoPath, revs)
+	landings, err := selfupdate.Landed(repoPath, revs)
 	if err != nil {
 		return err
 	}
@@ -145,24 +145,31 @@ func (a *app) cmdRelease(args []string) error {
 	if err != nil {
 		return ledgerFail(err)
 	}
-	// A release tags the code head, so the `done at` commit of a spec it
-	// carries comes after the tag: a spec merged in the last release's
-	// history is in that release, not this one.
-	landed := make([]*spec.Spec, 0, len(ids))
-	ids = slices.DeleteFunc(ids, func(id string) bool {
-		n, _ := strconv.Atoi(id)
+	// A landing's trailers are on the commit that landed: it is in this
+	// release when the code head has it, and a later one's when it came
+	// after (a landing that changed no code). An old landing's `done at`
+	// commit came after the code it recorded, which a release may have
+	// tagged before it: a spec merged in the last release's history is in
+	// that release, not this one.
+	landed := make([]*spec.Spec, 0, len(landings))
+	var ids []string
+	for _, l := range landings {
+		n, _ := strconv.Atoi(l.ID)
 		s, ok := spec.Find(specs, n)
-		if !ok {
-			return false
-		}
-		if m := s.Fields["merged"]; last != "" && m != "" {
-			if _, err := gitIn(ctx, repoPath, "merge-base", "--is-ancestor", m, last); err == nil {
-				return true
+		if !l.Legacy {
+			if _, err := gitIn(ctx, repoPath, "merge-base", "--is-ancestor", l.At, head); err != nil {
+				continue
+			}
+		} else if ok && last != "" && s.Fields["merged"] != "" {
+			if _, err := gitIn(ctx, repoPath, "merge-base", "--is-ancestor", s.Fields["merged"], last); err == nil {
+				continue
 			}
 		}
-		landed = append(landed, s)
-		return false
-	})
+		ids = append(ids, l.ID)
+		if ok {
+			landed = append(landed, s)
+		}
+	}
 	tag := firstRelease
 	if r, ok := parseRelease(last); ok {
 		feature := slices.ContainsFunc(landed, func(s *spec.Spec) bool { return s.Fields["kind"] == "feature" })
