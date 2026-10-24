@@ -529,7 +529,7 @@ func caseCell(t *testing.T, name, manual string) (string, string) {
 
 // landedCode checks that a watched lead's landing, commit sha on the
 // cell's origin, changes files (its code and its test, beside its spec), and
-// that the fixture's tests pass on origin's main once it landed.
+// that the fixture's tests pass at it.
 func landedCode(t *testing.T, dir, sha string, files ...string) {
 	t.Helper()
 	changed, err := git(dir, gitEnv(dir), "--git-dir", filepath.Join(dir, originDir), "diff-tree", "--no-commit-id", "--name-only", "-r", sha)
@@ -545,8 +545,11 @@ func landedCode(t *testing.T, dir, sha string, files ...string) {
 	if _, err := git(dir, gitEnv(dir), "clone", "-q", filepath.Join(dir, originDir), work); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := git(work, gitEnv(dir), "checkout", "-q", sha); err != nil {
+		t.Fatal(err)
+	}
 	if code, out, errs := run(work, 5*time.Minute, append(os.Environ(), "GOTOOLCHAIN=local", "GOPROXY=off", "GOWORK=off", "GOFLAGS="), "go", "test", "-count=1", "./..."); code != 0 {
-		t.Errorf("go test ./... on origin's main after %s: exit %d\n%s%s", sha, code, out, errs)
+		t.Errorf("go test ./... at %s: exit %d\n%s%s", sha, code, out, errs)
 	}
 }
 
