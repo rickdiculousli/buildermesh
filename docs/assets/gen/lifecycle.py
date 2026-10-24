@@ -97,9 +97,8 @@ def slot(x, y, w, h=20):
 # ---------------- Propose ----------------
 panel_open(*P[0])
 A('<g transform="translate(4 0)">')
-A('<text class="lb l14" x="28" y="90">engineer</text>')
-A('<text class="lb l14" x="28" y="144">UI/UX engineer</text>')
-for y, ids, t in [(98, ["012", "013", "014"], 0.4), (152, ["017", "018", "019"], 0.55)]:
+A('<text class="lb l14" x="28" y="104">one ranked list</text>')
+for y, ids, t in [(112, ["012", "013", "014"], 0.4), (144, ["015", "016", "017"], 0.55)]:
     for i, sid in enumerate(ids):
         cxx = 28 + i * 48
         swap(t + i * 0.3, '<rect class="qd" x="%g" y="%g" width="40" height="24" rx="6"/>' % (cxx, y),

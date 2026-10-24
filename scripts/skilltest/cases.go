@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -28,6 +30,7 @@ type Case struct {
 	Setup  func(e Env) error             // edits to the fixture before its commit
 	Canned func(e Env) map[string]string // the fake's outputs, by key (see fake/bmesh)
 	Lead   *Lead                         // a lead's case: its words are the build brief
+	Round  *Round                        // a round thread's case: its words are the round brief
 	Expect []Pred
 	Refs   []Ref
 }
@@ -66,13 +69,95 @@ func (l *Lead) brief(sandbox, host string, now time.Time) (string, error) {
 	return brief.WithSetup(text, brief.SetupStep("", "")), nil
 }
 
+// Round makes a case a round thread's: the session is round 1's eng
+// thread in its worktree of the sandbox on its own branch, as bmesh ideate
+// makes one, and its one turn is the round brief rendered from the arm's
+// own engineer template, numbered from NextID.
+type Round struct {
+	NextID int
+}
+
+const (
+	roundPath   = "shop-round-1"
+	roundNode   = roundPath + ".eng"
+	roundThread = "5d0c7a1e-0000-4000-8000-000000000097"
+)
+
+func (rd *Round) worktree() string { return filepath.Join("worktrees", repoName, rd.branch()) }
+func (rd *Round) branch() string   { return roundPath + "-eng" }
+
+// legacyRound are the round values an engineer template from before 097
+// was written for (it has no {{title}}): the engineer, three to five
+// ideas, beside a UI/UX engineer with a block of its own.
+var legacyRound = map[string]string{
+	"round_ask":     "Find what would most improve this repo and bring back three to five ranked ideas, each a half-page spec or a pitch line (see What you pitch), that the operator can pick or decline in a sentence.",
+	"round_partner": "The UI/UX engineer runs beside you on the same round and lands on the same `main`.",
+	"ux_ids":        " The UI/UX engineer has a block of its own, so a gap is expected.",
+}
+
+// legacy reports whether the arm's engineer template is from before 097,
+// when every round had a UI/UX thread beside the engineer.
+func legacy(text string) bool { return !strings.Contains(text, "{{title}}") }
+
+// template is the arm's engineer template: its own file, or this tree's for
+// an arm with none (a rehearsal's).
+func (rd *Round) template(a Arm) (string, error) {
+	if a.Dir != "" {
+		b, err := os.ReadFile(filepath.Join(a.Dir, "internal", "brief", "templates", "engineer.md"))
+		if err == nil {
+			return string(b), nil
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+	}
+	text, _, err := brief.Template("", "engineer")
+	return text, err
+}
+
+// claimed is the highest id the round's claims hold: its one thread's six,
+// or, for an arm from before 097, the engineer's five and the UI/UX
+// engineer's five.
+func (rd *Round) claimed(text string) int {
+	if legacy(text) {
+		return rd.NextID + 9
+	}
+	return rd.NextID + 5
+}
+
+// brief is the round brief for the sandbox's row, which lists no surfaces,
+// as bmesh ideate writes it for a repo with no setup command.
+func (rd *Round) brief(a Arm, dir, sandbox, host string, now time.Time) (string, error) {
+	text, err := rd.template(a)
+	if err != nil {
+		return "", err
+	}
+	r := row(sandbox, host)
+	values := brief.RowValues(r, sandbox)
+	for k, v := range map[string]string{"node": roundNode, "round": roundPath, "round_n": "1",
+		"worktree": filepath.Join(dir, rd.worktree()), "branch": rd.branch(), "thread_id": roundThread,
+		"next_id": fmt.Sprintf("%03d", rd.NextID), "date": now.UTC().Format("2006-01-02"), "operator_context": ""} {
+		values[k] = v
+	}
+	maps.Copy(values, brief.RoundValues(brief.RoundAll, r))
+	if legacy(text) {
+		maps.Copy(values, legacyRound)
+	}
+	out, err := brief.Fill(text, values)
+	if err != nil {
+		return "", fmt.Errorf("the arm's engineer template %w", err)
+	}
+	return brief.WithSetup(out, brief.SetupStep("", "")), nil
+}
+
 const (
 	goAhead   = "yes, go ahead"
 	maxSteers = 2
 )
 
 var cases = []*Case{bugCase(), tweakCase(), questionCase(), qaCase(), featureMCase(), featureLCase(),
-	inFlightCase(), waitingCase(), ideasCase(), pickCase(), releaseCase(), leadCase("lead-s", false), leadCase("lead-stop", true)}
+	inFlightCase(), waitingCase(), ideasCase(), pickCase(), releaseCase(), leadCase("lead-s", false), leadCase("lead-stop", true),
+	roundCase()}
 
 func findCase(name string) *Case {
 	for _, k := range cases {
@@ -1022,4 +1107,245 @@ func leadCase(name string, stopFirst bool) *Case {
 		}},
 	}
 	return k
+}
+
+// The round case: shop's round brief (no surfaces), its one thread's pitch
+// and the specs it lands.
+const roundFirst = 15
+
+var (
+	listMarkRE   = regexp.MustCompile(`^\s*(?:[-*•]|\d+[.)]|#\d+)\s+`)
+	pitchSpecRE  = regexp.MustCompile(`^\**(\d{3})\b.*?\(\s*[\w-]+\s*,\s*(XS|S|M|L|XL)\s*,`)
+	pitchSmallRE = regexp.MustCompile(`\(\s*[\w-]+\s*,\s*(XS|S)\s*\)`)
+)
+
+// pitchItem is one line of a pitch: a spec's (its id and size) or an XS or
+// S idea's, with no id.
+type pitchItem struct {
+	id, size string
+}
+
+// roundPitch is the text of the session's last done the fake let through.
+func roundPitch(s *State) (string, bool) {
+	text, ok := "", false
+	for _, c := range s.AgentCalls() {
+		if c.Is("done") && c.OK() {
+			_, args := c.Cmd()
+			text, ok = flagValue(args, "text"), true
+		}
+	}
+	return text, ok
+}
+
+// parsePitch reads a pitch's lines: each a spec's or a small idea's, its
+// list marker dropped; bad names the first line that is neither.
+func parsePitch(text string) (items []pitchItem, bad string) {
+	for _, l := range strings.Split(text, "\n") {
+		l = strings.TrimSpace(listMarkRE.ReplaceAllString(l, ""))
+		switch m := pitchSpecRE.FindStringSubmatch(l); {
+		case l == "":
+		case m != nil:
+			items = append(items, pitchItem{m[1], m[2]})
+		case pitchSmallRE.MatchString(l):
+			items = append(items, pitchItem{size: pitchSmallRE.FindStringSubmatch(l)[1]})
+		default:
+			if bad == "" {
+				bad = l
+			}
+		}
+	}
+	return items, bad
+}
+
+// newSpecs are the specs origin's main added since the base, parsed.
+func newSpecs(s *State) ([]*spec.Spec, error) {
+	base, err := s.git("ls-tree", "-r", "--name-only", s.Cell.Base, "--", "docs/proposals/")
+	if err != nil {
+		return nil, err
+	}
+	had := map[string]bool{}
+	for _, f := range strings.Fields(base) {
+		had[f] = true
+	}
+	var out []*spec.Spec
+	for _, f := range s.files("docs/proposals/") {
+		if had[f] || path.Dir(f) != "docs/proposals" || !regexp.MustCompile(`^\d{3}-.*\.md$`).MatchString(path.Base(f)) {
+			continue
+		}
+		sp, err := spec.Parse(s.Show(f), f)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sp)
+	}
+	return out, nil
+}
+
+var bigSize = map[string]bool{"M": true, "L": true, "XL": true}
+
+func roundCase() *Case {
+	ranked := Pred{"ranked_pitch", func(s *State) (bool, string) {
+		text, ok := roundPitch(s)
+		if !ok {
+			return false, "no done the fake let through"
+		}
+		items, bad := parsePitch(text)
+		if bad != "" {
+			return false, "a pitch line that is neither a spec's nor an XS or S idea's: " + clip(bad, 80)
+		}
+		return len(items) >= 3 && len(items) <= 6, fmt.Sprintf("done carries %d pitch lines", len(items))
+	}}
+	specsForM := Pred{"specs_for_m_ideas", func(s *State) (bool, string) {
+		specs, err := newSpecs(s)
+		if err != nil {
+			return false, err.Error()
+		}
+		text, _ := roundPitch(s)
+		items, _ := parsePitch(text)
+		pitched := map[string]bool{}
+		for _, it := range items {
+			if it.id != "" {
+				pitched[it.id] = true
+			}
+		}
+		for _, sp := range specs {
+			f := sp.Fields
+			for _, k := range []string{"title", "kind", "size", "judge", "lens", "proposed_by", "proposed_on"} {
+				if f[k] == "" {
+					return false, sp.Path + " has no " + k
+				}
+			}
+			if f["status"] != "proposed" || (f["lens"] != "eng" && f["lens"] != "ux") {
+				return false, fmt.Sprintf("%s reads status %s, lens %s", sp.Path, f["status"], f["lens"])
+			}
+			if !pitched[sp.IDString()] {
+				return false, sp.Path + " is on origin's main but not in the pitch"
+			}
+			delete(pitched, sp.IDString())
+		}
+		if len(pitched) > 0 {
+			return false, "the pitch names " + strings.Join(slices.Sorted(maps.Keys(pitched)), ", ") + ", not on origin's main"
+		}
+		return true, fmt.Sprintf("%d specs on origin's main, each in the pitch", len(specs))
+	}}
+	smallAsLines := Pred{"small_ideas_as_lines", func(s *State) (bool, string) {
+		specs, err := newSpecs(s)
+		if err != nil {
+			return false, err.Error()
+		}
+		for _, sp := range specs {
+			if !bigSize[sp.Fields["size"]] {
+				return false, sp.Path + " is sized " + sp.Fields["size"]
+			}
+		}
+		text, _ := roundPitch(s)
+		items, _ := parsePitch(text)
+		lines := 0
+		for _, it := range items {
+			switch {
+			case it.id != "" && !bigSize[it.size]:
+				return false, it.id + " is pitched sized " + it.size
+			case it.id == "":
+				lines++
+			}
+		}
+		return true, fmt.Sprintf("every spec M or larger; %d XS or S ideas as lines", lines)
+	}}
+	noGaps := Pred{"ids_without_gaps", func(s *State) (bool, string) {
+		specs, err := newSpecs(s)
+		if err != nil {
+			return false, err.Error()
+		}
+		var ids []int
+		for _, sp := range specs {
+			ids = append(ids, sp.ID)
+		}
+		slices.Sort(ids)
+		for i, id := range ids {
+			if id != roundFirst+i {
+				return false, fmt.Sprintf("ids %v, not %03d on without a gap", ids, roundFirst)
+			}
+		}
+		return true, fmt.Sprintf("ids %v", ids)
+	}}
+	onlyProposals := Pred{"only_proposals_changed", func(s *State) (bool, string) {
+		for _, f := range s.Changed() {
+			if !strings.HasPrefix(f, "docs/proposals/") {
+				return false, "origin's main changed " + f
+			}
+		}
+		return true, commitsOnOrigin(len(s.NewCommits())) + ", none outside docs/proposals/"
+	}}
+	specText := func(id, title, size string) string {
+		return "---\nid: " + id + "\ntitle: " + title + "\nkind: maintenance\nsize: " + size + "\njudge: opus\nstatus: proposed\nlens: eng\nproposed_by: " +
+			roundThread + "\nproposed_on: 2026-10-24\n---\n\n## Opportunity\nx\n\n## Proposal\ny\n\n## What you'll see\nz\n\n## Verification\n`go test ./...`\n\n## Risks and the alternative considered\nnone\n\n## Needs from the operator\n"
+	}
+	write := func(r *Rehearsal, id, title, size string) {
+		r.Write("docs/proposals/"+id+"-"+strings.ReplaceAll(strings.ToLower(title), " ", "-")+".md", specText(id, title, size))
+	}
+	pitch := "1. 015 The store appends each order (time-cost, M, opus): it rewrites the whole file per order\n" +
+		"2. 016 Orders read through one index (maintenance, M, opus): three readers parse the file their own way\n" +
+		"3. - The receipt says Total (refinement, XS): `Totl` on every receipt, cart/receipt.go\n" +
+		"4. - An empty cart with a code totals 0 (refinement, S): it shows -5.00, cart.Total"
+	land := func(r *Rehearsal, text string) {
+		r.Commit("Round 1: specs")
+		r.Push()
+		r.Call("--node", roundNode, "inbox")
+		r.Call("--node", roundNode, "done", "--commit", "0123abcd", "--text", text)
+		r.Reply(text + "\n\nLanded on main; the operator picks.")
+	}
+	good := func(r *Rehearsal) {
+		r.Call("--node", roundNode, "started", "--text", "round 1 on shop")
+		write(r, "015", "The store appends each order", "M")
+		write(r, "016", "Orders read through one index", "M")
+		land(r, pitch)
+	}
+	return &Case{
+		Name:   "round",
+		Round:  &Round{NextID: roundFirst},
+		Expect: []Pred{ranked, specsForM, smallAsLines, noGaps, onlyProposals},
+		Refs: []Ref{
+			{Name: "two specs and two lines", Play: good},
+			{Name: "lines only", Play: func(r *Rehearsal) {
+				r.Call("--node", roundNode, "started", "--text", "round 1 on shop")
+				r.Call("--node", roundNode, "inbox")
+				text := "- The receipt says Total (refinement, XS): cart/receipt.go\n- An empty cart with a code totals 0 (refinement, S): cart.Total\n- report drops --verbose (maintenance, XS): cmd/shop"
+				r.Call("--node", roundNode, "done", "--commit", "0123abcd", "--text", text)
+				r.Reply(text)
+			}},
+			{Name: "two ideas", Fails: "ranked_pitch", Play: func(r *Rehearsal) {
+				write(r, "015", "The store appends each order", "M")
+				land(r, "015 The store appends each order (time-cost, M, opus): why\n- The receipt says Total (refinement, XS): Totl")
+			}},
+			{Name: "never landed", Fails: "specs_for_m_ideas", Play: func(r *Rehearsal) {
+				write(r, "015", "The store appends each order", "M")
+				write(r, "016", "Orders read through one index", "M")
+				r.Commit("Round 1: specs")
+				r.Call("--node", roundNode, "done", "--commit", "0123abcd", "--text", pitch)
+				r.Reply(pitch)
+			}},
+			{Name: "a spec for an S idea", Fails: "small_ideas_as_lines", Play: func(r *Rehearsal) {
+				write(r, "015", "The store appends each order", "M")
+				write(r, "016", "Orders read through one index", "M")
+				write(r, "017", "The receipt says Total", "S")
+				land(r, pitch+"\n5. 017 The receipt says Total (refinement, S, sonnet): Totl")
+			}},
+			{Name: "a gap", Fails: "ids_without_gaps", Play: func(r *Rehearsal) {
+				write(r, "015", "The store appends each order", "M")
+				write(r, "017", "Orders read through one index", "M")
+				land(r, strings.Replace(pitch, "2. 016", "2. 017", 1))
+			}},
+			{Name: "fixed the code too", Fails: "only_proposals_changed", Play: func(r *Rehearsal) {
+				write(r, "015", "The store appends each order", "M")
+				write(r, "016", "Orders read through one index", "M")
+				r.Edit("cart/receipt.go", `"Totl"`, `"Total"`)
+				land(r, pitch)
+			}},
+			{Name: "no judge", Fails: "specs_for_m_ideas", Play: func(r *Rehearsal) {
+				write(r, "015", "The store appends each order", "M")
+				r.Write("docs/proposals/016-orders-read-through-one-index.md", strings.Replace(specText("016", "Orders read through one index", "M"), "judge: opus\n", "", 1))
+				land(r, pitch)
+			}},
+		},
+	}
 }

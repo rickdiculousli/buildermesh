@@ -142,7 +142,7 @@ Verified: review ok t:3f2a9c1e m:claude-opus-5-5 c:81d0b7a4; verify ok t:3f2a9c1
   </picture>
 </p>
 
-1. **Propose.** `bmesh ideate app` starts an engineer and a UI/UX engineer; each brings back three to five ranked ideas, landing a spec on `main` for each one sized M or larger and pitching a smaller one as a line, and with an [ntfy](https://ntfy.sh) topic set the list reaches your phone.
+1. **Propose.** `bmesh ideate app` starts one thread that reads the repo, and runs the app when its row lists surfaces, and brings back three to six ideas ranked in one list, landing a spec on `main` for each one sized M or larger and pitching a smaller one as a line (a second thread runs the UI/UX part only when the app runs on another box), and with an [ntfy](https://ntfy.sh) topic set the list reaches your phone.
 2. **Choose.** Picking is building: `bmesh build app 012 014` checks that `main` passes its verify commands and starts a lead for each, with `--context` for your words to them. A spec you don't want you decline with `bmesh spec set --repo app --id 013 --status rejected --field reason="covered by 012" --land`, or shelve with `--status later`; both land on `main`.
 3. **Build.** Each lead builds its spec in its own worktree. Nothing is recorded on `main`, where the spec reads `proposed` until its lead lands it `done`.
 4. **Verify.** Routines run `verify` (the repo's tests) and, for larger changes, `review` (Opus, in a session that never saw the change).
@@ -347,7 +347,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 
 - **`bmesh`**: the CLI, daemon, map server and NATS hub in one binary.
 - **Runners**: `t3` (a T3 Code thread), `claude` (headless `claude -p` turns) or `tmux` runs each session.
-- **The plugin**: ten Claude Code skills, carried by the binary: five for your chat, with `work` taking whatever you bring, and five that the sessions bmesh starts follow.
+- **The plugin**: nine Claude Code skills, carried by the binary: five for your chat, with `work` taking whatever you bring, and four that the sessions bmesh starts follow.
 - **Specs**: `docs/proposals/NNN-slug.md` in each repo, with status, builder, merged commit and `verified` line in the frontmatter.
 
 The [manual](docs/manual.md) covers every command, flag, config key, output and refusal, and the concepts behind them. [Internals](docs/internals.md) covers NATS subjects, buckets, record shapes and signing.

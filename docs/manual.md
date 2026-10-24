@@ -539,24 +539,34 @@ Propose specs, pick the ones to build or decline them, build them, and release w
 bmesh ideate <repo> [--idea] [--model M] [--effort E] [--context <text|->] [--force]
 ```
 
-Starts a proposal round on one ship repo. A round is two threads, an engineer and a UI/UX engineer. Each thread brings back three to five ranked ideas. An idea sized M or larger is a half-page spec, written into `docs/proposals/` and landed on `main` as `proposed`; one sized XS or S is a line of the pitch, `- <title> (<kind>, XS|S): <what changes, where, and why>`, with no spec file and no id. The pitch ranks them all together. You build what you pick with [`bmesh build`](#bmesh-build) and decline the rest with [`bmesh spec set --land`](#bmesh-spec-set).
+Starts a proposal round on one ship repo. A round is one thread, the engineer, which reads the repo once and brings back three to six ranked ideas in one list, the engineering ones and, when the row lists `surfaces`, the ones on how the app looks and feels. Only when the row's `ux_host` names another box, and the row lists `surfaces`, does a second thread, the UI/UX engineer, run the UI/UX part there; then each brings back three to five. An idea sized M or larger is a half-page spec, written into `docs/proposals/` and landed on `main` as `proposed`; one sized XS or S is a line of the pitch, `- <title> (<kind>, XS|S): <what changes, where, and why>`, with no spec file and no id. The pitch ranks them all together. You build what you pick with [`bmesh build`](#bmesh-build) and decline the rest with [`bmesh spec set --land`](#bmesh-spec-set).
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `--idea` | off | The round is your one idea, given in `--context`; only the engineer starts. |
-| `--model M` | `[models] proposer` | The model both threads run on. |
+| `--model M` | `[models] proposer` | The model the threads run on. |
 | `--effort E` | `[models] proposer_effort` | The threads' effort. |
 | `--context <text\|->` | none | What you ask of the round; `-` reads stdin. |
 | `--force` | off | Start a round while another round of the repo is still open, or five specs wait. |
 
-**What it does.** `ideate` needs the repo's registry row (`host`, `ux_host`, `verify`, `surfaces`). Before anything starts, it checks the refusals below, both hosts included. Then, from `main`, it:
+**What it does.** `ideate` needs the repo's registry row (`host`, `ux_host`, `verify`, `surfaces`). It decides the round's threads from it:
 
-1. makes `<[runner] worktrees>/<repo>/<repo>-round-<N>-eng` and `-ux` on branches of those names (an existing branch or path is refused, untouched);
-2. claims a block of spec ids for each child on the mesh, as [`bmesh spec next-id --count 5`](#bmesh-spec-next-id) does (three for an `--idea` thread), and renders the two briefs, each with the first id of its child's block, so they never collide with each other or with any other writer; a child that writes fewer leaves a gap;
-3. starts both threads through the runner, the engineer on the row's `host`, the UI/UX engineer on `ux_host` (`""` = `host`; `host` `""` = this box), with `--model` (default `[models] proposer`) at `--effort` (default `[models] proposer_effort`), titled `[ideate] <repo> round <N>: engineer|UI/UX`;
+| The row | Threads |
+|---|---|
+| `ux_host` `""` or the engineer's box, or no `surfaces` | one, `eng`, on `host` (`""` = this box): the engineering part and, with `surfaces`, the UI/UX part, ranked in one list of three to six |
+| `ux_host` another box, and `surfaces` | two: `eng` on `host`, the engineering part, three to five ideas; `ux` on `ux_host`, the UI/UX part only, three to five |
+| `--idea` | one, `eng`, on `host`: your idea |
+
+Before anything starts, it checks the refusals below, every thread's host included. Then, from `main`, it:
+
+1. makes `<[runner] worktrees>/<repo>/<repo>-round-<N>-eng` (and `-ux` for a second thread) on branches of those names (an existing branch or path is refused, untouched);
+2. claims a block of spec ids for each thread on the mesh, as [`bmesh spec next-id --count N`](#bmesh-spec-next-id) does: six for a round's one thread, five for each of two, three for an `--idea` thread; it renders each brief with the first id of its thread's block, so they never collide with each other or with any other writer; a thread that writes fewer leaves the rest unused;
+3. starts the threads through the runner, each on its box, with `--model` (default `[models] proposer`) at `--effort` (default `[models] proposer_effort`), titled `[ideate] <repo> round <N>: engineer|UI/UX`;
 4. prints the round as JSON (see Output).
 
-**Output.** `{"path","round","eng":{"path","thread","branch","worktree","host"},"ux":{...}}`. With `--idea` the output has no `ux`.
+The brief tells each thread its part. A row without `surfaces` gets a brief that never mentions screens or screenshots: its round is about its code.
+
+**Output.** `{"path","round","eng":{"path","thread","branch","worktree","host"}}`, with `"ux":{...}` beside `eng` when a second thread runs.
 
 **Refusals.**
 
@@ -565,8 +575,8 @@ Starts a proposal round on one ship repo. A round is two threads, an engineer an
 | The repo has no registry row (a path without one) | 2 | `<name> is not in repos.toml; a round needs its row (host, ux_host, verify, surfaces)` |
 | `--idea` without `--context` | 2 | `--idea needs the idea itself in --context` |
 | The row's `mode` is not `ship` | 3 | `refused: <repo> is <mode>; proposal rounds are for ship repos only` |
-| An open round (a live node) | 3 | `refused: <repo>-round-<N> is still open (eng working, ux working); wait for it, or pass --force to start another` |
-| A host it cannot reach (both hosts are checked before anything starts) | 3 | `refused: host <host> (the eng\|ux thread's) is unreachable from <this box>: <error>` |
+| An open round (a live node) | 3 | `refused: <repo>-round-<N> is still open (eng working); wait for it, or pass --force to start another` (each child's state in the brackets) |
+| A host it cannot reach (every thread's host is checked before anything starts) | 3 | `refused: host <host> (the eng\|ux thread's) is unreachable from <this box>: <error>` |
 | A `main` it cannot level with origin | 3 | `refused: main in <path> is not level with origin: <git error>` |
 | Five or more `proposed` specs on `main` that no live lead is building (without `--force`) | 3 | `refused: <repo> has <n> proposed specs waiting (<NNN, NNN, ...>); build or decline them first, or pass --force` |
 | A round branch that already exists | 3 | `refused: branch <b> already exists in <path>` |
@@ -579,28 +589,28 @@ To level `main`, `ideate` runs `fetch origin +refs/heads/main:refs/remotes/origi
 - `--force` starts a round anyway, past an open round (with blocks of its own, running the repo's tests beside the first round) and past five waiting specs. A spec being built reads `proposed` on `main` until it lands, so a spec whose newest lead is live (see [`bmesh build`](#bmesh-build)) is not counted as waiting.
 - Briefs are kept under `<user cache dir>/bmesh/briefs/<round>-<child>.md`.
 - On another host, `ideate` makes the thread, worktree and brief there over ssh. A child whose node is live or whose branch exists is refused there too.
-- Each child starts whatever happens to the other. A child that doesn't start is marked `blocked` (`did not start: <error>`), the round reads `blocked` naming it, and the command exits 1. The other thread runs on, and its pitch arrives when the daemon resettles the round.
+- In a round of two threads, each child starts whatever happens to the other. A child that doesn't start is marked `blocked` (`did not start: <error>`), the round reads `blocked` naming it, and the command exits 1. The other thread runs on, and its pitch arrives when the daemon resettles the round.
 - With the `t3` runner, a round's thread runs in the bmesh worktree, filed under the target repo's T3 project: T3 binds only a project's own worktrees.
 
-**Nodes.** The round is node `<repo>-round-<N>`. `<repo>` is the registry name's node token (see [Names](#names)), and `N` is one past the repo's highest round. Its children are `<repo>-round-<N>.eng` and `.ux`. Each child has an inbox, a thread and a bmesh worktree.
+**Nodes.** The round is node `<repo>-round-<N>`. `<repo>` is the registry name's node token (see [Names](#names)), and `N` is one past the repo's highest round. Its children are `<repo>-round-<N>.eng`, and `.ux` when a second thread runs; the round node records which. Each child has an inbox, a thread and a bmesh worktree.
 
-**`--context`** carries what you asked of the round (`-` reads stdin). Both briefs get `## The operator's focus` with the words as given, trimmed, before their closing. A repo's own template without `{{operator_context}}` gets the section appended. No words, no section.
+**`--context`** carries what you asked of the round (`-` reads stdin). Every brief gets `## The operator's focus` with the words as given, trimmed, before their closing. A repo's own template without `{{operator_context}}` gets the section appended. No words, no section.
 
 **`--idea`** makes the round your one idea, given in `--context` (refused without it, exit 2):
 
-- Only the engineer starts (`ux_host` is neither checked nor prompted for).
+- Only the engineer starts (`ux_host` is neither checked nor prompted for), on the engineering part.
 - Its brief gets `## The operator's idea` instead of the focus section: write that idea's spec, one half-pager or two or three in build order (an idea sized XS or S is a pitch line instead), and nothing else. Its opening, partner and numbering lines match (`{{round_ask}}`, `{{round_partner}}`, `{{ux_ids}}` for a repo's own engineer template).
-- The `started` text reads `round <N> on <repo>: one idea, eng on <host>`, and the output has no `ux`.
+- The `started` text reads `round <N> on <repo>: one idea, eng on <host>` (a round's reads `round <N> on <repo>: eng on <host>[, ux on <ux_host>]`).
 - The round settles on the engineer alone; its pitch is the engineer's line.
 
 **Reporting.** An engineer's node reports (`started`, `progress`, `ask`, `blocked`, `done`). The daemon polls it and wakes it like a lead. Its `done` needs only `--commit` (the commit on `main`) and carries its ranked list as `--text`.
 
 **Settling.** Each minute the daemon settles every open round:
 
-- **Both children `done`:** the round goes `done`, its text the merged pitch (the engineer's list, then the UI/UX engineer's), and the daemon publishes `done` from the round.
-- **One child `blocked`:** the round goes `blocked` (`<child> blocked: <text>`, then the other's pitch once done).
+- **Every child `done`:** the round goes `done`, its text the pitch: a round of one thread, its list as reported; of two, the engineer's list, then the UI/UX engineer's. The daemon publishes `done` from the round.
+- **A child `blocked`:** the round goes `blocked` (`<child> blocked: <text>`, then the other's pitch once done, in a round of two).
 
-The daemon rechecks a blocked round each minute. When the other child's pitch arrives, the daemon publishes `blocked` again with it. When a blocked child is unblocked and both children are `done`, the round goes `done` after all.
+The daemon rechecks a blocked round each minute. When the other child's pitch arrives, the daemon publishes `blocked` again with it. When a blocked child is unblocked and every child is `done`, the round goes `done` after all. A round started before rounds recorded their children (an older `bmesh`) settles as it started: on `eng` for an idea round, on `eng` and `ux` for any other.
 
 **Pushes.** The round's `done` pushes as `<repo> round N proposed` (priority default, tag `memo`, the pitch as body). Its `blocked` pushes as `<repo> round N blocked` (high, `no_entry`). Each push opens the engineer's thread on a tap when `[console]` resolves it and, like a lead's push, needs the event in `[notify] push`. An engineer's `ask` pushes like a lead's (`<path> asks`, with its thread's link). Its `done` and `blocked` reach you through the round.
 
@@ -2918,7 +2928,7 @@ Internals: [internals](internals.md#holds)
 
 ### Briefs
 
-A brief is a thread's first prompt. The engineer, UI/UX engineer, build, fix and half-pager templates are embedded in the binary (`internal/brief/templates/`). A repo overrides any but `fix` with `.bmesh/briefs/<name>.md` (`engineer`, `ux-engineer`, `build`, `half-pager`). The fix brief carries bmesh's rulings, which no repo sets. Rendered briefs are kept under `<user cache dir>/bmesh/briefs/<node>.md`.
+A brief is a thread's first prompt. The engineer (every thread of a round), build, fix and half-pager templates are embedded in the binary (`internal/brief/templates/`). A repo overrides any but `fix` with `.bmesh/briefs/<name>.md` (`engineer`, `build`, `half-pager`). The fix brief carries bmesh's rulings, which no repo sets. Rendered briefs are kept under `<user cache dir>/bmesh/briefs/<node>.md`.
 
 A template is filled in one pass: `{{name}}` placeholders take values, and braces inside a value stay as written. A placeholder with no value is an error naming the template and the placeholder.
 
@@ -2934,13 +2944,13 @@ Each kind of brief also gets its own values:
 
 | Brief | Values |
 |---|---|
-| A round's | `node`, `round`, `round_n`, `worktree`, `branch`, `thread_id`, `next_id`, `date` and `operator_context` (the operator's focus section, or empty) |
+| A round's | `node`, `round`, `round_n`, `worktree`, `branch`, `thread_id`, `next_id`, `date`, `operator_context` (the operator's focus section, or empty), and the lines that differ by the thread's part (one thread, the engineering part beside a UI/UX thread, the UI/UX part only, an idea): `title` (`Engineer` or `UI/UX engineer`), `role`, `round_ask` (what to bring back), `round_partner` (who runs beside it), `ux_ids` (the gap line, or empty) and `surfaces_line` (a line listing the surfaces to screenshot, or empty for a thread with no UI/UX part) |
 | The fix brief | `node`, `date` and `plain_words` (the plain-words rule every closing ends with) |
 | A build brief | `spec`, `spec_path`, `spec_id`, `node`, `date`, `operator_words` (the `## The operator's words` section `build --context` gives, or empty) and `upgrading` (empty, except in bmesh's own repo: a bullet asking the lead to fill the spec's `## Upgrading` section as built, with the template's rule) |
 
 **Setup first.** When the repo names a `[setup]` (see [Setup](#setup)), a build, fix or round brief gets a section `## First: bmesh setup` before its first `## ` heading (at its end when it has none), a repo's own template included: run `bmesh setup` before anything else (`cd <worktree> && bmesh setup` in a round's brief, whose shell doesn't start there), read its output if it fails, and run it again after changing dependencies. A build or fix brief reads `[setup]` from `main`, which the lead's worktree is made from; a round's, from its worktree. The executor header has the same first step (see [`bmesh executor new`](#bmesh-executor-new)). The runner makes a T3 lead's worktree after the brief is written, so bmesh can't run the setup there itself; a T3 project setup that already runs `bmesh setup` makes the step a no-op.
 
-The proposal briefs carry the repo's facts and point at the `ideate-engineer` and `ideate-ux` skills for the method. The build brief carries the spec, points at the `lead` skill, and says: the review is sized as `done_rule` says and queued with `--effort`; its findings are fixed and then landed, with a second pass only after a rebase changed the code; a taste finding is noted in the final message, not re-reviewed.
+The round's briefs carry the repo's facts and the thread's part, and point at the `ideate-engineer` skill for the method. The build brief carries the spec, points at the `lead` skill, and says: the review is sized as `done_rule` says and queued with `--effort`; its findings are fixed and then landed, with a second pass only after a rebase changed the code; a taste finding is noted in the final message, not re-reviewed.
 
 See also: [`bmesh build`](#bmesh-build), [`bmesh spec template`](#bmesh-spec-template).
 
@@ -3492,7 +3502,7 @@ Internals: [internals](internals.md#hosts)
 
 ### The plugin
 
-The repo is a Claude Code plugin, `buildermesh`, with ten skills. The binary reads none of them; a session loads them. The binary carries the plugin (`.claude-plugin/`, `skills/`, `hooks/` and `third_party/ponytail/LICENSE`, embedded from the repo) and writes it to the plugin dir, which Claude Code reads (see [`bmesh plugin`](#bmesh-plugin)), so a box's skills are always its binary's.
+The repo is a Claude Code plugin, `buildermesh`, with nine skills. The binary reads none of them; a session loads them. The binary carries the plugin (`.claude-plugin/`, `skills/`, `hooks/` and `third_party/ponytail/LICENSE`, embedded from the repo) and writes it to the plugin dir, which Claude Code reads (see [`bmesh plugin`](#bmesh-plugin)), so a box's skills are always its binary's.
 
 | Skill | Run by | What it covers |
 |---|---|---|
@@ -3504,10 +3514,9 @@ The repo is a Claude Code plugin, `buildermesh`, with ten skills. The binary rea
 | `fix` | the fixer | the fixer's pass (see [The fixer](#the-fixer)) |
 | `lead` | a lead | one spec, its executors, one `review` pass, landing, feedback |
 | `executor` | an executor | its own worktree and branch only; it reports and asks through the lead and never merges or pushes, except its own branch to queue a kind of another OS |
-| `ideate-engineer` | a round's engineer | a round's method, from reading the repo to the pitch the operator answers |
-| `ideate-ux` | a round's UI/UX engineer | the same, for how the app looks and feels |
+| `ideate-engineer` | a round's threads | a round's method, from reading the repo to the pitch the operator answers: its engineering part, and its UI/UX part (running the app, a screenshot of each surface) where the brief lists surfaces |
 
-Five are the operator's chat entry points: `work` for the work itself, `scaffold` for a repo's shared sections and rules, `ponytail-review` for a review of a change, and `sync` and `prune` across boxes. The nodes the work starts follow the other five.
+Five are the operator's chat entry points: `work` for the work itself, `scaffold` for a repo's shared sections and rules, `ponytail-review` for a review of a change, and `sync` and `prune` across boxes. The nodes the work starts follow the other four.
 
 #### From a chat
 
@@ -3540,7 +3549,7 @@ Both stop, saying so, on a box with `[hosts]` off.
 
 **The hook.** `hooks/hooks.json` runs `bmesh hosts --here` and then `bmesh update --notice` at every session start when `bmesh` is on PATH, with a 10-second timeout, and always exits 0. The stderr of `bmesh update --notice` is dropped, so a binary older than the plugin prints nothing there. On a box with `[hosts]` on, a session opens with the line naming the box (see [Several boxes](#several-boxes) and [`bmesh hosts --here`](#bmesh-hosts---here)); on a box whose binary is behind `main`, with the notice (see [Updates](#updates)). The hook prints nothing else.
 
-**Briefs and conventions.** A lead's brief says "follow the `buildermesh:lead` skill" and adds the operator's own conventions; the executor header names the executor skill (see [`bmesh executor new`](#bmesh-executor-new)); a round's briefs name the `ideate-engineer` and `ideate-ux` skills (see [Briefs](#briefs)). The skills name no repo convention: `docs/agents-snippet.md`, the paragraph a repo's AGENTS.md gets, is embedded in the binary for `bmesh scaffold` and kept in the repo for reading.
+**Briefs and conventions.** A lead's brief says "follow the `buildermesh:lead` skill" and adds the operator's own conventions; the executor header names the executor skill (see [`bmesh executor new`](#bmesh-executor-new)); a round's briefs name the `ideate-engineer` skill (see [Briefs](#briefs)). The skills name no repo convention: `docs/agents-snippet.md`, the paragraph a repo's AGENTS.md gets, is embedded in the binary for `bmesh scaffold` and kept in the repo for reading.
 
 ### Names
 
@@ -3705,9 +3714,9 @@ path = "~/repos/party-buzzer"           # required; this box's checkout (~ expan
 mode = "ship"                           # ship | companion | publish | fork | dormant
 remote = ""                             # owner/repo or a URL, for people and the table
 host = ""                               # box for proposal threads ("" = this one)
-ux_host = ""                            # box for UI/UX threads
+ux_host = ""                            # box a round's UI/UX thread runs on, when the app runs on another box ("" = host)
 verify = []                             # shell commands a change must pass
-surfaces = []                           # UI screens a UI/UX thread screenshots, with viewports
+surfaces = []                           # UI screens a round screenshots, with viewports (none: no UI/UX part)
 pin = ""                                # release tag every checkout stays on
 routines = ["verify", "review"]         # routine kinds a build runs
 code = []                               # git pathspecs of the code ("cmd/**", "*.go"); none = all but the spec files

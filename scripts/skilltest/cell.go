@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -156,7 +157,8 @@ type cellSetup struct {
 // the sandbox with the case's edits, committed once and pushed to a bare
 // origin beside it as main, the fake bmesh and the stubs in bin/, and the
 // fake's files. A lead's case gets its worktree of the sandbox on its own
-// branch, where the session runs, and its first words are the build brief.
+// branch, where the session runs, and its first words are the build brief;
+// a round's case the same, with the round brief.
 func setupCell(dir string, k *Case, a Arm, fixture, host string, now time.Time) (cellSetup, error) {
 	cs := cellSetup{Words: k.Turns}
 	for _, d := range []string{"bin", "canned", "state", "tmp", "turns", "bmesh-config"} {
@@ -191,6 +193,10 @@ func setupCell(dir string, k *Case, a Arm, fixture, host string, now time.Time) 
 		cs.Cwd = l.worktree()
 		steps = append(steps, []string{"-C", sandbox, "worktree", "add", "-q", "-b", l.branch(), filepath.Join(dir, cs.Cwd), "main"})
 	}
+	if rd := k.Round; rd != nil {
+		cs.Cwd = rd.worktree()
+		steps = append(steps, []string{"-C", sandbox, "worktree", "add", "-q", "-b", rd.branch(), filepath.Join(dir, cs.Cwd), "main"})
+	}
 	for _, s := range steps {
 		if _, err := git(dir, genv, s...); err != nil {
 			return cs, err
@@ -208,7 +214,28 @@ func setupCell(dir string, k *Case, a Arm, fixture, host string, now time.Time) 
 		}
 		cs.Words = []string{text}
 	}
-	if err := installFake(dir, a, sandbox, host, k.Lead); err != nil {
+	fn := fakeNode{}
+	if l := k.Lead; l != nil {
+		fn = fakeNode{Node: l.Node, Worktree: l.worktree(), Spec: l.Spec, StopFirst: l.StopFirst}
+	}
+	if rd := k.Round; rd != nil {
+		text, err := rd.brief(a, dir, sandbox, host, now)
+		if err != nil {
+			return cs, fmt.Errorf("case %s: the round brief: %w", k.Name, err)
+		}
+		cs.Words = []string{text}
+		fn = fakeNode{Node: roundNode, Worktree: rd.worktree(), Round: true}
+		// The mesh's counter holds the round's claims, so a spec next-id
+		// the thread runs numbers past them.
+		tmpl, err := rd.template(a)
+		if err != nil {
+			return cs, err
+		}
+		if err := writeFile(filepath.Join(dir, "state", "next-id"), strconv.Itoa(rd.claimed(tmpl))+"\n"); err != nil {
+			return cs, err
+		}
+	}
+	if err := installFake(dir, a, sandbox, host, fn); err != nil {
 		return cs, err
 	}
 	canned, err := defaultCanned(sandbox, host)
@@ -228,11 +255,19 @@ func setupCell(dir string, k *Case, a Arm, fixture, host string, now time.Time) 
 	return cs, nil
 }
 
+// fakeNode is the node a lead's or a round's cell runs as: its path, its
+// worktree (relative to the cell), a lead's spec and stop, and whether it is
+// a round's thread (whose spec list reads its checkout). Node "" is none.
+type fakeNode struct {
+	Node, Worktree, Spec string
+	StopFirst, Round     bool
+}
+
 // installFake writes the fake bmesh, the stubs, the arm's commands and the
-// fake's env file (with a lead's node, worktree and spec in a lead's cell),
-// and an inert bmesh config: the real binary, called by its path, finds no
-// mesh to reach.
-func installFake(dir string, a Arm, sandbox, host string, l *Lead) error {
+// fake's env file (with the cell's node, worktree and a lead's spec), and
+// an inert bmesh config: the real binary, called by its path, finds no mesh
+// to reach.
+func installFake(dir string, a Arm, sandbox, host string, n fakeNode) error {
 	fake, err := fakeFS.ReadFile("fake/bmesh")
 	if err != nil {
 		return err
@@ -254,12 +289,16 @@ func installFake(dir string, a Arm, sandbox, host string, l *Lead) error {
 	}
 	q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 	fakeEnv := "repo=" + q(repoName) + "\nrepo_path=" + q(sandbox) + "\nhost=" + q(host) + "\n"
-	if l != nil {
-		stop := "0"
-		if l.StopFirst {
+	if n.Node != "" {
+		stop, round := "0", "0"
+		if n.StopFirst {
 			stop = "1"
 		}
-		fakeEnv += "node=" + q(l.Node) + "\nworktree=" + q(filepath.Join(dir, l.worktree())) + "\nlead_spec=" + q(l.Spec) + "\nstop_first=" + stop + "\n"
+		if n.Round {
+			round = "1"
+		}
+		fakeEnv += "node=" + q(n.Node) + "\nworktree=" + q(filepath.Join(dir, n.Worktree)) + "\nlead_spec=" + q(n.Spec) + "\nstop_first=" + stop +
+			"\nround=" + round + "\n"
 	}
 	if err := writeFile(filepath.Join(dir, "fake.env"), fakeEnv); err != nil {
 		return err

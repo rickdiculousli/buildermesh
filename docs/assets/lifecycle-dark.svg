@@ -98,14 +98,13 @@ text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helveti
 <text class="tt" x="100" y="40" text-anchor="middle">Propose</text>
 <text class="cm" x="100" y="62" text-anchor="middle"><tspan class="mu">bmesh </tspan>ideate app</text>
 <g transform="translate(4 0)">
-<text class="lb l14" x="28" y="90">engineer</text>
-<text class="lb l14" x="28" y="144">UI/UX engineer</text>
-<g class="an hid k4"><rect class="qd" x="28" y="98" width="40" height="24" rx="6"/></g><g class="an k3"><rect class="sc" x="28" y="98" width="40" height="24" rx="6"/><text class="mo" x="48" y="114.5" text-anchor="middle">012</text></g>
-<g class="an hid k6"><rect class="qd" x="76" y="98" width="40" height="24" rx="6"/></g><g class="an k5"><rect class="sc" x="76" y="98" width="40" height="24" rx="6"/><text class="mo" x="96" y="114.5" text-anchor="middle">013</text></g>
-<g class="an hid k8"><rect class="qd" x="124" y="98" width="40" height="24" rx="6"/></g><g class="an k7"><rect class="sc" x="124" y="98" width="40" height="24" rx="6"/><text class="mo" x="144" y="114.5" text-anchor="middle">014</text></g>
-<g class="an hid k10"><rect class="qd" x="28" y="152" width="40" height="24" rx="6"/></g><g class="an k9"><rect class="sc" x="28" y="152" width="40" height="24" rx="6"/><text class="mo" x="48" y="168.5" text-anchor="middle">017</text></g>
-<g class="an hid k12"><rect class="qd" x="76" y="152" width="40" height="24" rx="6"/></g><g class="an k11"><rect class="sc" x="76" y="152" width="40" height="24" rx="6"/><text class="mo" x="96" y="168.5" text-anchor="middle">018</text></g>
-<g class="an hid k14"><rect class="qd" x="124" y="152" width="40" height="24" rx="6"/></g><g class="an k13"><rect class="sc" x="124" y="152" width="40" height="24" rx="6"/><text class="mo" x="144" y="168.5" text-anchor="middle">019</text></g>
+<text class="lb l14" x="28" y="104">one ranked list</text>
+<g class="an hid k4"><rect class="qd" x="28" y="112" width="40" height="24" rx="6"/></g><g class="an k3"><rect class="sc" x="28" y="112" width="40" height="24" rx="6"/><text class="mo" x="48" y="128.5" text-anchor="middle">012</text></g>
+<g class="an hid k6"><rect class="qd" x="76" y="112" width="40" height="24" rx="6"/></g><g class="an k5"><rect class="sc" x="76" y="112" width="40" height="24" rx="6"/><text class="mo" x="96" y="128.5" text-anchor="middle">013</text></g>
+<g class="an hid k8"><rect class="qd" x="124" y="112" width="40" height="24" rx="6"/></g><g class="an k7"><rect class="sc" x="124" y="112" width="40" height="24" rx="6"/><text class="mo" x="144" y="128.5" text-anchor="middle">014</text></g>
+<g class="an hid k10"><rect class="qd" x="28" y="144" width="40" height="24" rx="6"/></g><g class="an k9"><rect class="sc" x="28" y="144" width="40" height="24" rx="6"/><text class="mo" x="48" y="160.5" text-anchor="middle">015</text></g>
+<g class="an hid k12"><rect class="qd" x="76" y="144" width="40" height="24" rx="6"/></g><g class="an k11"><rect class="sc" x="76" y="144" width="40" height="24" rx="6"/><text class="mo" x="96" y="160.5" text-anchor="middle">016</text></g>
+<g class="an hid k14"><rect class="qd" x="124" y="144" width="40" height="24" rx="6"/></g><g class="an k13"><rect class="sc" x="124" y="144" width="40" height="24" rx="6"/><text class="mo" x="144" y="160.5" text-anchor="middle">017</text></g>
 <text class="mo mu" x="96" y="200" text-anchor="middle">docs/proposals/</text>
 <g class="an hid k16"><rect class="qd" x="14" y="212" width="164" height="26" rx="13"/></g><g class="an k15"><rect class="pl" style="--c:var(--teal)" x="14" y="212" width="164" height="26" rx="13"/><text style="fill:var(--teal)" x="96" y="229.5" text-anchor="middle">app round 4 proposed</text></g>
 </g></g>
