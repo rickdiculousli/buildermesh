@@ -13,23 +13,26 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/brief"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
 
 const executorUsage = "usage: bmesh executor new --name N [--base REF] [--model M] [--json] | list [--json] | remove <name> [--force]"
 
-// executorHeader is pasted at the top of an executor's Agent prompt. It
-// names the node on every bmesh command rather than exporting BMESH_NODE:
-// the harness's shell keeps no environment between tool calls, and a bmesh
-// run from the lead's worktree would otherwise act as the lead.
-const executorHeader = "You are executor %s in buildermesh. Work only in %s on branch %s: every file path you touch is under it, " +
-	"and every shell command starts with `cd %s &&` (the working directory and environment do not persist between tool calls). " +
-	"Every bmesh command carries --node %s. " +
-	"Before anything else run %s`cd %s && bmesh --node %s started --text \"<what you will do>\"`. " +
-	"Report the finished piece with `bmesh --node %s done --commit <sha> --text \"<one line>\"` alone: " +
-	"the mesh puts it, with your branch, in your lead's inbox. " +
-	"Read your brief below, then invoke the `buildermesh:executor` skill.\n"
+// executorBrief is the executor's brief from the embedded executor
+// template: the header the lead pastes verbatim, the piece's fields it
+// fills in, and how it starts and resumes the executor. The header names
+// the node on every bmesh command rather than exporting BMESH_NODE: the
+// harness's shell keeps no environment between tool calls, and a bmesh run
+// from the lead's worktree would otherwise act as the lead.
+func executorBrief(path, wt, branch, model, setup string) (string, error) {
+	on := "on the model the piece calls for"
+	if model != "" {
+		on = "on `" + model + "`"
+	}
+	return brief.Render("", "executor", map[string]string{"path": path, "worktree": wt, "branch": branch, "model": on, "setup_step": setup})
+}
 
 // executorSetupStep is the header's first step when the repo names a setup
 // command: bmesh setup in the executor's worktree, before started.
@@ -211,7 +214,11 @@ func (a *app) cmdExecutorNew(args []string) error {
 	}
 	fmt.Fprintf(a.stdout, "%s\n", line)
 	if !a.json {
-		fmt.Fprintf(a.stdout, executorHeader, path, wt, branch, wt, path, executorSetupStep(rc.Setup.Command, wt), wt, path, path)
+		text, err := executorBrief(path, wt, branch, *model, executorSetupStep(rc.Setup.Command, wt))
+		if err != nil {
+			return err
+		}
+		fmt.Fprint(a.stdout, text)
 	}
 	return nil
 }

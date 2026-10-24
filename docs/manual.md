@@ -1584,13 +1584,16 @@ Makes a worktree, branch and node for one executor. The lead runs it (or an exec
 | `--name N` | required | the executor's name, the last token of its path |
 | `--base REF` | the parent's HEAD | the commit the branch starts from |
 | `--model M` | none | the model the executor runs on, recorded on its node |
-| `--json` | off | print only the JSON, no header |
+| `--json` | off | print only the JSON, no brief |
 
 **What it does**, in order:
 
 1. makes `<[runner] worktrees>/<repo>/<parent path>.<name>` with `git worktree add -b <parent's branch>-<name>` from the parent's HEAD (`--base` picks another commit; the parent's branch is its worktree's current one, renamed or not);
 2. registers node `<parent path>.<name>` with an inbox and state `idle`;
-3. prints `{"path","branch","worktree"}` and, unless `--json`, the executor header to paste at the top of the subagent's prompt: the path, worktree and branch. The header says to start every shell command with `cd <worktree> &&`, pass `--node <path>` on every `bmesh` command, run `bmesh started` first (after `cd <worktree> && bmesh setup` when the commit it starts from names a `[setup]`, see [Setup](#setup)), report with `bmesh done --commit <sha> --text "<one line>"` alone, and invoke the `buildermesh:executor` skill.
+3. prints `{"path","branch","worktree"}` and, unless `--json`, the executor's brief (the embedded `executor` template, see [Briefs](#briefs)), which the lead completes and starts the executor with. It has three parts:
+   - the header, pasted verbatim at the top of the subagent's prompt: the path, worktree and branch. It says to start every shell command with `cd <worktree> &&`, pass `--node <path>` on every `bmesh` command, run `bmesh started` first (after `cd <worktree> && bmesh setup` when the commit it starts from names a `[setup]`, see [Setup](#setup)), report with `bmesh done --commit <sha> --text "<one line>"` alone, and invoke the `buildermesh:executor` skill;
+   - `## Your piece`, with brackets the lead fills in: what to build, the files it owns and must not touch, its done condition; and how it reports: `done --commit` alone once the condition holds (a piece that only checks reports at the commit it started from), and `progress` at least every 15 minutes;
+   - below a `----- for the lead, not the prompt -----` line, for the lead only: start it with the Agent tool, in the background, on the `--model` given (or the model the piece calls for), at medium effort, the prompt everything above that line; its `done`, `ask` and `blocked` reach the lead's inbox; resume it with SendMessage before it reports done, for a question, a correction or more work that needs most of what it has read, while its context is mostly that reading, and otherwise let it report and start a fresh one.
 
 When `git worktree add` fails (a hook, an unwritable root), nothing is registered and the worktree and branch are removed.
 
@@ -2946,7 +2949,7 @@ Internals: [internals](internals.md#holds)
 
 ### Briefs
 
-A brief is a thread's first prompt. The engineer (every thread of a round), build, fix and half-pager templates are embedded in the binary (`internal/brief/templates/`). A repo overrides any but `fix` with `.bmesh/briefs/<name>.md` (`engineer`, `build`, `half-pager`). The fix brief carries bmesh's rulings, which no repo sets. Rendered briefs are kept under `<user cache dir>/bmesh/briefs/<node>.md`.
+A brief is a thread's first prompt. The engineer (every thread of a round), build, fix, executor and half-pager templates are embedded in the binary (`internal/brief/templates/`). A repo overrides any but `fix` and `executor` with `.bmesh/briefs/<name>.md` (`engineer`, `build`, `half-pager`). The fix brief carries bmesh's rulings, which no repo sets; the executor brief, which [`bmesh executor new`](#bmesh-executor-new) prints, is filled from the executor alone (`path`, `worktree`, `branch`, `model`, `setup_step`) and gets none of the values below. Rendered briefs are kept under `<user cache dir>/bmesh/briefs/<node>.md`.
 
 A template is filled in one pass: `{{name}}` placeholders take values, and braces inside a value stay as written. A placeholder with no value is an error naming the template and the placeholder.
 
@@ -2966,9 +2969,9 @@ Each kind of brief also gets its own values:
 | The fix brief | `node`, `date` and `plain_words` (the plain-words rule every closing ends with) |
 | A build brief | `spec`, `spec_path`, `spec_id`, `node`, `date`, `operator_words` (the `## The operator's words` section `build --context` gives, or empty) and `upgrading` (empty, except in bmesh's own repo: a bullet asking the lead to fill the spec's `## Upgrading` section as built, with the template's rule) |
 
-**Setup first.** When the repo names a `[setup]` (see [Setup](#setup)), a build, fix or round brief gets a section `## First: bmesh setup` before its first `## ` heading (at its end when it has none), a repo's own template included: run `bmesh setup` before anything else (`cd <worktree> && bmesh setup` in a round's brief, whose shell doesn't start there), read its output if it fails, and run it again after changing dependencies. A build or fix brief reads `[setup]` from `main`, which the lead's worktree is made from; a round's, from its worktree. The executor header has the same first step (see [`bmesh executor new`](#bmesh-executor-new)). The runner makes a T3 lead's worktree after the brief is written, so bmesh can't run the setup there itself; a T3 project setup that already runs `bmesh setup` makes the step a no-op.
+**Setup first.** When the repo names a `[setup]` (see [Setup](#setup)), a build, fix or round brief gets a section `## First: bmesh setup` before its first `## ` heading (at its end when it has none), a repo's own template included: run `bmesh setup` before anything else (`cd <worktree> && bmesh setup` in a round's brief, whose shell doesn't start there), read its output if it fails, and run it again after changing dependencies. A build or fix brief reads `[setup]` from `main`, which the lead's worktree is made from; a round's, from its worktree. The executor brief's header has the same first step (see [`bmesh executor new`](#bmesh-executor-new)). The runner makes a T3 lead's worktree after the brief is written, so bmesh can't run the setup there itself; a T3 project setup that already runs `bmesh setup` makes the step a no-op.
 
-The round's briefs carry the repo's facts and the thread's part, and point at the `ideate-engineer` skill for the method. The build brief carries the spec, points at the `lead` skill, and says: the review is sized as `done_rule` says and queued with `--effort`; its findings are fixed and then landed, with a second pass only after a rebase changed the code; a taste finding is noted in the final message, not re-reviewed.
+The round's briefs carry the repo's facts and the thread's part, and point at the `ideate-engineer` skill for the method. The build brief carries only what it alone knows: the spec (inlined), the lead's node (every `bmesh` command carries `--node <node>`, `started` first), the repo's path and worktree, the operator's words, the row's `done_rule` (which names its verify commands) and, in bmesh's own repo, the Upgrading bullet; and one line to follow the `lead` skill. How to verify, size and queue the review, land, report done, read the inbox and close is the lead skill's and the commands' own output (`bmesh land`'s and `bmesh ready`'s refusals name their next step), said there once.
 
 See also: [`bmesh build`](#bmesh-build), [`bmesh spec template`](#bmesh-spec-template).
 
@@ -3559,7 +3562,7 @@ From a chat (a phone, or a session with the plugin and no command typed), the op
 
 `work` runs "stop X" as `node stop`, never as a message, which would wake the node. The steps after a command are that command's: `build`'s and `ideate`'s `next:` lines (the watch, the relay, a hold, a stop, a wipe), `watch-done` naming the feedback to drain, `feedback list`'s drain steps, `release`'s refusal for missing upgrade notes, the retry on Opus a failed Fable start names, and the context line's how to compact (see [`bmesh context`](#bmesh-context)). A change `work` hands to a subagent is the subagent's to verify, review and land; it reports one line, which `work` reads instead of the diff.
 
-Each skill ends with one line: what is started or landed and what waits on the operator, each thing named in plain words (a spec or issue by what it does, its number after it in brackets if at all). The done rule `scaffold` writes and every build brief's closing end the same way (`brief.PlainWords`).
+Each skill ends with one line: what is started or landed and what waits on the operator, each thing named in plain words (a spec or issue by what it does, its number after it in brackets if at all). The done rule `scaffold` writes and every round and fix brief's closing end the same way (`brief.PlainWords`), and the lead skill asks a lead's final message for the same.
 
 **`buildermesh:sync`** ("sync my repos", "sync X") shows what `bmesh sync` would do (it has no dry run): this box's checkout against a fresh fetch of origin (up to date, behind, ahead, or what will refuse it) and, from `bmesh hosts --json`, the boxes that would get a `level`, their state and which are secure; then runs `bmesh sync --all` or `--repo R` and reports per box what moved, is held for approval, was refused or has yet to answer. See [`bmesh sync`](#bmesh-sync).
 
@@ -3573,7 +3576,7 @@ Both stop, saying so, on a box with `[hosts]` off.
 
 **The hook.** `hooks/hooks.json` runs `bmesh hosts --here` and then `bmesh update --notice` at every session start when `bmesh` is on PATH, with a 10-second timeout, and always exits 0. The stderr of `bmesh update --notice` is dropped, so a binary older than the plugin prints nothing there. On a box with `[hosts]` on, a session opens with the line naming the box (see [Several boxes](#several-boxes) and [`bmesh hosts --here`](#bmesh-hosts---here)); on a box whose binary is behind `main`, with the notice (see [Updates](#updates)). The hook prints nothing else.
 
-**Briefs and conventions.** A lead's brief says "follow the `buildermesh:lead` skill" and adds the operator's own conventions; the executor header names the executor skill (see [`bmesh executor new`](#bmesh-executor-new)); a round's briefs name the `ideate-engineer` skill (see [Briefs](#briefs)). The skills name no repo convention: `docs/agents-snippet.md`, the paragraph a repo's AGENTS.md gets, is embedded in the binary for `bmesh scaffold` and kept in the repo for reading.
+**Briefs and conventions.** A lead's brief says "follow the `buildermesh:lead` skill" and adds what only it knows (the spec, the node, the row's done rule, the operator's words); the executor brief's header names the executor skill (see [`bmesh executor new`](#bmesh-executor-new)); a round's briefs name the `ideate-engineer` skill (see [Briefs](#briefs)). The skills name no repo convention: `docs/agents-snippet.md`, the paragraph a repo's AGENTS.md gets, is embedded in the binary for `bmesh scaffold` and kept in the repo for reading.
 
 ### Names
 

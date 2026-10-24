@@ -134,7 +134,7 @@ func TestFixBrief(t *testing.T) {
 	if !strings.Contains(string(env), "node='"+fixNode+"'") {
 		t.Errorf("fake.env:\n%s", env)
 	}
-	text, err := c.Lead.brief(filepath.Join(dir, sandboxDir), thisBox(), time.Now())
+	text, err := c.Lead.brief(Arm{}, filepath.Join(dir, sandboxDir), thisBox(), time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

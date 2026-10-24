@@ -85,6 +85,18 @@ func TestExecutorNewMakesWorktreeBranchNode(t *testing.T) {
 		!strings.Contains(rest, "`bmesh --node demo-012.alpha done --commit <sha> --text \"<one line>\"` alone") {
 		t.Fatalf("header %q", rest)
 	}
+	// Then the rest of its brief: the piece to fill in, how it reports, and
+	// for the lead how to start it and when to resume it.
+	for _, w := range []string{"\n\n## Your piece\n", "- Done when: <", "`bmesh --node demo-012.alpha progress --text \"<one line>\"` at least every 15 minutes",
+		"----- for the lead, not the prompt -----", "the Agent tool, in the background, on `claude-sonnet-5-5`, at medium effort (`effort: \"medium\"`)",
+		"resume it with SendMessage", "start a fresh one"} {
+		if !strings.Contains(rest, w) {
+			t.Errorf("brief lacks %q", w)
+		}
+	}
+	if strings.Contains(rest, "{{") {
+		t.Errorf("brief has a placeholder:\n%s", rest)
+	}
 	if b := gitLines(t, wt, "rev-parse", "--abbrev-ref", "HEAD"); len(b) != 1 || b[0] != "t3code/lead-alpha" {
 		t.Fatalf("worktree branch %v", b)
 	}

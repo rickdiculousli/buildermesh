@@ -96,8 +96,8 @@ func TestBuildStartsTheLeadRecordingNothingOnMain(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"# Build docs/proposals/002-second.md in demo", "title: Spec 002", "The second, after 001.", "--node demo-002 started",
-		"`npm test`", "`buildermesh:lead`", "pushed to `example/demo`", "`bmesh --node demo-002 land`", "`bmesh spec set --id 002 --status done`",
-		"`Spec: 002`", "--- end spec -----", "second pass only after a rebase"} {
+		"`npm test`", "`buildermesh:lead`", "pushed to `example/demo`", "every `bmesh` command you run carries `--node demo-002`",
+		"You are the lead of spec 002", "--- end spec -----", "## This repo\n"} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("brief lacks %q", want)
 		}
@@ -331,7 +331,7 @@ func TestBuildContextReachesTheBriefs(t *testing.T) {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
 	}
 	section := "## The operator's words\n\nThe operator picked this spec with these words for its lead. Read them with the spec; " +
-		"where the two disagree, ask before you build past the spec:\n\nkeep the old flag working\n\n## Read first\n"
+		"where the two disagree, ask before you build past the spec:\n\nkeep the old flag working\n\n## This repo\n"
 	for _, id := range []string{"002", "006"} {
 		if b := read(id); !strings.Contains(b, "----- end spec -----\n\n"+section) {
 			t.Fatalf("brief %s lacks the words:\n%s", id, b)
@@ -678,7 +678,7 @@ func TestBuildBriefAsksForUpgradingInOwnRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "- Build what the Proposal section puts In, and nothing it puts Out.\n- This is bmesh's own repo: fill the spec's `## Upgrading` section as built"
+	want := "pushed to `example/demo`.\n- This is bmesh's own repo: fill the spec's `## Upgrading` section as built"
 	if !strings.Contains(string(b), want) || !strings.Contains(string(b), brief.UpgradingRule) {
 		t.Fatalf("brief lacks the Upgrading bullet:\n%s", b)
 	}

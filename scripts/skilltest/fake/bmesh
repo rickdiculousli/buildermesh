@@ -441,7 +441,11 @@ fake_executor() {
 		fi
 		git worktree add -q -b "$b" "$wt" HEAD 2>/dev/null || mkdir -p "$wt"
 		printf '{"path":"%s","branch":"%s","worktree":"%s"}\n' "$p" "$b" "$wt"
-		if [ $json = 0 ]; then
+		if [ $json = 0 ] && [ -f "$cell/executor.md" ]; then
+			# The arm's executor brief, filled in as the binary fills it.
+			m=$(opt model "$@") && m="on \`$m\`" || m="on the model the piece calls for"
+			sed -e "s|@PATH@|$p|g" -e "s|@WORKTREE@|$wt|g" -e "s|@BRANCH@|$b|g" -e "s|@MODEL@|$m|g" "$cell/executor.md"
+		elif [ $json = 0 ]; then
 			printf 'You are executor %s in buildermesh. Work only in %s on branch %s: every file path you touch is under it, and every shell command starts with `cd %s &&` (the working directory and environment do not persist between tool calls). Every bmesh command carries --node %s. Before anything else run `cd %s && bmesh --node %s started --text "<what you will do>"`. Report the finished piece with `bmesh --node %s done --commit <sha> --text "<one line>"` alone: the mesh puts it, with your branch, in your lead'"'"'s inbox. Read your brief below, then invoke the `buildermesh:executor` skill.\n' \
 				"$p" "$wt" "$b" "$wt" "$p" "$wt" "$p" "$p"
 		fi

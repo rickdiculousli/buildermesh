@@ -89,6 +89,16 @@ func (r *Rehearsal) Commit(msg string) {
 	}
 }
 
+// Head is the commit where the session works.
+func (r *Rehearsal) Head() string {
+	if r.err != nil {
+		return ""
+	}
+	sha, err := git(r.sandbox(), gitEnv(r.Dir), "rev-parse", "HEAD")
+	r.fail(err)
+	return sha
+}
+
 // Push pushes HEAD to origin's main.
 func (r *Rehearsal) Push() {
 	if r.err == nil {
