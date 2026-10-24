@@ -11,26 +11,33 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/rickdiculousli/buildermesh/internal/kind"
 )
 
 // Arm is one version of the plugin under test: the directory claude loads
 // with --plugin-dir, and the top-level bmesh commands that version's binary
 // has, read from its manual.
 type Arm struct {
-	Name     string   `json:"name"`
-	Source   string   `json:"source"`           // what --arm named: a git ref or a directory
-	Commit   string   `json:"commit,omitempty"` // the ref's commit
-	Dir      string   `json:"dir"`
-	Commands []string `json:"commands"`
+	Name     string     `json:"name"`
+	Source   string     `json:"source"`           // what --arm named: a git ref or a directory
+	Commit   string     `json:"commit,omitempty"` // the ref's commit
+	Dir      string     `json:"dir"`
+	Commands []string   `json:"commands"`
+	Review   *kind.Kind `json:"-"` // the review kind bmesh scaffold seeds, from its examples/routines/review.toml; nil when it has none
 }
 
 var armNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
 // pluginPaths are what an arm from a ref takes from the tree: the plugin,
-// the manual its command set is read from and the brief templates a
-// round's case renders its brief from. The first two and the manual are
-// required.
-var pluginPaths = []string{".claude-plugin", "skills", "docs/manual.md", "hooks", "third_party", "internal/brief/templates"}
+// the manual its command set is read from, the brief templates a round's
+// case renders its brief from, and the review kind bmesh scaffold seeds. The
+// first two and the manual are required.
+var pluginPaths = []string{".claude-plugin", "skills", "docs/manual.md", "hooks", "third_party", "internal/brief/templates", reviewKindPath}
+
+// reviewKindPath is the review kind bmesh scaffold seeds a repo with: the
+// review case's prompt and allow.
+const reviewKindPath = "examples/routines/review.toml"
 
 func parseArm(v string) (name, source string, err error) {
 	name, source, ok := strings.Cut(v, "=")
@@ -73,6 +80,13 @@ func prepareArm(name, source, root, outDir string) (Arm, error) {
 		return a, fmt.Errorf("arm %s: its commands are read from docs/manual.md: %w", name, err)
 	}
 	a.Commands = commandsFromManual(string(manual))
+	if b, err := os.ReadFile(filepath.Join(a.Dir, filepath.FromSlash(reviewKindPath))); err == nil {
+		k, err := kind.Parse("review", b)
+		if err != nil {
+			return a, fmt.Errorf("arm %s: %s: %w", name, reviewKindPath, err)
+		}
+		a.Review = &k
+	}
 	return a, nil
 }
 

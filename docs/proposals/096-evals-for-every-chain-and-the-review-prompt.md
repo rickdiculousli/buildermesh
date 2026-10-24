@@ -4,10 +4,11 @@ title: The skill test measures the review prompt on planted defects, runs each c
 kind: maintenance
 size: M
 judge: opus
-status: proposed
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-24
+scope_grew: [100]
 ---
 
 ## Opportunity
@@ -24,6 +25,8 @@ In:
 - **Flips.** `summary.md` lists each case whose pass differs between arms, run by run, before the totals.
 - **A fix-lead case**: the fix brief this tree renders, with the fake's `feedback list --repo shop` holding an XS bug with a `where`, a duplicate of it, one a spec on `main` already covers, and one sized M. Passes when a `Fix #<seq>: ...` commit on origin's `main` fixes the bug (a hidden test), the duplicate is ruled with it, the covered one is dropped, the M one lands as a spec carrying `from_feedback`, `feedback drain` names those sequences, and `done` carries the report.
 - **A feedback-drain case** for the work skill: a family's `watch-done`, with `feedback list <family>` holding a one-cause XS issue, one naming bmesh's own repo, and one larger. Passes when the XS lands as `Quick fix from <family> #<seq>: ...`, the bmesh one stays pending, the larger lands as a proposed spec with `from_feedback`, and `feedback drain` names only the handled sequences.
+
+Scope grew: 100 landed first and moved the drain's steps out of the work skill into `watch-done; next: bmesh feedback list <family>` and the three `next:` lines `feedback list <family>` ends with, so the drain case's watch ends with that `next:` and the fake's family list prints those lines on an arm whose manual documents them.
 
 Out: changing the review prompt; cases for rounds and executors (097 and 099 each ship the case for the chain they change).
 

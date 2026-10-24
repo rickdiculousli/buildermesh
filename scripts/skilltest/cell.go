@@ -52,8 +52,9 @@ type Cell struct {
 	Model   string    `json:"model"`
 	Plugin  string    `json:"plugin"`
 	Host    string    `json:"host"`
-	Base    string    `json:"base"`          // the sandbox's one commit, origin's main at the start
-	Cwd     string    `json:"cwd,omitempty"` // where the session runs, under the cell: the sandbox when empty
+	Base    string    `json:"base"`              // the sandbox's one commit, origin's main at the start
+	Cwd     string    `json:"cwd,omitempty"`     // where the session runs, under the cell: the sandbox when empty
+	Routine *Routine  `json:"routine,omitempty"` // a routine's model run, not a session of the plugin
 	Turns   []Turn    `json:"turns"`
 	Steers  int       `json:"steers"`
 	Error   string    `json:"error,omitempty"`
@@ -146,11 +147,13 @@ const gitconfig = `[user]
 `
 
 // cellSetup is what setupCell made: the base commit, where the session
-// runs (relative to the cell; the sandbox when empty) and its turns' words.
+// runs (relative to the cell; the sandbox when empty), its turns' words and,
+// in a routine's case, the run.
 type cellSetup struct {
-	Base  string
-	Cwd   string
-	Words []string
+	Base    string
+	Cwd     string
+	Words   []string
+	Routine *Routine
 }
 
 // setupCell makes a cell in dir for case k on arm a: the fixture copied into
@@ -158,7 +161,9 @@ type cellSetup struct {
 // origin beside it as main, the fake bmesh and the stubs in bin/, and the
 // fake's files. A lead's case gets its worktree of the sandbox on its own
 // branch, where the session runs, and its first words are the build brief;
-// a round's case the same, with the round brief.
+// a round's case the same, with the round brief. A routine's case gets the
+// change its job reviews committed on a branch of the sandbox, and its words
+// are the arm's kind prompt and the job.
 func setupCell(dir string, k *Case, a Arm, fixture, host string, now time.Time) (cellSetup, error) {
 	cs := cellSetup{Words: k.Turns}
 	for _, d := range []string{"bin", "canned", "state", "tmp", "turns", "bmesh-config"} {
@@ -207,6 +212,13 @@ func setupCell(dir string, k *Case, a Arm, fixture, host string, now time.Time) 
 		return cs, err
 	}
 	cs.Base = base
+	if k.Routine != nil {
+		rt, words, err := routineRun(k, a, sandbox, genv)
+		if err != nil {
+			return cs, fmt.Errorf("case %s: %w", k.Name, err)
+		}
+		cs.Routine, cs.Words = rt, []string{words}
+	}
 	if k.Lead != nil {
 		text, err := k.Lead.brief(sandbox, host, now)
 		if err != nil {

@@ -31,16 +31,21 @@ type Case struct {
 	Canned func(e Env) map[string]string // the fake's outputs, by key (see fake/bmesh)
 	Lead   *Lead                         // a lead's case: its words are the build brief
 	Round  *Round                        // a round thread's case: its words are the round brief
-	Expect []Pred
-	Refs   []Ref
+	// A routine's case: its one turn is the arm's kind prompt and the job,
+	// run as the routine runs it, not as a session of the plugin.
+	Routine *Routine
+	Expect  []Pred
+	Refs    []Ref
 }
 
 // Lead makes a case a lead's: the session is lead Node building spec Spec,
 // in a worktree of the sandbox on its own branch, and its one turn is the
-// build brief this tree's internal/brief writes. With StopFirst the fake's
-// first ready or land refuses because the spec doesn't read done.
+// brief this tree's internal/brief writes: the build brief, or with Brief
+// "fix" the fix lead's (Spec empty). With StopFirst the fake's first ready
+// or land refuses because the spec doesn't read done.
 type Lead struct {
 	Node, Spec string
+	Brief      string // "" is the build brief; "fix" the fix lead's
 	StopFirst  bool
 }
 
@@ -49,9 +54,18 @@ type Lead struct {
 func (l *Lead) worktree() string { return filepath.Join("worktrees", repoName, l.Node) }
 func (l *Lead) branch() string   { return "bmesh/" + l.Node }
 
-// brief is the build brief for the lead's spec in the sandbox, as bmesh
-// build writes it for a repo with no setup command.
+// brief is the lead's brief in the sandbox, as bmesh build (or bmesh fix)
+// writes it for a repo with no setup command.
 func (l *Lead) brief(sandbox, host string, now time.Time) (string, error) {
+	if l.Brief == "fix" {
+		values := brief.RowValues(row(sandbox, host), sandbox)
+		values["node"], values["date"], values["plain_words"] = l.Node, now.UTC().Format("2006-01-02"), brief.PlainWords
+		text, err := brief.Render("", "fix", values)
+		if err != nil {
+			return "", err
+		}
+		return brief.WithSetup(text, brief.SetupStep("", "")), nil
+	}
 	specs, err := spec.Scan(sandbox, "docs/proposals/{id}-*.md")
 	if err != nil {
 		return "", err
@@ -157,7 +171,7 @@ const (
 
 var cases = []*Case{bugCase(), tweakCase(), questionCase(), qaCase(), featureMCase(), featureLCase(),
 	inFlightCase(), waitingCase(), ideasCase(), pickCase(), releaseCase(), leadCase("lead-s", false), leadCase("lead-stop", true),
-	roundCase()}
+	roundCase(), reviewCase(), fixCase(), drainCase()}
 
 func findCase(name string) *Case {
 	for _, k := range cases {

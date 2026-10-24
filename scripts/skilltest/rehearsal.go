@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rickdiculousli/buildermesh/internal/kind"
 )
 
 // Ref is a reference end state of a case, played offline: a good one
@@ -31,13 +33,13 @@ type Rehearsal struct {
 }
 
 func newRehearsal(dir string, k *Case, fixture string) (*Rehearsal, error) {
-	arm := Arm{Name: "ref", Commands: []string{"help"}}
+	arm := Arm{Name: "ref", Commands: []string{"help"}, Review: &kind.Kind{Name: "review", Prompt: "Review the change."}}
 	now := time.Now()
 	cs, err := setupCell(dir, k, arm, fixture, thisBox(), now)
 	if err != nil {
 		return nil, err
 	}
-	c := &Cell{Case: k.Name, Arm: "ref", Run: 1, Host: thisBox(), Base: cs.Base, Cwd: cs.Cwd, Started: now}
+	c := &Cell{Case: k.Name, Arm: "ref", Run: 1, Host: thisBox(), Base: cs.Base, Cwd: cs.Cwd, Routine: cs.Routine, Started: now}
 	return &Rehearsal{Dir: dir, Case: k, cell: c, words: cs.Words}, nil
 }
 

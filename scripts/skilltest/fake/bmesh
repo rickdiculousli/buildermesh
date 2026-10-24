@@ -613,6 +613,117 @@ fake_release() {
 	fi
 }
 
+# The feedback queue: a case cans each family's pending issues as
+# canned/feedback-list.<family> and each repo's as
+# canned/feedback-list.repo.<repo>, one line per issue in the binary's
+# formats, its sequence first. A drained sequence is kept in state/drained.
+
+# drained SEQ: whether the sequence was drained.
+drained() { grep -qx "$1" "$state/drained" 2>/dev/null; }
+
+# landedseqs: the sequences origin's main names, one per line: in a spec's
+# from_feedback, or in a fix commit's subject (Fix #a, #b: ... or Quick fix
+# from <family> #a: ...).
+landedseqs() {
+	og=$cell/origin.git
+	{
+		git --git-dir "$og" log --format=%s main 2>/dev/null |
+			sed -n -e 's/^Fix \(#[0-9][0-9]*\(, #[0-9][0-9]*\)*\): .*/\1/p' -e 's/^Quick fix from [^ ]* \(#[0-9][0-9]*\(, #[0-9][0-9]*\)*\): .*/\1/p'
+		for f in $(git --git-dir "$og" ls-tree -r --name-only main -- docs/proposals/ 2>/dev/null); do
+			git --git-dir "$og" show "main:$f" | awk 'NR == 1 && /^---$/ { fm = 1; next } fm && /^---$/ { exit } fm && /^from_feedback:/ { print }'
+		done
+	} | grep -o '#[0-9][0-9]*' | tr -d '#'
+}
+
+# pending FILE [landed]: FILE's canned lines still pending: not drained
+# and, with landed, not named on origin's main.
+pending() {
+	[ -f "$1" ] || return 0
+	skip=$(cat "$state/drained" 2>/dev/null)
+	[ -z "${2-}" ] || skip="$skip $(landedseqs)"
+	skip=" $(echo $skip) "
+	while IFS= read -r l; do
+		case $skip in *" ${l%% *} "*) continue ;; esac
+		printf '%s\n' "$l"
+	done <"$1"
+}
+
+fake_feedback_list() {
+	shift
+	if r=$(opt repo "$@"); then
+		case $r in . | "$repo_path" | "$worktree") r=$repo ;; esac
+		pending "$canned/feedback-list.repo.$r" landed
+		return 0
+	fi
+	f=$(first "$@")
+	f=${f:-$gnode}
+	list=$(pending "$canned/feedback-list.$f")
+	[ -n "$list" ] || return 0
+	printf '%s\n' "$list"
+	# A family's list that isn't a fixer's ends with the steps of draining
+	# it (100), on an arm whose manual documents them; no row here holds
+	# bmesh's module.
+	case $f in *-fix-[0-9]*) return 0 ;; esac
+	if [ $json = 0 ] && saysnext feedback; then
+		echo "next: an issue naming bmesh's own repo is its fixer's: leave it pending. Of the rest, merge duplicates and drop what main already covers (a spec, or a commit naming its #<seq>)" >&2
+		echo "next: make each one-cause XS or S issue as the work skill's rung 3 makes a change, titled Quick fix from $f #<seq>: <what it changes>; write each other one as a proposed spec with from_feedback: $f (<its leads>) #<seq>, landed as Feedback NNN: proposed from $f, for the operator to pick" >&2
+		echo "next: then bmesh feedback drain --seq <the sequences you ruled on>, and report one line per issue: fixed by <sha8>, proposed NNN, already NNN, dropped: <why> or to the fixer" >&2
+	fi
+}
+
+# fake_feedback_drain: --seq deletes exactly those sequences, a family
+# its pending issues up to --through; drained ones are not pending.
+fake_feedback_drain() {
+	shift
+	if seqs=$(opt seq "$@"); then
+		n=0
+		gone=
+		for s in $(printf '%s' "$seqs" | tr ',#' '  '); do
+			if ! drained "$s" && cat "$canned"/feedback-list.* 2>/dev/null | grep -q "^$s "; then
+				echo "$s" >>"$state/drained"
+				n=$((n + 1))
+			else
+				gone=${gone:+$gone,}$s
+			fi
+		done
+		echo "drained $n"
+		[ -z "$gone" ] || echo "not pending: $gone"
+		return 0
+	fi
+	f=$(first "$@")
+	through=$(opt through "$@") || through=
+	n=0
+	for s in $(pending "$canned/feedback-list.$f" | cut -d' ' -f1); do
+		[ -n "$through" ] && [ "$s" -gt "$through" ] && continue
+		echo "$s" >>"$state/drained"
+		n=$((n + 1))
+	done
+	echo "drained $n from $f"
+}
+
+# fake_watch: the case's canned watch. When the case cans watch-land (a
+# spec id), the lead it watches lands first, once, as a lead's land does:
+# a commit on origin's main that sets the spec done, whose sha8 stands in
+# for @LANDED@ in the watch's lines, so a done line names a real commit.
+fake_watch() {
+	landed=$(cat "$state/watch-landed" 2>/dev/null)
+	if [ -z "$landed" ] && [ -f "$canned/watch-land" ]; then
+		id=$(pad "$(cat "$canned/watch-land")")
+		clone=$state/watch-clone
+		rm -rf "$clone"
+		if git clone -q "$cell/origin.git" "$clone" 2>/dev/null && f=$(specfile "$clone" "$id") && [ -n "$f" ]; then
+			setstatus "$f" done
+			git -C "$clone" commit -qam "$(spectitle "$id")
+
+Spec: $id" && git -C "$clone" push -q origin HEAD:main 2>/dev/null &&
+				landed=$(sha8 HEAD "$clone") && echo "$landed" >"$state/watch-landed"
+		fi
+		rm -rf "$clone"
+	fi
+	# An arm whose manual has no next: on watch-done gets the bare line.
+	if saysnext watch; then out watch; else out watch | sed 's/^watch-done; next: .*/watch-done/'; fi | sed "s/@LANDED@/${landed:-00000000}/g"
+}
+
 case $cmd in
 help) usage ;;
 version) echo "bmesh (skilltest's fake)" ;;
@@ -638,10 +749,7 @@ thread-status)
 		out "thread-status.$p" || echo idle
 	fi
 	;;
-watch)
-	# An arm whose manual has no next: on watch-done gets the bare line.
-	if saysnext watch; then out watch; else out watch | sed 's/^watch-done; next: .*/watch-done/'; fi
-	;;
+watch) fake_watch ;;
 inbox)
 	if [ -f "$state/mail" ]; then
 		cat "$state/mail"
@@ -698,8 +806,8 @@ unhold)
 node) [ "${1-}" = stop ] && echo "stopped $(positionals "$@" | sed -n 2p)" ;;
 feedback)
 	case ${1-} in
-	list) ;;
-	drain) echo "drained 0" ;;
+	list) fake_feedback_list "$@" ;;
+	drain) fake_feedback_drain "$@" ;;
 	*) echo "feedback $(next feedback) in $repo-build-1" ;;
 	esac
 	;;

@@ -39,7 +39,7 @@ func cli(args []string, stdout, stderr io.Writer) int {
 	var armArgs armFlags
 	fs.Var(&armArgs, "arm", "a version of the plugin, `name=<git ref or dir>`; repeatable")
 	caseArg := fs.String("cases", "", "the cases to run, comma-separated (default every case)")
-	runs := fs.Int("runs", 1, "runs of each case on each arm")
+	runs := fs.Int("runs", 2, "runs of each case on each arm")
 	model := fs.String("model", "opus", "the sessions' model: opus, sonnet, haiku, fable or a full id")
 	out := fs.String("out", "", "where the cells, results.json and summary.md go (default cache/skilltest/<stamp> in this repo)")
 	jobs := fs.Int("jobs", 2, "cells run at once")
@@ -138,8 +138,12 @@ func cli(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "skilltest: %d cells, %d at a time, into %s\n", len(selected)*len(arms)**runs, *jobs, outDir)
 	res.Rows = r.runAll(ctx, plan(selected, arms, *runs), fixture, scratch, outDir, *jobs, func(row Row, done, total int) {
-		fmt.Fprintf(stdout, "  [%d/%d] %s / %s #%d: %s, %d steers, %d commits, $%.2f, %.0fs%s\n", done, total, row.Case, row.Arm, row.Run,
-			map[bool]string{true: "pass", false: "fail"}[row.Pass], row.Steers, row.Commits, row.CostUSD, float64(row.DurationMS)/1000,
+		defects := ""
+		if named, missed := planted(row); len(named)+len(missed) > 0 {
+			defects = fmt.Sprintf(", named [%s], missed [%s]", strings.Join(named, " "), strings.Join(missed, " "))
+		}
+		fmt.Fprintf(stdout, "  [%d/%d] %s / %s #%d: %s, %d steers, %d commits, $%.2f, %.0fs%s%s\n", done, total, row.Case, row.Arm, row.Run,
+			map[bool]string{true: "pass", false: "fail"}[row.Pass], row.Steers, row.Commits, row.CostUSD, float64(row.DurationMS)/1000, defects,
 			map[bool]string{true: ", error: " + row.Error, false: ""}[row.Error != ""])
 		if err := writeResults(outDir, res); err != nil {
 			fmt.Fprintln(stderr, "skilltest:", err)
@@ -149,6 +153,7 @@ func cli(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skilltest:", err)
 		return 1
 	}
+	fmt.Fprint(stdout, flips(res))
 	fmt.Fprintf(stdout, "skilltest: wrote %s and %s\n", filepath.Join(outDir, "results.json"), filepath.Join(outDir, "summary.md"))
 	if ctx.Err() != nil {
 		return 1
@@ -290,7 +295,7 @@ func (r *runner) runCell(ctx context.Context, p cellPlan, fixture, scratch, outD
 	if err := makeHome(dir, r.host); err != nil {
 		return Row{}, err
 	}
-	c := &Cell{Case: p.k.Name, Arm: p.arm.Name, Run: p.run, Model: r.model, Plugin: p.arm.Dir, Host: host, Base: cs.Base, Cwd: cs.Cwd, Started: now}
+	c := &Cell{Case: p.k.Name, Arm: p.arm.Name, Run: p.run, Model: r.model, Plugin: p.arm.Dir, Host: host, Base: cs.Base, Cwd: cs.Cwd, Routine: cs.Routine, Started: now}
 	if err := c.save(dir); err != nil {
 		return Row{}, err
 	}

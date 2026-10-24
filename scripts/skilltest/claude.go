@@ -199,7 +199,11 @@ func (r *runner) turn(ctx context.Context, dir string, c *Cell, words string, st
 		stdout.Close()
 		return err
 	}
-	cmd := exec.Command(r.claude, r.turnArgs(words, c.lastSession(), c.Plugin)...)
+	args := r.turnArgs(words, c.lastSession(), c.Plugin)
+	if c.Routine != nil {
+		args = r.routineArgs(words, c.Routine)
+	}
+	cmd := exec.Command(r.claude, args...)
 	cmd.Dir = c.cwd(dir)
 	cmd.Env = sessionEnv(r.env, dir, r.host)
 	cmd.Stdin = nil
