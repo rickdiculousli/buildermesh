@@ -3,9 +3,7 @@ package main
 import (
 	"embed"
 	"fmt"
-	"io/fs"
 	"path"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -127,19 +125,7 @@ func parseSheet(text string) (Sheet, error) {
 }
 
 // overlay writes the files under testdata/review/<part> over the sandbox.
-func overlay(sandbox, part string) error {
-	root := reviewDir + "/" + part
-	return fs.WalkDir(reviewFS, root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		b, err := reviewFS.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		return writeFile(filepath.Join(sandbox, filepath.FromSlash(strings.TrimPrefix(p, root+"/"))), string(b))
-	})
-}
+func overlay(sandbox, part string) error { return layOver(reviewFS, reviewDir+"/"+part, sandbox) }
 
 // commitChange lays the change over the sandbox's base and commits it on
 // its own branch, which the sandbox is left on, and returns the job's text

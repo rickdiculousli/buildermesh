@@ -436,6 +436,7 @@ func TestFakeLandsWhatItSays(t *testing.T) {
 			if _, err := git(dir, gitEnv(dir), "--git-dir", filepath.Join(dir, originDir), "merge-base", "--is-ancestor", d[3], "main"); err != nil {
 				t.Errorf("%s, %s's done commit, is not on origin's main", d[3], d[2])
 			}
+			landedCode(t, dir, d[3], map[string][]string{"012": {"store/store.go", "store/store_test.go"}, "014": {"cart/catalog.go", "cart/catalog_test.go", "cmd/shop/main.go"}}[d[2]]...)
 		}
 		if _, again, _ := fake(t, dir, sandbox, "watch", "--nodes", "shop-012,shop-014"); again != out {
 			t.Errorf("a second watch printed %q, want the first's %q: the leads land once", again, out)
@@ -524,6 +525,29 @@ func caseCell(t *testing.T, name, manual string) (string, string) {
 		t.Fatal(err)
 	}
 	return dir, cs.Base
+}
+
+// landedCode checks that a watched lead's landing, commit sha on the
+// cell's origin, changes files (its code and its test, beside its spec), and
+// that the fixture's tests pass on origin's main once it landed.
+func landedCode(t *testing.T, dir, sha string, files ...string) {
+	t.Helper()
+	changed, err := git(dir, gitEnv(dir), "--git-dir", filepath.Join(dir, originDir), "diff-tree", "--no-commit-id", "--name-only", "-r", sha)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		if !slices.Contains(strings.Fields(changed), f) {
+			t.Errorf("%s changes %q, want %s among them: a lead's landing carries its code", sha, changed, f)
+		}
+	}
+	work := t.TempDir()
+	if _, err := git(dir, gitEnv(dir), "clone", "-q", filepath.Join(dir, originDir), work); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, errs := run(work, 5*time.Minute, append(os.Environ(), "GOTOOLCHAIN=local", "GOPROXY=off", "GOWORK=off", "GOFLAGS="), "go", "test", "-count=1", "./..."); code != 0 {
+		t.Errorf("go test ./... on origin's main after %s: exit %d\n%s%s", sha, code, out, errs)
+	}
 }
 
 func fake(t *testing.T, dir, cwd string, args ...string) (int, string, string) {

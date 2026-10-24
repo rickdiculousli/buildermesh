@@ -185,3 +185,18 @@ func writeFile(path, text string) error {
 	}
 	return os.WriteFile(path, []byte(text), 0o644)
 }
+
+// layOver writes the files under root in fsys over dst, each at its path
+// below root.
+func layOver(fsys fs.FS, root, dst string) error {
+	return fs.WalkDir(fsys, root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := fs.ReadFile(fsys, p)
+		if err != nil {
+			return err
+		}
+		return writeFile(filepath.Join(dst, filepath.FromSlash(strings.TrimPrefix(p, root+"/"))), string(b))
+	})
+}

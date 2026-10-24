@@ -207,7 +207,8 @@ func TestRunFix(t *testing.T) {
 }
 
 // The drain case's watch lands the lead's spec first, once, after its
-// build: its done line names a commit on origin's main that sets 013 done.
+// build: its done line names a commit on origin's main that sets 013 done
+// and carries its code and its test, as a real lead's landing.
 func TestFakeWatchLands(t *testing.T) {
 	dir, base := caseCell(t, "drain", thisManual(t))
 	sandbox := filepath.Join(dir, sandboxDir)
@@ -225,6 +226,7 @@ func TestFakeWatchLands(t *testing.T) {
 	if !strings.Contains(spec, "\nstatus: done\n") {
 		t.Errorf("013 on origin's main:\n%s", spec)
 	}
+	landedCode(t, dir, landed, "report/report.go", "report/report_test.go", "cmd/shop/main.go")
 	if _, again, _ := fake(t, dir, sandbox, "watch", "--nodes", "shop-013"); again != out || origin() != landed {
 		t.Errorf("a second watch landed again or said otherwise:\n%s", again)
 	}

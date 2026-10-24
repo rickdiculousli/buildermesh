@@ -785,8 +785,8 @@ func pickCase() *Case {
 	}
 	watched := func(r *Rehearsal) {
 		r.Call("watch", "--nodes", "shop-012,shop-014", "--timeout", "30m")
-		r.Lands("Orders are numbered under a lock\n\nSpec: 012", setStatus(f012, "done"))
-		r.Lands("The catalog is read from catalog.json\n\nSpec: 014", setStatus(f014, "done"))
+		r.Lands("Orders are numbered under a lock\n\nSpec: 012", landedChange("012"), setStatus(f012, "done"))
+		r.Lands("The catalog is read from catalog.json\n\nSpec: 014", landedChange("014"), setStatus(f014, "done"))
 	}
 	return &Case{
 		Name:  "pick",

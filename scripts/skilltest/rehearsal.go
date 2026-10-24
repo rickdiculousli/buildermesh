@@ -1,8 +1,10 @@
 package main
 
 import (
+	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -176,6 +178,34 @@ func setStatus(file, status string) func(dir string) error {
 		}
 		return os.WriteFile(p, statusRE.ReplaceAll(b, []byte("status: "+status)), 0o644)
 	}
+}
+
+// testdata/landed/<id> is what a watched lead lands for spec <id> beside
+// its status, its code and its test, whole files laid over the fixture: a
+// session that opens the landing finds the spec built, as a real lead's.
+
+//go:embed testdata/landed
+var landedFS embed.FS
+
+const landedDir = "testdata/landed"
+
+// landedChange is an edit for Lands: spec id's lead's change.
+func landedChange(id string) func(dir string) error {
+	return func(dir string) error { return layOver(landedFS, landedDir+"/"+id, dir) }
+}
+
+// cannedLanded copies the change each of a case's watch-land ids has into
+// the cell's canned/landed/<id>, where the fake's watch lays it over.
+func cannedLanded(dir, ids string) error {
+	for _, id := range strings.Fields(ids) {
+		if _, err := fs.Stat(landedFS, landedDir+"/"+id); err != nil {
+			continue // a round's id: its specs are the whole landing
+		}
+		if err := layOver(landedFS, landedDir+"/"+id, filepath.Join(dir, "canned", "landed", id)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // newFile is an edit for Lands: a file written whole.

@@ -264,6 +264,9 @@ func setupCell(dir string, k *Case, a Arm, fixture, host string, now time.Time) 
 			return cs, err
 		}
 	}
+	if err := cannedLanded(dir, canned["watch-land"]); err != nil {
+		return cs, err
+	}
 	return cs, nil
 }
 
