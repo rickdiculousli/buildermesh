@@ -1,11 +1,21 @@
 ---
 name: quickfix
-description: Use when the operator asks to have a change made rather than proposed - "fix X", "hotfix X", "quick fix", "tweak X", "rename X", "make X do Y", "just change it", "build simply" - in a repo in the bmesh registry. Makes the change in this session and lands it by the repo's definition of done, with no spec, spec id, lead, executor, round or ledger commit; a change sized L or larger it offers as a spec instead.
+description: Use when the operator asks to have a change made rather than proposed - "fix X", "hotfix X", "quick fix", "tweak X", "rename X", "make X do Y", "just change it", "build simply" - in a repo in the bmesh registry, and when the operator is QA-ing or says to hold ("I'm QA-ing", "hold off", "don't fix yet", "just note it"), which keeps every change on a numbered list until they say go. Makes the change in this session and lands it by the repo's definition of done, with no spec, spec id, lead, executor, round or ledger commit; a change sized L or larger it offers as a spec instead.
 ---
 
 # Quick fix
 
 A change the operator asks to have made is made here, by you, and is done when the repo's definition of done (its `AGENTS.md`) holds. Specs, leads and the ledger are for work the operator asks to have proposed, or to have a lead build; a quick fix uses none of them. So no `bmesh spec next-id` and no file under `docs/proposals/`; no `bmesh ideate`, `build`, `lead start` or `executor new`; no `bmesh land`, `ready`, `done` or `feedback` (those are a node's, and you are none); and no commit that only records state. A request for a spec, a proposal or a thread ("spec this", "ideate this", "write this up", "spin up a thread") is the `ideate` skill's.
+
+**A finding is not an order.** A report of something wrong ("the label overlaps", "this 500s") with no ask to change it gets looked into and answered with its cause and the fix you would make; nothing is changed.
+
+**Hold while the operator QAs.** When they say they are QA-ing, testing or going through a list, or to hold ("hold off", "don't fix yet", "just note it"), every change waits for their release. While holding:
+
+- Keep a numbered list: each finding with what they saw, its cause (or `not looked at`), the fix you would make and its size. Answer each in one line (`3 noted: <cause>; fix: <change> (XS)`), and show the whole list when asked.
+- Read, reproduce and run tests as you like, but leave what they are testing alone (no edit, restart, rebuild or deploy of it), and commit, push or start nothing (no `bmesh` command that starts a thread or changes state).
+- A "fix X" goes on the list as picked, not made, unless they say now.
+
+The release ("go", "fix them", "fix 1 and 3") makes the picked findings as one quick fix by the steps below: one worktree, a commit per finding, one verify, one review sized by the batch as a whole, one push. A finding sized L is offered as a spec there, as step 1 says. What wasn't picked stays on the list, and the hold ends at the push or when they say they are done.
 
 1. **Size it** as the definition of done sizes work with no spec: XS one file, S one module, M crosses modules, L changes an interface others depend on. XS, S and M are quick fixes. For L or larger, say in one line what makes it L and offer the two ways, a spec (the `ideate` skill's one idea, built by a lead) or here anyway with a high-effort review, and let the operator choose; a quick fix that grows to L while you make it stops there with the same line. Ask nothing else first: read the code and decide.
 2. **Where.** A worktree of your own on a branch from `origin/main` (the harness's, or `git -C <repo path> worktree add <dir> -b <branch> origin/main`), never the repo's checkout itself: a commit there not yet pushed holds every lead's `bmesh land` of the repo until it is, and land fast-forwards that checkout under your edits. It needs a checkout of the repo on this box (`bmesh repos show <repo>` names its path); with none, say so and name the row's `host`, which has one. Never move, reset or push commits on `main` that aren't yours.
