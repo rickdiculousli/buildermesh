@@ -733,6 +733,13 @@ func leadCalls(s *State) []string {
 	return out
 }
 
+// acceptedByFake are the ready and land calls the fake let through, in
+// order: a call it refused, for any stop, isn't one.
+func acceptedByFake(s *State) []string {
+	b, _ := os.ReadFile(filepath.Join(s.Dir, "state", "accepted"))
+	return strings.Fields(string(b))
+}
+
 // landedByFake are the commits the fake's land pushed to origin's main.
 func landedByFake(s *State) []string {
 	b, _ := os.ReadFile(filepath.Join(s.Dir, "state", "landed"))
@@ -771,16 +778,33 @@ func leadCase(name string, stopFirst bool) *Case {
 		return false, "no inbox, no ready and no land"
 	}}
 	landsOnce := Pred{"lands_once", func(s *State) (bool, string) {
-		calls := leadCalls(s)
-		seen := strings.Join(calls, ", ")
-		if stopFirst {
-			if len(calls) == 0 || calls[0] == "done" {
-				return false, "no ready or land for the fake to refuse: " + seen
+		// What the fake let through, so a stop the session met and settled
+		// (a dirty tree, the spec not done) costs nothing here.
+		let, calls := acceptedByFake(s), leadCalls(s)
+		dones := 0
+		for _, c := range calls {
+			if c == "done" {
+				dones++
 			}
-			calls = calls[1:]
 		}
-		ok := slices.Equal(calls, []string{"ready"}) || slices.Equal(calls, []string{"land", "done"})
-		return ok, "ready, land and done in order: [" + seen + "]"
+		ok := slices.Equal(let, []string{"ready"}) && dones == 0 ||
+			slices.Equal(let, []string{"land"}) && dones == 1 && calls[len(calls)-1] == "done"
+		return ok, "let through: [" + strings.Join(let, ", ") + "]; called: [" + strings.Join(calls, ", ") + "]"
+	}}
+	tookStep := Pred{"took_the_step", func(s *State) (bool, string) {
+		met := 0
+		for _, c := range s.AgentCalls() {
+			_, rest := c.Cmd()
+			switch {
+			case c.Is("ready") && !c.Has("cancel"), c.Is("land"):
+				if met++; met == 2 {
+					return false, "ready or land again before the step the stop named"
+				}
+			case met == 1 && c.Is("spec", "set") && flagValue(rest, "status") == "done":
+				return true, "set the spec done after the stop, as it said"
+			}
+		}
+		return false, "never took the step the stop named"
 	}}
 	noAsk := Pred{"no_ask_or_blocked", func(s *State) (bool, string) {
 		for _, c := range s.AgentCalls() {
@@ -809,7 +833,16 @@ func leadCase(name string, stopFirst bool) *Case {
 		r.Edit(leadSpecFile, "status: proposed", "status: done")
 		r.Commit("012: done")
 	}
-	ready := func(r *Rehearsal) { r.Call("--node", leadNode, "ready", "--text", "012: the receipt says Total") }
+	// ready and land are calls the fake let through; refused is one it refused.
+	ready := func(r *Rehearsal) {
+		r.Call("--node", leadNode, "ready", "--text", "012: the receipt says Total")
+		r.Let("ready")
+	}
+	land := func(r *Rehearsal) {
+		r.Call("--node", leadNode, "land")
+		r.Let("land")
+	}
+	refused := func(r *Rehearsal, what string) { r.Call("--node", leadNode, what) }
 	k := &Case{
 		Name: name,
 		Lead: &Lead{Node: leadNode, Spec: "012", StopFirst: stopFirst},
@@ -821,6 +854,9 @@ func leadCase(name string, stopFirst bool) *Case {
 			return writeFile(filepath.Join(e.Sandbox, leadSpecFile), leadSpec)
 		},
 		Expect: []Pred{change, tests, specDone, startedFirst, inboxFirst, landsOnce, noAsk, noPush},
+	}
+	if stopFirst {
+		k.Expect = append(k.Expect, tookStep)
 	}
 	if !stopFirst {
 		k.Refs = []Ref{
@@ -836,7 +872,7 @@ func leadCase(name string, stopFirst bool) *Case {
 				fix(r)
 				setDone(r)
 				r.Call("--node", leadNode, "inbox")
-				r.Call("--node", leadNode, "land")
+				land(r)
 				r.Call("--node", leadNode, "done", "--commit", "0123abcd", "--text", "012 landed")
 				r.Reply("Landed 0123abcd: the receipt says Total.")
 			}},
@@ -897,7 +933,7 @@ func leadCase(name string, stopFirst bool) *Case {
 		{Name: "took the stop's step", Play: func(r *Rehearsal) {
 			fix(r)
 			r.Call("--node", leadNode, "inbox")
-			ready(r)
+			refused(r, "ready")
 			setDone(r)
 			ready(r)
 			r.Reply("Ready, after setting 012 done as the stop said.")
@@ -906,23 +942,31 @@ func leadCase(name string, stopFirst bool) *Case {
 			fix(r)
 			setDone(r)
 			r.Call("--node", leadNode, "inbox")
-			r.Call("--node", leadNode, "land")
+			refused(r, "land")
 			r.Call("--node", leadNode, "spec", "set", "--id", "012", "--status", "done")
-			r.Call("--node", leadNode, "land")
+			land(r)
 			r.Call("--node", leadNode, "done", "--commit", "0123abcd")
 			r.Reply("Landed 0123abcd.")
+		}},
+		{Name: "readied again blindly", Fails: "took_the_step", Play: func(r *Rehearsal) {
+			fix(r)
+			setDone(r)
+			r.Call("--node", leadNode, "inbox")
+			refused(r, "ready")
+			ready(r)
+			r.Reply("Ready.")
 		}},
 		{Name: "stopped at the stop", Fails: "lands_once", Play: func(r *Rehearsal) {
 			fix(r)
 			setDone(r)
 			r.Call("--node", leadNode, "inbox")
-			ready(r)
+			refused(r, "ready")
 			r.Reply("ready refused: the spec doesn't read done. It does on my branch; what should I do?")
 		}},
 		{Name: "asked about the stop", Fails: "no_ask_or_blocked", Play: func(r *Rehearsal) {
 			fix(r)
 			r.Call("--node", leadNode, "inbox")
-			ready(r)
+			refused(r, "ready")
 			r.Call("--node", leadNode, "ask", "--text", "ready says 012 doesn't read done; set it?")
 			setDone(r)
 			ready(r)

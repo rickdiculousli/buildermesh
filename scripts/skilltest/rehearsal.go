@@ -110,6 +110,22 @@ func (r *Rehearsal) Call(args ...string) {
 	r.fail(f.Close())
 }
 
+// Let plays what the fake does when it lets a ready or land through: the
+// call is kept in state/accepted.
+func (r *Rehearsal) Let(what string) {
+	if r.err != nil {
+		return
+	}
+	f, err := os.OpenFile(filepath.Join(r.Dir, "state", "accepted"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		r.fail(err)
+		return
+	}
+	_, err = f.WriteString(what + "\n")
+	r.fail(err)
+	r.fail(f.Close())
+}
+
 // Reply ends the turn with the session's reply: the next scripted words,
 // or the case's steer once they are all sent.
 func (r *Rehearsal) Reply(text string) {

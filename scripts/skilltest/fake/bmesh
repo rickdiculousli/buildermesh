@@ -363,6 +363,7 @@ fake_land() {
 	echo "push origin main $s8"
 	git -C "$repo_path" merge -q --ff-only "$sha" 2>/dev/null && echo "main $s8"
 	echo "released land.$repo"
+	echo land >>"$state/accepted"
 	echo "landed $s8"
 }
 
@@ -373,6 +374,7 @@ fake_ready() {
 		return 0
 	fi
 	leadcheck ready "$@"
+	echo ready >>"$state/accepted"
 	echo "ready: $host's daemon lands $(sha8 HEAD); it wakes you only if land needs you"
 }
 
