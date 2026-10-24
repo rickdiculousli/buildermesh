@@ -4,7 +4,7 @@ title: A reply names the rung it took and why, a lead's shape reaches the mesh, 
 kind: refinement
 size: M
 judge: opus
-status: proposed
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-24
