@@ -418,7 +418,11 @@ func TestFakeLandsWhatItSays(t *testing.T) {
 				t.Errorf("%s reads %s at %s, the commit its done line names", f, got, d[3])
 			}
 			tree := origin(t, dir, "rev-parse", d[3]+"^{tree}")
-			if body := origin(t, dir, "log", "-1", "--format=%b", d[3]); body != "Spec: "+d[2]+"\nVerified: verify ok t:"+tree[:8] {
+			verified := "verify ok t:" + tree[:8]
+			if d[2] == "014" { // sized M: its land records a review
+				verified += "; review ok t:" + tree[:8] + " m:claude-opus-5-5"
+			}
+			if body := origin(t, dir, "log", "-1", "--format=%b", d[3]); body != "Spec: "+d[2]+"\nVerified: "+verified {
 				t.Errorf("%s's message ends %q, want a lead's trailers", d[3], body)
 			}
 			if _, err := git(dir, gitEnv(dir), "--git-dir", filepath.Join(dir, originDir), "merge-base", "--is-ancestor", d[3], "main"); err != nil {

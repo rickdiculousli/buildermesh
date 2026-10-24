@@ -795,7 +795,7 @@ fake_feedback_drain() {
 # fake_watch: the case's canned watch. When the case cans watch-land (spec
 # ids), what it watches lands first, once: each id with a spec on origin's
 # main is a lead's, landed as its land does, a commit setting the spec done
-# with its trailers
+# with its trailers (a review entry for an M or larger)
 # whose sha8 stands in for @LANDED@ on that id's done line; the ids with
 # none are a round's, its pitch lines landed as proposed specs in one
 # commit, as the round's thread lands them. Each landed id is kept in
@@ -811,10 +811,17 @@ fake_watch() {
 			f=$(git --git-dir "$cell/origin.git" ls-tree --name-only main -- docs/proposals/ | grep "/$id-[^/]*\.md$" | sed -n 1p)
 			if [ -z "$f" ]; then
 				new=${new:+$new, }$id
-			elif s=$(onmain "$(spectitle "$id")
+				continue
+			fi
+			# An M or larger spec's land records its review too.
+			v="verify ok t:@TREE@"
+			case $(git --git-dir "$cell/origin.git" show "main:$f" | sed -n 's/^size: *//p' | sed -n 1p) in
+			M | L | XL) v="$v; review ok t:@TREE@ m:claude-opus-5-5" ;;
+			esac
+			if s=$(onmain "$(spectitle "$id")
 
 Spec: $id
-Verified: verify ok t:@TREE@" setfield "$f" status done) && [ -n "$s" ]; then
+Verified: $v" setfield "$f" status done) && [ -n "$s" ]; then
 				echo "$id $s" >>"$state/watch-landed"
 			else
 				all=0
