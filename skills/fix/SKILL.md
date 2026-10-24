@@ -26,10 +26,10 @@ Land each fix and spec on `main` as soon as it is made: commit it on your branch
 
 ## 4. Build the M fixes, one at a time
 
-`bmesh build <repo> NNN --family <your path>` starts its lead; arm `bmesh watch --nodes <its path> --timeout 30m` (re-arm with `--since` on exit 5; a Monitor where the harness has one). Fixes and the operator's builds are separate pipelines and don't hold each other. A fix lead's `ask`, `blocked` and `done` never reach the operator: they come to you, on the watch and in your inbox. When the watch shows:
+`bmesh build <repo> NNN --family <your path>` starts its lead and records nothing on `main`: the spec reads `accepted` there until its lead lands it `done` with its code. Arm `bmesh watch --nodes <its path> --timeout 30m` (re-arm with `--since` on exit 5; a Monitor where the harness has one). Fixes and the operator's builds are separate pipelines and don't hold each other. A fix lead's `ask`, `blocked` and `done` never reach the operator: they come to you, on the watch and in your inbox. When the watch shows:
 
 - an `ask` the rulings settle: answer it, `bmesh send <its path> "<answer>"`, citing the ruling; anything else, relay with `bmesh ask --text "<its question>"` and carry on with the rest of the queue;
-- `blocked`: it waits on the operator; report it;
+- `blocked`: it waits on the operator; report it (the block is the lead's node state, never in the spec; once it is settled, `bmesh build <repo> NNN --family <your path>` starts it again);
 - `done`: list again (step 1). The fix's own lead may have left feedback; rule on it in this pass.
 
 A `build` refusal under `reversible` or `premise` means the spec should have been proposed: set it `proposed` (`bmesh spec set --repo . --id NNN --status proposed --from accepted`), drop its `ruled` and `fix_of` lines, name the ruling in its Opportunity and land it. `main is red`: `ask` the operator with its line; never `--force`.

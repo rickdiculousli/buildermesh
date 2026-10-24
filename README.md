@@ -123,13 +123,14 @@ Each picture below plays one of the demo's steps on its own, on a loop. <img src
   <img alt="A lead runs bmesh land: rebase, verify, carry the review, write the verified line, push main" src="docs/assets/land.svg" width="100%">
 </p>
 
-`bmesh land` runs `verify` first, queues the Opus review the spec's size calls for when the branch has none and waits for it, then takes the land lease, runs `verify` on the rebased tree and carries the review across the rebase when the diff is unchanged (a changed diff gets a new review, which land queues and waits for), then writes the results into the spec as one line:
+`bmesh land` runs `verify` first, queues the Opus review the spec's size calls for when the branch has none and waits for it, then takes the land lease, runs `verify` on the rebased tree and carries the review across the rebase when the diff is unchanged (a changed diff gets a new review, which land queues and waits for), then rewords the lead's last commit to carry the results as two trailers, changing no file:
 
 ```
-verified: review ok t:3f2a9c1e m:claude-opus-5-5 c:81d0b7a4; verify ok t:3f2a9c1e
+Spec: 012
+Verified: review ok t:3f2a9c1e m:claude-opus-5-5 c:81d0b7a4; verify ok t:3f2a9c1e
 ```
 
-`t:` is the landed tree, `c:` the tree the review ran on before the rebase. `bmesh done` refuses until the spec on `origin/main` reads `done` with a merged commit and a recorded result for every entry.
+`t:` is the landed tree, `c:` the tree the review ran on before the rebase. `bmesh done` refuses until that commit is on `origin/main` with a recorded result for every entry.
 
 ## How you drive the work
 
@@ -143,9 +144,9 @@ verified: review ok t:3f2a9c1e m:claude-opus-5-5 c:81d0b7a4; verify ok t:3f2a9c1
 
 1. **Propose.** `bmesh ideate app` starts an engineer and a UI/UX engineer; each lands three to five ranked specs on `main`, and with an [ntfy](https://ntfy.sh) topic set the list reaches your phone.
 2. **Choose.** Reply in plain words: `bmesh choose-ideas app "1 and 3 yes, 2 smaller, 4 no, 5 later"`. The verdicts land on `main`; a word that isn't a verdict, like `smaller`, marks the spec `adjusting`, with your words kept for the rework.
-3. **Build.** `bmesh build app 012` checks that `main` passes its verify commands, marks the spec `building` and starts a lead.
+3. **Build.** `bmesh build app 012` checks that `main` passes its verify commands and starts a lead; it records nothing on `main`, where the spec reads `accepted` until its lead lands it.
 4. **Verify.** Routines run `verify` (the repo's tests) and, for larger changes, `review` (Opus, in a session that never saw the change).
-5. **Land.** `bmesh land` verifies, queues the review the spec's size calls for and waits for it, then rebases onto `origin/main` (resolving the conflicts a rule can), requires a result for the tree it lands, writes the `verified` line, marks the spec `done` and fast-forwards `main`. It waits out what clears by itself (a review running, `main` moving, someone's unpushed `main`, another lead landing) and stops only for what needs the lead. A lead usually hands this to its box's daemon instead: it runs `bmesh ready --text "<done line>"` and ends its turn, its state reads `landing`, and the daemon runs `land` and `done` for it. The daemon wakes the lead only when land refuses (a conflict, a failing check or review), and once at the end for its closing line. A hold waits for the release without waking it, and a message withdraws the request and wakes it.
+5. **Land.** `bmesh land` verifies, queues the review the spec's size calls for and waits for it, then rebases onto `origin/main` (resolving the conflicts a rule can), requires a result for the tree it lands, rewords the last commit to carry the `Spec:` and `Verified:` trailers and fast-forwards `main`; the lead set the spec `done` on its branch, so it lands with the code. It waits out what clears by itself (a review running, `main` moving, someone's unpushed `main`, another lead landing) and stops only for what needs the lead. A lead usually hands this to its box's daemon instead: it runs `bmesh ready --text "<done line>"` and ends its turn, its state reads `landing`, and the daemon runs `land` and `done` for it. The daemon wakes the lead only when land refuses (a conflict, a failing check or review), and once at the end for its closing line. A hold waits for the release without waking it, and a message withdraws the request and wakes it.
 
 A lead reports problems outside its spec as feedback. When a batch started from a chat is done, the plugin's `build` skill makes the quick fixes itself without asking you, writes the rest up as proposed specs for your review and tags the next version with `bmesh release`. In a chat, say "proposals for app", "1 and 3 yes", "build what's accepted in app" or "what's building".
 
@@ -260,7 +261,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 | [`bmesh spec set`](docs/manual.md#bmesh-spec-set) | `--id NNN --status S [--repo R] [--from A,B] [--field K=V]...` |
 | [`bmesh spec template`](docs/manual.md#bmesh-spec-template) | `[--repo R]` |
 | [`bmesh spec steps [<NNN>]`](docs/manual.md#bmesh-spec-steps) | `[--repo R] [--tick N,N [--note W] \| --check [--wait D]]` |
-| [`bmesh spec verified`](docs/manual.md#bmesh-spec-verified) | `[--spec NNN] [--commit C] [--write]` |
+| [`bmesh spec verified`](docs/manual.md#bmesh-spec-verified) | `[--commit C]` |
 | [`bmesh build <repo> <NNN>`](docs/manual.md#bmesh-build) | `[--model M] [--effort E] [--path P] [--family F] [--hold land\|now] [--force]` |
 | [`bmesh build --accepted <repo>`](docs/manual.md#bmesh-build) | `[--model M] [--effort E] [--family F] [--hold land\|now] [--force]` |
 | [`bmesh lead start`](docs/manual.md#bmesh-lead-start) | `--repo R --spec NNN --brief FILE [--model M] [--effort E] [--title T] [--path P]` |

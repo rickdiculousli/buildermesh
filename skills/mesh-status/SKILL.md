@@ -7,7 +7,7 @@ description: Use when the operator asks "what's building", "mesh status", "where
 
 The mesh is the record; read it and summarise, never guess from the runner.
 
-1. **The mesh.** `bmesh mesh-status --json` lists every node with its path, role, state, since, runner and unread count. For a named repo, `bmesh spec list --repo <repo>` shows the ledger (`NNN status size kind lens title`); for a named spec, its lead is node `<repo>-<NNN>`, and `bmesh thread-status <path>` shows that one node with its last event text.
+1. **The mesh.** `bmesh mesh-status --json` lists every node with its path, role, state, since, runner and unread count. For a named repo, `bmesh spec list --repo <repo>` shows the ledger (`NNN status size kind lens title`): a spec being built reads `accepted` there until it lands `done`, and only its lead's node says it is building or blocked; for a named spec, its lead is node `<repo>-<NNN>`, and `bmesh thread-status <path>` shows that one node with its last event text.
 2. **The summary**, by state, leads and rounds first with their executors and children nested, routine instances left out unless asked:
    - **working**: path, since when, and the spec or round it is on;
    - **asking**: the question in the operator's words (`bmesh thread-status <path>`), the thing most worth answering first;

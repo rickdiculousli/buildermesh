@@ -634,7 +634,7 @@ bmesh spec list [--repo R] [--status S] [--json]
 bmesh spec next-id [--repo R] [--count N] [--peek]
 bmesh spec set --id NNN --status S [--repo R] [--from A,B] [--field K=V]...
 bmesh spec template [--repo R]
-bmesh spec verified [--spec NNN] [--commit C] [--write]
+bmesh spec verified [--commit C]
 bmesh spec steps [<NNN>] [--repo R] [--tick N,N [--note W] | --check [--wait D]]
 ```
 
@@ -727,7 +727,7 @@ Prints the half-pager: the repo's `.bmesh/briefs/half-pager.md`, else the embedd
 bmesh spec steps [<NNN>] [--repo R] [--tick N,N [--note W] | --check [--wait D]]
 ```
 
-Reads, ticks and checks a landed spec's steps for the operator (the `operator_steps` field, see [The ledger](#the-ledger)).
+Reads, ticks and checks a landed spec's steps for the operator. The steps are the landed spec's `## Needs from the operator` section on `main`; the ticks live on the hub, in `bm-steps` (see [The ledger](#the-ledger)).
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -737,16 +737,18 @@ Reads, ticks and checks a landed spec's steps for the operator (the `operator_st
 | `--check` | off | Run the open steps' checks and tick those that pass. |
 | `--wait D` | `30s` | How long to wait for another box's checks. |
 
-**Reading.** `steps NNN` reads the spec from `main` (`origin/main` after a fetch). It prints `NNN <title>: X of Y open`, then each step as `<n>. [<box>] <text> (check: <command>) -- done <time> <box>: <note>` with the parts it has, or `NNN <title>: no operator steps`.
+**Which steps.** A spec that reads `done` on `main` has the steps of its `## Needs from the operator` section, read as `land` counts them (see [`bmesh land`](#bmesh-land)): one per list item, a box in brackets first, `check: <command>` last. A bracketed word the roster doesn't name as a box (with `[hosts]` on) stays part of the step's words, so `[optional] ...` is words, not a box. A spec landed before trailers has the steps its land copied into its `operator_steps` field, ticks included, and none when it has no such field. Any other spec has none.
 
-With no id, it prints `operator: <repo> NNN <title>: X of Y open (bmesh spec steps NNN --repo <repo>)` per landed spec with open steps (as `mesh-status` ends). It reads `--repo`'s ledger, or else every registered repo with a checkout here, from its local `origin/main`. It fetches a repo again when the repo has open steps, so a step ticked from another box drops out.
+**Reading.** `steps NNN` reads the spec from `main` (`origin/main` after a fetch) and the ticks from the hub. It prints `NNN <title>: X of Y open`, then each step as `<n>. [<box>] <text> (check: <command>) -- done <time> <box>: <note>` with the parts it has, or `NNN <title>: no operator steps`.
 
-**Ticking.** `--tick 2,3` records `done: <time> <this box>` (with `--note`, the words as `note`) on those steps. It lands the change on `main` as `choose-ideas` lands a review (worktree `<repo>-steps-<hex8>`, commit `Steps: NNN 2, 3 done`) and prints `landed <sha8> on main: Steps: NNN 2, 3 done; X of Y open`. A step already done is named (`step 2 already done <when>`) and left alone. When every step named is done, nothing lands.
+With no id, it prints `operator: <repo> NNN <title>: X of Y open (bmesh spec steps NNN --repo <repo>)` per landed spec with open steps (as `mesh-status` ends). It reads `--repo`'s ledger, or else every registered repo with a checkout here, from its local `origin/main`, with the ticks on the hub, so a step ticked from another box drops out at once. The ticks are only on the hub, so with no hub to reach it fails, as a mesh command does.
+
+**Ticking.** `--tick 2,3` records `<time> <this box>` (with `--note`, the words as its note) for those steps in `bm-steps`, key `<repo token>.<NNN>`, and prints `ticked NNN 2, 3; X of Y open`. Nothing is committed. A step already done (on the hub, or in an old spec's `operator_steps`) is named (`step 2 already done <when>`) and left alone; when every step named is, nothing is written. Two boxes ticking at once both keep their ticks: the write is a compare-and-swap, and a step ticked first keeps its tick.
 
 **Checking.** `--check` runs the check of each open step that has one. It runs the check here, in the repo's checkout, when the step names no box or this one. Else it sends a `check-step` job to the step's box (see [Hosts](#hosts)) and waits `--wait` (default 30s).
 
 - It prints `<n>. <box>: exit 0`, `exit <code>: <the output's last line>`, `timed out after 2m0s`, a refusal, or, for a box that hasn't answered, `asleep` or `no answer in <wait>` followed by `; run --check again once it answers`.
-- It ticks each step whose check exited 0 with `done: <time> <the box that ran it>` and the note `check passed`, one landing per box. When the other boxes can't be asked (no hub, a box not joined), the passes here still land, and the failure is reported after them.
+- It ticks each step whose check exited 0 with `<time> <the box that ran it>` and the note `check passed`, one `ticked` line per box. When the other boxes can't be asked (no hub, a box not joined), the passes here are still ticked, and the failure is reported after them.
 - With `[hosts]` off, a step of another box is not run (`not run: hosts are off here; run bmesh spec steps NNN --check on <box>`).
 
 **Refusals.**
@@ -762,25 +764,22 @@ With no id, it prints `operator: <repo> NNN <title>: X of Y open (bmesh spec ste
 #### `bmesh spec verified`
 
 ```
-bmesh spec verified [--spec NNN] [--commit C] [--write]
+bmesh spec verified [--commit C]
 ```
 
-Composes a spec's `verified` line from the results recorded for the tree of the cwd worktree's HEAD, or of commit `C`. A lead runs it. `bmesh land` composes the same line at its step 5.
+Composes the verified line from the results recorded for the tree of the cwd worktree's HEAD, or of commit `C`, and prints it. It writes nothing: `bmesh land` composes the same line at its step 5 and puts it on the commit it lands, as the `Verified:` trailer.
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--spec NNN` | this node's spec | the spec whose file `--write` sets |
 | `--commit C` | `HEAD` | compose from the results for this commit's tree; HEAD below reads as `C` |
-| `--write` | off | set the line in the spec's file in this worktree |
 
 **What it does.**
 
 - It writes one entry per (kind, model). The newest result wins, whatever its args. Entries are sorted by kind, then by model.
 - A (kind, model) with no result at the tree takes the newest model result whose patch-id equals HEAD's. HEAD's patch-id is that of the diff from HEAD's merge-base with `origin/main` (`main` without an origin) to HEAD. The entry is written `t:<HEAD's tree8>` and `c:<its own tree8>`: a review of the same diff on another base.
 - A changed diff carries nothing, however small. A command kind's result (verify) never carries, because it is about its tree. Nothing carries when HEAD is on main.
-- `--write` finds the spec's file by `[spec] glob`. It replaces a `verified:` line, or adds one before the closing `---`, whichever commit the line was composed for. So a line for a merged commit is rebuilt from its records, not typed. A line that wouldn't read back as the same entries isn't written.
 
-**Output.** `verified: ...`, then `wrote <file>` under `--write`.
+**Output.** `verified: ...`.
 
 **Refusals.**
 
@@ -788,8 +787,6 @@ Composes a spec's `verified` line from the results recorded for the tree of the 
 |---|---|---|
 | `--commit` is not a commit | 2 | `--commit "<C>" is not a commit in <worktree>` |
 | no results for the tree | 3 | `bmesh: no results for HEAD's tree; run the routines first` (`no results for <C>'s tree t:<tree8>` under `--commit`) |
-| `--write` with no `--spec` and no node spec | 2 | `spec verified --write needs --spec NNN (no node spec resolves)` |
-| `--write`, and the glob doesn't match one file | 3 | `spec <id> matches <n> files in <top>` |
 
 See also: [The verified line](#the-verified-line), [Results](#results), [`bmesh land`](#bmesh-land).
 
@@ -800,7 +797,7 @@ bmesh build <repo> <NNN> [--model M] [--effort E] [--path P] [--family F] [--hol
 bmesh build --accepted <repo> [--model M] [--effort E] [--family F] [--hold land|now] [--force]
 ```
 
-Dispatches an accepted spec to a lead: it records `building` on `main`, writes the build brief and starts the lead as [`bmesh lead start`](#bmesh-lead-start) does. `--accepted` dispatches every accepted spec of the repo. A coordinator runs it (the `build` skill's session, or the operator).
+Dispatches an accepted spec to a lead: it writes the build brief and starts the lead as [`bmesh lead start`](#bmesh-lead-start) does. It records nothing on `main`: the lead's node (`bm-nodes`: repo, spec, branch, host, family, state) is what says the spec is being built, and the spec reads `accepted` until its lead lands it `done`. `--accepted` dispatches every accepted spec of the repo that no live lead is building. A coordinator runs it (the `build` skill's session, or the operator).
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -813,28 +810,27 @@ Dispatches an accepted spec to a lead: it records `building` on `main`, writes t
 | `--force` | off | Pass the hold and the verify of `main` (see **What it does**). |
 | `--json` | off | `--accepted` only: print its lines as JSON. A single `build` always prints JSON. |
 
-**What it does**, in order. Nothing is recorded before steps 1 to 7 pass.
+**What it does**, in order. Nothing starts before steps 1 to 7 pass.
 
 1. **Row.** No registry row is exit 2; a row not `ship` is exit 3.
-2. **Spec.** It levels `main` as `ideate` does (see [`bmesh ideate`](#bmesh-ideate)) and reads the ledger there. A missing spec is exit 1. A spec not `accepted` is refused (exit 3), naming its status.
+2. **Spec.** It levels `main` as `ideate` does (see [`bmesh ideate`](#bmesh-ideate)) and reads the ledger there. A missing spec is exit 1. A spec not `accepted` is refused (exit 3), naming its status; one that reads `building` (only the release before wrote it) counts as `accepted`. Then it reads the spec's newest lead: the newest `bm-nodes` node (by `started_at`) with role `lead`, this repo and this spec. A live one (neither `done` nor `blocked`) is refused (exit 3), whatever `--path` says; a `blocked` or `done` one, or none, lets the spec be dispatched again.
 3. **Rulings.** A single `build` checks two of the fixer's rulings here; `--accepted` checks them per spec after steps 4 and 5 (see **Details**). `--force` doesn't pass them. See **Refusals**.
-4. **Hold.** Once the spec reads `accepted`, it reads the repo's leads on every box and holds while the repo's last build run is still going (which families hold a build is in [Build families](#build-families)). A held single `build` is refused (exit 3). `--accepted` prints `held <family>: <why>` once (`--json`: `[{"state":"held","family","reason"}]`), exits 0 and starts nothing.
+4. **Hold.** Once the spec can be dispatched, it reads the repo's leads on every box and holds while the repo's last build run is still going (which families hold a build is in [Build families](#build-families)). A held single `build` is refused (exit 3). `--accepted` prints `held <family>: <why>` once (`--json`: `[{"state":"held","family","reason"}]`), exits 0 and starts nothing.
 5. **Verify `main`.**
-   1. The commit checked is main's code head (see [Updates](#updates)): a `Dispatch`, `Review` or `done` ledger commit, or with `code` set a README, document or art commit, gets no verify of its own.
+   1. The commit checked is main's code head (see [Updates](#updates)): an old `Dispatch`, `Review` or `done` ledger commit, or with `code` set a README, document or art commit, gets no verify of its own.
    2. A `verify` result recorded for its tree answers: `verify main <sha8>: ok t:<tree8> (answered from the record)`. With none, one is carried from the commits between `main`'s tip and the code head, as `routine run` carries it (see [Carried verify](#bmesh-routine-run)), so a landing that ended in a docs commit answers from that commit's verify: `verify main <sha8>: ok t:<tree8> (carried from t:<old8>: nothing under code changed)`.
    3. Otherwise the repo's `verify` kind, as that commit defines it, runs inline in a bmesh worktree at that commit (`<[runner] worktrees>/<repo>/<repo>-verify-<hex8>`, removed after), as `land` runs it, and records the result: `verify main <sha8>: running at t:<tree8>`, then `... (recorded)`. When that commit names a `[setup]` (see [Setup](#setup)), it runs in the fresh worktree first; a setup that fails refuses the build (exit 3) with the tail of its output and records nothing, so a flaky registry never turns `main` red.
    4. A failing verify refuses the build (exit 3, nothing dispatched; see **Refusals**). A `main` with no verify kind prints `verify: <repo> defines none` and the build goes on.
 6. **Model.** The model is `--model`, else the spec's `judge`; with neither, the build is refused.
 7. **Node.** The path is `--path`, else `<repo>-<NNN>`. A node there that is neither `done` nor `blocked` (live, from here on) is refused (exit 3, `use --path <repo>-<NNN>-2`). A box at `[runner] max_leads` is refused too.
-8. **Building.** `building` lands on `main` with `built_by` (the lead's thread id), `host`, `family`, and `branch` when the runner names branches ahead (`claude` and `tmux` do). The commit is `Dispatch NNN: building on <host>`, made in a bmesh worktree, fast-forwarded and pushed as `choose-ideas` lands (see [The ledger](#the-ledger)).
-9. **Brief.** The brief (the spec file, the row's done rule and verify commands, the node path, the standard closing) is written to `<user cache dir>/bmesh/briefs/<path>.md` (see [Briefs](#briefs)). When `main` names a `[setup]`, its first section is `bmesh setup`.
-10. **Start.** The lead starts through the runner with that thread id, titled `[build] <repo> <NNN>: <title>`, as `lead start` would.
+8. **Brief.** The brief (the spec file, the row's done rule and verify commands, the node path, the standard closing) is written to `<user cache dir>/bmesh/briefs/<path>.md` (see [Briefs](#briefs)). When `main` names a `[setup]`, its first section is `bmesh setup`.
+9. **Start.** The lead starts through the runner with a fresh thread id, titled `[build] <repo> <NNN>: <title>`, as `lead start` would, and its node records the repo, spec, branch, host and family.
 
-A runner that names the branch itself (`t3`) gets a second commit, `Dispatch NNN: branch <b>`. A failed start puts the spec back to `accepted` (`Dispatch NNN: did not start`), exit 1.
+A failed start is the runner's error (exit 1), with the hold `--hold` wrote deleted; nothing else was written.
 
 `--force` passes the hold and the red `main` (as `ideate --force` passes an open round), runs no verify and prints what it passed: `--force: past held: ...`, `--force: past main is red at ...` or `--force: past verify main <sha8>: no result for t:<tree8>`.
 
-**Output.** A single `build` prints `{"path","thread","branch","worktree","model","spec","building","family"}` (plus `hold` under `--hold`). `building` is the commit of step 8; `warnings` is what `choose-ideas` warned at accept (a command `main` or another spec already defines), read again from the ledger. The verify lines of step 5 go to stderr; under `--accepted`, they go to stdout among its lines.
+**Output.** A single `build` prints `{"path","thread","branch","worktree","model","spec","family"}` (plus `hold` under `--hold`, and `warnings`). `warnings` is what `choose-ideas` warned at accept (a command `main` or another spec already defines), read again from the ledger. The verify lines of step 5 go to stderr; under `--accepted`, they go to stdout among its lines.
 
 **Refusals.** Each message prints after `bmesh: `.
 
@@ -845,8 +841,9 @@ A runner that names the branch itself (`t3`) gets a second commit, `Dispatch NNN
 | No registry row | 2 | `<name> is not in repos.toml; a build needs its row (verify, remote, routines)` |
 | Row not `ship` | 3 | `refused: <name> is <mode>; builds are for ship repos only` |
 | No such spec on `main` | 1 | `no spec NNN on main in <path>` |
-| Two specs share an id on `main`, or in the dispatch commit about to land | 3 | `refused: <file> and <file> share id NNN; renumber the newer with bmesh spec next-id` |
-| Spec not `accepted` | 3 | `refused: spec NNN is <status>, not accepted` |
+| Two specs share an id on `main` | 3 | `refused: <file> and <file> share id NNN; renumber the newer with bmesh spec next-id` |
+| Spec not `accepted` (or `building`) | 3 | `refused: spec NNN is <status>, not accepted` |
+| The spec's newest lead is live | 3 | `refused: spec NNN is building: <path> (<state>)` |
 | Spec `ruled` and sized `L` or larger | 3 | the sized message below |
 | `fix_of` chain three deep | 3 | the `fix 3` message below |
 | Held | 3 | one of the `held:` messages below |
@@ -855,7 +852,7 @@ A runner that names the branch itself (`t3`) gets a second commit, `Dispatch NNN
 | No `--model` and no usable `judge` | 3 | `` refused: <err>; pass --model, or `NNN on <judge>` to bmesh choose-ideas `` |
 | Live node at the path | 3 | `refused: path <p> is taken (state <s>); use --path <p>-2` |
 | Box at `[runner] max_leads` | 3 | `<N> leads already working on this host` |
-| Start failed | 1 | `<runner error>; the spec reads accepted again`, or `<runner error>; and the spec is left building on main: <err>` when putting it back failed |
+| Start failed | 1 | the runner's error |
 
 - Held: `held: <family> is still running (<path> <state>, ...); watch it with bmesh watch --nodes <paths>` or `held: <family> has <N> feedback pending; drain it with bmesh feedback list/drain <family>`.
 - `main` red: `main is red at <sha8> <subject>: verify fail t:<tree8> (<how>); build its fix with --force`.
@@ -864,16 +861,18 @@ A runner that names the branch itself (`t3`) gets a second commit, `Dispatch NNN
 
 **Details.**
 
-*`--accepted`.* It dispatches every accepted spec, lowest id first, through the same steps; one refusal doesn't stop the next. It holds and verifies once per batch, and only when a spec is accepted. Then each spec in turn takes the rulings check, the two `waits` checks below, and then the model and node checks and the start. It prints one line per spec:
+*`--accepted`.* It dispatches every accepted spec (and one reading `building`), lowest id first, through the same steps; one refusal doesn't stop the next. A spec stays `accepted` while it is built, so a spec whose newest lead is live or blocked is skipped, never dispatched twice. It holds and verifies once per batch, and only when a spec is accepted. Then each spec in turn takes the lead check, the rulings check, the two `waits` checks below, and then the model and node checks and the start. It prints one line per spec:
 
-- `started NNN <title>: <path> on <model> (thread, branch, building, family F)`, then `; warning: <warning>` per warning;
-- `waits NNN <title>: on 004 (building)`: its body names a lower id (`004`, or a run `001 to 004`) whose spec is not yet `done`, `rejected` or `later`; a higher id is a pointer, not a dependency;
+- `building NNN <title>: <path> (<state>)`: its newest lead is live;
+- `blocked NNN <title>: <path>: <why>`: its newest lead is blocked (a single `build` starts it again);
+- `started NNN <title>: <path> on <model> (thread, branch, family F)`, then `; warning: <warning>` per warning;
+- `waits NNN <title>: on 004 (accepted)`: its body names a lower id (`004`, or a run `001 to 004`) whose spec is not yet `done`, `rejected` or `later`; a higher id is a pointer, not a dependency;
 - `waits NNN <title>: 3 leads working on <repo>`: three leads of the repo (on any box) are live, counting those just started;
 - `not started NNN <title>: <the refusal>`, the two ruling refusals included.
 
-With no accepted spec it prints `no accepted specs in <repo>`. When any started, a last line names their family: `family <repo>-build-<N>`. `--json` prints the lines as objects, each with `family`.
+With no accepted spec it prints `no accepted specs in <repo>`. When any started, a last line names their family: `family <repo>-build-<N>`. `--json` prints the lines as objects (`id`, `title`, `state`, `reason`, each with `family`; a started one has the single form's fields too), with the same states.
 
-*Families.* Without `--family`, each invocation mints `<repo>-build-<N>` (`<repo>` the repo's node token, see [Names](#names)), `N` one past the highest such family in `bm-nodes` or still holding feedback. The lead's node and spec record it as `family`. A coordinator dispatching several commands or repos passes the first family to the rest (over ssh, on the command line). See [Build families](#build-families).
+*Families.* Without `--family`, each invocation mints `<repo>-build-<N>` (`<repo>` the repo's node token, see [Names](#names)), `N` one past the highest such family in `bm-nodes` or still holding feedback. The lead's node records it as `family`. A coordinator dispatching several commands or repos passes the first family to the rest (over ssh, on the command line). See [Build families](#build-families).
 
 *`--hold land|now`* (both forms; "build these, land none until I say"). It writes each lead's hold before the runner starts it (`by` the sender, text `held at dispatch (build --hold <gate>)`) and sends the hold message once the lead has started. A failed message goes to stderr, `build: <path> is held before land, but the hold message failed: <err>`, and the start stands. The JSON carries `hold`; `--accepted`'s started line ends `, held before land` (`, held now`). A failed start deletes the hold. A build without `--hold` deletes a hold an earlier lead left on its path. See [Holds](#holds).
 
@@ -1074,7 +1073,7 @@ Tags the repo's code head (see [Updates](#updates)) with an annotated `vX.Y.Z` t
 
 **The version.** With no `vX.Y.Z` tag in `main`'s history, the version is `v0.1.0`. Otherwise the highest tag's minor goes up (patch `0`) when any spec landed since that tag is a `feature`, else its patch goes up. `--minor` or `--patch` overrides this (both: exit 2).
 
-**The specs a release carries** are those of the `NNN: done at <sha8>` subjects after the last tag (every one, for the first release), less any whose `merged` commit is already in that release's history. A release tags the code head, so the `done` commit of a spec it carries comes after its tag.
+**The specs a release carries** are those landed after the last tag (every one, for the first release), oldest first, each once. A commit's `Spec: NNN` trailer names its landing, and is carried when the code head being tagged has that commit; a landing that changed no code and came after the code head goes in the next release. An old `NNN: done at <sha8>` subject still counts, less any whose `merged` commit is already in the last release's history: a release tags the code head, so such a `done` commit comes after its tag.
 
 **The tag's message.**
 
@@ -1290,7 +1289,7 @@ A node never registered reads as `idle`. Nothing leaves `done`. A `landing` lead
 
 1. Resolves the node as [`bmesh whoami`](#bmesh-whoami) does.
 2. For `done` on a node already `done`: compares `--commit` with the newest `done` event's commit. The same commit (equal, or one an abbreviation of at least 7 characters of the other) prints `already done at <sha8>`, exits 0 and publishes nothing; another commit is refused, exit 3, `bmesh: refused: <path> is already done at <sha8>, not <sha8>`.
-3. For a lead's `done`: checks the spec. A lead's `done` is refused (exit 3, `bmesh: not done: <why>`) until the spec on `origin/main` reads `done` with a merged commit and a recorded result for every entry of its verified line; see [`bmesh land`](#bmesh-land); the checks, in order, with their messages, are in [The verified line](#the-verified-line). An executor's `done` and an engineer's `done` need only `--commit` and never read the spec.
+3. For a lead's `done`: checks the landing. `--commit` names the landed commit (`landed <sha8>` in `land`'s output), and a lead's `done` is refused (exit 3, `bmesh: not done: <why>`) until that commit is on `origin/main` with a `Verified:` trailer whose every entry has a recorded result and a `Spec:` trailer naming the node's spec; see [`bmesh land`](#bmesh-land); the checks, in order, with their messages, are in [The verified line](#the-verified-line). A commit whose subject is the old `NNN: done at <sha8>`, from a land of the release before, is checked as it was: the spec on `origin/main`. An executor's `done` and an engineer's `done` need only `--commit` and never read the spec.
 4. Checks the state move against the table above. A refused event publishes nothing and sends no message.
 5. For an executor's `ask`, `blocked` and `done`: puts a message in its parent's inbox (see Details). A fix lead's (a lead in the fixer's family) go to the fixer's inbox the same way (see [The fixer](#the-fixer)).
 6. Publishes the event and writes the node's new state.
@@ -1312,7 +1311,7 @@ A node never registered reads as `idle`. Nothing leaves `done`. A `landing` lead
 
 **Details.**
 
-A lead's `--commit` is the commit `main` points at after its push, the follow-up commit recording `done` (the `landed <sha8>` that [`bmesh land`](#bmesh-land) prints). The spec check reads `merged` and the results, not this sha.
+A lead's `--commit` is the commit `main` points at after its push: its last commit, reworded to carry the trailers (the `landed <sha8>` that [`bmesh land`](#bmesh-land) prints). The check reads that commit's trailers and the results recorded for its tree.
 
 **What reaches the lead.** An executor's `ask`, `blocked` and `done` are published as events and also put in its parent's inbox, since only leads reach the operator; `started` and `progress` are events only.
 
@@ -2013,7 +2012,7 @@ See also: [Setup](#setup), [`bmesh routine run`](#bmesh-routine-run).
 bmesh land [--spec NNN] [--size XS|S|M|L] [--ttl D] [--wait D]
 ```
 
-Lands a lead's branch on `main` from its worktree in one command. It verifies, queues the review the spec's size calls for and waits for it, then lands under the lease `land.<repo>` (`<repo>` is the node's repo, else the registry row or base name of the main checkout), so two leads landing at once queue. It waits out what clears by itself and stops only for what needs the lead: a hold, the operator's mail, a conflict, a failing verify or review, scaffold drift, a spec that isn't `building`, or a HEAD that moved.
+Lands a lead's branch on `main` from its worktree in one command. It verifies, queues the review the spec's size calls for and waits for it, then lands under the lease `land.<repo>` (`<repo>` is the node's repo, else the registry row or base name of the main checkout), so two leads landing at once queue. It waits out what clears by itself and stops only for what needs the lead: a spec that doesn't read `done`, a hold, the operator's mail, a conflict, a failing verify or review, scaffold drift, or a HEAD that moved. It writes no commit of its own: it rewords the branch's last commit so its message carries the landing's proof, as two trailers.
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -2028,31 +2027,32 @@ The holder is the node, else the host name. A lead runs `land` in the background
 
 1. Stops (exit 3, nothing pushed) when run from a node held in `bm-holds` at either gate (see [Holds](#holds)).
 2. Refuses (exit 3) a dirty worktree, and one not on a branch or on `main`.
-3. Run from a node, reads its inbox as the daemon's wake does (see [Config: Wake text](#wake-text)), holding and acking nothing. An unread message sent by `operator` with `bmesh send` refuses it (exit 3); there is no `--force`. Anything else unread (a report, a reply, another node's message) is named on one line, each item as the wake names it, `unread: done from <path> (branch <b> at <sha8>); reply to job <id> (<kind> ok|fail); message from <path>`. Outside a node there is no inbox and no check.
-4. Prints the kinds it will require of the landed tree and where each came from, `required: verify (the repo's verify kind), review (t:<tree8> at HEAD)`, or `review (t:<tree8> before the rebase at <sha8>)` for a result from before a rebase by hand (`required: nothing` when none). A kind it doesn't require that has a result on an earlier commit of the branch (its own first-parent commits back to its fork point from main, and those of a head a rebase by hand rewrote) is named after them, from the nearest such commit: `required: verify (the repo's verify kind); left behind by later commits: review ok t:<tree8> at <sha8> (not on the verified line)`, or `review fail ...` for a review that failed and was fixed. It isn't required because a review is one pass, its findings fixed in later commits and landed; a second pass (`routine queue review --again`) is for code a rebase changed.
-5. **Verify first.** Runs the required inline kinds on HEAD, as step 4 under the lease runs them, so a review never reads code that fails its tests. A failing one prints its output and exits 1. Under the lease, a kind ok at the same tree here prints `<entry> (ran before the lease)` and isn't run again.
-6. **The review, sized by the spec.** Run from a node, in a repo whose `review` kind is queued (not inline), prints one of:
+3. **The spec reads `done`.** The spec must be in the worktree and read `done`: the lead sets it on its branch (`bmesh spec set --id NNN --status done`, committed), so the spec lands with its code. Otherwise it is refused here (exit 3), before anything is queued or waited for: `refused: spec NNN reads <status> on <branch>; a spec lands with its code reading done: run bmesh spec set --id NNN --status done, commit it, and land again`.
+4. Run from a node, reads its inbox as the daemon's wake does (see [Config: Wake text](#wake-text)), holding and acking nothing. An unread message sent by `operator` with `bmesh send` refuses it (exit 3); there is no `--force`. Anything else unread (a report, a reply, another node's message) is named on one line, each item as the wake names it, `unread: done from <path> (branch <b> at <sha8>); reply to job <id> (<kind> ok|fail); message from <path>`. Outside a node there is no inbox and no check.
+5. Prints the kinds it will require of the landed tree and where each came from, `required: verify (the repo's verify kind), review (t:<tree8> at HEAD)`, or `review (t:<tree8> before the rebase at <sha8>)` for a result from before a rebase by hand (`required: nothing` when none). A kind it doesn't require that has a result on an earlier commit of the branch (its own first-parent commits back to its fork point from main, and those of a head a rebase by hand rewrote) is named after them, from the nearest such commit: `required: verify (the repo's verify kind); left behind by later commits: review ok t:<tree8> at <sha8> (not on the verified line)`, or `review fail ...` for a review that failed and was fixed. It isn't required because a review is one pass, its findings fixed in later commits and landed; a second pass (`routine queue review --again`) is for code a rebase changed.
+6. **Verify first.** Runs the required inline kinds on HEAD, as step 4 under the lease runs them, so a review never reads code that fails its tests. A failing one prints its output and exits 1. Under the lease, a kind ok at the same tree here prints `<entry> (ran before the lease)` and isn't run again.
+7. **The review, sized by the spec.** Run from a node, in a repo whose `review` kind is queued (not inline), prints one of:
     - `review: waiting for job <id>`: the node has an unanswered `review` job for a commit of the branch (one `land` queued before it timed out, or one the lead queued by hand); `land` waits for it instead of queueing another.
     - `review: on the branch already (ok|fail at t:<tree8>)`: a commit of the branch has a review result (the check `routine queue review` makes, including the heads a rebase by hand rewrote, so a hand rebase carries its review). It queues nothing, so a failing review that was then fixed lands on verify alone.
     - `review: none (size XS|S)`: the change is small enough to land on verify alone.
     - `review: queued <id> (medium|high, size M|L)`: it pushes the branch (`push origin <branch> <sha8>`, so a daemon on any box can fetch the commit; a failing push is said on stderr and `land` goes on) and queues `review` on HEAD on the kind's first model, started at once, its text `base: <merge-base origin/main HEAD>`, at `medium` for size M and `high` for L or larger, bmesh's done rule.
 
     The size is `--size`, else the spec's `size`. Only when `land` would queue does it need one: a spec with neither is refused (exit 2, `land needs --size: spec NNN has no size`), and so is a repo not in the registry, whose review no daemon would take (exit 3). Outside a node, or in a repo with no queued review kind, this step prints nothing.
-7. **The node's jobs.** Waits for the reply to every unanswered job the node queued on HEAD of the repo's queued kinds, and to the review job of step 6. A job on an earlier commit is not waited for: its result isn't at HEAD's tree, and `land` requires what it would without it. Each job is named once, `waiting for job <id> (<kind>, waiting|held|running[ on <host>])`, and its reply looked for every 2 s. `land` sends each kind it waits on one `go`, as `routine go` does, so a job queued without `--go` starts. `land` acks each reply it reads, as `routine wait` does, so no wake follows.
+8. **The node's jobs.** Waits for the reply to every unanswered job the node queued on HEAD of the repo's queued kinds, and to the review job of step 7. A job on an earlier commit is not waited for: its result isn't at HEAD's tree, and `land` requires what it would without it. Each job is named once, `waiting for job <id> (<kind>, waiting|held|running[ on <host>])`, and its reply looked for every 2 s. `land` sends each kind it waits on one `go`, as `routine go` does, so a job queued without `--go` starts. `land` acks each reply it reads, as `routine wait` does, so no wake follows.
     - An ok reply prints `job <id> (<kind>): ok t:<tree8>`.
     - A failing reply prints its output (a review's findings) and is refused (exit 3), so the lead never needs a `routine wait`.
     - A reply that recorded nothing because its model run never answered (no result, output `model run failed: <why>; nothing recorded`) is queued once more as it was, started at once: `job <id> (<kind>): model run failed: ...; queued <id> once more`. A second such reply, or any other that recorded nothing, prints its output and is refused (exit 3).
 
     Once the replies are in, `land` starts again from step 1, so the results they recorded are required (a second `required:` line). Outside a node it waits for no job.
-8. **The main checkout.** While the main checkout's `main` has commits `origin/main` doesn't (someone's unpushed work, which `land` never pushes), prints `waiting for main in <path> to be pushed: it has <n> commits origin/main doesn't (someone's unpushed work; land never pushes it)` once per count and fetches again every 15 s.
-9. While another holder has the lease, prints `waiting for land.<repo> (held by <holder>)` once per holder and retries every 2 s.
+9. **The main checkout.** While the main checkout's `main` has commits `origin/main` doesn't (someone's unpushed work, which `land` never pushes), prints `waiting for main in <path> to be pushed: it has <n> commits origin/main doesn't (someone's unpushed work; land never pushes it)` once per count and fetches again every 15 s.
+10. While another holder has the lease, prints `waiting for land.<repo> (held by <holder>)` once per holder and retries every 2 s.
 
-**Waiting.** Every wait (steps 7 to 9, and the main checkout and a moving `main` under the lease) reads the node's hold and its mail again at each poll: a hold refuses at once, as step 1 does, and so does an unread operator message, or any the operator sent since `land` started, read or not, since a lead woken mid-land can't act on it before the push (`refused: <n> message(s) from the operator since land started; ...`). `--wait` bounds all of the waiting together; past it, `land` exits 5 with `timed out waiting for <what>; nothing is pushed`, `<what>` the job, the main checkout or `main` it waited for (`timed out waiting for land.<repo>, held by <holder>` for the lease). Run again, it waits for the same jobs rather than queueing them twice. Run from a node, `land` publishes a `land` event under the node when it starts and then once a minute until it ends, its text what it is doing (`waiting for job <id> (review)`, `landing under land.<repo>`). It sets no state, but it is the node's activity, so a lead waiting in `land` isn't called silent, and `watch` shows where it is.
+**Waiting.** Every wait (steps 8 to 10, and the main checkout and a moving `main` under the lease) reads the node's hold and its mail again at each poll: a hold refuses at once, as step 1 does, and so does an unread operator message, or any the operator sent since `land` started, read or not, since a lead woken mid-land can't act on it before the push (`refused: <n> message(s) from the operator since land started; ...`). `--wait` bounds all of the waiting together; past it, `land` exits 5 with `timed out waiting for <what>; nothing is pushed`, `<what>` the job, the main checkout or `main` it waited for (`timed out waiting for land.<repo>, held by <holder>` for the lease). Run again, it waits for the same jobs rather than queueing them twice. Run from a node, `land` publishes a `land` event under the node when it starts and then once a minute until it ends, its text what it is doing (`waiting for job <id> (review)`, `landing under land.<repo>`). It sets no state, but it is the node's activity, so a lead waiting in `land` isn't called silent, and `watch` shows where it is.
 
 The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander blocks the next for at most that long. Holding it, `land` checks that the worktree is clean and that HEAD is the commit it waited on (or its own rebase of it), refusing `HEAD moved while land waited` (exit 3) otherwise, and reads the hold and the inbox again. A message arriving during the rebase and checks is not seen. It prints `lease land.<repo>`, then a line per step:
 
-1. `fetch origin/main <sha8>`: `git fetch origin main`. While the main checkout's `main` has commits `origin/main` doesn't, `land` waits under the lease, as step 8 before it does. Without an origin the base is the local `main`.
-2. `rebase onto <sha8>: N commits` (or `rebase: on <sha8> already`). When the rebase stops on a conflict, `land` resolves what a rule can (see Conflicts below): when every region of every conflicted file resolves, it adds the files, continues the rebase and prints `rebase: resolved <file> (<rules>)` per file, at each stop, `<rules>` from `kept both`, `applied both` and `by sentence`. Anything left aborts the rebase and is refused (exit 3), as is a rebase that fails for another reason. A branch with nothing beyond the base is refused (`nothing to land`), as are a spec the worktree doesn't have and a spec not reading `building` in the worktree.
+1. `fetch origin/main <sha8>`: `git fetch origin main`. While the main checkout's `main` has commits `origin/main` doesn't, `land` waits under the lease, as step 9 before it does. Without an origin the base is the local `main`.
+2. `rebase onto <sha8>: N commits` (or `rebase: on <sha8> already`). When the rebase stops on a conflict, `land` resolves what a rule can (see Conflicts below): when every region of every conflicted file resolves, it adds the files, continues the rebase and prints `rebase: resolved <file> (<rules>)` per file, at each stop, `<rules>` from `kept both`, `applied both` and `by sentence`. Anything left aborts the rebase and is refused (exit 3), as is a rebase that fails for another reason. A branch with nothing beyond the base is refused (`nothing to land`), as are a spec the rebased worktree doesn't have and one not reading `done` there.
 3. `scaffold: follows the row`, for a repo with a `ship` row whose `AGENTS.md` (in the rebased tree) has a `<!-- bmesh:` marker. Each marked block of `AGENTS.md` that differs from the base's (`origin/main`'s), except the `rules` block, which is the repo's own (a branch that edits, re-picks or drops its rules lands), the verify kind's command when it differs from the base's, and, when the row has a `setup`, `.bmesh/config.toml`'s `[setup]` when it reads otherwise than the base's (a `[slots]` edit is the repo's own), is compared with what `scaffold` writes from the row and the binary. A file the branch didn't change isn't compared, so a row published mid-build, a newer snippet or another box's older binary never refuse a landing. A file `scaffold` would create isn't drift.
     - Drift prints the first 20 lines of its unified diff (`...` after them) and is refused (exit 3). Once the row is published with the new verify or setup, its host box commits the files on `main` (see [The registry](#the-registry)) and a rebase brings them; `bmesh scaffold <worktree>` writes them on the branch at once.
     - A repo never scaffolded prints `scaffold: not scaffolded, not checked`; one with no `ship` row prints nothing.
@@ -2066,22 +2066,24 @@ The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander b
         2. a result recorded with the rebased diff's patch-id (see [The verified line](#the-verified-line)), `<kind> ok t:<new8> m:<model> c:<old8> (carried from t:<old8>: the diff is unchanged)`;
         3. an ok result from before the rebase with no patch-id whose diff the rebase left unchanged (the patch-id of the fork point to the old head equals that of the new base to the new head). Each model's result is stored again with that patch-id and lands on the line as a carried entry, `<kind> ok t:<new8> m:<model> c:<old8> (carried from t:<old8>: the rebase left the diff unchanged)`, which `done` matches as any carried entry. A result with no model has nothing `done` can match, so it carries off the line: `<kind> ok t:<old8> carried: the rebase left the diff unchanged (not on the verified line)`.
 
-        A failing result, or a changed diff, is refused (exit 3) naming the kind and how to re-run it. A review whose diff the rebase changed, when `land` runs from a node in a repo with a queued review kind, is instead queued again by `land`: it prints `review has a result for t:<old8> but none for t:<new8>, and the rebase changed the diff`, releases the lease (`released land.<repo>`), pushes the branch and queues the review again on the rebased HEAD at the size's effort with the new `base:`, printing `review: queued <id> again (the rebase changed the diff)`, and starts again from step 1 before the lease. The worktree stays rebased, and the rebase's reflog entry is what step 4 before the lease reads, so what `land` requires is worked out again.
+        A failing result, or a changed diff, is refused (exit 3) naming the kind and how to re-run it. A review whose diff the rebase changed, when `land` runs from a node in a repo with a queued review kind, is instead queued again by `land`: it prints `review has a result for t:<old8> but none for t:<new8>, and the rebase changed the diff`, releases the lease (`released land.<repo>`), pushes the branch and queues the review again on the rebased HEAD at the size's effort with the new `base:`, printing `review: queued <id> again (the rebase changed the diff)`, and starts again from step 1 before the lease. The worktree stays rebased, and the rebase's reflog entry is what step 5 before the lease reads, so what `land` requires is worked out again.
     - Any failing entry for the tree is refused too.
-5. `verified: ...` and `spec NNN done: merged <sha8>, branch <b>`: the `verified` line as `spec verified --write` composes it, and `status: done` (from `building`) with `merged` the rebased HEAD and `branch` the worktree's branch. A spec whose `## Needs from the operator` section has steps also gets `operator_steps` (see Steps for the operator under [The ledger](#the-ledger)), printed `operator steps: N (bmesh spec steps NNN)`.
-6. `commit <sha8> NNN: done at <merged8>`: the spec's change, committed on the branch.
-7. `push origin main <sha8>`: `git push origin HEAD:refs/heads/main`, a fast-forward or nothing. When the push is refused because `origin/main` moved, `land` takes the record commit back off the branch, prints `main moved; again from the fetch` and restarts at step 1, as often as `main` moves while `--wait` lasts (past it, exit 5, `timed out waiting for main to stop moving; nothing is pushed`). Step 4 then carries the verify it just ran when what moved `main` is outside the code (a coordinator's ledger commit, or, with `code` set, a README commit). Any other failure takes the commit back and exits 1.
+5. `verified: ...`: the verified line, as `spec verified` composes it, from the entries of step 4. A line that wouldn't read back as the same entries (a model with a `;` or a space) exits 1. A spec whose `## Needs from the operator` section has steps prints `operator steps: N (bmesh spec steps NNN)`; land copies nothing into the spec, and the steps are read from the landed spec (see [`bmesh spec steps`](#bmesh-spec-steps)).
+6. `trailers <sha8>: Spec NNN, Verified`: HEAD reworded so its message ends with two trailers, `Spec: NNN` and `Verified: <the line>` (`git interpret-trailers --if-exists replace`, then `git commit --amend --no-verify --allow-empty`), replacing any a pass before wrote, never doubling them. Rewording changes no file, so the tree, and every result recorded for it, still match: `land` checks the tree is unchanged and, if not, puts HEAD back and exits 1. `<sha8>` is the reworded commit.
+7. `push origin main <sha8>`: `git push origin HEAD:refs/heads/main`, a fast-forward or nothing. When the push is refused because `origin/main` moved, `land` takes the reword back (`git reset --keep` to the commit before it), prints `main moved; again from the fetch` and restarts at step 1, as often as `main` moves while `--wait` lasts (past it, exit 5, `timed out waiting for main to stop moving; nothing is pushed`). Step 4 then carries the verify it just ran when what moved `main` is outside the code (a coordinator's commit, or, with `code` set, a README commit). Any other failure takes the reword back and exits 1.
 8. `main <sha8>`: the main checkout's `main` fast-forwarded as `choose-ideas` does (`merge --ff-only` when it is on `main`, else `fetch . <branch>:main`). When it can't, `land` says so on stderr and the landing stands, `origin/main` holding the commit. Without an origin this step is the landing, and a `main` that moved is retried as a refused push is.
 
-**Output.** It ends `released land.<repo>` and `landed <sha8>`, the record commit `bmesh done --commit` names.
+**Output.** It ends `released land.<repo>` and `landed <sha8>`, the reworded commit that carries the trailers: the one `bmesh done --commit` names.
 
-**Refusals.** When `land` stops at any step, nothing is pushed and the branch holds no record commit, so it runs again as it stands.
+**Refusals.** When `land` stops at any step, nothing is pushed and the branch holds no trailers of this run, so it runs again as it stands.
 
 | When | Exit | Message |
 |---|---|---|
 | `--ttl` under 3 s | 2 | `land: --ttl must be at least 3s` |
 | no `--spec` and no node spec | 2 | `land needs --spec NNN (no node spec resolves)` |
 | `--spec` is not a number | 2 | `--spec "<NNN>" is not a number` |
+| the worktree has no such spec | 3 | `refused: no spec NNN in <top>` |
+| the spec doesn't read `done` in the worktree | 3 | `refused: spec NNN reads <status> on <branch>; a spec lands with its code reading done: run bmesh spec set --id NNN --status done, commit it, and land again` |
 | `--size` is none of XS, S, M, L (or XL and up) | 2 | `land: --size "<size>": want XS, S, M or L` |
 | a review to queue and no size | 2 | `land needs --size: spec NNN has no size` |
 | not a worktree of a repo with a main checkout | 3 | `refused: <top> is not a worktree of a repo with a main checkout` |
@@ -2099,17 +2101,16 @@ The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander b
 | the rebase fails | 3 | see below |
 | nothing beyond the base | 3 | `refused: nothing to land: HEAD is on <base>` |
 | the rebased ledger has two specs sharing an id (another writer landed the same number) | 3 | `refused: <file> and <file> share id NNN; renumber the newer with bmesh spec next-id` |
-| the worktree has no such spec | 3 | `refused: no spec NNN in <top>` |
-| the spec doesn't read `building` | 3 | `refused: spec NNN reads <status>, not building` |
 | scaffold drift | 3 | see below |
 | a failing inline kind | 1 | `<kind> failed at t:<tree8>; fix it, commit and run bmesh land again`; after a resolution, see below |
 | an inline command kind's setup failed | 3 | as [`bmesh routine run`](#bmesh-routine-run) says |
 | a failing result or a changed diff; a failing entry for the tree | 3 | names the kind and how to re-run it; see below |
 | any other push failure | 1 | `push main: <git error>` |
+| the reword changed the tree | 1 | `rewording <sha8> changed its tree (t:<tree8>, was t:<tree8>); it is put back and nothing is pushed` |
 | an interrupt (SIGINT or SIGTERM: Ctrl-C, or the daemon cancelling a [`bmesh ready`](#bmesh-ready) step) before the push | 1 | `interrupted; nothing is pushed`; under the lease, the rebase is aborted and the lease released first. An interrupt once the push to `main` has begun lets the push and the main checkout's fast-forward finish, and `land` reports what happened. |
 
 - Rebase conflict: `bmesh: refused: rebase onto origin/main conflicts in <files>; it is aborted and nothing is pushed. Rebase yourself, resolve it, re-validate, then run bmesh land again`, `<files>` those no rule resolves. When a rule resolved other files, at this stop or an earlier one, `<files>` is followed by `, which no rule resolves (a rule resolves <files>)`. When no file conflicts, it reads `rebase onto <base> fails` in place of `rebase onto origin/main conflicts in <files>`.
-- A failing inline kind after a resolution: `<kind> failed at t:<tree8>, after the rebase resolved <files> by rule: that is land's merge, and the branch is left rebased; fix it forward, commit, then run bmesh land again, which queues the review the new diff needs` (exit 1). Run again from a node, `land` finds no review on the branch (the reviewed commits are not under the fix) and queues one, as step 6 before the lease says.
+- A failing inline kind after a resolution: `<kind> failed at t:<tree8>, after the rebase resolved <files> by rule: that is land's merge, and the branch is left rebased; fix it forward, commit, then run bmesh land again, which queues the review the new diff needs` (exit 1). Run again from a node, `land` finds no review on the branch (the reviewed commits are not under the fix) and queues one, as step 7 before the lease says.
 - A required kind with no result for the tree: `refused: <kind> has no result for t:<tree8>; run it, then run bmesh land again`
 - A required kind that failed before the rebase: `refused: <kind> failed at t:<tree8>, before the rebase; fix what it found, commit and run bmesh land again`
 - A changed diff (a review that `land` doesn't queue again: run outside a node, or the repo's review kind is inline): `refused: <kind> has a result for t:<old8> but none for t:<new8>, and the rebase changed the diff: run it again on this tree (for review: bmesh routine queue review --again --go --text "base: <sha>", then routine wait), then run bmesh land again`
@@ -2125,7 +2126,7 @@ The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander b
 
 Any other region stays a conflict, and so does every region in a markdown file's frontmatter, a spec's included. So does a file one side added or deleted, a symlink or submodule, and a binary file. The rules keep both sides' lines or sentences and never write one. Verify runs on every rebased tree, so a resolution that doesn't build fails it there. The branch is left as `land` rebased it, for the lead to fix forward. A resolution nearly always changes the diff's patch-id, so the review needs to run again, as step 4 says.
 
-**Details.** A branch rebased by hand is read as it was before, by walking its reflog (`git reflog show refs/heads/<branch>`). When HEAD is the commit a rebase made (a `rebase (finish)` entry at HEAD; `rebase -i` and `pull --rebase` count), the entry before it, the head the rebase rewrote, counts as land's own head before the rebase. The walk goes on back while that head was itself made by a rebase. A commit made after the rebase ends the walk, and HEAD is read as it stands. HEAD is also read as it stands for a branch whose reflog has no rebase or has expired (`gc.reflogExpire`, 90 days), or that was rebased on another box. A kind with no result at HEAD's tree is required when that earlier head's tree has one, judged against that head and its fork point from main, as if land had done the rebase. So a review lost to a conflict the lead resolved by hand carries when the resolution left the diff unchanged, and is refused otherwise, as in step 4. A review's findings fixed in a commit and then rebased land on verify alone, because the fix's tree has no review; the review is named as left behind by later commits, as in step 4.
+**Details.** A branch rebased by hand is read as it was before, by walking its reflog (`git reflog show refs/heads/<branch>`). When HEAD is the commit a rebase made (a `rebase (finish)` entry at HEAD; `rebase -i` and `pull --rebase` count), the entry before it, the head the rebase rewrote, counts as land's own head before the rebase. The walk goes on back while that head was itself made by a rebase. A commit made after the rebase ends the walk, and HEAD is read as it stands. HEAD is also read as it stands for a branch whose reflog has no rebase or has expired (`gc.reflogExpire`, 90 days), or that was rebased on another box. A kind with no result at HEAD's tree is required when that earlier head's tree has one, judged against that head and its fork point from main, as if land had done the rebase. So a review lost to a conflict the lead resolved by hand carries when the resolution left the diff unchanged, and is refused otherwise, as in step 4. A review's findings fixed in a commit and then rebased land on verify alone, because the fix's tree has no review; the review is named as left behind by later commits, as in step 5 before the lease.
 
 See also: [Holds](#holds), [`bmesh spec verified`](#bmesh-spec-verified), [The verified line](#the-verified-line), [`bmesh scaffold`](#bmesh-scaffold), [`bmesh done`](#bmesh-started-progress-blocked-ask-done).
 
@@ -2150,7 +2151,7 @@ Hands a lead's landing to its box's daemon. The lead runs it once its work is co
 
 **What the daemon does.** The daemon of the box the lead runs on acts on the `ready` event, on every message to an inbox and on each poll tick. It holds the claim `ready.<path>` in `bm-leases` while it works a request, so a second daemon, or one restarted beside a step still running, leaves it alone. A dead daemon's claim expires within 2 minutes. Each pass reads, in order:
 
-1. **Landed.** The spec on `origin/main` reads `done` and its `merged` commit is an ancestor of the worktree's HEAD (a daemon that died after the push finds it here). The daemon fetches and runs `bmesh --node <path> done --commit <HEAD> --text "<done line>; landed <sha8>, origin/main at <sha8> contains it"`. `done` is idempotent, so a repeat records nothing twice. Then it sends the final wake, `bmesh: landed <sha8>, spec NNN done; origin/main at <sha8> contains it. Write your closing line; nothing else to run.` The request ends once the wake is delivered. A wake that still fails after an hour is logged and dropped, since `done` is the record. A `done` that refuses is handled as a refusal (step 5).
+1. **Landed.** The worktree's HEAD carries a `Spec:` trailer naming the request's spec and is on `origin/main` after a fetch (a daemon that died after the push finds it here). A HEAD that is an old `NNN: done at` record commit, from a land of the release before, is read as before: the spec on `origin/main` reads `done` and its `merged` commit is an ancestor of HEAD. The daemon fetches and runs `bmesh --node <path> done --commit <HEAD> --text "<done line>; landed <sha8>, origin/main at <sha8> contains it"`. `done` is idempotent, so a repeat records nothing twice. Then it sends the final wake, `bmesh: landed <sha8>, spec NNN done; origin/main at <sha8> contains it. Write your closing line; nothing else to run.` The request ends once the wake is delivered. A wake that still fails after an hour is logged and dropped, since `done` is the record. A `done` that refuses is handled as a refusal (step 5).
 2. **Withdrawn.** The request ends, with nothing run, when it was cancelled, the node was stopped, or the lead's state is neither `landing` nor `held` (the lead acted itself). A message (`bmesh send`) sent after the request also ends it, and the daemon then wakes the lead for its mail, as the wake pass would. For a message or a cancel, a lead still `landing` or `held` is written `working`, `ready withdrawn: <why>`, so silence applies to it again.
 3. **Held.** The lead has a hold: a `landing` lead is moved to `held` by running `bmesh --node <path> held`, which `watch` shows as the lead reaching its gate. Nothing else runs and nobody is woken. Once the release deletes the hold, the daemon writes the lead `landing` again and goes on.
 4. **Land.** It runs `bmesh --node <path> land --wait 10m [--size S]` in the node's registered worktree, which must exist, and only while HEAD is the request's head or land's own rebase of it (read from the branch's reflog, as land reads a hand rebase). Exit 0: the next pass finds it landed. Exit 5 (timed out): the next pass runs it again, and land waits for the review job already out rather than queueing a second. A refusal because of a hold: step 3.
@@ -2171,7 +2172,7 @@ While land runs, the daemon reads the request, the lead's state and its mail eve
 | the node has no thread | 3 | `refused: <path> has no thread for the daemon to wake; run bmesh land` |
 | the node's registered worktree isn't this checkout | 3 | `refused: <path>'s worktree is <worktree>, not this checkout <top>` |
 | a dirty worktree | 3 | `refused: the worktree has changes not committed; commit them, then run bmesh ready again` |
-| the spec doesn't read `building` | 3 | `refused: spec NNN reads <status>, not building` (or `refused: no spec NNN in <top>`) |
+| the spec doesn't read `done` in the worktree | 3 | `refused: spec NNN reads <status> on <branch>; a spec lands with its code reading done: run bmesh spec set --id NNN --status done, commit it, and land again` (or `refused: no spec NNN in <top>`) |
 | an unread message from the operator | 3 | `refused: <n> unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh ready again` |
 | a request already stands | 3 | `already ready; bmesh ready --cancel first` |
 | this box's daemon doesn't land for leads: its newest `started` event has no `can` naming `land` (an older release, or no daemon ever started) | 3 | `this box's daemon doesn't land for leads; run bmesh land` |
@@ -2683,7 +2684,7 @@ Internals: [internals](internals.md#several-boxes)
 **What a box follows.** `[update] track` (default `release`) names the commit that every update path (the daemon's self-update, the notice, [`bmesh update`](#bmesh-update)) goes to: the target. The code head is the newest commit on `main` that changes the repo's code (its row's `code`, see [repos.toml](#repostoml)). It is the commit `build` verifies and `release` tags.
 
 - `release`: the newest release, the highest `vX.Y.Z` tag in `main`'s history (see [`bmesh release`](#bmesh-release)). A pre-release such as `v0.2.0-rc1` is passed over. With no release tag yet, the target is the code head, and the daemon logs once: `update: no release tag on main yet; following its code head`.
-- `latest`: the code head. A commit outside the code (a dispatch, review or `done` record; with `code` set, a README, a document or art) never causes a rebuild.
+- `latest`: the code head. A commit outside the code (with `code` set, a README, a document or art; and the dispatch, review and `done` record commits only older landings wrote) never causes a rebuild.
 
 **Where a binary stands.**
 
@@ -2728,6 +2729,8 @@ There is no hint for a binary or daemon of unknown revision, for commands that r
 
 - for a release: `bmesh: v0.2.0 is out (you run v0.1.0: 046, 047); run bmesh update, then update the buildermesh plugin`;
 - for a code head (`track = "latest"`, or no release yet): `bmesh: 9 commits behind main (landed since: 032 The Quickstart works as written, 033 …); run bmesh update, then update the buildermesh plugin`. It counts only commits that change the repo's code, and lists the specs landed since, oldest first, each with its title (the id alone without one).
+
+The specs both lines list are the landings between the binary's commit and `main`: each commit with a `Spec: NNN` trailer, and each old `NNN: done at <sha8>` subject, whose landed commit the target has and the binary hasn't (or one the repo doesn't know).
 
 The daemon removes the file when the binary is current, ahead, or outside the target's history (another line, or unknown revision). With no check (`check_every = 0`, self-updating from a row, or no checkouts root), it removes the file at start. A failed fetch is logged and tried again at the next check.
 
@@ -2810,7 +2813,7 @@ Internals: [internals](internals.md#runners)
 
 ### Build families
 
-A build family is the set of leads a coordinator dispatched together. Every lead that [`bmesh build`](#bmesh-build) starts is in one: `--family F` joins `F`, and without it each `build` mints `<repo>-build-<N>`. The lead's node and spec record it as `family`. A family's feedback is read once the family is done (see [`bmesh feedback`](#bmesh-feedback)).
+A build family is the set of leads a coordinator dispatched together. Every lead that [`bmesh build`](#bmesh-build) starts is in one: `--family F` joins `F`, and without it each `build` mints `<repo>-build-<N>`. The lead's node records it as `family`. A family's feedback is read once the family is done (see [`bmesh feedback`](#bmesh-feedback)).
 
 A family holds a new build of the repo while the repo's last build run is still going. Both forms of `build` read the repo's leads on every box and hold while either is true:
 
@@ -2917,35 +2920,43 @@ Internals: [internals](internals.md#the-fixer)
 
 A repo's specs live in `docs/proposals/NNN-slug.md` (`[spec] glob`). Each spec is a flat `key: value` frontmatter between `---` fences (lines starting with `#` are ignored) over a half-page body. `README.md` is not a spec. [`bmesh spec`](#bmesh-spec) reads and writes the ledger, and [`bmesh choose-ideas`](#bmesh-choose-ideas) lands your verdicts in it.
 
-**Frontmatter rules.** The frontmatter is the whole record. So each of these is an error (exit 1) for every command, never skipped or counted around:
+What stays in git is content: a spec's text, its status as decided (`proposed`, `accepted`, `adjusting`, `later`, `rejected`) and, once it lands, `done`, set by its lead on its own branch so it lands with the code. What is in flight lives on the mesh, never in git:
+
+| What | Where |
+|---|---|
+| A lead is building a spec | the lead's node (`bm-nodes`: repo, spec, branch, host, family, state); the spec reads `accepted` meanwhile |
+| A lead is blocked | the node's state, from `bmesh blocked "<why>"` |
+| A spec landed, with its proof | trailers on the landed commit, `Spec: NNN` and `Verified: <entries>` (see [The verified line](#the-verified-line)) |
+| A step for the operator was done | a tick on the hub, in `bm-steps` |
+
+Specs landed before keep the fields their landing wrote and still read: a status of `building` or `blocked`, `built_by`, `branch`, `host`, `family`, `merged`, `verified` and `operator_steps`. Nothing writes them any more, and `NNN: done at <sha8>` subjects still count as landings.
+
+**Frontmatter rules.** The frontmatter is the spec's whole record. So each of these is an error (exit 1) for every command, never skipped or counted around:
 
 - a missing or non-numeric `id`, or one that differs from the file name's;
-- a `status` outside `proposed`, `accepted`, `adjusting`, `later`, `rejected`, `building`, `blocked`, `done`;
+- a `status` outside `proposed`, `accepted`, `adjusting`, `later`, `rejected`, `building`, `blocked`, `done` (`building` and `blocked` only old specs carry);
 - a `judge` outside `fable`, `opus`, `sonnet`;
 - missing fences, or a line that is not `key: value`;
 - two files sharing an id.
 
-**Ids are claimed.** A writer claims a spec's id with [`bmesh spec next-id`](#bmesh-spec-next-id) before it lands the spec, and [`bmesh ideate`](#bmesh-ideate) claims a block per child: the counter on the mesh (`bm-specids`, one key per repo) never hands out a number twice. A spec written by plain git without a claim can still take a number another writer holds, so the commands that land the ledger (`choose-ideas`, `spec set`, `build`'s dispatch commit and `land`) refuse, before any push, a ledger in which two files share an id: `refused: <file> and <file> share id NNN; renumber the newer with bmesh spec next-id`. Renumbering is yours.
+**Ids are claimed.** A writer claims a spec's id with [`bmesh spec next-id`](#bmesh-spec-next-id) before it lands the spec, and [`bmesh ideate`](#bmesh-ideate) claims a block per child: the counter on the mesh (`bm-specids`, one key per repo) never hands out a number twice. A spec written by plain git without a claim can still take a number another writer holds, so the commands that land the ledger (`choose-ideas`, `spec set` and `land`) refuse, before any push, a ledger in which two files share an id: `refused: <file> and <file> share id NNN; renumber the newer with bmesh spec next-id`. Renumbering is yours.
 
 With no id, `bmesh spec steps` passes over a repo whose ledger can't be read.
 
 **Fields the mesh writes.**
 
-- `branch`: set by dispatch, corrected by the build thread when the runner renamed it. The `spec set` that writes `done` and `merged` adds `--field branch=<the branch landed>` when it differs.
-- `family`: the build family the spec was dispatched in, set with `building`.
 - `from_feedback: <family> (<the leads whose feedback it came from, comma-separated>) #<seq>`: on a spec a coordinator wrote from feedback. Several issues are comma-separated, each with its stream sequence (see [`bmesh feedback`](#bmesh-feedback)).
 - `ruled: [<the rulings' slugs>]` and `fix_of: <the reporting lead's spec>`: on a fix the fixer accepted. `build` checks them (see [`bmesh build`](#bmesh-build) and [The fixer](#the-fixer)).
-- `operator_steps`: the steps for the operator, below.
 
-**Steps for the operator.** When [`bmesh land`](#bmesh-land) lands a spec (step 5 of the steps it runs holding the lease), it reads the spec's `## Needs from the operator` section as a list and copies it into the frontmatter as `operator_steps`.
+**Steps for the operator.** A landed spec's steps are its `## Needs from the operator` section, read as a list; [`bmesh spec steps`](#bmesh-spec-steps) reads them from the spec on `main`, and `land` counts them (`operator steps: N`).
 
 - Each top-level `-`, `*`, `+` or numbered (`1.`, `1)`) line is a step, with the lines under it (indented, or running on with no blank line between; a nested list too).
 - A step may start with a box in brackets, `[<host>]` (lowercase letters, digits and `-`). With `[hosts]` on and a roster read, a word naming neither a roster box nor this one is text (`[optional] ...`). A leading checkbox `[ ]` or `[x]` is dropped.
 - A step may end with `check: <command>` (backticks dropped). The step is done when the command exits 0.
 - A paragraph of prose is a step of its own, except one ending in `:` straight before a list (`On the Mac:`). Its words go in front of each of that list's steps, and its box, if any, applies to the steps that name none.
-- A section that is absent, empty, or whose first word is `nothing` or `none` has no steps and gets no `operator_steps`. A spec landed again with steps from before gets `operator_steps: []`.
+- A section that is absent, empty, or whose first word is `nothing` or `none` has no steps.
 
-The value is JSON on one line, `[{"n":1,"box":"<host>","text":"...","check":"...","done":"","note":"..."}]` (`check` and `note` only when set). `done` is empty until the step is ticked, then `<RFC 3339 time> <box>`. A spec landed again keeps the ticks of the steps whose box and words are unchanged, each old tick at most once. [`bmesh spec steps`](#bmesh-spec-steps) reads, ticks and checks the steps.
+A step is ticked by its number in that list: `bm-steps` key `<repo token>.<NNN>` holds the ticks as JSON, `[{"n":2,"done":"<RFC 3339 time> <box>","note":"..."}]` (`note` only when set). An old spec's `operator_steps` (JSON on one line, `[{"n":1,"box":"<host>","text":"...","check":"...","done":"","note":"..."}]`) are its steps instead, its ticks counting beside the hub's; a spec landed before trailers without the field has none.
 
 ### Routines
 
@@ -3127,7 +3138,7 @@ A result is kept per kind, tree, args and model, with its verdict, output (cut a
 
 Every run naming a commit records, inline or daemon, deterministic or not. A kind's newest run at a tree replaces the last. Answered-from-record jobs, refused jobs, failed setups, lost leases, runs cut off by a stopping daemon and inline runs with no hub record nothing.
 
-A result older than `[routines] keep_results` (default `30d`; `0` keeps them forever) is gone. A deterministic kind then runs again, and `bmesh done` for a spec landed longer ago needs its routines rerun on the merged tree (it names the missing result). The spec's `verified` line stays.
+A result older than `[routines] keep_results` (default `30d`; `0` keeps them forever) is gone. A deterministic kind then runs again, and `bmesh done` for a spec landed longer ago needs its routines rerun on the landed tree (it names the missing result). The landed commit's `Verified:` trailer (an old spec's `verified` line) stays.
 
 The commands are [`bmesh result find`](#bmesh-result-find) and [`bmesh result record`](#bmesh-result-record).
 
@@ -3135,27 +3146,31 @@ Internals: [internals](internals.md#results)
 
 #### The verified line
 
-A spec's frontmatter carries one line of proof, `;`-separated, one entry per check:
+A landing carries one line of proof, `;`-separated, one entry per check, as the `Verified:` trailer of the commit that landed, beside a `Spec:` trailer naming the spec:
 
 ```
-verified: review ok t:3f2a9c1e m:claude-opus-5-5; verify ok t:3f2a9c1e
+Spec: 012
+Verified: review ok t:3f2a9c1e m:claude-opus-5-5; verify ok t:3f2a9c1e
 ```
 
 Each entry is `<kind> <ok|fail> t:<tree first 8>[ m:<model>][ c:<tree first 8>]`. `c:` names the tree a model's result was recorded at when it carries to `t:` across a rebase that left the diff unchanged:
 
 ```
-verified: review ok t:3f2a9c1e m:claude-opus-5-5 c:81d0b7a4; verify ok t:3f2a9c1e
+Verified: review ok t:3f2a9c1e m:claude-opus-5-5 c:81d0b7a4; verify ok t:3f2a9c1e
 ```
 
-[`bmesh spec verified`](#bmesh-spec-verified) composes the line and, with `--write`, sets it; [`bmesh land`](#bmesh-land) writes it as it lands.
+[`bmesh spec verified`](#bmesh-spec-verified) composes the line and prints it; [`bmesh land`](#bmesh-land) composes it for the rebased tree and rewords the tip commit to carry it. Rewording changes no file, so the tree, and every result recorded for it, still match. A spec landed before trailers carries the same line in its frontmatter, as `verified:`.
 
-`bmesh done` checks, in order, and refuses with exit 3 at the first that fails:
+`bmesh done --commit <landed>` checks, in order, and refuses with exit 3 at the first that fails:
 
-1. The spec reads `done` on main with a `merged` commit main contains (`git merge-base --is-ancestor <merged> <ref>`, `ref` = `origin/main` when the repo has an origin, else `main`). Else `bmesh: not done: merged <sha> is not on <ref>`.
-2. For a lead only (other roles stop here): the `verified` line is non-empty (`bmesh: not done: verified is empty`) and has no `fail` entry (`bmesh: not done: verified has a failing entry <kind>`).
-3. For a lead, each entry is for the tree of `merged` (`bmesh: not done: verified entry <kind> is for tree <t>, merged tree is <m>`) and is matched by a record of that kind at that tree with the same `ok` (and model, when the entry names one), whatever its args. A carried entry is matched by a model record at the tree its `c:` names, with the same `ok` and model, whose patch-id is the diff `merged` landed. Else `bmesh: not done: verified names <kind> but no result for tree <t>` (`<t>` is the `c:` tree for a carried entry).
+1. The commit is on main (`git merge-base --is-ancestor <commit> <ref>`, `ref` = `origin/main` when the repo has an origin, after a fetch, else `main`). Else `bmesh: not done: <sha8> is not on <ref>`.
+2. It has a `Verified:` trailer (`bmesh: not done: <sha8> has no Verified trailer`) with no `fail` entry (`bmesh: not done: verified has a failing entry <kind>`).
+3. Each entry is for the commit's tree (`bmesh: not done: verified entry <kind> is for tree <t>, merged tree is <m>`) and is matched by a record of that kind at that tree with the same `ok` (and model, when the entry names one), whatever its args. A carried entry is matched by a model record at the tree its `c:` names, with the same `ok` and model, whose patch-id is the diff the commit landed. Else `bmesh: not done: verified names <kind> but no result for tree <t>` (`<t>` is the `c:` tree for a carried entry).
+4. Its `Spec:` trailer names the node's spec: `bmesh: not done: <sha8> landed spec MMM, not NNN` (`bmesh: not done: <sha8> has no Spec trailer` without one).
 
-An executor's `done` skips the spec check.
+A commit whose subject is the old `NNN: done at <sha8>` record (a lead that landed with the release before) is checked as it was: the spec on main reads `done` with a `merged` commit main contains (else `bmesh: not done: status is <status>`, `merged is empty` or `merged <sha> is not on <ref>`), and its `verified` line passes 2 and 3 for `merged`, an empty one refused with `bmesh: not done: verified is empty`.
+
+An executor's `done` skips these checks.
 
 Internals: [internals](internals.md#verified)
 
@@ -3368,7 +3383,7 @@ It refuses `refused: no node <path>`, `refused: <path> is on <host>, not <box>` 
 **A step's check.** `check-step` (`repo` a registry name, `args` `[<spec id>, <step number>]`) runs one step's `check:` for `bmesh spec steps --check` (see [`bmesh spec steps`](#bmesh-spec-steps)). The job names the step, never a command.
 
 1. The box fetches its own checkout of the repo, under the repo's lock.
-2. It reads the spec's `operator_steps` from its `origin/main` (`main` without an origin).
+2. It reads the spec's steps from its `origin/main` (`main` without an origin), as `spec steps` reads them (an old spec's `operator_steps`).
 3. It runs that step's check through the platform shell in the checkout, for at most 2 minutes.
 4. It answers `exit 0`, or `exit <code>: <the output's last line>`.
 
@@ -3436,7 +3451,7 @@ From a chat (a phone, or a session with the plugin and no command typed), the op
 - **`buildermesh:ideate`** ("proposals for X", "run a round on X") runs `ideate` on the row's `host` (locally, else over ssh), with what was asked beyond the repo's name as `--context`; watches with `bmesh watch --nodes <repo>-round-<N>`, relaying an engineer's `ask`; and reports the round proposed (its ranked pitch) or blocked. For one idea of the operator's own to be specced (by what was asked, not the words) it starts no two-thread round: `ideate --idea` (one engineer thread, on the row's `host`) when a thread, a model or an effort is asked for, or the idea needs the repo read and measured at length; otherwise it writes the spec itself (one half-pager, or two or three in build order for an idea too big for one lead, `proposed_by: operator`) and lands it on `main` as `proposed`.
 - **`buildermesh:choose-ideas`** (the reply to a pitch, in plain words) runs `choose-ideas`.
 - **`buildermesh:build`** ("build X 3", "build what's accepted in X") runs `build` on the row's `host`, building specs that edit the same files one after another in one family; after a `held` refusal it drains its own family, waits with `bmesh watch` on the named nodes and runs `build` again; a hold by another coordinator's family, or a red `main`, it reports. It watches the leads with `bmesh watch --nodes <paths>`, relays each `ask` and answers it with `bmesh --node operator send`, reports a lead reaching its gate as one line, holds and releases with `hold` and `unhold` ("hold X", "hold land on X", "release X"; see [Holds](#holds)) and stops with `node stop` ("stop X"; see [`bmesh node stop`](#bmesh-node-stop)), never with free text. Once the family's watch is done it names the fixer started for the issues naming bmesh's own repo (see [The fixer](#the-fixer)), makes the quick fixes among the rest itself, as `quickfix` does, writes the others up as proposed specs and drains them (see [`bmesh feedback`](#bmesh-feedback)).
-- **`buildermesh:quickfix`** ("fix X", "hotfix X", "tweak X", "make X do Y", or a problem reported, "this 500s") makes a change the operator asks to have made in the chat itself, with no spec, spec id, lead, executor, round or ledger commit. It sizes the change as the definition of done sizes work with no spec (XS one file, S one module, M crosses modules, L changes an interface others depend on) and offers one sized L or larger as a spec instead. It works in a worktree of its own from `origin/main`, never the repo's checkout, whose unpushed commit would hold every lead's `land` (step 8 of [`bmesh land`](#bmesh-land)). It commits and runs `routine run verify`, which needs no node and records the result for the tree; with no hub it still runs and records nothing. Then it reviews its own diff by the `ponytail-review` skill, in the same session at its own effort, and fixes its Must fix and Should fix findings in the change; for an M, Opus at medium effort reviews it once more in a fresh session, by the same skill, and the findings are fixed. Then it rebases onto `origin/main`, verifies again when the rebase brought in commits, and pushes `HEAD:main`. It cuts a release only when the operator wants the change running now and the repo is released by tag. A change the operator asks to have specced is `ideate`'s. A problem reported ("the label overlaps") is a change to make, unless the operator is QA-ing. While the operator QAs or says to hold ("I'm QA-ing", "hold off", "don't fix yet"), it keeps a numbered list of findings, each with its cause, fix and size, edits, restarts, commits and starts nothing, and puts a "fix X" on the list unless told now; the release ("go", "fix 1 and 3") makes the picked ones as one quick fix, a commit per finding, with one verify, one review sized by the batch and one push.
+- **`buildermesh:quickfix`** ("fix X", "hotfix X", "tweak X", "make X do Y", or a problem reported, "this 500s") makes a change the operator asks to have made in the chat itself, with no spec, spec id, lead, executor, round or ledger commit. It sizes the change as the definition of done sizes work with no spec (XS one file, S one module, M crosses modules, L changes an interface others depend on) and offers one sized L or larger as a spec instead. It works in a worktree of its own from `origin/main`, never the repo's checkout, whose unpushed commit would hold every lead's `land` (step 9 of [`bmesh land`](#bmesh-land)). It commits and runs `routine run verify`, which needs no node and records the result for the tree; with no hub it still runs and records nothing. Then it reviews its own diff by the `ponytail-review` skill, in the same session at its own effort, and fixes its Must fix and Should fix findings in the change; for an M, Opus at medium effort reviews it once more in a fresh session, by the same skill, and the findings are fixed. Then it rebases onto `origin/main`, verifies again when the rebase brought in commits, and pushes `HEAD:main`. It cuts a release only when the operator wants the change running now and the repo is released by tag. A change the operator asks to have specced is `ideate`'s. A problem reported ("the label overlaps") is a change to make, unless the operator is QA-ing. While the operator QAs or says to hold ("I'm QA-ing", "hold off", "don't fix yet"), it keeps a numbered list of findings, each with its cause, fix and size, edits, restarts, commits and starts nothing, and puts a "fix X" on the list unless told now; the release ("go", "fix 1 and 3") makes the picked ones as one quick fix, a commit per finding, with one verify, one review sized by the batch and one push.
 - **`buildermesh:scaffold`** ("scaffold X", "change X's rules") runs `scaffold --check` and shows the diff. When the repo's `AGENTS.md` has no `rules` block, or the operator asked to change its rules, it interviews the operator first: it shows each of the [rule sets](#rule-sets) and asks which to pick (several, or none), recommending `core`, plus `tests` when the repo has tests, `design` when it holds stateful or concurrent code and `ponytail` when the operator wants agents to write the least code a change needs, each with the evidence it saw; it writes the pick as an empty block (`<!-- bmesh:rules <sets> -->` and its closing marker) at the end of `AGENTS.md`, or rewrites the existing opening marker, and runs `scaffold` to fill it; on a `customized` block it asks whether to keep it (the default) or go back to bmesh's sets. Then, on the filled block, it clears conflicts out of the repo's own prose: it reads `AGENTS.md` outside bmesh's markers, `CLAUDE.md` and any file `AGENTS.md` says to read at the start for lines that restate a picked rule (deleted, since the block carries it), contradict one (the operator says which wins: the repo's line, with the rule cut or reworded in the block, which marks it customized, or the rule), or rest on a set not picked (asked the same), and changes only what the operator answers, running `scaffold` again after an edit to the block so its marker reads `customized`. Then it runs the row's verify, commits `Scaffold the shared definition of done, proposals and rules` with those files, and pushes.
 - **`buildermesh:mesh-status`** ("what's building", "where is X") summarises `mesh-status` (and `spec list` for a named repo) as working, asking, silent, stopped and done since the last look.
 
