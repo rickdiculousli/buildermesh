@@ -1003,12 +1003,11 @@ A lead runs `feedback` to leave one line per issue of friction outside its spec 
 **Draining a family.** The coordinator (the `build` skill) reads the queue once `watch` prints `watch-done` for a family:
 
 1. Issues naming bmesh's own repo are the fixer's (see [The fixer](#the-fixer)): it reports the fixer `mesh-status` names on its `fixes:` line and leaves them pending.
-2. The rest it lists, merges duplicates, drops what a spec on `main` already covers (any status) or a `--fixed` commit settled, and sorts:
-   - A quick fix (one cause, one obvious change, XS or S) becomes a spec landed as `accepted` (`Feedback NNN: accepted from <family>`, `proposed_by` its thread, `from_feedback` the family and leads). It is built in a new family once this family is drained, with no operator review.
-   - Anything that needs thought becomes a `proposed` spec (`Feedback NNN: proposed from <family>`, the same `proposed_by` and `from_feedback`) for the operator's review, never a round.
-   - An issue from a lead built from a `from_feedback` spec is always proposed.
-3. It drains the issues it ruled on with `drain --seq` and leaves the fixer's, so the specs' `from_feedback` (`<family> (<leads>) #<seq>`) is the only record left.
-4. It reports one line per issue: `fixed by NNN (started)`, `proposed NNN`, `already NNN`, `dropped: <why>` or `to the fixer`.
+2. The rest it lists, merges duplicates, drops what a spec on `main` already covers (any status), a `--fixed` commit settled or a commit on `main` naming the issue's `#<seq>` fixed, and sorts:
+   - A quick fix (one cause, one obvious change, XS or S) it makes itself, as the `quickfix` skill makes a change, with no spec, no lead and no operator review: one commit on `main` titled `Quick fix from <family> #<seq>: <what it changes>`.
+   - Anything that needs thought becomes a `proposed` spec (`Feedback NNN: proposed from <family>`, `proposed_by` its thread, `from_feedback` the family and leads) for the operator's review, never a round.
+3. It drains the issues it ruled on with `drain --seq` and leaves the fixer's, so the quick fixes' titles and the specs' `from_feedback` (`<family> (<leads>) #<seq>`) are the only record left.
+4. It reports one line per issue: `fixed by <sha8>`, `proposed NNN`, `already NNN`, `dropped: <why>` or `to the fixer`.
 
 A coordinator that dies between list and drain leaves the family pending, and `mesh-status` shows it. `mesh-status` shows pending feedback as `feedback: N pending in <family>` per family, and issues naming bmesh's own repo instead as `fixes: N pending for <repo> (...)` (see [The fixer](#the-fixer) and [`bmesh mesh-status`](#bmesh-mesh-status)).
 
@@ -1022,7 +1021,7 @@ Internals: [internals](internals.md#feedback)
 bmesh fix [--model M] [--effort E]
 ```
 
-Starts the fixer on bmesh's own repo: a fix lead that rules on the feedback naming that repo and builds the fixes (see [The fixer](#the-fixer)). It takes no repo. The daemon also starts a fixer on its own, so no session has to run `fix`.
+Starts the fixer on bmesh's own repo: a fix lead that rules on the feedback naming that repo, makes the small fixes and builds the rest (see [The fixer](#the-fixer)). It takes no repo. The daemon also starts a fixer on its own, so no session has to run `fix`.
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -2844,7 +2843,7 @@ See also: [`bmesh build`](#bmesh-build), [`bmesh spec template`](#bmesh-spec-tem
 
 ### The fixer
 
-The fixer is a fix lead whose builds neither hold nor are held by the repo's other builds (its own pipeline, see [Build families](#build-families)). On bmesh's own repo only (the registry row whose `go.mod` declares the module the binary was built from; the row `update` and `land` find), it rules on the feedback naming that repo under the rulings below. The fixes it rules are built without the operator reviewing them first. With no such row, nothing here is active. With no such row, or a binary that doesn't name its module, the daemon starts nothing. [`bmesh fix`](#bmesh-fix) starts one by hand.
+The fixer is a fix lead whose builds neither hold nor are held by the repo's other builds (its own pipeline, see [Build families](#build-families)). On bmesh's own repo only (the registry row whose `go.mod` declares the module the binary was built from; the row `update` and `land` find), it rules on the feedback naming that repo under the rulings below. The fixes it rules are made or built without the operator reviewing them first. With no such row, nothing here is active. With no such row, or a binary that doesn't name its module, the daemon starts nothing. [`bmesh fix`](#bmesh-fix) starts one by hand.
 
 **When the daemon starts one.** The daemon of the row's `host` (any daemon when the row names none) starts a fixer while the row is `ship` and all three hold:
 
@@ -2856,7 +2855,7 @@ An issue a fixer had when it started and left is not started on again. The daemo
 
 **Who reaches the operator.** Only the fixer does. A lead in a `<repo>-fix-<N>` family (a fix lead) pushes nothing: its `ask`, `blocked` and `done` go to the fixer's inbox in the shapes an executor's take to its lead (see [`bmesh executor`](#bmesh-executor)). The fixer answers or relays them under the rulings, and reports them. The fixer's own `ask`, `blocked` and `done` push as a lead's do (see [Pushes](#pushes)). `mesh-status` shows the open issues on its `fixes:` line, with the fixer's state (see [`bmesh mesh-status`](#bmesh-mesh-status)).
 
-**The rulings.** The fixer's brief, the embedded `fix` template, carries these rulings. Each spec it writes cites by slug the ones it rests on.
+**The rulings.** The fixer's brief, the embedded `fix` template, carries these rulings. Each fix and spec it writes cites by slug the ones it rests on.
 
 1. `root`: fix the first wrong decision, not the place it showed, then every other place with the same fault. A guard is a fix only when the state it handles is legitimate.
 2. `failing-first`: name what fails before the fix and passes after: a test through the real command or package, or a run with its output. A rate or timing the fix rests on carries its run count. An issue that can't be made to fail is dropped, saying what was tried.
@@ -2865,17 +2864,17 @@ An issue a fixer had when it started and left is not started on again. The daemo
 5. `premise`: no third fix on one premise. When two fixes of the same thing haven't held, write down the belief both assumed, test it, and propose it to the operator with the evidence.
 6. `no-new-surface`: a fix adds no command, flag, config or registry key, frontmatter field, bucket, subject or event. Anything new the operator would have to learn is product direction, and is proposed.
 7. `reversible`: build what can be undone inside the repo without asking, then report it. Proposed, never built: taste, product direction, anything sized L, and anything outside the repo's `main` (a step on another box, deleted records, the registry or a box's config).
-8. `drop`: dropping is an outcome: what a spec on `main` already covers (any status), what a `--fixed` commit settled, and the reporting lead's own spec's work.
+8. `drop`: dropping is an outcome: what a spec on `main` already covers (any status), what a `--fixed` commit or a commit on `main` naming the issue's `#<seq>` settled, and the reporting lead's own spec's work.
 
 Code-design principles (types, boundaries, domain modelling, reader load) are left to the repo's `AGENTS.md` and its review. A migration is sized L and goes to the operator. What is proposed is designed by the ideate method. `build` checks the two rulings it can (see [`bmesh build`](#bmesh-build)), and `list --repo` hides what a spec already names.
 
 **Its pass.** The fixer follows the `fix` skill, one pass:
 
 1. `feedback list --repo <repo>`.
-2. One ruling per issue. A fix is a spec with `status: accepted`, `ruled: [<slugs>]`, `fix_of: <the reporting lead's spec>` and `from_feedback: <family> (<lead>) #<seq>`. What `premise`, `no-new-surface` or `reversible` send on is a spec with `status: proposed` and the ruling named in its Opportunity, with no `ruled` or `fix_of`. A drop is a line in the report.
-3. Each spec lands on `main` and its issues are drained at once (`drain --seq`).
-4. Each fix is built one at a time (`bmesh build <repo> NNN --family <the fixer's>`) and watched. The fixer answers an `ask` the rulings settle, relays the rest, and lists again after each (a fix lead's own feedback is ruled on in the same pass).
-5. Once the queue is empty and no fix lead runs, it releases the repo when the repo has a release tag, then runs `done`: one line per issue (`<seq>: fixed by NNN (root, failing-first)`, `<seq>: proposed NNN (no-new-surface: ...)`, `<seq>: dropped (drop: 044 covers it)`), what waits on the operator first, then the release.
+2. One ruling per issue. A fix sized XS or S the fixer makes itself, as the `quickfix` skill makes a change: one commit titled `Fix #<seq>: <what it changes>`, its body naming the rulings and what fails before and passes after, with no spec and no lead. A fix sized M is a spec with `status: accepted`, `ruled: [<slugs>]`, `fix_of: <the reporting lead's spec>` and `from_feedback: <family> (<lead>) #<seq>`. What `premise`, `no-new-surface` or `reversible` send on is a spec with `status: proposed` and the ruling named in its Opportunity, with no `ruled` or `fix_of`. A drop is a line in the report.
+3. Each fix and spec lands on `main` and its issues are drained at once (`drain --seq`).
+4. Each M fix is built one at a time (`bmesh build <repo> NNN --family <the fixer's>`) and watched. The fixer answers an `ask` the rulings settle, relays the rest, and lists again after each (a fix lead's own feedback is ruled on in the same pass).
+5. Once the queue is empty and no fix lead runs, it releases the repo when the repo has a release tag, then runs `done`: one line per issue (`<seq>: fixed by <sha8> (root, failing-first)` for a fix it made, `<seq>: fixed by NNN (...)` for a spec a lead built, `<seq>: proposed NNN (no-new-surface: ...)`, `<seq>: dropped (drop: 044 covers it)`), what waits on the operator first, then the release.
 
 Internals: [internals](internals.md#the-fixer)
 
@@ -3373,13 +3372,14 @@ Internals: [internals](internals.md#hosts)
 
 ### The plugin
 
-The repo is a Claude Code plugin, `buildermesh`, with twelve skills. The binary reads none of them; a session loads them.
+The repo is a Claude Code plugin, `buildermesh`, with thirteen skills. The binary reads none of them; a session loads them.
 
 | Skill | Run by | What it covers |
 |---|---|---|
 | `ideate` | the operator, from a chat | a proposal round ([`bmesh ideate`](#bmesh-ideate)) |
 | `choose-ideas` | the operator, from a chat | the verdicts on a pitch ([`bmesh choose-ideas`](#bmesh-choose-ideas)) |
 | `build` | the operator, from a chat | dispatch, watch, holds and stops ([`bmesh build`](#bmesh-build)) |
+| `quickfix` | the operator, from a chat | a change asked to be made, made in the chat and landed by the definition of done, with no spec or lead (below) |
 | `scaffold` | the operator, from a chat | a ship repo's shared sections and its rule sets ([`bmesh scaffold`](#bmesh-scaffold)) |
 | `mesh-status` | the operator, from a chat | what's building ([`bmesh mesh-status`](#bmesh-mesh-status)) |
 | `sync` | the operator, from a chat | levelling repos across boxes (below) |
@@ -3390,15 +3390,16 @@ The repo is a Claude Code plugin, `buildermesh`, with twelve skills. The binary 
 | `ideate-engineer` | a round's engineer | a round's method, from reading the repo to the pitch the operator answers with `bmesh choose-ideas` |
 | `ideate-ux` | a round's UI/UX engineer | the same, for how the app looks and feels |
 
-Seven are the operator's chat entry points: `ideate`, `choose-ideas`, `build`, `scaffold` and `mesh-status` for the lifecycle; `sync` and `prune` across boxes. The nodes the lifecycle starts follow the other five.
+Eight are the operator's chat entry points: `ideate`, `choose-ideas`, `build`, `scaffold` and `mesh-status` for the lifecycle; `quickfix` for a change made without it; `sync` and `prune` across boxes. The nodes the lifecycle starts follow the other five.
 
 #### From a chat
 
 From a chat (a phone, or a session with the plugin and no command typed), the operator runs this lifecycle through the plugin's skills:
 
-- **`buildermesh:ideate`** ("proposals for X", "run a round on X") runs `ideate` on the row's `host` (locally, else over ssh), with what was asked beyond the repo's name as `--context`; watches with `bmesh watch --nodes <repo>-round-<N>`, relaying an engineer's `ask`; and reports the round proposed (its ranked pitch) or blocked. For one idea of the operator's own (by what was asked, not the words) it starts no two-thread round: `ideate --idea` (one engineer thread, on the row's `host`) when a thread, a model or an effort is asked for, or the idea needs the repo read and measured at length; otherwise it writes the spec itself (one half-pager, or two or three in build order for an idea too big for one lead, `proposed_by: operator`) and lands it on `main` as `proposed`.
+- **`buildermesh:ideate`** ("proposals for X", "run a round on X") runs `ideate` on the row's `host` (locally, else over ssh), with what was asked beyond the repo's name as `--context`; watches with `bmesh watch --nodes <repo>-round-<N>`, relaying an engineer's `ask`; and reports the round proposed (its ranked pitch) or blocked. For one idea of the operator's own to be specced (by what was asked, not the words) it starts no two-thread round: `ideate --idea` (one engineer thread, on the row's `host`) when a thread, a model or an effort is asked for, or the idea needs the repo read and measured at length; otherwise it writes the spec itself (one half-pager, or two or three in build order for an idea too big for one lead, `proposed_by: operator`) and lands it on `main` as `proposed`.
 - **`buildermesh:choose-ideas`** (the reply to a pitch, in plain words) runs `choose-ideas`.
-- **`buildermesh:build`** ("build X 3", "build what's accepted in X") runs `build` on the row's `host`, building specs that edit the same files one after another in one family; after a `held` refusal it drains its own family, waits with `bmesh watch` on the named nodes and runs `build` again; a hold by another coordinator's family, or a red `main`, it reports. It watches the leads with `bmesh watch --nodes <paths>`, relays each `ask` and answers it with `bmesh --node operator send`, reports a lead reaching its gate as one line, holds and releases with `hold` and `unhold` ("hold X", "hold land on X", "release X"; see [Holds](#holds)) and stops with `node stop` ("stop X"; see [`bmesh node stop`](#bmesh-node-stop)), never with free text. Once the family's watch is done it names the fixer started for the issues naming bmesh's own repo (see [The fixer](#the-fixer)), and turns the rest into specs and drains them (see [`bmesh feedback`](#bmesh-feedback)).
+- **`buildermesh:build`** ("build X 3", "build what's accepted in X") runs `build` on the row's `host`, building specs that edit the same files one after another in one family; after a `held` refusal it drains its own family, waits with `bmesh watch` on the named nodes and runs `build` again; a hold by another coordinator's family, or a red `main`, it reports. It watches the leads with `bmesh watch --nodes <paths>`, relays each `ask` and answers it with `bmesh --node operator send`, reports a lead reaching its gate as one line, holds and releases with `hold` and `unhold` ("hold X", "hold land on X", "release X"; see [Holds](#holds)) and stops with `node stop` ("stop X"; see [`bmesh node stop`](#bmesh-node-stop)), never with free text. Once the family's watch is done it names the fixer started for the issues naming bmesh's own repo (see [The fixer](#the-fixer)), makes the quick fixes among the rest itself, as `quickfix` does, writes the others up as proposed specs and drains them (see [`bmesh feedback`](#bmesh-feedback)).
+- **`buildermesh:quickfix`** ("fix X", "hotfix X", "tweak X", "make X do Y") makes a change the operator asks to have made in the chat itself, with no spec, spec id, lead, executor, round or ledger commit. It sizes the change as the definition of done sizes work with no spec (XS one file, S one module, M crosses modules, L changes an interface others depend on) and offers one sized L or larger as a spec instead. It commits and runs `routine run verify`, which needs no node and records the result for the tree; for an M, Opus at medium effort reviews it once in a fresh session and the findings are fixed. Then it rebases onto `origin/main`, verifies again when the rebase brought in commits, and pushes `HEAD:main`. It cuts a release only when the operator wants the change running now and the repo is released by tag. A change the operator asks to have specced is `ideate`'s.
 - **`buildermesh:scaffold`** ("scaffold X", "change X's rules") runs `scaffold --check` and shows the diff. When the repo's `AGENTS.md` has no `rules` block, or the operator asked to change its rules, it interviews the operator first: it shows each of the [rule sets](#rule-sets) and asks which to pick (several, or none), recommending `core`, plus `tests` when the repo has tests and `design` when it holds stateful or concurrent code, each with the evidence it saw; it writes the pick as an empty block (`<!-- bmesh:rules <sets> -->` and its closing marker) at the end of `AGENTS.md`, or rewrites the existing opening marker, and runs `scaffold` to fill it; on a `customized` block it asks whether to keep it (the default) or go back to bmesh's sets. Then, on the filled block, it clears conflicts out of the repo's own prose: it reads `AGENTS.md` outside bmesh's markers, `CLAUDE.md` and any file `AGENTS.md` says to read at the start for lines that restate a picked rule (deleted, since the block carries it), contradict one (the operator says which wins: the repo's line, with the rule cut or reworded in the block, which marks it customized, or the rule), or rest on a set not picked (asked the same), and changes only what the operator answers, running `scaffold` again after an edit to the block so its marker reads `customized`. Then it runs the row's verify, commits `Scaffold the shared definition of done, proposals and rules` with those files, and pushes.
 - **`buildermesh:mesh-status`** ("what's building", "where is X") summarises `mesh-status` (and `spec list` for a named repo) as working, asking, silent, stopped and done since the last look.
 

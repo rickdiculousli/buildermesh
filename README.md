@@ -147,7 +147,9 @@ verified: review ok t:3f2a9c1e m:claude-opus-5-5 c:81d0b7a4; verify ok t:3f2a9c1
 4. **Verify.** Routines run `verify` (the repo's tests) and, for larger changes, `review` (Opus, in a session that never saw the change).
 5. **Land.** `bmesh land` verifies, queues the review the spec's size calls for and waits for it, then rebases onto `origin/main` (resolving the conflicts a rule can), requires a result for the tree it lands, writes the `verified` line, marks the spec `done` and fast-forwards `main`. It waits out what clears by itself (a review running, `main` moving, someone's unpushed `main`, another lead landing) and stops only for what needs the lead. A lead usually hands this to its box's daemon instead: it runs `bmesh ready --text "<done line>"` and ends its turn, its state reads `landing`, and the daemon runs `land` and `done` for it. The daemon wakes the lead only when land refuses (a conflict, a failing check or review), and once at the end for its closing line. A hold waits for the release without waking it, and a message withdraws the request and wakes it.
 
-A lead reports problems outside its spec as feedback. When a batch started from a chat is done, the plugin's `build` skill starts builds for the quick fixes without asking you, writes the rest up as proposed specs for your review and tags the next version with `bmesh release`. In a chat, say "proposals for app", "1 and 3 yes", "build what's accepted in app" or "what's building".
+A lead reports problems outside its spec as feedback. When a batch started from a chat is done, the plugin's `build` skill makes the quick fixes itself without asking you, writes the rest up as proposed specs for your review and tags the next version with `bmesh release`. In a chat, say "proposals for app", "1 and 3 yes", "build what's accepted in app" or "what's building".
+
+A fix or a tweak skips all of this. Say "fix the login button in app" and the plugin's `quickfix` skill makes the change in the chat, runs `verify`, has it reviewed only when it crosses modules, and pushes it to `main`: no spec, no lead. A change that alters an interface others depend on, it offers as a spec instead.
 
 ## Quickstart (single box)
 
@@ -211,7 +213,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 
 ## All commands and flags
 
-> **Honestly, you can mostly skip this.** With the plugin installed, just ask your agent to run the mesh for you: "proposals for app", "build what's accepted in app", "what's building", "sync my repos". The skills know these commands so you don't have to. This list is here for when you're curious or something needs a closer look.
+> **Honestly, you can mostly skip this.** With the plugin installed, just ask your agent to run the mesh for you: "proposals for app", "build what's accepted in app", "fix the typo in app's footer", "what's building", "sync my repos". The skills know these commands so you don't have to. This list is here for when you're curious or something needs a closer look.
 
 `--config FILE`, `--node PATH` and `--json` go before or after any command ([Synopsis](docs/manual.md#synopsis)). Each command links to its section of the [manual](docs/manual.md).
 
@@ -329,7 +331,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 
 - **`bmesh`**: the CLI, daemon, map server and NATS hub in one binary.
 - **Runners**: `t3` (a T3 Code thread), `claude` (headless `claude -p` turns) or `tmux` runs each session.
-- **The plugin**: twelve Claude Code skills, seven for your chat and five that the sessions bmesh starts follow.
+- **The plugin**: thirteen Claude Code skills, eight for your chat and five that the sessions bmesh starts follow.
 - **Specs**: `docs/proposals/NNN-slug.md` in each repo, with status, builder, merged commit and `verified` line in the frontmatter.
 
 The [manual](docs/manual.md) covers every command, flag, config key, output and refusal, and the concepts behind them. [Internals](docs/internals.md) covers NATS subjects, buckets, record shapes and signing.
