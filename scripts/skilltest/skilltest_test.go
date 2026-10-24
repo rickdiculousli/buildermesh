@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -79,9 +80,12 @@ func TestReferences(t *testing.T) {
 	}
 }
 
+var update = flag.Bool("update", false, "rewrite the fixture as bmesh scaffold writes it")
+
 // The fixture is a shop as bmesh scaffold leaves a ship repo: its AGENTS.md
 // blocks and routine kinds as scaffold writes them, a ledger of three
-// proposed specs, and tests that pass with its bugs in.
+// proposed specs, and tests that pass with its bugs in. A change to what
+// scaffold writes is taken in with -update.
 func TestFixture(t *testing.T) {
 	need(t, "go")
 	fixture := testFixture(t)
@@ -90,8 +94,12 @@ func TestFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan := scaffold.Plan(targets); plan != "" {
-		t.Errorf("the fixture is not as bmesh scaffold writes it:\n%s", plan)
+	if plan := scaffold.Plan(targets); plan != "" && *update {
+		if _, err := scaffold.Write(fixture, targets); err != nil {
+			t.Fatal(err)
+		}
+	} else if plan != "" {
+		t.Errorf("the fixture is not as bmesh scaffold writes it (go test ./scripts/skilltest -run TestFixture -update takes it in):\n%s", plan)
 	}
 	specs, err := spec.Scan(fixture, "docs/proposals/{id}-*.md")
 	if err != nil {
