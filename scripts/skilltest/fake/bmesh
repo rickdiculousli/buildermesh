@@ -117,6 +117,24 @@ first() { positionals "$@" | sed -n 1p; }
 
 out() { [ -f "$canned/$1" ] && cat "$canned/$1"; }
 
+# saysnext CMD: the arm's manual has CMD print its next: lines (100), as
+# the binary that manual documents does.
+saysnext() { grep -qxF -- "$1 next:" "$cell/commands.txt"; }
+
+# watchnext PATHS: the watch line build and ideate end with on stderr.
+watchnext() {
+	echo "next: bmesh watch --nodes $1 --timeout 30m, under a Monitor where your harness has one, else in the background (never poll the runner); on exit 5, run it again with --since <its last line's time>" >&2
+}
+
+# leadsnext PATHS: the lines build ends with on stderr for the leads it
+# started.
+leadsnext() {
+	saysnext build || return 0
+	watchnext "$1"
+	echo 'next: an ask goes to the operator in their words, and their answer back with bmesh --node operator send <path> "<answer>"; a blocked is reported with its reason, a done with its commit, a held or landing line only when asked' >&2
+	echo 'next: to hold one, bmesh --node operator hold <path> --text "<why>" (before it lands; --gate now at once), released with bmesh --node operator unhold <path>; to stop one for good, bmesh --node operator node stop <path> --text "<why>", never a message; to wipe one, stop it, then bmesh node forget <path> --wipe (--dry-run first)' >&2
+}
+
 # next NAME: a counter in the cell's state, one more on each call.
 next() {
 	n=$(cat "$state/$1" 2>/dev/null || echo 0)
@@ -498,6 +516,7 @@ fake_ideate() {
 	else
 		printf '{"path":"%s","round":%s,"eng":%s,"ux":%s}\n' "$p" "$n" "$(child "$p" eng)" "$(child "$p" ux)"
 	fi
+	if saysnext ideate; then watchnext "$p"; fi
 }
 
 # jstr S: S as a JSON string's body, escaped as Go's encoding/json does.
@@ -554,14 +573,17 @@ fake_build() {
 	fam=$(opt family "$@") || fam=$r-build-$(next family)
 	model=$(opt model "$@") || model=claude-opus-5-5
 	objs=
+	paths=
 	for id in $ids; do
 		id=$(pad "$id")
 		p=$(opt path "$@") || p=$r-$id
+		paths=${paths:+$paths,}$p
 		t=$(uuid "$(next thread)")
 		fields=$(printf '"path":"%s","thread":"%s","branch":"bmesh/%s","worktree":"%s/worktrees/%s/%s","model":"%s","spec":"%s"' \
 			"$p" "$t" "$t" "$cell" "$r" "$p" "$model" "$id")
 		if [ "$n" = 1 ]; then
 			printf '{%s,"family":"%s"}\n' "$fields" "$fam"
+			leadsnext "$paths"
 			return 0
 		fi
 		title=$(spectitle "$id")
@@ -576,6 +598,7 @@ fake_build() {
 	elif [ "$n" -gt 1 ]; then
 		echo "family $fam"
 	fi
+	leadsnext "$paths"
 }
 
 fake_release() {
@@ -615,7 +638,10 @@ thread-status)
 		out "thread-status.$p" || echo idle
 	fi
 	;;
-watch) out watch ;;
+watch)
+	# An arm whose manual has no next: on watch-done gets the bare line.
+	if saysnext watch; then out watch; else out watch | sed 's/^watch-done; next: .*/watch-done/'; fi
+	;;
 inbox)
 	if [ -f "$state/mail" ]; then
 		cat "$state/mail"

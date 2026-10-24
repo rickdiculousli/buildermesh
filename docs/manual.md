@@ -39,7 +39,7 @@ The three global flags are accepted before or after the command.
 
 A path that does not parse exits 2 with `node "<path>": <why>`. When nothing resolves, the command exits 2 with `no node for this directory; pass --node or set BMESH_NODE`. A command a person may run outside any node (`hold`, `unhold`, `node stop`, `result`, `lock-lease`) acts as this host's name instead.
 
-**The context line.** Run on the main thread of an agent session whose context bmesh can measure, any command but `context`, `serve`, `hub`, `hosts --here` and `update --notice` ends with at most one more line on stderr, after its own output and its exit message, when the session's context has crossed a nudge it hasn't heard (`bmesh: this session's context is 312k. <advice>`) or has dropped since (`bmesh: this session compacted (412k -> 38k); read your state file before going on.`). See [`bmesh context`](#bmesh-context). It is never on stdout, so `--json` output stays whole.
+**The context line.** Run on the main thread of an agent session whose context bmesh can measure, any command but `context`, `serve`, `hub`, `hosts --here` and `update --notice` ends with at most one more line on stderr, after its own output and its exit message, when the session's context has crossed a nudge it hasn't heard (`bmesh: this session's context is 312k. <advice>`) or has dropped since (`bmesh: this session compacted (412k -> 38k); read your state file before going on, and set your effort ...`). See [`bmesh context`](#bmesh-context). It is never on stdout, so `--json` output stays whole.
 
 **The setup flag.** `<config dir>/.setup-complete` is the file [`bmesh init`](#bmesh-init) writes last. Any other command but `help`, `version`, `context`, `plugin`, `hosts --here` and `update --notice` checks for it, or for a `config.toml`, first. When it finds neither:
 
@@ -566,7 +566,7 @@ Before anything starts, it checks the refusals below, every thread's host includ
 
 The brief tells each thread its part. A row without `surfaces` gets a brief that never mentions screens or screenshots: its round is about its code.
 
-**Output.** `{"path","round","eng":{"path","thread","branch","worktree","host"}}`, with `"ux":{...}` beside `eng` when a second thread runs.
+**Output.** `{"path","round","eng":{"path","thread","branch","worktree","host"}}`, with `"ux":{...}` beside `eng` when a second thread runs. Then, on stderr, the watch that follows the round: `next: bmesh watch --nodes <round> --timeout 30m, ...`, as `build` prints it (see [`bmesh build`](#bmesh-build)).
 
 **Refusals.**
 
@@ -839,6 +839,14 @@ A failed start is the runner's error (exit 1 with one id), with the hold `--hold
 
 **Output.** One id prints `{"path","thread","branch","worktree","model","spec","family"}` (plus `hold` under `--hold`, and `warnings`). Several print a line per spec (see **Details**). `warnings` are the spec's command clashes, which `build` warns of at dispatch (below). The verify lines of step 5 go to stderr for one id; for several, they go to stdout among its lines.
 
+When any lead started, three lines follow on stderr, so stdout stays the result, saying what the coordinator does next, `<paths>` the started leads' joined by commas:
+
+- `next: bmesh watch --nodes <paths> --timeout 30m, under a Monitor where your harness has one, else in the background (never poll the runner); on exit 5, run it again with --since <its last line's time>`;
+- `next: an ask goes to the operator in their words, and their answer back with bmesh --node operator send <path> "<answer>"; a blocked is reported with its reason, a done with its commit, a held or landing line only when asked`;
+- `next: to hold one, bmesh --node operator hold <path> --text "<why>" (before it lands; --gate now at once), released with bmesh --node operator unhold <path>; to stop one for good, bmesh --node operator node stop <path> --text "<why>", never a message; to wipe one, stop it, then bmesh node forget <path> --wipe (--dry-run first)`.
+
+Nothing started (every spec `building`, `waits` or `not started`, or `held`) prints none of them.
+
 **Refusals.** Each message prints after `bmesh: `.
 
 | When | Exit | Message |
@@ -862,7 +870,7 @@ A failed start is the runner's error (exit 1 with one id), with the hold `--hold
 | The setup before verifying `main` failed | 3 | `verify main <sha8>: setup failed: <why>; nothing recorded: fix the setup (bmesh setup runs it alone), then run it again`, then the last 30 lines of its output (`<why>` is `exit status <n>`, `timed out after <d>`, or for a setup that dirtied the tree, `verify main <sha8>: setup dirtied the tree: <paths>; nothing recorded: fix the setup (bmesh setup runs it alone), then run it again`) |
 | Live node at the path | 3 | `refused: path <p> is taken (state <s>); use --path <p>-2` |
 | Box at `[runner] max_leads` | 3 | `<N> leads already working on this host` |
-| Start failed | 1 | the runner's error |
+| Start failed | 1 | `runner start (thread id <id>): <the runner's error>`, and on a Fable model the retry below |
 
 - Held: `held: <family> is still running (<path> <state>, ...); watch it with bmesh watch --nodes <paths>` or `held: <family> has <N> feedback pending; drain it with bmesh feedback list/drain <family>`.
 - `main` red: `main is red at <sha8> <subject>: verify fail t:<tree8> (<how>); build its fix with --force`.
@@ -891,7 +899,7 @@ A spec whose newest lead is blocked is started again. When any started, a last l
 
 *`--hold land|now`* ("build these, land none until I say"). It writes each lead's hold before the runner starts it (`by` the sender, text `held at dispatch (build --hold <gate>)`) and sends the hold message once the lead has started. A failed message goes to stderr, `build: <path> is held before land, but the hold message failed: <err>`, and the start stands. The JSON carries `hold`; a `started` line ends `, held before land` (`, held now`). A failed start deletes the hold. A build without `--hold` deletes a hold an earlier lead left on its path. See [Holds](#holds).
 
-*Models.* The binary has no model fallback: when the runner rejects a model, you retry with `--model`.
+*Models.* The binary has no model fallback: when the runner rejects a model, you retry with `--model`. A failed start on a Fable model (`claude-fable-*`) says so: its error ends `; when this turns down <model> (its access, consent or credits), run the same command again with --model claude-opus-5-5 and tell the operator what the runner said`. `lead start` and a round's threads (`ideate`) end a failed start the same way.
 
 See also: [Build families](#build-families), [Holds](#holds), [`bmesh feedback`](#bmesh-feedback), [The fixer](#the-fixer), [`bmesh release`](#bmesh-release), [`bmesh spec set`](#bmesh-spec-set) (to decline or shelve a spec).
 
@@ -998,7 +1006,11 @@ A lead runs `feedback` to leave one line per issue of friction outside its spec 
 
 **`feedback "<text>"`** reads the family, repo and spec from the node. It publishes the issue to the family's feedback queue, with the node's worktree commit when the worktree is on this box, and prints `feedback <seq> in <family>` (`--json`: the record with `seq`). An issue is pending until it is drained or 30 days pass.
 
-**`list <family>`** prints the family's pending feedback, oldest first: `<seq> <from> (<repo> <spec>[, where W][, fixed F]): <text>` (`--json`: an array of the records, each with `seq`). With nothing pending it prints nothing.
+**`list <family>`** prints the family's pending feedback, oldest first: `<seq> <from> (<repo> <spec>[, where W][, fixed F]): <text>` (`--json`: an array of the records, each with `seq`). With nothing pending it prints nothing. Without `--json`, a list with anything in it ends with three lines on stderr, the steps of **Draining a family** (below), `<own>` the registry row holding bmesh's module (`bmesh's own repo` when none does):
+
+- `next: an issue naming <own> is its fixer's: leave it pending. Of the rest, merge duplicates and drop what main already covers (a spec, or a commit naming its #<seq>)`;
+- `next: make each one-cause XS or S issue as the work skill's rung 3 makes a change, titled Quick fix from <family> #<seq>: <what it changes>; write each other one as a proposed spec with from_feedback: <family> (<its leads>) #<seq>, landed as Feedback NNN: proposed from <family>, for the operator to pick`;
+- `next: then bmesh feedback drain --seq <the sequences you ruled on>, and report one line per issue: fixed by <sha8>, proposed NNN, already NNN, dropped: <why> or to the fixer`.
 
 **`list --repo R`** prints every family's pending feedback naming `R`, in stream order, each line naming its family: `<seq> <from> (<repo> <spec>, family <F>[, where W][, fixed F]): <text>`. It leaves out an issue whose sequence a spec on `R`'s `main` names in `from_feedback` (`#<seq>`), whatever the spec's status, or a fix commit on that `main` names in its subject: `Fix #<seq>: ...` (the fixer's) or `Quick fix from <family> #<seq>: ...` (a coordinator's), several issues as `#<seq>, #<seq>`.
 
@@ -1014,7 +1026,7 @@ A lead runs `feedback` to leave one line per issue of friction outside its spec 
 | `feedback` from an unregistered node | 1 | `node <path> is not registered` |
 | `drain --seq` with a sequence that holds anything but feedback | 3 | `refused: <seq> is <subject>, not feedback` (nothing is deleted) |
 
-**Draining a family.** The coordinator (the `work` skill) reads the queue once `watch` prints `watch-done` for a family:
+**Draining a family.** The coordinator (the `work` skill) reads the queue once `watch` prints `watch-done` naming the family (see [`bmesh watch`](#bmesh-watch)), and `list <family>` ends with these steps:
 
 1. Issues naming bmesh's own repo are the fixer's (see [The fixer](#the-fixer)): it reports the fixer `mesh-status` names on its `fixes:` line and leaves them pending.
 2. The rest it lists, merges duplicates, drops what a spec on `main` already covers (any status), a `--fixed` commit settled or a quick fix on `main` names (a `Quick fix from <family> #<seq>` commit whose drain never ran), and sorts:
@@ -1069,7 +1081,7 @@ See also: [The fixer](#the-fixer), [`bmesh feedback`](#bmesh-feedback).
 bmesh release <repo> [--minor|--patch] [--dry-run]
 ```
 
-Tags the repo's code head (see [Updates](#updates)) with an annotated `vX.Y.Z` tag and pushes it to `origin`. You run it, or the `work` skill runs it when you ask for a release ("ship X") or at the end of a batch (see Details).
+Tags the repo's code head (see [Updates](#updates)) with an annotated `vX.Y.Z` tag and pushes it to `origin`. You run it, or the `work` skill runs it when you ask for a release ("ship X") or at the end of a batch (see Details), after any step the repo's `AGENTS.md` names before a release.
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -1104,7 +1116,7 @@ Tags the repo's code head (see [Updates](#updates)) with an annotated `vX.Y.Z` t
 - `held: <family> is still running (...)` or `held: <family> has N feedback pending; ...`: the hold `build` reads (see [`bmesh build`](#bmesh-build)), a live lead (neither `done` nor `blocked`) or pending feedback of the repo's. `release` has no family of its own, so the coordinator's own family and both pipelines hold it. Feedback naming bmesh's own repo holds neither command.
 - `main is red at <sha8> <subject>: verify fail t:<tree8> (...); release once main is green`, then the tail of the output: `verify` at the code head is not ok. The result is answered from the record, carried, or run and recorded as `build` does. A repo with no `verify` kind says so and goes on.
 - In bmesh's own repo only (see [The fixer](#the-fixer); `land`'s scaffold check makes the same test; no key turns this on elsewhere):
-  - `refused: 055, 057 have Upgrading steps and docs/upgrading/vX.Y.Z.toml is missing: distil them into it (the work skill's Releases), commit it to main and release again`: a spec landed since the last tag has `## Upgrading` steps (any text, unless the section is empty or its first word is `nothing`, in any case), and the ref read has no notes for the new tag;
+  - `refused: 055, 057 have Upgrading steps and docs/upgrading/vX.Y.Z.toml is missing: distil their ## Upgrading sections into the fewest true steps there (the manual's Upgrade notes), commit it to main as Upgrade notes vX.Y.Z, push, and release again`: a spec landed since the last tag has `## Upgrading` steps (any text, unless the section is empty or its first word is `nothing`, in any case), and the ref read has no notes for the new tag;
   - `refused: docs/upgrading/vX.Y.Z.toml: <what doesn't parse>`;
   - `refused: docs/upgrading/vX.Y.Z.toml names keys this binary doesn't know: [runner] foo`: an ask or a `when` names a key this binary's config or registry lacks.
 
@@ -1112,7 +1124,7 @@ Tags the repo's code head (see [Updates](#updates)) with an annotated `vX.Y.Z` t
 
 **Details.**
 
-- `--dry-run` runs the same checks and prints `would release <repo> vX.Y.Z at <sha8> (...); --dry-run tags nothing`, a blank line and the tag's message. It pushes nothing.
+- `--dry-run` runs the same checks and prints `would release <repo> vX.Y.Z at <sha8> (...); --dry-run tags nothing`, a blank line and the tag's message. It pushes nothing. In bmesh's own repo it is how a release's upgrade notes are found missing: its refusal names the specs whose `## Upgrading` sections go into them and the steps to land them, before the release that would refuse the same way.
 - A pushed tag is public, so a bad release is followed by the next one, never moved.
 - The first tag is cut by hand or with `release`. From then on, the `work` skill ends each batch, once its family is done and drained, with `bmesh release <repo>` for every repo with a `v*` tag where the family landed code.
 - A box on `[update] track = "release"` (the default) updates to each release (see [Updates](#updates)). `track = "latest"` and `bmesh update --latest` follow the code head.
@@ -1298,15 +1310,17 @@ A transcript that has changed shape measures nothing rather than a wrong number;
 | Level | Advice |
 |---|---|
 | from `nudge_from` (250k) | `You'll hear again every 50k.` |
-| from `compact_from` (300k) | `Compact at your next milestone, after updating your state file; never while exploring or investigating.` |
-| from `compact_soon` (400k) | `Compact at the next safe point, after updating your state file.` |
+| from `compact_from` (300k) | `Compact at your next milestone, never while exploring or investigating; about to finish the work in hand, finish it first.`, then how to compact (below) |
+| from `compact_soon` (400k) | `Compact at the next safe point.`, then how to compact |
+
+How to compact, said with either: `` To compact: update your state file (the plan, the order, the ids in flight, what's next, open questions, lessons; in the repo's gitignored scratch dir or elsewhere that outlives the session, never a temp dir or a commit); then, where your harness lets a session queue into its own thread (T3 Code's t3_thread_send, mode queue), queue in one step `/compact <what to keep, naming the state file>` and `Resume: read <state file>, run bmesh mesh-status, and carry on from its Next.`, or the /compact alone when the operator asked you to pause; elsewhere ask the operator to type /compact, then to resume you. Leave your effort as it is until the compaction has run. `` A session's effort changes only after the compaction: a change before it makes the compaction reread the whole long context with a cache miss. A lead hands its next run of work to an executor instead of compacting (its skill says so).
 
 With `nudge_every = 0` the first advice reads `You'll hear again at <the next level>.` The defaults suit a 1M-token window; `nudge_from = 0` turns the nudges off, the compaction line with them.
 
 **The lines** (see [Synopsis](#synopsis)):
 
 - `bmesh: this session's context is <N>k. <advice>` when the session's level is above the last one it heard. Each level is said once per session; a jump past several says the highest once.
-- `bmesh: this session compacted (<before>k -> <now>k); read your state file before going on.` when the level is below the last one heard and the context is below the last one read: a compaction, the harness's own auto-compaction included. `<before>` is the last context bmesh read for the session. It is said once, and the levels are said again as the context grows back. A level below the last one heard on a context that didn't drop (a `[context]` changed since) is recorded with no line.
+- `bmesh: this session compacted (<before>k -> <now>k); read your state file before going on, and set your effort for the work ahead now, where your harness lets a session set its own (T3 Code's t3_thread_configure): high to design, medium to run settled work.` when the level is below the last one heard and the context is below the last one read: a compaction, the harness's own auto-compaction included. `<before>` is the last context bmesh read for the session. It is said once, and the levels are said again as the context grows back. A level below the last one heard on a context that didn't drop (a `[context]` changed since) is recorded with no line.
 
 `<state dir>/context/<session id>` holds the level last heard and the last context read at or past `nudge_from`; a session's file unchanged for 7 days is pruned. A line bmesh can't record is not said, so a failing disk never repeats it. `bmesh context` records what it reports as heard.
 
@@ -1527,11 +1541,11 @@ Follows the named nodes until every one is `done`, `blocked` or `silent`. A coor
 
 **What it does.**
 
-1. When every named node is already `done`, `blocked` or `silent`, it prints `watch-done` and exits 0.
+1. When every named node is already `done`, `blocked` or `silent`, it prints `watch-done` (below) and exits 0.
 2. Else it prints the events since `--since` in the trees of the named nodes' leads, then follows new ones live, and prints each named node's runner change.
 3. It reads the states again on every event and every 5 seconds (the daemon marks silence without an event), and stops with `watch-done` once every named node is `done`, `blocked` or `silent`.
 
-**Output.** One line per event, `<at> <path> <event> <text>` (with the event's `to` path before the text when it has one); the daemon's events addressed into a watched tree print too. A runner change prints `<at> <path> runner running|idle`. A held lead shows as the `held` event, `<at> <path> held <text>`, and the watch goes on (see [Holds](#holds)). Host jobs and replies never show. The last line is `watch-done`.
+**Output.** One line per event, `<at> <path> <event> <text>` (with the event's `to` path before the text when it has one); the daemon's events addressed into a watched tree print too. A runner change prints `<at> <path> runner running|idle`. A held lead shows as the `held` event, `<at> <path> held <text>`, and the watch goes on (see [Holds](#holds)). Host jobs and replies never show. The last line is `watch-done`, which names the next step when a named node is a lead of a build family with feedback pending: `watch-done; next: bmesh feedback list <family>` (several: `, then bmesh feedback list <family>`), in the order the nodes were named (see [`bmesh feedback`](#bmesh-feedback)). A node or a queue it can't read adds nothing.
 
 **Refusals.**
 
@@ -3540,7 +3554,7 @@ From a chat (a phone, or a session with the plugin and no command typed), the op
   "Ship X" (or "release X" for a repo) cuts a release with `bmesh release` (see [`bmesh release`](#bmesh-release)). "What's building" is `mesh-status`, one line per lead or round, asks first, then the landed specs whose steps for the operator are still open.
 - **`buildermesh:scaffold`** ("scaffold X", "change X's rules") runs `scaffold --check` and shows the diff. When the repo's `AGENTS.md` has no `rules` block, or the operator asked to change its rules, it interviews the operator first: it shows each of the [rule sets](#rule-sets) and asks which to pick (several, or none), recommending `core`, plus `tests` when the repo has tests, `design` when it holds stateful or concurrent code and `ponytail` when the operator wants agents to write the least code a change needs, each with the evidence it saw; it writes the pick as an empty block (`<!-- bmesh:rules <sets> -->` and its closing marker) at the end of `AGENTS.md`, or rewrites the existing opening marker, and runs `scaffold` to fill it; on a `customized` block it asks whether to keep it (the default) or go back to bmesh's sets. Then, on the filled block, it clears conflicts out of the repo's own prose: it reads `AGENTS.md` outside bmesh's markers, `CLAUDE.md` and any file `AGENTS.md` says to read at the start for lines that restate a picked rule (deleted, since the block carries it), contradict one (the operator says which wins: the repo's line, with the rule cut or reworded in the block, which marks it customized, or the rule), or rest on a set not picked (asked the same), and changes only what the operator answers, running `scaffold` again after an edit to the block so its marker reads `customized`. Then it runs the row's verify, commits `Scaffold the shared definition of done, proposals and rules` with those files, and pushes.
 
-`work` runs "stop X" as `node stop`, never as a message, which would wake the node, and adds the Fable fallback the binary lacks: a Fable model the runner rejects runs once more with `--model claude-opus-5-5`, and the skill reports what the runner said.
+`work` runs "stop X" as `node stop`, never as a message, which would wake the node. The steps after a command are that command's: `build`'s and `ideate`'s `next:` lines (the watch, the relay, a hold, a stop, a wipe), `watch-done` naming the feedback to drain, `feedback list`'s drain steps, `release`'s refusal for missing upgrade notes, the retry on Opus a failed Fable start names, and the context line's how to compact (see [`bmesh context`](#bmesh-context)). A change `work` hands to a subagent is the subagent's to verify, review and land; it reports one line, which `work` reads instead of the diff.
 
 Each skill ends with one line: what is started or landed and what waits on the operator, each thing named in plain words (a spec or issue by what it does, its number after it in brackets if at all). The done rule `scaffold` writes and every build brief's closing end the same way (`brief.PlainWords`).
 
@@ -3848,7 +3862,7 @@ Internals: [internals](internals.md#map)
 
 ### Upgrade notes
 
-In bmesh's own repo, `docs/upgrading/vX.Y.Z.toml` holds the steps an install at the release before needs. The coordinator distils them from the `## Upgrading` sections of the specs the release carries (the `work` skill's Releases) and commits the file to `main` before `release` (see [`bmesh release`](#bmesh-release)). A TOML key not listed here is an error:
+In bmesh's own repo, `docs/upgrading/vX.Y.Z.toml` holds the steps an install at the release before needs. The coordinator distils them from the `## Upgrading` sections of the specs the release carries into the fewest true steps, as `release`'s refusal for missing notes says, and commits the file to `main` as `Upgrade notes vX.Y.Z` before `release` (see [`bmesh release`](#bmesh-release)). A TOML key not listed here is an error:
 
 - `summary`: one line, what the release asks of an install;
 - `start_over`: `true` when the steps uninstall the box and set it up again;

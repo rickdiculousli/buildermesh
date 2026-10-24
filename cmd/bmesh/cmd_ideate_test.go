@@ -97,6 +97,9 @@ func TestIdeateStartsARoundOfOneThread(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("%q: %v", out, err)
 	}
+	if !strings.HasPrefix(errs, "next: bmesh watch --nodes demo-round-1 --timeout 30m,") {
+		t.Fatalf("stderr %q; want the watch on the round", errs)
+	}
 	if got.Path != "demo-round-1" || got.Round != 1 || got.Eng.Path != "demo-round-1.eng" || got.UX.Path != "" ||
 		!strings.HasPrefix(got.Eng.Thread, "mcp:") || got.Eng.Host != testHost || strings.Contains(out, `"ux"`) {
 		t.Fatalf("%+v", got)

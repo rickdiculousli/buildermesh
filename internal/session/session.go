@@ -268,7 +268,7 @@ func Level(c config.ContextConfig, tokens int) int {
 // the operator asked for a pause), and its effort left alone until the
 // compaction has run, since a change before it rereads the whole long
 // context with a cache miss.
-const howToCompact = "To compact: update your state file (the plan, the ids in flight, what's next); then, where your harness lets a session queue into its own thread (T3 Code's t3_thread_send, mode queue), queue in one step `/compact <what to keep, naming the state file>` and `Resume: read <state file>, run bmesh mesh-status, and carry on from its Next.`, or the /compact alone when the operator asked you to pause; elsewhere ask the operator to type /compact, then to resume you. Leave your effort as it is until the compaction has run."
+const howToCompact = "To compact: update your state file (the plan, the order, the ids in flight, what's next, open questions, lessons; in the repo's gitignored scratch dir or elsewhere that outlives the session, never a temp dir or a commit); then, where your harness lets a session queue into its own thread (T3 Code's t3_thread_send, mode queue), queue in one step `/compact <what to keep, naming the state file>` and `Resume: read <state file>, run bmesh mesh-status, and carry on from its Next.`, or the /compact alone when the operator asked you to pause; elsewhere ask the operator to type /compact, then to resume you. Leave your effort as it is until the compaction has run."
 
 // afterCompact is what a session does first once it compacted: read its
 // state file, then set its effort for what is next.

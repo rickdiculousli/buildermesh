@@ -129,6 +129,10 @@ func TestCommandsFromManual(t *testing.T) {
 	if want := []string{"build", "build --accepted", "help", "hosts", "land", "version"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("commands %v, want %v", got, want)
 	}
+	got = commandsFromManual("### `bmesh build`\n- `next: bmesh watch --nodes <paths>`\n### `bmesh land`\nnext: the push\n")
+	if want := []string{"build", "build next:", "help", "hosts", "land", "version"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("commands %v, want %v", got, want)
+	}
 	root := repoRoot(t)
 	manual, err := os.ReadFile(filepath.Join(root, "docs", "manual.md"))
 	if err != nil {
@@ -154,6 +158,11 @@ func TestCommandsFromManual(t *testing.T) {
 	gotSet := map[string]bool{}
 	for _, c := range got {
 		gotSet[c] = true
+	}
+	for _, c := range []string{"build next:", "ideate next:", "watch next:", "feedback next:"} {
+		if !gotSet[c] {
+			t.Errorf("this manual's %q section documents no next: lines", strings.TrimSuffix(c, " next:"))
+		}
 	}
 	for c := range want {
 		if !gotSet[c] {
@@ -252,12 +261,24 @@ func TestFakeBuild(t *testing.T) {
 	expect(`spec id "x" is not a number`, 2, "build", "shop", "x")
 	expect("usage: bmesh build <repo> <NNN>", 2, "build", "shop")
 	expect("bmesh: build: flag provided but not defined: -accepted", 2, "build", "--accepted", "shop")
+	// The leads it started are followed by the binary's next: lines on
+	// stderr, on an arm whose manual documents them.
+	if _, stdout, stderr := fake(t, dir, sandbox, "build", "shop", "012", "014"); strings.Contains(stdout, "next:") ||
+		!strings.HasPrefix(stderr, "next: bmesh watch --nodes shop-012,shop-014 --timeout 30m,") || strings.Count(stderr, "next: ") != 3 {
+		t.Errorf("build's next lines: stdout %q, stderr %q", stdout, stderr)
+	}
+	if _, _, stderr := fake(t, dir, sandbox, "ideate", "shop"); !strings.HasPrefix(stderr, "next: bmesh watch --nodes shop-round-1 --timeout 30m,") {
+		t.Errorf("ideate's next line: %q", stderr)
+	}
 	// An arm whose manual documents --accepted gets the canned answer.
 	old := "### `bmesh build`\n\n```\nbmesh build --accepted <repo> [--model M]\n```\n\n### `bmesh land`\n"
 	if err := os.WriteFile(filepath.Join(dir, "commands.txt"), []byte(strings.Join(commandsFromManual(old), "\n")+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	expect("no accepted specs in shop", 0, "build", "--accepted", "shop")
+	if _, _, stderr := fake(t, dir, sandbox, "build", "shop", "012"); stderr != "" {
+		t.Errorf("an arm whose manual has no next: lines got %q", stderr)
+	}
 	if _, stdout, _ := fake(t, dir, sandbox, "help"); strings.Contains(stdout, "--accepted") || !strings.Contains(stdout, "  build\n") {
 		t.Errorf("help lists:\n%s", stdout)
 	}

@@ -321,7 +321,11 @@ func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string, f
 		}
 		return fmt.Errorf("round %s: %s", roundPath, strings.Join(failed, "; "))
 	}
-	return a.printJSON(out)
+	if err := a.printJSON(out); err != nil {
+		return err
+	}
+	watchNext(a.stderr, []string{roundPath})
+	return nil
 }
 
 // idBlock is how many spec ids a round claims for a thread that runs

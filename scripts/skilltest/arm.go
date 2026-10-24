@@ -176,7 +176,8 @@ var gatedFlags = map[string][]string{"build": {"accepted"}}
 // from its level-3 headings that name one (the heading of bmesh hold,
 // unhold and held names three), plus help, version and hosts, and a
 // "<command> --<flag>" entry for each of gatedFlags its command's section
-// names, sorted.
+// names, and a "<command> next:" entry when its section documents the
+// next: lines it ends with (100), sorted.
 func commandsFromManual(manual string) []string {
 	set := map[string]bool{"help": true, "version": true, "hosts": true}
 	section := ""
@@ -190,6 +191,9 @@ func commandsFromManual(manual string) []string {
 				if strings.Contains(line, "--"+f) {
 					set[section+" --"+f] = true
 				}
+			}
+			if section != "" && (strings.Contains(line, "`next: ") || strings.Contains(line, "next: bmesh")) {
+				set[section+" next:"] = true
 			}
 			continue
 		}
