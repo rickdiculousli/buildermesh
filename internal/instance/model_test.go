@@ -61,10 +61,13 @@ func TestModelInstanceResumesAndRecycles(t *testing.T) {
 	if !r.OK || r.Output != "fine" || r.Context != 1000 {
 		t.Fatalf("first reply %+v", r)
 	}
-	for _, want := range []string{"-p ", "--model m-test", "--output-format json", "--allowedTools Read,Grep,Glob,Bash(go test:*)", "--max-turns 40"} {
+	for _, want := range []string{"-p ", "--model m-test", "--output-format json", "--allowedTools Read,Grep,Glob,Bash(go test:*)"} {
 		if !strings.Contains(argv, want) {
 			t.Fatalf("first argv %q lacks %q", argv, want)
 		}
+	}
+	if strings.Contains(argv, "--max-turns") {
+		t.Fatalf("first argv %q: want no turn cap, the kind's timeout bounds a run", argv)
 	}
 	if flag(argv, "--effort") != "" {
 		t.Fatalf("first argv %q: want no --effort for a job without one", argv)
@@ -149,7 +152,7 @@ func TestModelSessionHoldsOnlyAllowedTools(t *testing.T) {
 			if got := flag(argv, "--tools"); got != c.tools {
 				t.Errorf("allow %q %s: --tools %q, want %q", c.allow, run, got, c.tools)
 			}
-			if !strings.Contains(argv, "--allowedTools "+c.allowed+" ") {
+			if !strings.Contains(argv+" ", "--allowedTools "+c.allowed+" ") {
 				t.Errorf("allow %q %s argv %q: want --allowedTools %s", c.allow, run, argv, c.allowed)
 			}
 			if has(argv, "--strict-mcp-config") != c.strictMCP || has(argv, "--disable-slash-commands") != c.noSkill {

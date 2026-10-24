@@ -8,6 +8,7 @@
 mode = "pooled"
 models = ["claude-opus-5-5"]
 allow = ["Bash(git diff:*)", "Bash(git log:*)"]
+timeout = "40m"   # an L change takes longer to read past than the default 20m
 prompt = """
 Review the change at this commit as the engineer who is paged when it breaks.
 The job text carries `base: <sha>`: the change is `git diff <base>..HEAD`.

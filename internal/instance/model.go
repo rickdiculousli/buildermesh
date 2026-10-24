@@ -128,7 +128,9 @@ func (m *Model) Run(ctx context.Context, j Job) Reply {
 	if j.Effort != "" {
 		argv = append(argv, "--effort", j.Effort)
 	}
-	argv = append(append(argv, sessionFlags(m.k.Allow)...), "--max-turns", "40")
+	// No --max-turns: the kind's timeout bounds a run, and a review that
+	// reads past a large diff needs more turns than any fixed cap allows.
+	argv = append(argv, sessionFlags(m.k.Allow)...)
 
 	var stdout, stderr bytes.Buffer
 	note, err := run(ctx, m.k.Timeout, j, func(ctx context.Context) *exec.Cmd { return exec.CommandContext(ctx, argv[0], argv[1:]...) },
