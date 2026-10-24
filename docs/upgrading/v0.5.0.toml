@@ -1,0 +1,16 @@
+# Upgrade notes for v0.5.0, distilled from the Upgrading sections of the
+# specs it carries. 094 has any bmesh command in a Claude Code session tell
+# it its context and when to compact, from [context]'s levels: one ask, on
+# nudge_from, since a smaller window lowers it and 0 turns the nudges off
+# (the other levels are in the summary). 094's skill changes reach a box
+# when it levels the plugin's checkout, which differs by install, so that is
+# in the summary, not a step. 093 needs nothing.
+
+summary = "Sessions now hear their own context: in a Claude Code session, a bmesh command ends with one stderr line when the context crosses a nudge, and says when to compact. The [context] defaults (nudge_from = 250000, nudge_every = 50000, compact_from = 300000, compact_soon = 400000) suit a 1M-token window; for a smaller one set all four lower in config.toml. The work and lead skills change with it: level the buildermesh plugin's checkout after bmesh update, and a new session loads them."
+
+[[step]]
+kind = "ask"
+key = "[context] nudge_from"
+changed = "a bmesh command in a Claude Code session now tells it its context from this many tokens."
+question = "From how many tokens should this box's sessions hear their context (0 for never)?"
+default = "250000"
