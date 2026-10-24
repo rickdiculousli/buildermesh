@@ -22,6 +22,7 @@ In:
   - `bmesh release <repo> --dry-run` ends with the steps before a release: the upgrade notes from the specs it names. What is only this repo's (levelling ponytail first) moves to this repo's `AGENTS.md`;
   - the context line (094), when it advises compacting, says how: the state file, then the two queued messages, or the `/compact` alone when the operator asked for a pause;
   - the Fable fallback and the effort rule go where the runner's error and the context line already speak.
+- **The effort rule is corrected** where it moves (operator, 2026-10-24): a session changes its own effort only after a compaction has run, as the first step of the resumed turn, never before queueing the `/compact`: a change before it makes the compaction reread the whole long context with a cache miss. The skill's "high before queueing a `/compact`" is wrong and goes.
 - **Subagents the coordinator starts** (not a lead's executors): when the coordinator hands a change to a subagent instead of making it itself, the subagent verifies, reviews and lands its own work and reports one line, so the coordinator reads the line, not the diff. The 2026-10-24 study found the coordinator spent 31% of a subagent-built stretch checking and landing their work at up to 537k tokens. (This bullet holds only if the operator said yes to it before this lead started; otherwise it is Out.)
 - The skill test's fake prints what these commands now print.
 - The manual's sections for each command's output.
