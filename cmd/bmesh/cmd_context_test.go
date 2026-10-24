@@ -38,6 +38,11 @@ func setTranscript(t *testing.T, env map[string]string, tokens int, tool string)
 	}
 }
 
+// milestoneAdvice is the context line's advice from compact_from: when to
+// compact, then how (100).
+const milestoneAdvice = "Compact at your next milestone, never while exploring or investigating; about to finish the work in hand, finish it first. " +
+	"To compact: update your state file (the plan, the ids in flight, what's next); then, where your harness lets a session queue into its own thread (T3 Code's t3_thread_send, mode queue), queue in one step `/compact <what to keep, naming the state file>` and `Resume: read <state file>, run bmesh mesh-status, and carry on from its Next.`, or the /compact alone when the operator asked you to pause; elsewhere ask the operator to type /compact, then to resume you. Leave your effort as it is until the compaction has run."
+
 func TestCommandEndsWithContextLineOnStderrOnce(t *testing.T) {
 	reposSetup(t)
 	env := claudeSession(t, "ec03a02c-aaaa", 304123)
@@ -49,7 +54,7 @@ func TestCommandEndsWithContextLineOnStderrOnce(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &rows); err != nil || len(rows) != 2 {
 		t.Fatalf("stdout isn't the rows alone: %v\n%s", err, out)
 	}
-	want := "bmesh: this session's context is 304k. Compact at your next milestone, after updating your state file; never while exploring or investigating.\n"
+	want := "bmesh: this session's context is 304k. " + milestoneAdvice + "\n"
 	if !strings.HasSuffix(errs, want) || strings.Count(errs, "context is") != 1 {
 		t.Fatalf("stderr = %q; want it to end with %q", errs, want)
 	}
@@ -123,7 +128,8 @@ func TestContextLineSaysACompactionOnce(t *testing.T) {
 	env := claudeSession(t, "c1", 412000)
 	runCLI(t, env, "repos")
 	setTranscript(t, env, 38000, "Bash")
-	want := "bmesh: this session compacted (412k -> 38k); read your state file before going on.\n"
+	want := "bmesh: this session compacted (412k -> 38k); read your state file before going on, and set your effort for the work ahead now, " +
+		"where your harness lets a session set its own (T3 Code's t3_thread_configure): high to design, medium to run settled work.\n"
 	if _, errs, _ := runCLI(t, env, "context"); errs != want {
 		t.Fatalf("context after a compaction: stderr %q; want %q", errs, want)
 	}
@@ -142,7 +148,7 @@ func TestContextCommand(t *testing.T) {
 	reposSetup(t)
 	env := claudeSession(t, "ec03a02c-1234", 312456)
 	out, errs, code := runCLI(t, env, "context")
-	if code != 0 || errs != "" || out != "context 312k (claude session ec03a02c): Compact at your next milestone, after updating your state file; never while exploring or investigating.\n" {
+	if code != 0 || errs != "" || out != "context 312k (claude session ec03a02c): "+milestoneAdvice+"\n" {
 		t.Fatalf("context: exit %d, %q, %q", code, out, errs)
 	}
 	// It heard the 300k nudge: the next command says nothing.

@@ -182,10 +182,10 @@ func TestHeardSaysEachCrossingOnceInOrder(t *testing.T) {
 	}
 	want := []string{
 		"bmesh: this session's context is 250k. You'll hear again every 50k.",
-		"bmesh: this session's context is 304k. Compact at your next milestone, after updating your state file; never while exploring or investigating.",
-		"bmesh: this session's context is 351k. Compact at your next milestone, after updating your state file; never while exploring or investigating.",
-		"bmesh: this session's context is 404k. Compact at the next safe point, after updating your state file.",
-		"bmesh: this session's context is 455k. Compact at the next safe point, after updating your state file.",
+		"bmesh: this session's context is 304k. Compact at your next milestone, never while exploring or investigating; about to finish the work in hand, finish it first. " + howToCompact,
+		"bmesh: this session's context is 351k. Compact at your next milestone, never while exploring or investigating; about to finish the work in hand, finish it first. " + howToCompact,
+		"bmesh: this session's context is 404k. Compact at the next safe point. " + howToCompact,
+		"bmesh: this session's context is 455k. Compact at the next safe point. " + howToCompact,
 	}
 	if strings.Join(said, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("said:\n%s\nwant:\n%s", strings.Join(said, "\n"), strings.Join(want, "\n"))
@@ -212,7 +212,7 @@ func TestHeardDropSaysCompactedOnceAndResets(t *testing.T) {
 		t.Fatalf("412k: %q; want nothing", l)
 	}
 	r.Tokens = 38000
-	if l, compacted := Heard(dir, defaults, r, time.Now()); !compacted || l != "bmesh: this session compacted (412k -> 38k); read your state file before going on." {
+	if l, compacted := Heard(dir, defaults, r, time.Now()); !compacted || l != "bmesh: this session compacted (412k -> 38k); "+afterCompact {
 		t.Fatalf("drop: %q, %v", l, compacted)
 	}
 	if l, _ := Heard(dir, defaults, r, time.Now()); l != "" {
@@ -294,11 +294,11 @@ func TestLevelAndAdvice(t *testing.T) {
 	}{
 		{defaults, 249999, 0, ""},
 		{defaults, 299999, 250000, "You'll hear again every 50k."},
-		{defaults, 300000, 300000, "Compact at your next milestone, after updating your state file; never while exploring or investigating."},
-		{defaults, 999999, 950000, "Compact at the next safe point, after updating your state file."},
-		{config.ContextConfig{NudgeFrom: 250000, CompactFrom: 320000}, 330000, 320000, "Compact at your next milestone, after updating your state file; never while exploring or investigating."},
+		{defaults, 300000, 300000, "Compact at your next milestone, never while exploring or investigating; about to finish the work in hand, finish it first. " + howToCompact},
+		{defaults, 999999, 950000, "Compact at the next safe point. " + howToCompact},
+		{config.ContextConfig{NudgeFrom: 250000, CompactFrom: 320000}, 330000, 320000, "Compact at your next milestone, never while exploring or investigating; about to finish the work in hand, finish it first. " + howToCompact},
 		{config.ContextConfig{NudgeFrom: 250000, CompactFrom: 320000}, 300000, 250000, "You'll hear again at 320k."},
-		{config.ContextConfig{NudgeFrom: 250000, NudgeEvery: 50000, CompactFrom: 320000}, 325000, 320000, "Compact at your next milestone, after updating your state file; never while exploring or investigating."},
+		{config.ContextConfig{NudgeFrom: 250000, NudgeEvery: 50000, CompactFrom: 320000}, 325000, 320000, "Compact at your next milestone, never while exploring or investigating; about to finish the work in hand, finish it first. " + howToCompact},
 		{config.ContextConfig{NudgeFrom: 250000}, 900000, 250000, ""},
 	} {
 		level := Level(tc.c, tc.tokens)

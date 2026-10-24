@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/runner"
+	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
 func (a *app) cmdLead(args []string) error {
@@ -185,7 +187,7 @@ func (a *app) startLead(o leadStart) (leadStarted, error) {
 		return leadStarted{}, fail(exitRefused, "%s", se.Msg)
 	}
 	if err != nil {
-		return leadStarted{}, fmt.Errorf("runner start (thread id %s): %w", thread, err)
+		return leadStarted{}, startFailed(thread, o.Model, err)
 	}
 	ctx, cancel = cmdCtx()
 	defer cancel()
@@ -195,6 +197,17 @@ func (a *app) startLead(o leadStart) (leadStarted, error) {
 			started.Thread, started.Branch, started.Worktree, err)
 	}
 	return leadStarted{Path: p, Thread: started.Thread, Branch: started.Branch, Worktree: started.Worktree}, nil
+}
+
+// startFailed is a runner's failed start. A Fable model the runner turns
+// down (its access, consent or credits) is run again on Opus: the binary
+// has no fallback of its own, so the error says how.
+func startFailed(thread, model string, err error) error {
+	if strings.HasPrefix(model, "claude-fable") {
+		return fmt.Errorf("runner start (thread id %s): %w; when this turns down %s (its access, consent or credits), run the same command again with --model %s and tell the operator what the runner said",
+			thread, err, model, spec.Judges["opus"])
+	}
+	return fmt.Errorf("runner start (thread id %s): %w", thread, err)
 }
 
 // preflight refuses (exit 3) a start runner r says it would refuse, before

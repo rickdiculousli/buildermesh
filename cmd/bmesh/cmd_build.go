@@ -215,9 +215,27 @@ func (a *app) cmdBuild(args []string) error {
 		if err != nil {
 			return err
 		}
-		return a.printJSON(started)
+		if err := a.printJSON(started); err != nil {
+			return err
+		}
+	} else if err := a.buildPicked(ctx, b, picked); err != nil {
+		return err
 	}
-	return a.buildPicked(ctx, b, picked)
+	leadsNext(a.stderr, b.paths)
+	return nil
+}
+
+// leadsNext is what the coordinator does with the leads a build started
+// (100): the watch that follows them, then how to relay, hold, stop and
+// wipe one, to stderr so stdout stays the command's result. paths are the
+// started leads'; nothing started says nothing.
+func leadsNext(w io.Writer, paths []string) {
+	if len(paths) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "next: bmesh watch --nodes %s --timeout 30m, under a Monitor where your harness has one, else in the background (never poll the runner); on exit 5, run it again with --since <its last line's time>\n", strings.Join(paths, ","))
+	fmt.Fprintln(w, `next: an ask goes to the operator in their words, and their answer back with bmesh --node operator send <path> "<answer>"; a blocked is reported with its reason, a done with its commit, a held or landing line only when asked`)
+	fmt.Fprintln(w, `next: to hold one, bmesh --node operator hold <path> --text "<why>" (before it lands; --gate now at once), released with bmesh --node operator unhold <path>; to stop one for good, bmesh --node operator node stop <path> --text "<why>", never a message; to wipe one, stop it, then bmesh node forget <path> --wipe (--dry-run first)`)
 }
 
 // readWords is the operator's words a flag gives, trimmed; - reads them
@@ -245,6 +263,7 @@ type batch struct {
 	family                     string
 	working                    int
 	started                    []string // ids this batch started, in order
+	paths                      []string // their leads' paths, in the same order
 }
 
 // refusal is why spec s is not built, whoever picked it: done, declined,
@@ -427,6 +446,7 @@ func (a *app) buildOne(ctx context.Context, b *batch, s *spec.Spec, pathFlag str
 	}
 	b.working++
 	b.started = append(b.started, s.IDString())
+	b.paths = append(b.paths, p)
 	return buildStarted{leadStarted: started, Model: model, Spec: s.IDString(), Family: family, Hold: hold,
 		Warnings: spec.CommandClashes(s, b.claims(), mainCommands())}, nil
 }

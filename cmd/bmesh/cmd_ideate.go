@@ -444,7 +444,7 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 	}
 	if err != nil {
 		undo()
-		return childStarted{}, fmt.Errorf("runner start (thread id %s): %w", thread, err)
+		return childStarted{}, startFailed(thread, model, err)
 	}
 	node := mesh.Node{Path: path, Role: "engineer", Parent: roundPath, Repo: row.Name, RepoPath: repoPath,
 		Branch: branch, Worktree: wt, Host: a.cfg.HostName(), Model: model, Effort: effort,
