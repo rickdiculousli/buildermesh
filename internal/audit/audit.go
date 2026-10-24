@@ -156,7 +156,8 @@ type use struct {
 	input   map[string]any
 	before  bool // called before the turn's first action
 	context int
-	skill   int // a skill's read in its turn's Read, plus one; its words come with its text
+	skill   int    // a skill's read in its turn's Read, plus one; its words come with its text
+	acts    string // what it changes, "" for a read; a refused call changed nothing
 }
 
 // File reads a transcript, the main thread's from path and its subagents'
@@ -286,11 +287,8 @@ func Transcript(r io.Reader) (*Audit, error) {
 				case "tool_use":
 					u := &use{name: b.Name, before: t.Acted == "", context: ctx}
 					json.Unmarshal(b.Input, &u.input)
+					u.acts = acts(u)
 					uses[b.ID] = u
-					if what := acts(u); what != "" && t.Acted == "" {
-						t.Acted, t.Context = what, ctx
-						u.before = false
-					}
 				}
 			}
 		case "user":
@@ -329,47 +327,24 @@ func acts(u *use) string {
 		return u.name + " " + p
 	case "Bash":
 		cmd, _ := u.input["command"].(string)
-		for _, c := range bmeshCalls(cmd) {
-			if c.acts() {
-				return "bmesh " + c.String()
-			}
-		}
-		if w := gitActs(cmd); w != "" {
-			return w
-		}
+		return shellActs(cmd)
 	}
 	return ""
 }
 
-// gitActs is `git commit` or `git push` when the command line runs one.
-func gitActs(s string) string {
-	for _, words := range commands(s) {
-		words = unwrap(words)
-		if len(words) < 2 || filepath.Base(words[0]) != "git" {
-			continue
-		}
-		for i := 1; i < len(words); i++ {
-			w := words[i]
-			if w == "-C" || w == "-c" {
-				i++
-				continue
-			}
-			if strings.HasPrefix(w, "-") {
-				continue
-			}
-			if w == "commit" || w == "push" {
-				return "git " + w
-			}
-			break
-		}
-	}
-	return ""
-}
-
-// result takes a tool call's result into its turn: the facts its success
-// sets, and, for a call before the first action, what it read.
+// result takes a tool call's result into its turn: the first action, when
+// it is one that succeeded; the facts its success sets; and, for a call
+// before the first action, what it read.
 func result(t *Turn, u *use, b content, raw json.RawMessage) {
 	words := len(strings.Fields(resultText(b.Content)))
+	if u.acts != "" {
+		if !b.IsError && t.Acted == "" {
+			t.Acted, t.Context = u.acts, u.context
+		}
+		if !b.IsError {
+			u.before = false
+		}
+	}
 	cmd, _ := u.input["command"].(string)
 	if u.name == "Bash" && !b.IsError {
 		for _, c := range bmeshCalls(cmd) {

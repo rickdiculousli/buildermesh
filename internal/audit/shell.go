@@ -179,23 +179,30 @@ type call struct {
 func bmeshCalls(s string) []call {
 	var out []call
 	for _, words := range commands(s) {
-		words = unwrap(words)
-		if len(words) == 0 || path.Base(words[0]) != "bmesh" {
-			continue
-		}
-		rest := words[1:]
-		for len(rest) > 0 && strings.HasPrefix(rest[0], "-") {
-			name, _, inline := strings.Cut(strings.TrimLeft(rest[0], "-"), "=")
-			rest = rest[1:]
-			if (name == "node" || name == "config") && !inline && len(rest) > 0 {
-				rest = rest[1:]
-			}
-		}
-		if len(rest) > 0 {
-			out = append(out, call{rest[0], rest[1:]})
+		if c, ok := bmeshCall(unwrap(words)); ok {
+			out = append(out, c)
 		}
 	}
 	return out
+}
+
+// bmeshCall is a simple command's words as a bmesh call, when it is one.
+func bmeshCall(words []string) (call, bool) {
+	if len(words) == 0 || path.Base(words[0]) != "bmesh" {
+		return call{}, false
+	}
+	rest := words[1:]
+	for len(rest) > 0 && strings.HasPrefix(rest[0], "-") {
+		name, _, inline := strings.Cut(strings.TrimLeft(rest[0], "-"), "=")
+		rest = rest[1:]
+		if (name == "node" || name == "config") && !inline && len(rest) > 0 {
+			rest = rest[1:]
+		}
+	}
+	if len(rest) == 0 {
+		return call{}, false
+	}
+	return call{rest[0], rest[1:]}, true
 }
 
 // sub is the call's subcommand, `start` of `lead start`: the word right
@@ -244,7 +251,7 @@ var reads = map[string][]string{
 
 // acts reports whether c starts or changes something.
 func (c call) acts() bool {
-	if slices.Contains(reports, c.cmd) {
+	if slices.Contains(reports, c.cmd) || c.has("help") || c.has("h") {
 		return false
 	}
 	subs, ok := reads[c.cmd]
@@ -339,3 +346,37 @@ func fileRead(s string) (file, rng string, ok bool) {
 }
 
 func digits(s string) bool { return s != "" && strings.Trim(s, "0123456789") == "" }
+
+// shellActs is the first command of a shell command line that changes
+// something, in the order it runs: a git commit or push, or a bmesh
+// command that acts; "" when it only reads.
+func shellActs(s string) string {
+	for _, words := range commands(s) {
+		words = unwrap(words)
+		if len(words) == 0 {
+			continue
+		}
+		switch path.Base(words[0]) {
+		case "bmesh":
+			if c, ok := bmeshCall(words); ok && c.acts() {
+				return "bmesh " + c.String()
+			}
+		case "git":
+			for i := 1; i < len(words); i++ {
+				w := words[i]
+				if w == "-C" || w == "-c" {
+					i++
+					continue
+				}
+				if strings.HasPrefix(w, "-") {
+					continue
+				}
+				if w == "commit" || w == "push" {
+					return "git " + w
+				}
+				break
+			}
+		}
+	}
+	return ""
+}
