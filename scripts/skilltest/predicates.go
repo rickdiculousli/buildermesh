@@ -76,41 +76,69 @@ func noSpecAdded() Pred {
 	}}
 }
 
-// rungNamed is the rung the replies named against the rung the case's end
-// state implies, through internal/audit's rules, as bmesh audit reads a
-// real session (101): the last turn whose texts name a rung, its first
-// text naming one. An arm whose manual has no bmesh audit is from before
-// its skills named a rung, so it passes there.
+// rungNamed is, for each turn, the rung its replies named (its first text
+// naming one) against the rung that turn's own actions imply, through
+// internal/audit's rules, as bmesh audit reads each request of a real
+// session (101). It holds when some turn names a rung and every turn that
+// names one names the one it took; a turn that only carries on names none.
+// An arm whose manual has no bmesh audit is from before its skills named a
+// rung, so it passes there.
 func rungNamed() Pred {
 	return Pred{"rung_named", func(s *State) (bool, string) {
 		if !s.ArmHas("audit") {
 			return true, "the arm's manual has no bmesh audit: its skills name no rung"
 		}
-		implied, rule := audit.Implied(s.Facts())
-		said := fmt.Sprintf("implied %s (%s)", implied, rule)
-		for i := len(s.Texts) - 1; i >= 0; i-- {
-			for _, t := range s.Texts[i] {
+		var seen []string
+		for i, texts := range s.Texts {
+			implied, rule := audit.Implied(s.TurnFacts(i))
+			for _, t := range texts {
 				if named, line, ok := audit.Named(t); ok {
-					return named == implied, fmt.Sprintf("named %s (%q), %s", named, clip(line, 80), said)
+					why := fmt.Sprintf("turn %d named %s (%q), implied %s (%s)", i+1, named, clip(line, 80), implied, rule)
+					if named != implied {
+						return false, why
+					}
+					seen = append(seen, why)
+					break
 				}
 			}
 		}
-		return false, "named none, " + said
+		if len(seen) == 0 {
+			implied, rule := audit.Implied(s.TurnFacts(len(s.Texts) - 1))
+			return false, fmt.Sprintf("named none; the last turn implied %s (%s)", implied, rule)
+		}
+		return true, strings.Join(seen, "; ")
 	}}
 }
 
-// Facts are what the case's end state did, as audit's rules read a
-// session: an OK build or lead start, an OK ideate, new commits on
-// origin's main, a spec it added, and whether the last reply asks.
-func (s *State) Facts() audit.Facts {
+// TurnFacts are what turn i did, as audit's rules read a request: the
+// calls the fake logged during it (an OK build or lead start, an OK
+// ideate), origin's main moving during it, a spec it added there, and
+// whether its reply asks.
+func (s *State) TurnFacts(i int) audit.Facts {
 	var f audit.Facts
-	for _, c := range s.AgentCalls() {
+	if i < 0 || i >= len(s.Cell.Turns) {
+		return f
+	}
+	from, origin := 0, s.Cell.Base
+	if i > 0 {
+		from, origin = s.Cell.Turns[i-1].After.Calls, s.Cell.Turns[i-1].After.Origin
+	}
+	after := s.Cell.Turns[i].After
+	for _, c := range s.Calls[min(from, len(s.Calls)):min(after.Calls, len(s.Calls))] {
+		if hookCall(c) {
+			continue
+		}
 		f.Leads = f.Leads || c.OK() && (c.Is("build") || c.Is("lead", "start"))
 		f.Round = f.Round || c.OK() && c.Is("ideate")
 	}
-	f.PushedMain = len(s.NewCommits()) > 0
-	f.NewSpec = len(s.AddedSpecs()) > 0
-	f.EndsAsking = audit.EndsAsking(s.Reply())
+	if after.Origin != "" && origin != "" && after.Origin != origin {
+		f.PushedMain = true
+		out, _ := s.git("diff", "--name-only", "--diff-filter=A", origin, after.Origin, "--", "docs/proposals/")
+		f.NewSpec = len(strings.Fields(out)) > 0
+	}
+	if i < len(s.Replies) {
+		f.EndsAsking = audit.EndsAsking(s.Replies[i])
+	}
 	return f
 }
 

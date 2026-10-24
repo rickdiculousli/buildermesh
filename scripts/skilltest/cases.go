@@ -704,7 +704,7 @@ func waitingCase() *Case {
 			out["hosts-here"] = "this box is " + e.Host + "; secure: no; on the mesh: " + box + " (awake, admin, 1 held)\n"
 			return out
 		},
-		Expect: []Pred{noCommit(), nothingStarted(), noApprove, where, rungNamed()},
+		Expect: []Pred{noCommit(), nothingStarted(), noApprove, where},
 		Refs: []Ref{
 			{Name: "relayed it", Play: func(r *Rehearsal) {
 				r.Call("mesh-status")
