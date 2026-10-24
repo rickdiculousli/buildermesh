@@ -1,0 +1,9 @@
+# Upgrade notes for v0.5.2, distilled from the Upgrading sections of the
+# specs it carries. 097 runs a proposal round as one thread rendering
+# engineer.md, and starts a thread on another box with --part, which an
+# older box refuses; 098 adds an at: entry to the Verified trailer, which an
+# older bmesh done refuses. Both ask that every box runs this release before
+# it is relied on: an order across boxes, not a step one box takes, so it is
+# the summary. 100 needs nothing.
+
+summary = "Nothing to run on a box, but update every box (bmesh update, or its daemon's own) before relying on this release: an older bmesh done refuses a landed commit whose Verified trailer carries the new at: entry, and an older box refuses a proposal round's thread started on it with --part (the round reads blocked, naming it). A proposal round is now one thread rendering a repo's .bmesh/briefs/engineer.md, which takes {{title}}, {{role}} and {{surfaces_line}}; a repo's own ux-engineer.md is no longer read, so carry what it said into engineer.md or delete it."
