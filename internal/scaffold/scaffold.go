@@ -70,7 +70,7 @@ func Proposals() string {
 	return "## Proposals\n" +
 		"Half-page specs live in `docs/proposals/NNN-slug.md` (the template is `bmesh spec template`; the lifecycle is in `docs/proposals/README.md`). " +
 		"The build thread owns its spec's status: it sets `done` on its own branch, so the spec lands with its code; a build in flight, or blocked, is its lead's node on the mesh, never a status in git. " +
-		"Rejected specs stay so they aren't re-proposed. Accepted specs are built by buildermesh leads (see Buildermesh below)."
+		"Rejected specs stay so they aren't re-proposed. A spec the operator picks is built by a buildermesh lead (see Buildermesh below)."
 }
 
 // Mesh is the "Buildermesh" section: the snippet's quoted paragraph with

@@ -2868,21 +2868,21 @@ Internals: [internals](internals.md#the-fixer)
 
 A repo's specs live in `docs/proposals/NNN-slug.md` (`[spec] glob`). Each spec is a flat `key: value` frontmatter between `---` fences (lines starting with `#` are ignored) over a half-page body. `README.md` is not a spec. [`bmesh spec`](#bmesh-spec) reads and writes the ledger: [`bmesh spec set --land`](#bmesh-spec-set) lands your declines and shelvings in it, and picking a spec to build ([`bmesh build`](#bmesh-build)) writes nothing there.
 
-What stays in git is content: a spec's text, its status as decided (`proposed`, `accepted`, `adjusting`, `later`, `rejected`) and, once it lands, `done`, set by its lead on its own branch so it lands with the code. What is in flight lives on the mesh, never in git:
+What stays in git is content: a spec's text, its status as decided and, once it lands, `done`, set by its lead on its own branch so it lands with the code. A spec is `proposed`, then `done`, `rejected` (declined, with a `reason`) or `later` (shelved). Picking it to build is the accept and writes nothing: [`bmesh build`](#bmesh-build) builds any spec not `done` or `rejected`. What is in flight lives on the mesh, never in git:
 
 | What | Where |
 |---|---|
-| A lead is building a spec | the lead's node (`bm-nodes`: repo, spec, branch, host, family, state); the spec reads `accepted` meanwhile |
+| A lead is building a spec | the lead's node (`bm-nodes`: repo, spec, branch, host, family, state); the spec reads as it did when picked (`proposed`, say) meanwhile |
 | A lead is blocked | the node's state, from `bmesh blocked "<why>"` |
 | A spec landed, with its proof | trailers on the landed commit, `Spec: NNN` and `Verified: <entries>` (see [The verified line](#the-verified-line)) |
 | A step for the operator was done | a tick on the hub, in `bm-steps` |
 
-Specs landed before keep the fields their landing wrote and still read: a status of `building` or `blocked`, `built_by`, `branch`, `host`, `family`, `merged`, `verified` and `operator_steps`. Nothing writes them any more, and `NNN: done at <sha8>` subjects still count as landings.
+Older specs keep the statuses an earlier release wrote, `accepted` and `adjusting`, and read as before (the fixer still writes `accepted` on a fix it rules). Specs landed before keep the fields their landing wrote and still read: a status of `building` or `blocked`, `built_by`, `branch`, `host`, `family`, `merged`, `verified` and `operator_steps`. Nothing writes them any more, and `NNN: done at <sha8>` subjects still count as landings.
 
 **Frontmatter rules.** The frontmatter is the spec's whole record. So each of these is an error (exit 1) for every command, never skipped or counted around:
 
 - a missing or non-numeric `id`, or one that differs from the file name's;
-- a `status` outside `proposed`, `accepted`, `adjusting`, `later`, `rejected`, `building`, `blocked`, `done` (`building` and `blocked` only old specs carry);
+- a `status` outside `proposed`, `accepted`, `adjusting`, `later`, `rejected`, `building`, `blocked`, `done` (`adjusting`, `building` and `blocked` only old specs carry);
 - a `judge` outside `fable`, `opus`, `sonnet`;
 - missing fences, or a line that is not `key: value`;
 - two files sharing an id.
