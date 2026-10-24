@@ -133,19 +133,23 @@ func (a *app) cmdFeedbackList(args []string) error {
 }
 
 // repoFeedback is every family's pending feedback naming repo, less what a
-// spec on its main already names (from_feedback's #<seq>): a fixer that
-// stopped between landing a spec and draining its issue never writes that
-// spec twice.
+// spec (from_feedback's #<seq>) or a fix commit on its main already names:
+// a fixer that stopped between landing a spec or a fix and draining its
+// issue never does it twice.
 func (a *app) repoFeedback(ctx context.Context, repo, repoPath string) ([]mesh.Feedback, error) {
 	specs, err := spec.ScanRef(repoPath, a.cfg.Spec.Glob, "main")
 	if err != nil {
 		return nil, ledgerFail(err)
 	}
+	fixed, err := spec.FixedSeqs(repoPath, "main")
+	if err != nil {
+		return nil, err
+	}
 	all, err := mesh.ListAllFeedback(ctx, a.client)
 	if err != nil {
 		return nil, err
 	}
-	return spec.OpenIssues(all, repo, specs), nil
+	return spec.OpenIssues(all, repo, specs, fixed), nil
 }
 
 // feedbackLine is "<seq> <from> (<repo> <spec>[, family F][, where W][, fixed F]): <text>",

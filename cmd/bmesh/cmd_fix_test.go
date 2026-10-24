@@ -145,6 +145,17 @@ func TestFeedbackListByRepoSpansFamiliesAndHidesNamedSeqs(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &list); err != nil || len(list) != 2 || list[0].Seq != one || list[1].Seq != three || list[1].Family != "demo-fix-1" {
 		t.Fatalf("%q %v", out, err)
 	}
+	// So does a fix commit on main naming it, the fixer's or a
+	// coordinator's; a commit that only mentions the number doesn't.
+	commitFile(t, repo, "a.txt", "1", "Note #"+itoa(one)+": not a fix")
+	commitFile(t, repo, "a.txt", "2", "Fix #"+itoa(three)+": the land wait")
+	if out, _, _ := runCLI(t, nil, "feedback", "list", "--repo", "demo"); out != itoa(one)+" demo-002 (demo 002, family demo-build-1): first\n" {
+		t.Fatalf("after Fix #: %q", out)
+	}
+	commitFile(t, repo, "a.txt", "3", "Quick fix from demo-build-1 #"+itoa(two)+", #"+itoa(one)+": both")
+	if out, errs, code := runCLI(t, nil, "feedback", "list", "--repo", "demo"); code != 0 || out != "" {
+		t.Fatalf("after Quick fix: %d %q %q", code, out, errs)
+	}
 	if _, _, code := runCLI(t, nil, "feedback", "list", "demo-build-1", "--repo", "demo"); code != 2 {
 		t.Fatalf("both: %d", code)
 	}

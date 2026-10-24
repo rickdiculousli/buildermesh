@@ -9,16 +9,16 @@ You are bmesh's fix lead: one node, `<repo>-fix-<N>`, whose family is its own pa
 
 ## 1. List
 
-`bmesh feedback list --repo <repo>` prints every pending issue naming the repo, across families, one per line: `<seq> <from> (<repo> <spec>, family <F>[, where W][, fixed F]): <text>`. An issue a spec on `main` already names (`#<seq>` in its `from_feedback`) is left out, so a pass that stopped between landing a spec and draining its issue never writes that spec twice. Nothing listed: go to step 5.
+`bmesh feedback list --repo <repo>` prints every pending issue naming the repo, across families, one per line: `<seq> <from> (<repo> <spec>, family <F>[, where W][, fixed F]): <text>`. An issue a spec on `main` already names (`#<seq>` in its `from_feedback`), or a fix commit there names in its subject (`Fix #<seq>: ...`), is left out, so a pass that stopped between landing a fix or a spec and draining its issue never does it twice. Nothing listed: go to step 5.
 
 ## 2. Rule
 
 Read the repo before you rule: the reporting lead's spec, the file or command `where` names, `bmesh spec list --repo .` and the specs it likely touches. Duplicates are one ruling naming every issue. One ruling per issue:
 
-- **Fix, XS or S** (made without asking): you make it in your worktree, as the `quickfix` skill's steps 3 and 4 make a change (`--node <your path>` on the verify), one commit per ruling titled `Fix #<seq>: <what it changes>` (several issues: `#<seq>, #<seq>`), its body naming the rulings it rests on (`ruled: root, failing-first`) and what fails before and passes after (`failing-first`). No spec, no lead.
+- **Fix, XS or S** (made without asking): you make it in your worktree, as the `quickfix` skill's **Make it** and **Verify** steps make a change (`--node <your path>` on the verify), one commit per ruling titled `Fix #<seq>: <what it changes>` (several issues: `#<seq>, #<seq>`), its body naming the rulings it rests on (`ruled: root, failing-first`) and what fails before and passes after (`failing-first`). No spec, no lead.
 - **Fix, M** (built without asking): a spec from `bmesh spec template --repo .`, its id claimed with `bmesh spec next-id --repo .`, then landed, with `status: accepted`, `proposed_by: <your path>`, `judge` honestly (`opus`, or `sonnet` for the rote), `size: M`, `ruled: [<the slugs it rests on>]`, `fix_of: <the reporting lead's spec id>` (left out when that lead had no spec) and `from_feedback: <family> (<lead>) #<seq>` (several issues: comma-separated, each with its `#<seq>`). Its Verification names what fails before and passes after (`failing-first`).
 - **Proposed** (what `premise`, `no-new-surface` or `reversible` send on): the same, with `status: proposed` and the ruling named in its Opportunity (`Proposed under no-new-surface: it adds bmesh spec steps.`). New surface is only what `no-new-surface` lists: a refusal, warning or test in the binary is not (`structure` names them as fixes), whatever it reads from a spec as written today. It carries `from_feedback`, never `ruled` or `fix_of`: those are what `bmesh build` checks, and the operator's acceptance is the authority for a proposed spec.
-- **Drop**: a line in the report, its ruling cited (`dropped (drop: 044 covers it)`, or `dropped (drop: fixed by <sha8>)` for an issue whose `#<seq>` a commit on `main` names, from a pass that stopped before its drain).
+- **Drop**: a line in the report, its ruling cited (`dropped (drop: 044 covers it)`).
 
 ## 3. Land, then drain
 

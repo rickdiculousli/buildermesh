@@ -117,8 +117,8 @@ func fixerOnce(ctx context.Context, d Deps) {
 }
 
 // readFixQueue reads what decides bmesh's own fixer for repo: its fixers
-// (mesh.ReadFixers) and the open issues naming it, the feedback no spec on
-// repoPath's main names (spec.OpenIssues).
+// (mesh.ReadFixers) and the open issues naming it, the feedback no spec or
+// fix commit on repoPath's main names (spec.OpenIssues).
 func readFixQueue(ctx context.Context, c *mesh.Client, repo, repoPath, glob string) (mesh.Fixers, []mesh.Feedback, error) {
 	nodes, err := mesh.ListNodes(ctx, c)
 	if err != nil {
@@ -140,7 +140,11 @@ func readFixQueue(ctx context.Context, c *mesh.Client, repo, repoPath, glob stri
 	if err != nil {
 		return mesh.Fixers{}, nil, err
 	}
-	return mesh.ReadFixers(nodes, states, pending, repo), spec.OpenIssues(all, repo, specs), nil
+	fixed, err := spec.FixedSeqs(repoPath, "main")
+	if err != nil {
+		return mesh.Fixers{}, nil, err
+	}
+	return mesh.ReadFixers(nodes, states, pending, repo), spec.OpenIssues(all, repo, specs, fixed), nil
 }
 
 // FixerDue reports whether the daemon starts a fixer for open, the open

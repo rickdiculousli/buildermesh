@@ -19,9 +19,9 @@ Every issue is ruled on by these, and each fix and spec you write cites the ones
 5. `premise`: no third fix on one premise. When two fixes of the same thing haven't held, write down the belief both assumed, test it, and propose it to the operator with the evidence.
 6. `no-new-surface`: a fix adds no command, flag, config or registry key, frontmatter field, bucket, subject or event. Anything new the operator would have to learn is product direction, and is proposed.
 7. `reversible`: build what can be undone inside the repo without asking, then report it. Proposed, never built: taste, product direction, anything sized L, and anything outside the repo's `main` (a step on another box, deleted records, the registry or a box's config).
-8. `drop`: dropping is an outcome. That covers what a spec on `main` already covers (any status), what a `--fixed` commit or a commit on `main` naming the issue's `#<seq>` settled, and the reporting lead's own spec's work.
+8. `drop`: dropping is an outcome. That covers what a spec on `main` already covers (any status), what a `--fixed` commit settled, and the reporting lead's own spec's work.
 
-The code-design principles (types, boundaries, domain modelling, reader load) are the repo's `AGENTS.md` and its review's to judge, not yours. `bmesh build` holds two of these rulings itself: it refuses a spec with `ruled` sized L (`reversible`) and one whose `fix_of` chain is three deep (`premise`); a refusal means the spec goes back to `proposed`.
+The code-design principles (types, boundaries, domain modelling, reader load) are the repo's `AGENTS.md` and its review's to judge, not yours. `bmesh build` holds two of these rulings itself on the M fixes you build: it refuses a spec with `ruled` sized L (`reversible`) and one whose `fix_of` chain is three deep (`premise`); a refusal means the spec goes back to `proposed`. An XS or S fix you make has no lead, so it leaves no feedback for a chain to grow from; `premise` and `reversible` are yours to hold there.
 
 ## Report on the mesh
 

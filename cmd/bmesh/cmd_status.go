@@ -541,7 +541,11 @@ func (a *app) feedbackLines(ctx context.Context, nodes []mesh.Node, states map[s
 		if err != nil {
 			return ledgerFail(err)
 		}
-		if open := spec.OpenIssues(mine, own, specs); len(open) > 0 {
+		fixed, err := spec.FixedSeqs(repoPath, "main")
+		if err != nil {
+			return err
+		}
+		if open := spec.OpenIssues(mine, own, specs, fixed); len(open) > 0 {
 			fx := mesh.ReadFixers(nodes, states, nil, own)
 			who := "starts within a minute"
 			switch {
