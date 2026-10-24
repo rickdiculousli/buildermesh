@@ -263,7 +263,7 @@ func TestReleaseOwnRepoChecksUpgradeNotes(t *testing.T) {
 
 	// Steps and no notes: refused, --dry-run too.
 	missing := "bmesh: refused: 030, 032 have Upgrading steps and docs/upgrading/v0.1.0.toml is missing: " +
-		"distil them into it (the build skill's step 7), commit it to main and release again\n"
+		"distil them into it (the work skill's Releases), commit it to main and release again\n"
 	for _, args := range [][]string{{"release", "demo"}, {"release", "demo", "--dry-run"}} {
 		if _, errs, exit := runCLI(t, nil, args...); exit != exitRefused || errs != missing {
 			t.Fatalf("%v: %d %q", args, exit, errs)

@@ -180,7 +180,7 @@ func TestArms(t *testing.T) {
 	if a.Commit != head || a.Dir != filepath.Join(out, "arms", "base", "plugin") {
 		t.Errorf("arm %+v", a)
 	}
-	for _, f := range []string{".claude-plugin/plugin.json", "skills/quickfix/SKILL.md", "hooks/hooks.json", "docs/manual.md"} {
+	for _, f := range []string{".claude-plugin/plugin.json", "skills/lead/SKILL.md", "hooks/hooks.json", "docs/manual.md"} {
 		if _, err := os.Stat(filepath.Join(a.Dir, f)); err != nil {
 			t.Errorf("the extracted arm has no %s", f)
 		}

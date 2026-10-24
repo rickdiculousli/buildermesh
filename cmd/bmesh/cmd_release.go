@@ -254,7 +254,7 @@ func (a *app) releaseNotes(ctx context.Context, repoPath, ref, tag string, lande
 		if len(ids) > 1 {
 			have = "have Upgrading steps"
 		}
-		return nil, fail(exitRefused, "refused: %s %s and %s is missing: distil them into it (the build skill's step 7), commit it to main and release again",
+		return nil, fail(exitRefused, "refused: %s %s and %s is missing: distil them into it (the work skill's Releases), commit it to main and release again",
 			strings.Join(ids, ", "), have, p)
 	}
 	text, err := gitIn(ctx, repoPath, "show", ref+":"+p)
