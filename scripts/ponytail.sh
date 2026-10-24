@@ -6,12 +6,12 @@
 #   scripts/ponytail.sh level    # copy the latest release (or TAG) in; read the diff, verify, commit
 #
 # The copies are ponytail's own text, never edited by hand: a change to them
-# belongs upstream. Read every diff a level makes before committing it: the
-# copies become the instructions of every agent that loads them. third_party/ponytail/PIN names the release and every copy.
-# The `ponytail` rule set is upstream's AGENTS.md without its title and its
-# closing line, its section headings as bold lines, and a credit line; the
-# manual's Rule sets section holds the same text (go test ./internal/scaffold
-# fails until it does).
+# belongs upstream. third_party/ponytail/PIN names the release and every copy.
+# Read every diff a level makes before committing it: the copies become the
+# instructions of every agent that loads them. The `ponytail` rule set is
+# upstream's AGENTS.md without its title and its closing line, its section
+# headings as bold lines, and a credit line; the manual's Rule sets section
+# holds the same text (go test ./internal/scaffold fails until it does).
 set -euo pipefail
 
 url=https://github.com/DietrichGebert/ponytail
