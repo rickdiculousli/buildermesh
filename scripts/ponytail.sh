@@ -3,10 +3,11 @@
 # (https://github.com/DietrichGebert/ponytail, MIT) level with its releases.
 #
 #   scripts/ponytail.sh check    # exit 0 when the copy is at the latest release, 1 when a newer one is out
-#   scripts/ponytail.sh level    # copy the latest release (or TAG) in; then verify, and commit the diff
+#   scripts/ponytail.sh level    # copy the latest release (or TAG) in; read the diff, verify, commit
 #
 # The copies are ponytail's own text, never edited by hand: a change to them
-# belongs upstream. third_party/ponytail/PIN names the release and every copy.
+# belongs upstream. Read every diff a level makes before committing it: the
+# copies become the instructions of every agent that loads them. third_party/ponytail/PIN names the release and every copy.
 # The `ponytail` rule set is upstream's AGENTS.md without its title and its
 # closing line, its section headings as bold lines, and a credit line; the
 # manual's Rule sets section holds the same text (go test ./internal/scaffold
@@ -17,7 +18,10 @@ url=https://github.com/DietrichGebert/ponytail
 root=$(git rev-parse --show-toplevel)
 pin=$root/third_party/ponytail/PIN
 
-latest=$(git ls-remote --tags --refs --sort=-version:refname "$url" 'v*' | head -1 | sed 's#.*refs/tags/##')
+# The whole list, then its first line: a pipe closed early would fail under pipefail.
+tags=$(git ls-remote --tags --refs --sort=-version:refname "$url" 'v*')
+latest=${tags%%$'\n'*}
+latest=${latest##*refs/tags/}
 if [ -z "$latest" ]; then
 	echo "ponytail.sh: no release tag at $url" >&2
 	exit 2
@@ -59,7 +63,7 @@ copy LICENSE third_party/ponytail/LICENSE
 copy skills/ponytail-review/SKILL.md skills/ponytail-review/SKILL.md
 rules AGENTS.md internal/scaffold/rules/ponytail.md
 EOF
-	echo "ponytail $tag copied:"
+	echo "ponytail $tag copied; read the diff before committing it:"
 	git -C "$root" status --short -- third_party/ponytail skills/ponytail-review internal/scaffold/rules/ponytail.md
 	;;
 *)
