@@ -1137,30 +1137,43 @@ func landsDone(top, glob string, id int, branch string) (*spec.Spec, error) {
 
 // reword amends HEAD (head, at tree) so its message ends with the Spec
 // and Verified trailers, replacing any a pass before wrote, and returns
-// the new HEAD. The message is all that changes: a tree that moved anyway
-// is put back (exit 1).
+// the new HEAD. The message is all that changes: a tree that moved, or
+// trailers that don't read back as written, are put back (exit 1), as is
+// the amend when an interrupt comes after it.
 func (l *lander) reword(ctx context.Context, head, tree, verified string) (string, error) {
 	msg, err := gitIn(ctx, l.top, "log", "-1", "--format=%B", head)
 	if err != nil {
 		return "", err
 	}
-	trailed, err := gitStdin(ctx, l.top, msg+"\n", "interpret-trailers", "--if-exists", "replace",
-		"--trailer", fmt.Sprintf("%s: %03d", spec.SpecTrailer, l.id), "--trailer", spec.VerifiedTrailer+": "+verified)
+	// --no-divider: a `---` line is the message's own, not the start of a
+	// patch, so the trailers go at its end, where git log reads them.
+	id := fmt.Sprintf("%03d", l.id)
+	trailed, err := gitStdin(ctx, l.top, msg+"\n", "interpret-trailers", "--no-divider", "--if-exists", "replace",
+		"--trailer", spec.SpecTrailer+": "+id, "--trailer", spec.VerifiedTrailer+": "+verified)
 	if err != nil {
 		return "", err
 	}
 	if _, err := gitStdin(ctx, l.top, trailed, "commit", "--amend", "--quiet", "--no-verify", "--allow-empty", "-F", "-"); err != nil {
 		return "", err
 	}
-	rec, err := gitIn(ctx, l.top, "rev-parse", "HEAD")
-	if err != nil {
-		return "", err
-	}
-	if now, err := gitIn(ctx, l.top, "rev-parse", "HEAD^{tree}"); err != nil || now != tree {
-		c, cancel := context.WithTimeout(context.Background(), time.Minute)
-		defer cancel()
+	c, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	defer cancel()
+	putBack := func(why string) (string, error) {
 		_, _ = gitIn(c, l.top, "reset", "--quiet", "--keep", head)
-		return "", fail(exitError, "rewording %s changed its tree (t:%.8s, was t:%s); it is put back and nothing is pushed", head[:8], now, tree[:8])
+		return "", fail(exitError, "rewording %s %s; it is put back and nothing is pushed", head[:8], why)
+	}
+	rec, err := gitIn(c, l.top, "rev-parse", "HEAD")
+	if err != nil {
+		return putBack(err.Error())
+	}
+	if now, err := gitIn(c, l.top, "rev-parse", "HEAD^{tree}"); err != nil || now != tree {
+		return putBack(fmt.Sprintf("changed its tree (t:%.8s, was t:%s)", now, tree[:8]))
+	}
+	if got, err := spec.ReadLanded(c, l.top, rec); err != nil || got.Spec != id || got.Verified != verified {
+		return putBack(fmt.Sprintf("left trailers that read Spec %q, Verified %q", got.Spec, got.Verified))
+	}
+	if err := ctx.Err(); err != nil {
+		return putBack(err.Error())
 	}
 	return rec, nil
 }

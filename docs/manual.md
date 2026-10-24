@@ -2107,6 +2107,7 @@ The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander b
 | a failing result or a changed diff; a failing entry for the tree | 3 | names the kind and how to re-run it; see below |
 | any other push failure | 1 | `push main: <git error>` |
 | the reword changed the tree | 1 | `rewording <sha8> changed its tree (t:<tree8>, was t:<tree8>); it is put back and nothing is pushed` |
+| the reworded commit's trailers don't read back as written | 1 | `rewording <sha8> left trailers that read Spec "<id>", Verified "<line>"; it is put back and nothing is pushed` |
 | an interrupt (SIGINT or SIGTERM: Ctrl-C, or the daemon cancelling a [`bmesh ready`](#bmesh-ready) step) before the push | 1 | `interrupted; nothing is pushed`; under the lease, the rebase is aborted and the lease released first. An interrupt once the push to `main` has begun lets the push and the main checkout's fast-forward finish, and `land` reports what happened. |
 
 - Rebase conflict: `bmesh: refused: rebase onto origin/main conflicts in <files>; it is aborted and nothing is pushed. Rebase yourself, resolve it, re-validate, then run bmesh land again`, `<files>` those no rule resolves. When a rule resolved other files, at this stop or an earlier one, `<files>` is followed by `, which no rule resolves (a rule resolves <files>)`. When no file conflicts, it reads `rebase onto <base> fails` in place of `rebase onto origin/main conflicts in <files>`.

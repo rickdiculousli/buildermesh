@@ -260,6 +260,22 @@ func TestLandReplacesTrailersAPassWrote(t *testing.T) {
 	}
 }
 
+// A `---` line in the lead's message is the message's own, not a patch's
+// start: the trailers go at its end, where done and the daemon read them.
+func TestLandTrailersFollowADashLine(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	meshtest.Git(t, r.wt, "commit", "--amend", "-qm", "the work\n\nWhy:\n---\n--- a/x.go")
+	if out, errs, code := runCLI(t, as("app-012"), "land"); code != 0 {
+		t.Fatalf("land: %d %q %q", code, out, errs)
+	}
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
+	if got := r.trailersOnOrigin(t); got != "Spec: 012\nVerified: verify ok t:"+tree[:8] {
+		t.Fatalf("trailers on origin %q", got)
+	}
+}
+
 // Main moving on every try is given up on at --wait (exit 5), with nothing
 // pushed and the branch as the rebase left it.
 func TestLandTimesOutWhenMainKeepsMoving(t *testing.T) {
