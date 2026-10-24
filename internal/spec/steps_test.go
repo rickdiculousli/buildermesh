@@ -91,14 +91,24 @@ func TestOperatorSteps(t *testing.T) {
 	if got, _ := parse("status: done\nmerged: abc\n").OperatorSteps(isBox); got != nil {
 		t.Fatalf("legacy with none: %+v", got)
 	}
-	// The hub's ticks lay on by number; a tick the file has stays.
-	ticked := Ticked(want, []mesh.StepTick{{N: 2, Done: "2026-10-17T10:00:00Z k16", Note: "by hand"}, {N: 9, Done: "x"}})
+	// The hub's ticks lay on by the step's words, box included; a tick the
+	// file has stays, and one no step names is dropped.
+	ticked := Ticked(want, []mesh.StepTick{{Step: "[optional] two", Done: "2026-10-17T10:00:00Z k16", Note: "by hand"}, {Step: "gone", Done: "x"}})
 	if Open(ticked) != 1 || ticked[1].String() != "2. [optional] two -- done 2026-10-17T10:00:00Z k16: by hand" ||
 		ticked[0].String() != "1. [k16] a <b> & c (check: test -f x)" {
 		t.Fatalf("%d %q %q", Open(ticked), ticked[0], ticked[1])
 	}
 	if _, err := DecodeSteps("[{"); err == nil {
 		t.Fatal("bad json read")
+	}
+}
+
+// A tick names its step by its words, so a step put in front of it
+// leaves the tick where it was.
+func TestTickStaysWithItsStep(t *testing.T) {
+	got := Ticked(ParseSteps("- z\n- [k16] a\n- b\n"), []mesh.StepTick{{Step: "[k16] a", Done: "t k16"}})
+	if got[0].Done != "" || got[1].Done != "t k16" || got[2].Done != "" {
+		t.Fatalf("%+v", got)
 	}
 }
 

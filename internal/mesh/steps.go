@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -16,10 +15,11 @@ import (
 
 var stepsConfig = jetstream.KeyValueConfig{Bucket: BucketSteps, History: 1, Storage: jetstream.FileStorage}
 
-// StepTick is one step ticked: its number in the spec's list, `<time>
-// <box>`, and the words the tick added.
+// StepTick is one step ticked: the step's words, its box included (not
+// its number, so the tick stays with its step when the list changes),
+// `<time> <box>`, and the words the tick added.
 type StepTick struct {
-	N    int    `json:"n"`
+	Step string `json:"step"`
 	Done string `json:"done"`
 	Note string `json:"note,omitempty"`
 }
@@ -70,7 +70,7 @@ func StepTicks(ctx context.Context, c *Client, repo, id string) ([]StepTick, err
 
 // TickSteps adds ticks to repo's spec id by compare-and-swap, retrying when
 // another writer moved the key first; a step already ticked keeps its
-// tick. It returns the ticks recorded, by step number.
+// tick. It returns the ticks recorded, oldest first.
 func TickSteps(ctx context.Context, c *Client, repo, id string, ticks []StepTick) ([]StepTick, error) {
 	kv, err := stepsBucket(ctx, c, true)
 	if err != nil {
@@ -82,18 +82,17 @@ func TickSteps(ctx context.Context, c *Client, repo, id string, ticks []StepTick
 		if err != nil {
 			return nil, err
 		}
-		have := map[int]bool{}
+		have := map[string]bool{}
 		for _, t := range cur {
-			have[t.N] = true
+			have[t.Step] = true
 		}
 		all := cur
 		for _, t := range ticks {
-			if !have[t.N] {
+			if !have[t.Step] {
 				all = append(all, t)
-				have[t.N] = true
+				have[t.Step] = true
 			}
 		}
-		sort.Slice(all, func(i, j int) bool { return all[i].N < all[j].N })
 		data, err := json.Marshal(all)
 		if err != nil {
 			return nil, err

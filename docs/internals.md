@@ -448,7 +448,7 @@ The stream, subjects and buckets built on node paths:
 | KV | `bm-holds` | `<path>` to `{"gate","text","by","at"}` (a coordinator's hold on a lead, until `unhold`; see Holds) |
 | KV | `bm-ready` | `<path>` to `{"spec","head","size","text","at","phase","seq","commit","main","refusal","output","failing_since"}` (a lead's request that its daemon land it, until its wake is delivered; created on demand; see Ready) |
 | KV | `bm-specids` | `<repo token>` to the highest spec id claimed in that repo, in decimal (see Spec ids); no age limit |
-| KV | `bm-steps` | `<repo token>.<NNN>` to the operator's ticks of that landed spec's steps, `[{"n","done","note"}]` by step number (`spec steps --tick` and `--check`, by compare-and-swap; a step ticked keeps its first tick); history 1, no age limit, created by `Provision` or on the first tick |
+| KV | `bm-steps` | `<repo token>.<NNN>` to the operator's ticks of that landed spec's steps, `[{"step","done","note"}]`, each naming its step by its words, box included (`spec steps --tick` and `--check`, by compare-and-swap; a step ticked keeps its first tick); history 1, no age limit, created by `Provision` or on the first tick |
 
 The map, `watch`, status, the push loop and the activity reader skip subjects whose first token is one of the five reserved words (`mesh.IsMeshInternal`), each keeping the inbox and daemon events it reads; host traffic (`bm.inbox.host.*`, `bm.hostreply.*`) never reaches the map or `watch`. JetStream is addressed in `[mesh] domain` (default `hub`).
 

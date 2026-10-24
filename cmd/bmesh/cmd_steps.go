@@ -226,7 +226,7 @@ func (a *app) tickSteps(ctx context.Context, name, repoPath string, id int, ns [
 			fmt.Fprintf(a.stdout, "step %d already done %s\n", k, st.Done)
 			continue
 		}
-		ticks = append(ticks, mesh.StepTick{N: k, Done: when, Note: note})
+		ticks = append(ticks, mesh.StepTick{Step: steps[k-1].Words(), Done: when, Note: note})
 		ticked = append(ticked, strconv.Itoa(k))
 	}
 	if len(ticks) == 0 {

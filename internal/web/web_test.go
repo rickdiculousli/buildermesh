@@ -321,8 +321,8 @@ func TestTreeEndpoint(t *testing.T) {
 		"docs/proposals/010-all.md":     "---\nid: 10\ntitle: All ticked\nstatus: done\n---\n\n## Needs from the operator\n- one\n",
 		"docs/proposals/011-unbuilt.md": "---\nid: 11\ntitle: Not landed\nstatus: accepted\n---\n\n## Needs from the operator\n- one\n",
 	})
-	for id, n := range map[string]int{"009": 2, "010": 1} {
-		if _, err := mesh.TickSteps(ctx, c, "app", id, []mesh.StepTick{{N: n, Done: "2026-10-24T10:00:00Z k"}}); err != nil {
+	for id, step := range map[string]string{"009": "two", "010": "one"} {
+		if _, err := mesh.TickSteps(ctx, c, "app", id, []mesh.StepTick{{Step: step, Done: "2026-10-24T10:00:00Z k"}}); err != nil {
 			t.Fatal(err)
 		}
 	}

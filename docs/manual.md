@@ -2957,7 +2957,7 @@ With no id, `bmesh spec steps` passes over a repo whose ledger can't be read.
 - A paragraph of prose is a step of its own, except one ending in `:` straight before a list (`On the Mac:`). Its words go in front of each of that list's steps, and its box, if any, applies to the steps that name none.
 - A section that is absent, empty, or whose first word is `nothing` or `none` has no steps.
 
-A step is ticked by its number in that list: `bm-steps` key `<repo token>.<NNN>` holds the ticks as JSON, `[{"n":2,"done":"<RFC 3339 time> <box>","note":"..."}]` (`note` only when set). An old spec's `operator_steps` (JSON on one line, `[{"n":1,"box":"<host>","text":"...","check":"...","done":"","note":"..."}]`) are its steps instead, its ticks counting beside the hub's; a spec landed before trailers without the field has none.
+A step is ticked by its number in that list, and its tick names it by its words, its box included, so the tick stays with its step when the list changes: `bm-steps` key `<repo token>.<NNN>` holds the ticks as JSON, `[{"step":"[k16] restart the service","done":"<RFC 3339 time> <box>","note":"..."}]` (`note` only when set). An old spec's `operator_steps` (JSON on one line, `[{"n":1,"box":"<host>","text":"...","check":"...","done":"","note":"..."}]`) are its steps instead, its ticks counting beside the hub's; a spec landed before trailers without the field has none.
 
 ### Routines
 

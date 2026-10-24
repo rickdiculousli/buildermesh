@@ -16,10 +16,10 @@ func TestMeshStatusEndsWithOpenOperatorSteps(t *testing.T) {
 		t.Fatalf("mesh-status: %d %q %q", code, out, errs)
 	}
 	// Ticked from another box: the hub's ticks drop the lines.
-	if _, err := mesh.TickSteps(ctx, c, "demo", "015", []mesh.StepTick{{N: 1, Done: "x"}, {N: 2, Done: "x"}, {N: 3, Done: "x"}, {N: 4, Done: "x"}}); err != nil {
+	if _, err := mesh.TickSteps(ctx, c, "demo", "015", []mesh.StepTick{{Step: "set the key", Done: "x"}, {Step: "[" + testHost + "] restart", Done: "x"}, {Step: "[otherbox] on the other box", Done: "x"}, {Step: "by hand", Done: "x"}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := mesh.TickSteps(ctx, c, "demo", "016", []mesh.StepTick{{N: 2, Done: "x"}}); err != nil {
+	if _, err := mesh.TickSteps(ctx, c, "demo", "016", []mesh.StepTick{{Step: "old two", Done: "x"}}); err != nil {
 		t.Fatal(err)
 	}
 	out, errs, code = runCLI(t, nil, "mesh-status")

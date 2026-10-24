@@ -324,8 +324,9 @@ func stepsRepo(t *testing.T) (*mesh.Client, context.Context, string) {
 	return c, ctx, repo
 }
 
-// ticksOnHub is spec 015's ticks on the hub, by step number, after
-// checking nothing was committed on origin's main since head.
+// ticksOnHub is spec 015's ticks on the hub, by the number of the step
+// each names (stepsRepo's), after checking nothing was committed on
+// origin's main since head.
 func ticksOnHub(t *testing.T, c *mesh.Client, ctx context.Context, repo, head string) map[int]mesh.StepTick {
 	t.Helper()
 	meshtest.Git(t, repo, "fetch", "-q", "origin")
@@ -336,9 +337,10 @@ func ticksOnHub(t *testing.T, c *mesh.Client, ctx context.Context, repo, head st
 	if err != nil {
 		t.Fatal(err)
 	}
+	num := map[string]int{"set the key": 1, "[" + testHost + "] restart": 2, "[otherbox] on the other box": 3, "by hand": 4}
 	out := map[int]mesh.StepTick{}
 	for _, k := range ticks {
-		out[k.N] = k
+		out[num[k.Step]] = k
 	}
 	return out
 }

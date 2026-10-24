@@ -158,12 +158,25 @@ func (s *Spec) NeedsSteps() []Step {
 	return ParseSteps(body)
 }
 
-// Ticked is steps with the hub's ticks laid on: a step its file has not
-// ticked takes the tick of its number.
+// Words is the step as its line says it, its box included: what a tick on
+// the hub names, so the tick stays with its step when the list changes.
+func (s Step) Words() string {
+	if s.Box == "" {
+		return s.Text
+	}
+	return "[" + s.Box + "] " + s.Text
+}
+
+// Ticked is steps with the hub's ticks laid on: each tick on the first
+// step not yet ticked whose words it names; a tick no step names is
+// dropped.
 func Ticked(steps []Step, ticks []mesh.StepTick) []Step {
 	for _, t := range ticks {
-		if i := t.N - 1; i >= 0 && i < len(steps) && steps[i].Done == "" {
-			steps[i].Done, steps[i].Note = t.Done, t.Note
+		for i := range steps {
+			if steps[i].Done == "" && steps[i].Words() == t.Step {
+				steps[i].Done, steps[i].Note = t.Done, t.Note
+				break
+			}
 		}
 	}
 	return steps
