@@ -128,13 +128,33 @@ func TestSettleFinishedFamilies(t *testing.T) {
 	if got := settles(fake)[len(want):]; !slices.Equal(got, []string{"mcp:demo-006", "mcp:demo-007"}) {
 		t.Fatalf("third pass settled %v", got)
 	}
+	all := []string{"mcp:demo-001", "mcp:demo-002", "mcp:demo-round-1.eng", "mcp:demo-006", "mcp:demo-007"}
 	fake.Do(func(s *t3fake.Server) {
 		for id, th := range s.Threads {
-			if th.Settled != slices.Contains([]string{"mcp:demo-001", "mcp:demo-002", "mcp:demo-round-1.eng", "mcp:demo-006", "mcp:demo-007"}, id) {
+			if th.Settled != slices.Contains(all, id) {
 				t.Errorf("thread %s settled %v", id, th.Settled)
 			}
 		}
 	})
+
+	// A message wakes a settled lead: its thread is settled again once that turn ends.
+	f.send(t, "demo-001", 1)
+	wakeOnce(f.ctx, f.d, NewActivity())
+	if n, _, _ := mesh.GetNode(f.ctx, f.c, "demo-001"); n.Settled != "" {
+		t.Fatal("a woken lead kept its settled mark")
+	}
+	settleOnce(f.ctx, f.d) // the woken turn runs: nothing
+	if got := settles(fake); len(got) != len(all) {
+		t.Fatalf("settled a running thread: %v", got)
+	}
+	fake.Do(func(s *t3fake.Server) {
+		th := s.Threads["mcp:demo-001"]
+		th.ActiveRunID, th.Runs[len(th.Runs)-1].Status = "", "completed"
+	})
+	settleOnce(f.ctx, f.d)
+	if got := settles(fake)[len(all):]; !slices.Equal(got, []string{"mcp:demo-001"}) {
+		t.Fatalf("after the woken turn settled %v", got)
+	}
 }
 
 func TestSettleRetriesWhatT3Refused(t *testing.T) {

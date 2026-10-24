@@ -151,6 +151,7 @@ A launch has no retry key: after a lost or timed-out reply, `start` reads the pr
 3. **Settle.** For each member of a finished unit with `host` this box, `runner.kind` `t3`, a `runner.thread` and no `settled`: `status` first, skipped while running (the closing turn); then `settle`. A `thread_not_found` at either step counts as settled. The node is then re-read and written with `"settled": <RFC 3339>`, unless its `runner.thread` changed.
 4. **Report.** A pass that marked any publishes `bm.daemon.<host>.settled`, `to` the unit's first member, text `<unit>: <n> threads` (`1 thread`), `<n>` the unit's members on this box marked `settled`, with `Nats-Msg-Id` `settled-<unit>-<host>-<n>`.
 5. **Failure.** A failed `status` or `settle` is logged once per thread per distinct error and tried again next pass.
+6. **Wake.** A wake the daemon delivers to a node with `settled` (a message unsettles its T3 thread) rewrites the node without it, so step 3 settles the thread again once the woken turn ends. Wakes and the settle pass run in the same loop, so the two never write a node at once.
 
 `mesh-status` prints `settled <unit>: <n>` from the nodes' `settled` marks; `watch` prints the event without its `to`.
 

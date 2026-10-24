@@ -168,7 +168,8 @@ func wake(ctx context.Context, d Deps, act *Activity, n mesh.Node, unread int, r
 }
 
 // deliverWake sends text to n's thread and, on delivery, records the wake
-// (Activity and a daemon wake event). Runner.Send reads Status itself and
+// (Activity and a daemon wake event) and drops a settled mark, since the
+// message unsettles the thread in T3. Runner.Send reads Status itself and
 // refuses a running thread (ErrRunning). The caller holds wakeMu.
 func deliverWake(ctx context.Context, d Deps, act *Activity, n mesh.Node, text string) error {
 	now := d.Now()
@@ -176,6 +177,9 @@ func deliverWake(ctx context.Context, d Deps, act *Activity, n mesh.Node, text s
 		return err
 	}
 	act.ObserveWake(n.Path, now)
+	if n.Settled != "" {
+		unmarkSettled(ctx, d, n)
+	}
 	ev := mesh.Event{From: d.from(), Event: "wake", To: n.Path, Text: text, At: now.UTC().Format(time.RFC3339)}
 	if err := mesh.PublishEvent(ctx, d.Client, ev); err != nil {
 		d.Log.Warn("wake: publish", "path", n.Path, "err", err)

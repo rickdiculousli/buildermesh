@@ -538,6 +538,7 @@ func (s *Server) tool(name string, a map[string]any, access string) (map[string]
 			t.ActiveRunID = r.ID
 		}
 		t.Items = append(t.Items, Item{Type: "user_message", Status: "completed", Text: str(a, "message")})
+		t.Settled = false // a new message wakes a settled thread
 		s.Sends = append(s.Sends, Send{Thread: t.ID, Message: str(a, "message"), Mode: str(a, "mode"), ClientRequestID: str(a, "clientRequestId")})
 		res := map[string]any{"threadId": t.ID, "messageId": s.id("message:"), "runId": r.ID, "status": status, "delivery": delivery}
 		if id := str(a, "clientRequestId"); id != "" {

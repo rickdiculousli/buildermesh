@@ -165,3 +165,17 @@ func settleThread(ctx context.Context, d Deps, st runner.Settler, m mesh.Node) b
 	}
 	return true
 }
+
+// unmarkSettled drops n's settled mark once a wake reached its thread (a
+// message unsettles a T3 thread), so the settle pass settles it again when
+// the turn the wake started ends.
+func unmarkSettled(ctx context.Context, d Deps, n mesh.Node) {
+	cur, ok, err := mesh.GetNode(ctx, d.Client, n.Path)
+	if err != nil || !ok || cur.Settled == "" || cur.Runner.Thread != n.Runner.Thread {
+		return
+	}
+	cur.Settled = ""
+	if err := mesh.PutNode(ctx, d.Client, cur); err != nil {
+		d.Log.Warn("settle: unmark", "path", n.Path, "err", err)
+	}
+}
