@@ -1,0 +1,7 @@
+# Upgrade notes for v0.4.8. Its specs (089, 091) have no Upgrading steps;
+# the rest is the lean redesign (docs/design/2026-10-24-lean.md), built
+# without specs. A box that takes this release by its own update needs
+# nothing run, so the notes are a summary of what changed for the people
+# and scripts that drive bmesh.
+
+summary = "Nothing to run on a box. The plugin's chat skills are one, work, which takes whatever you bring and stops at the first rung that holds; a new session loads it. bmesh choose-ideas and bmesh build --accepted are gone: bmesh build <repo> <NNN>... builds the specs you pick, and bmesh spec set --id NNN --status rejected --field reason=... --land declines one. Nothing about a build is committed to main any more: land puts Spec and Verified trailers on the landed commit, the spec reads done on the lead's branch, and operator steps are ticked on the hub. Every stop a lead can hit names its next step, and routine run works with no hub."
