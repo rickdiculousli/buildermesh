@@ -3849,4 +3849,6 @@ To check a UI change:
 2. Run the printed `node scripts/check.mjs ... 390 844 shot.png`, and the same at `1280 800`.
 3. Run `scripts/seed.sh stop`.
 
+**`go run ./scripts/skilltest --arm <name>=<ref or dir> ...`** measures the plugin's chat skills: scripted operator asks run as headless Claude Code sessions, one arm per version of the plugin, each in a sandbox repo with a local origin and a fake `bmesh` first on PATH, and each cell is scored on what landed, what it ran, what it replied and how often it had to be steered (`scripts/skilltest/README.md`). Its Go tests check its scorers offline and run with the rest; no test starts a session.
+
 Internals: [internals](internals.md#testing)
