@@ -15,7 +15,7 @@
 set -euo pipefail
 
 url=https://github.com/DietrichGebert/ponytail
-root=$(git rev-parse --show-toplevel)
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 pin=$root/third_party/ponytail/PIN
 
 # The whole list, then its first line: a pipe closed early would fail under pipefail.

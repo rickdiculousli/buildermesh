@@ -27,8 +27,8 @@ const Customized = "customized"
 //go:embed rules/*.md
 var ruleFiles embed.FS
 
-// RuleSet is the embedded text of the named set, its lines as a Markdown
-// list; ok is false for a name bmesh doesn't ship.
+// RuleSet is the embedded text of the named set, Markdown with no heading;
+// ok is false for a name bmesh doesn't ship.
 func RuleSet(name string) (text string, ok bool) {
 	if !slices.Contains(RuleSets, name) {
 		return "", false
