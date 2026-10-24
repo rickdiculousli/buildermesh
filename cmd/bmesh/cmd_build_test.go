@@ -61,6 +61,15 @@ func TestBuildStartsTheLeadRecordingNothingOnMain(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("%q: %v", out, err)
 	}
+	// Stdout is the JSON alone; the steps for the lead it started follow
+	// on stderr.
+	for _, want := range []string{"next: bmesh watch --nodes demo-002 --timeout 30m,", "on exit 5, run it again with --since",
+		`bmesh --node operator send <path> "<answer>"`, "bmesh --node operator hold <path>", "bmesh --node operator node stop <path>",
+		"bmesh node forget <path> --wipe"} {
+		if !strings.Contains(errs, want) {
+			t.Errorf("stderr lacks %q:\n%s", want, errs)
+		}
+	}
 	// The node is a lead for the spec, with the thread T3 named and the id
 	// the brief was started with.
 	n, ok, err := mesh.GetNode(ctx, c, "demo-002")
@@ -184,8 +193,14 @@ func TestBuildAFailedStartRecordsNothing(t *testing.T) {
 	fake.Do(func(s *t3fake.Server) { projects, s.Projects = s.Projects, nil })
 	before := gitOut(t, "-C", repo, "rev-parse", "HEAD")
 	_, errs, code := runCLI(t, nil, "build", "demo", "002", "--hold", "land")
-	if code != 1 || !strings.Contains(errs, "runner start") {
+	if code != 1 || !strings.Contains(errs, "runner start") || strings.Contains(errs, "--model") || strings.Contains(errs, "next:") {
 		t.Fatalf("code %d err %q", code, errs)
+	}
+	// A Fable model's failed start says how to run it on Opus.
+	_, errs, code = runCLI(t, nil, "build", "demo", "003")
+	if code != 1 || !strings.Contains(errs, "runner start") ||
+		!strings.Contains(errs, "; when this turns down claude-fable-5-1 (its access, consent or credits), run the same command again with --model claude-opus-5-5 and tell the operator what the runner said") {
+		t.Fatalf("fable: code %d err %q", code, errs)
 	}
 	if gitOut(t, "-C", repo, "rev-parse", "main") != before {
 		t.Fatal("a failed start recorded on main")
@@ -223,6 +238,9 @@ func TestBuildSeveralOrdersAndCapsLeads(t *testing.T) {
 	out, errs, code := runCLI(t, nil, "build", "demo", "009", "002", "003", "004", "005", "002", "001", "007", "--family", "demo-build-1")
 	if code != 0 {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
+	}
+	if !strings.HasPrefix(errs, "next: bmesh watch --nodes demo-002 --timeout 30m,") {
+		t.Fatalf("stderr: %q; want the watch on the one lead started", errs)
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	want := []string{

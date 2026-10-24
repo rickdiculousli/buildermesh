@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
 // stored reads a subject straight from bm-mesh.
@@ -62,21 +63,43 @@ func TestFeedbackPublishesWithTheNodesFamily(t *testing.T) {
 		t.Fatalf("%d messages after the refusals", n)
 	}
 
-	// list prints each with its sequence.
-	out, _, code = runCLI(t, nil, "feedback", "list", "demo-build-2")
+	// list prints each with its sequence, then on stderr how to rule on
+	// them and drain them.
+	out, errs, code = runCLI(t, nil, "feedback", "list", "demo-build-2")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	if code != 0 || len(lines) != 2 ||
 		lines[0] != itoa(h[0].Seq)+" demo-004 (demo 004, where bmesh inbox, fixed abc123): inbox read is slow when empty" ||
 		lines[1] != itoa(h[1].Seq)+" demo-004 (buildermesh 004): the skill says X twice" {
 		t.Fatalf("%d %q", code, out)
 	}
-	out, _, code = runCLI(t, nil, "feedback", "list", "demo-build-2", "--json")
-	var list []mesh.Feedback
-	if err := json.Unmarshal([]byte(out), &list); code != 0 || err != nil || len(list) != 2 || list[1].Seq != h[1].Seq {
-		t.Fatalf("%d %q %v", code, out, err)
+	for _, want := range []string{"is its fixer's: leave it pending", "titled Quick fix from demo-build-2 #<seq>: <what it changes>",
+		"from_feedback: demo-build-2 (<its leads>) #<seq>", "landed as Feedback NNN: proposed from demo-build-2",
+		"next: then bmesh feedback drain --seq <the sequences you ruled on>"} {
+		if !strings.Contains(errs, want) {
+			t.Errorf("stderr lacks %q:\n%s", want, errs)
+		}
 	}
-	if out, _, code := runCLI(t, nil, "feedback", "list", "demo-build-9"); code != 0 || out != "" {
-		t.Fatalf("empty family: %d %q", code, out)
+	out, errs, code = runCLI(t, nil, "feedback", "list", "demo-build-2", "--json")
+	var list []mesh.Feedback
+	if err := json.Unmarshal([]byte(out), &list); code != 0 || err != nil || len(list) != 2 || list[1].Seq != h[1].Seq || errs != "" {
+		t.Fatalf("%d %q %v %q", code, out, err, errs)
+	}
+	if out, errs, code := runCLI(t, nil, "feedback", "list", "demo-build-9"); code != 0 || out != "" || errs != "" {
+		t.Fatalf("empty family: %d %q %q", code, out, errs)
+	}
+
+	// watch-done names the watched leads' families with feedback pending.
+	putNode(t, c, ctx, mesh.Node{Path: "demo-006", Role: "lead", Repo: "demo", Spec: "006", Family: "demo-build-2"})
+	putNode(t, c, ctx, mesh.Node{Path: "demo-007", Role: "lead", Repo: "demo", Spec: "007", Family: "demo-build-9"})
+	for _, p := range []string{"demo-006", "demo-007"} {
+		meshtest.ForceState(t, c, p, mesh.State{State: "done", By: "node"})
+	}
+	if out, errs, code := runCLI(t, nil, "watch", "--nodes", "demo-006,demo-007", "--timeout", "10s"); code != 0 ||
+		out != "watch-done; next: bmesh feedback list demo-build-2\n" {
+		t.Fatalf("watch: %d %q %q", code, out, errs)
+	}
+	if out, _, _ := runCLI(t, nil, "watch", "--nodes", "demo-007", "--timeout", "10s"); out != "watch-done\n" {
+		t.Fatalf("watch with nothing pending: %q", out)
 	}
 	if _, _, code := runCLI(t, nil, "feedback", "list", "a.b"); code != 2 {
 		t.Fatalf("bad family: %d", code)

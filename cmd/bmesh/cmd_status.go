@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -347,6 +348,31 @@ func (a *app) printJSON(v any) error {
 
 var terminal = map[string]bool{"done": true, "blocked": true, "silent": true}
 
+// drainNext is what watch-done adds for the build families of the watched
+// leads that have feedback pending (100): "; next: bmesh feedback list
+// <family>", one per family, "" for none. A node or a queue it can't read
+// adds nothing.
+func (a *app) drainNext(ctx context.Context, paths []string) string {
+	var next []string
+	for _, p := range paths {
+		n, ok, err := mesh.GetNode(ctx, a.client, p)
+		if err != nil || !ok || n.Role != "lead" || n.Family == "" {
+			continue
+		}
+		cmd := "bmesh feedback list " + n.Family
+		if slices.Contains(next, cmd) {
+			continue
+		}
+		if fb, err := mesh.ListFeedback(ctx, a.client, n.Family); err == nil && len(fb) > 0 {
+			next = append(next, cmd)
+		}
+	}
+	if len(next) == 0 {
+		return ""
+	}
+	return "; next: " + strings.Join(next, ", then ")
+}
+
 // cmdWatch follows the named nodes' trees and runner changes until every
 // named node is done, blocked or silent. It needs no daemon.
 func (a *app) cmdWatch(args []string) error {
@@ -401,7 +427,7 @@ func (a *app) cmdWatch(args []string) error {
 		return true, nil
 	}
 	finished := func() error {
-		fmt.Fprintln(a.stdout, "watch-done")
+		fmt.Fprintln(a.stdout, "watch-done"+a.drainNext(ctx, named))
 		return nil
 	}
 	if ok, err := allTerminal(); err != nil {

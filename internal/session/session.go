@@ -263,15 +263,26 @@ func Level(c config.ContextConfig, tokens int) int {
 	return level
 }
 
+// howToCompact is how a session compacts, said with the advice to (100):
+// the state file, then the two queued messages (the /compact alone when
+// the operator asked for a pause), and its effort left alone until the
+// compaction has run, since a change before it rereads the whole long
+// context with a cache miss.
+const howToCompact = "To compact: update your state file (the plan, the ids in flight, what's next); then, where your harness lets a session queue into its own thread (T3 Code's t3_thread_send, mode queue), queue in one step `/compact <what to keep, naming the state file>` and `Resume: read <state file>, run bmesh mesh-status, and carry on from its Next.`, or the /compact alone when the operator asked you to pause; elsewhere ask the operator to type /compact, then to resume you. Leave your effort as it is until the compaction has run."
+
+// afterCompact is what a session does first once it compacted: read its
+// state file, then set its effort for what is next.
+const afterCompact = "read your state file before going on, and set your effort for the work ahead now, where your harness lets a session set its own (T3 Code's t3_thread_configure): high to design, medium to run settled work."
+
 // Advice is what a session at level is told to do; "" below nudge_from.
 func Advice(c config.ContextConfig, level int) string {
 	switch {
 	case level <= 0:
 		return ""
 	case c.CompactSoon > 0 && level >= c.CompactSoon:
-		return "Compact at the next safe point, after updating your state file."
+		return "Compact at the next safe point. " + howToCompact
 	case c.CompactFrom > 0 && level >= c.CompactFrom:
-		return "Compact at your next milestone, after updating your state file; never while exploring or investigating."
+		return "Compact at your next milestone, never while exploring or investigating; about to finish the work in hand, finish it first. " + howToCompact
 	case c.NudgeEvery > 0:
 		return "You'll hear again every " + K(c.NudgeEvery) + "."
 	}
@@ -324,7 +335,7 @@ func Heard(dir string, c config.ContextConfig, r Reading, now time.Time) (line s
 	case cur.level > last.level:
 		return strings.TrimSpace("bmesh: this session's context is " + K(r.Tokens) + ". " + Advice(c, cur.level)), false
 	case cur.level < last.level && r.Tokens < last.tokens:
-		return "bmesh: this session compacted (" + K(last.tokens) + " -> " + K(r.Tokens) + "); read your state file before going on.", true
+		return "bmesh: this session compacted (" + K(last.tokens) + " -> " + K(r.Tokens) + "); " + afterCompact, true
 	}
 	return "", false
 }

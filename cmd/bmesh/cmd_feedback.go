@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os/exec"
@@ -129,7 +130,20 @@ func (a *app) cmdFeedbackList(args []string) error {
 	for _, f := range list {
 		fmt.Fprintln(a.stdout, feedbackLine(f, *repo != ""))
 	}
+	if *repo == "" && len(list) > 0 {
+		a.drainSteps(pos[0])
+	}
 	return nil
+}
+
+// drainSteps is how the coordinator rules on a family's feedback and
+// drains it (100), to stderr after the list: the fixer's issues stay, the
+// rest are fixed, specced or dropped, then drained by sequence.
+func (a *app) drainSteps(family string) {
+	own := cmp.Or(a.ownRepo(), "bmesh's own repo")
+	fmt.Fprintf(a.stderr, "next: an issue naming %s is its fixer's: leave it pending. Of the rest, merge duplicates and drop what main already covers (a spec, or a commit naming its #<seq>)\n", own)
+	fmt.Fprintf(a.stderr, "next: make each one-cause XS or S issue as the work skill's rung 3 makes a change, titled Quick fix from %s #<seq>: <what it changes>; write each other one as a proposed spec with from_feedback: %s (<its leads>) #<seq>, landed as Feedback NNN: proposed from %s, for the operator to pick\n", family, family, family)
+	fmt.Fprintln(a.stderr, "next: then bmesh feedback drain --seq <the sequences you ruled on>, and report one line per issue: fixed by <sha8>, proposed NNN, already NNN, dropped: <why> or to the fixer")
 }
 
 // repoFeedback is every family's pending feedback naming repo, less what a
