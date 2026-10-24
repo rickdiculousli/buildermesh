@@ -93,6 +93,7 @@ func (a *app) cmdIdeate(args []string) error {
 	round := fs.Int("round", 0, "child form: the round number")
 	nextID := fs.Int("next-id", 0, "child form: the first spec id")
 	thread := fs.String("thread-id", "", "child form: the thread's UUID")
+	part := fs.String("part", "", "child form: the part of the method it runs, all, eng, ux or idea (the full form passes it)")
 	focus := fs.String("context", "", "the operator's words for the round's briefs (- reads stdin)")
 	force := fs.Bool("force", false, "start a round while another of the repo's is still open, or five specs wait")
 	idea := fs.Bool("idea", false, "one idea, the operator's, in --context: start only the engineer, which writes that idea's spec")
@@ -149,7 +150,11 @@ func (a *app) cmdIdeate(args []string) error {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		started, err := a.startChild(ctx, row, repoPath, *round, childThread(row, a.cfg.HostName(), *child, *idea), *nextID, *thread, *model, *effort, *focus)
+		t, err := childThread(*child, *part, *idea, a.cfg.HostName())
+		if err != nil {
+			return err
+		}
+		started, err := a.startChild(ctx, row, repoPath, *round, t, *nextID, *thread, *model, *effort, *focus)
 		if err != nil {
 			return err
 		}
@@ -161,16 +166,26 @@ func (a *app) cmdIdeate(args []string) error {
 	return a.runRound(row, repoPath, *model, *effort, *focus, *force, *idea)
 }
 
-// childThread is the thread the child form starts: ux runs the UI/UX
-// part; eng runs what roundThreads gives it (on another box the row names
-// its host, so this box's name doesn't change the answer).
-func childThread(row config.Repo, me, child string, idea bool) roundThread {
-	if child == "ux" {
-		return roundThread{"ux", brief.RoundUX, me}
+// childThread is the thread the child form starts on box me: the part the
+// full form chose (--part), or, from a full form that passes none (an
+// older bmesh, whose rounds always had a ux thread), the UI/UX part for ux,
+// the idea for --idea and the engineering part for eng.
+func childThread(child, part string, idea bool, me string) (roundThread, error) {
+	p := brief.RoundPart(part)
+	switch {
+	case part == "" && idea:
+		p = brief.RoundIdea
+	case part == "" && child == "ux":
+		p = brief.RoundUX
+	case part == "":
+		p = brief.RoundEng
 	}
-	t := roundThreads(row, me, idea)[0]
-	t.host = me
-	return t
+	ok := map[brief.RoundPart]bool{brief.RoundAll: child == "eng", brief.RoundEng: child == "eng", brief.RoundUX: child == "ux",
+		brief.RoundIdea: child == "eng"}[p]
+	if !ok || idea != (p == brief.RoundIdea) {
+		return roundThread{}, fail(exitUsage, "--part %s doesn't go with --child %s%s", part, child, map[bool]string{true: " --idea"}[idea])
+	}
+	return roundThread{child, p, me}, nil
 }
 
 // runRound is the full form. An idea round starts only the engineer.
@@ -281,7 +296,7 @@ func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string, f
 		if t.host == me {
 			started, err = a.startChild(ctx, row, repoPath, n, t, ids[t.child], uuids[t.child], model, effort, focus)
 		} else {
-			started, err = a.startRemoteChild(ctx, t.host, row.Name, n, t.child, ids[t.child], uuids[t.child], model, effort, focus, idea)
+			started, err = a.startRemoteChild(ctx, row.Name, n, t, ids[t.child], uuids[t.child], model, effort, focus)
 		}
 		if err != nil {
 			// Another child is still started: the one that did not is
@@ -562,10 +577,12 @@ func reachable(ctx context.Context, host string) error {
 	return err
 }
 
-// startRemoteChild runs the child form on host and reads what it printed.
-func (a *app) startRemoteChild(ctx context.Context, host, repo string, round int, child string, nextID int,
-	thread, model, effort, focus string, idea bool) (childStarted, error) {
-	parts := []string{"bmesh", "ideate", repo, "--child", child, "--round", strconv.Itoa(round),
+// startRemoteChild runs the child form for thread t on its box, passing
+// the part it runs, and reads what it printed.
+func (a *app) startRemoteChild(ctx context.Context, repo string, round int, t roundThread, nextID int,
+	thread, model, effort, focus string) (childStarted, error) {
+	host := t.host
+	parts := []string{"bmesh", "ideate", repo, "--child", t.child, "--part", string(t.part), "--round", strconv.Itoa(round),
 		"--next-id", strconv.Itoa(nextID), "--thread-id", thread, "--model", model}
 	if effort != "" {
 		parts = append(parts, "--effort", effort)
@@ -573,7 +590,7 @@ func (a *app) startRemoteChild(ctx context.Context, host, repo string, round int
 	if focus != "" {
 		parts = append(parts, "--context", focus)
 	}
-	if idea {
+	if t.part == brief.RoundIdea {
 		parts = append(parts, "--idea")
 	}
 	for i, p := range parts {

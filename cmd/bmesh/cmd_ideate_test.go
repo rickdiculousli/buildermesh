@@ -241,7 +241,7 @@ func TestIdeateStartsTwoThreadsWhenUXHostIsAnotherBox(t *testing.T) {
 	}
 	// Two blocks of five: 014 for eng, 019 for ux.
 	l, _ := os.ReadFile(os.Getenv("FAKE_SSH_LOG"))
-	if !strings.Contains(string(l), "--child ux --round 1 --next-id 19 ") {
+	if !strings.Contains(string(l), "--child ux --part ux --round 1 --next-id 19 ") {
 		t.Fatalf("ssh log:\n%s", l)
 	}
 	if hist, _ := mesh.History(ctx, c, "bm.demo-round-1.started", time.Time{}); len(hist) != 1 {
@@ -478,7 +478,7 @@ func TestIdeateRemoteChildGoesThroughSSH(t *testing.T) {
 	l, _ := os.ReadFile(os.Getenv("FAKE_SSH_LOG"))
 	lines := strings.Split(strings.TrimSpace(string(l)), "\n")
 	if len(lines) != 2 || lines[0] != "ssh other bash -lc 'bmesh help >/dev/null'" ||
-		!strings.HasPrefix(lines[1], "ssh other bash -lc 'bmesh ideate demo --child ux --round 1 --next-id 21 --thread-id ") ||
+		!strings.HasPrefix(lines[1], "ssh other bash -lc 'bmesh ideate demo --child ux --part ux --round 1 --next-id 21 --thread-id ") ||
 		!strings.HasSuffix(lines[1], " --model prop-model --effort xhigh'") {
 		t.Fatalf("ssh log:\n%s", l)
 	}
@@ -600,9 +600,27 @@ func TestIdeateChildForm(t *testing.T) {
 	if !ok || n.Model != "m-1" || n.Parent != "demo-round-3" || n.Runner.Thread != got.Thread || n.Runner.Ref != thread {
 		t.Fatalf("%+v", n)
 	}
+	// No --part is an older full form's eng, which always had a ux thread
+	// beside it: the engineering part only, whatever the row says.
 	b, err := os.ReadFile(filepath.Join(os.Getenv("BMESH_CACHE_DIR"), "bmesh", "briefs", "demo-round-3-eng.md"))
-	if err != nil || !strings.Contains(string(b), "number yours from 007") {
+	if err != nil || !strings.Contains(string(b), "number yours from 007") || !strings.Contains(string(b), "improve this repo's code and bring back three to five") ||
+		strings.Contains(string(b), "Surfaces to screenshot") || strings.Contains(string(b), "only thread") {
 		t.Fatalf("%v %s", err, b)
+	}
+	// --part all, as a new full form passes for a round of one thread.
+	if out, errs, code := runCLI(t, nil, "ideate", "demo", "--child", "eng", "--part", "all", "--round", "4", "--next-id", "9", "--thread-id", thread); code != 0 {
+		t.Fatalf("--part all: code %d out %q err %q", code, out, errs)
+	}
+	b, err = os.ReadFile(filepath.Join(os.Getenv("BMESH_CACHE_DIR"), "bmesh", "briefs", "demo-round-4-eng.md"))
+	if err != nil || !strings.Contains(string(b), "three to six ranked ideas in one list") || !strings.Contains(string(b), "Surfaces to screenshot") {
+		t.Fatalf("%v %s", err, b)
+	}
+	for _, bad := range [][]string{{"--child", "ux", "--part", "eng"}, {"--child", "eng", "--part", "ux"}, {"--child", "eng", "--part", "most"},
+		{"--child", "eng", "--part", "idea"}, {"--child", "eng", "--part", "all", "--idea", "--context", "x"}} {
+		args := append([]string{"ideate", "demo", "--round", "5", "--next-id", "9", "--thread-id", thread}, bad...)
+		if _, errs, code := runCLI(t, nil, args...); code != exitUsage || !strings.Contains(errs, "doesn't go with --child") {
+			t.Errorf("%v: code %d err %q", bad, code, errs)
+		}
 	}
 	// The same child again is refused while its node is live and its branch exists.
 	if _, errs, code := runCLI(t, nil, "ideate", "demo", "--child", "eng", "--round", "3", "--next-id", "7", "--thread-id", thread); code != 3 {
