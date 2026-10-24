@@ -4,7 +4,7 @@ title: The work skill keeps the ladder; the steps for running leads, releasing a
 kind: token-cost
 size: M
 judge: opus
-status: proposed
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-24
