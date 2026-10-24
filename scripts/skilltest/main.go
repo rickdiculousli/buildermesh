@@ -251,6 +251,9 @@ func (r *runner) runAll(ctx context.Context, cells []cellPlan, fixture, scratch,
 		go func() {
 			defer wg.Done()
 			for p := range work {
+				if ctx.Err() != nil {
+					continue
+				}
 				row, err := r.runCell(ctx, p, fixture, scratch, outDir)
 				if err != nil {
 					row = Row{Case: p.k.Name, Arm: p.arm.Name, Run: p.run, Error: err.Error()}
