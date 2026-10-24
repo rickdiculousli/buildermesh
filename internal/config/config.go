@@ -232,6 +232,18 @@ type T3DoneConfig struct {
 	MinBusy time.Duration
 }
 
+// ContextConfig is [context]: the context a session hears about at the end
+// of a bmesh command (094). NudgeFrom is the first nudge (0 = off), then
+// one every NudgeEvery (0 = none between); from CompactFrom the advice is
+// to compact at a milestone, from CompactSoon at the next safe point
+// (0 = never). In tokens.
+type ContextConfig struct {
+	NudgeFrom   int `toml:"nudge_from"`
+	NudgeEvery  int `toml:"nudge_every"`
+	CompactFrom int `toml:"compact_from"`
+	CompactSoon int `toml:"compact_soon"`
+}
+
 // Config is the parsed config.toml plus the registry read from repos.toml
 // beside it. Path-valued fields are stored as written; callers pass them
 // through Expand.
@@ -253,6 +265,7 @@ type Config struct {
 	Update   UpdateConfig
 	Hosts    HostsConfig
 	Addons   AddonsConfig
+	Context  ContextConfig
 
 	dir     string   // directory of the config file; "" when none was read
 	path    string   // the config file's path as given to Load
@@ -338,8 +351,9 @@ type file struct {
 		Upstream   bool
 		Track      string
 	}
-	Hosts  HostsConfig
-	Addons struct {
+	Hosts   HostsConfig
+	Context ContextConfig
+	Addons  struct {
 		Enable []string
 		T3Done struct {
 			Ntfy    string
@@ -367,6 +381,7 @@ func defaults() *Config {
 		Routines: RoutinesConfig{KeepResults: 30 * 24 * time.Hour},
 		Update:   UpdateConfig{CheckEvery: 6 * time.Hour, Track: "release"},
 		Addons:   AddonsConfig{T3Done: T3DoneConfig{Every: 5 * time.Second, MinBusy: 5 * time.Minute}},
+		Context:  ContextConfig{NudgeFrom: 250000, NudgeEvery: 50000, CompactFrom: 300000, CompactSoon: 400000},
 	}
 }
 
@@ -374,7 +389,7 @@ func defaults() *Config {
 func (c *Config) file() file {
 	f := file{
 		Mesh: c.Mesh, Host: c.Host, Hub: c.Hub, Serve: c.Serve, Runner: c.Runner, Spec: c.Spec, Models: c.Models,
-		Quota: c.Quota, Console: c.Console, Hosts: c.Hosts,
+		Quota: c.Quota, Console: c.Console, Hosts: c.Hosts, Context: c.Context,
 	}
 	f.Update.Repo, f.Update.CheckEvery, f.Update.Upstream, f.Update.Track = c.Update.Repo, duration(c.Update.CheckEvery), c.Update.Upstream, c.Update.Track
 	f.Notify.Ntfy, f.Notify.Command, f.Notify.MapURL = c.Notify.Ntfy, c.Notify.Command, c.Notify.MapURL
@@ -495,7 +510,13 @@ func Load(path string) (*Config, error) {
 			return nil, fmt.Errorf("config %s: [hub] %s: %w", path, key, err)
 		}
 	}
-	c.Quota, c.Console, c.Hosts = f.Quota, f.Console, f.Hosts
+	c.Quota, c.Console, c.Hosts, c.Context = f.Quota, f.Console, f.Hosts, f.Context
+	for key, n := range map[string]int{"nudge_from": c.Context.NudgeFrom, "nudge_every": c.Context.NudgeEvery,
+		"compact_from": c.Context.CompactFrom, "compact_soon": c.Context.CompactSoon} {
+		if n < 0 {
+			return nil, fmt.Errorf("config %s: [context] %s: want 0 or more tokens", path, key)
+		}
+	}
 	c.Update = UpdateConfig{Repo: f.Update.Repo, CheckEvery: time.Duration(f.Update.CheckEvery), Upstream: f.Update.Upstream, Track: f.Update.Track}
 	if !slices.Contains(Tracks, c.Update.Track) {
 		return nil, fmt.Errorf("config %s: [update] track %q: want release or latest", path, c.Update.Track)

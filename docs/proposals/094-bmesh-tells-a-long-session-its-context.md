@@ -4,7 +4,7 @@ title: Any bmesh command tells a long session its context, and when to compact
 kind: feature
 size: M
 judge: opus
-status: proposed
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-24
@@ -47,6 +47,7 @@ In:
     - On the line, act on its advice at the next milestone. Right before executing a finished design is a milestone: run `bmesh context`.
     - To compact, where the harness lets a session queue `/compact <what to keep>` into its own thread (T3 Code's `t3_thread_send` with mode `queue`), queue it, then a resume message unless the operator paused. Elsewhere, ask the operator to type `/compact`. Say it in one line of the reply.
   - **The lead skill takes the line as its measure for the hand-off (091), in a sentence:** a lead hands off rather than compacting. On 2026-10-23 neither compaction nor a restart paid for leads, whose tokens go mostly to review and land.
+  - **The executor skill says the line is its lead's, in a sentence:** an executor never compacts. Built: a subagent's commands carry its parent's `CLAUDE_CODE_SESSION_ID`, so an executor spawned as a subagent hears its lead's context.
 
 Out:
 - the daemon sending into threads;
@@ -88,6 +89,7 @@ The session compacts after its next landing, and its reply says so in a line.
 
 ## Upgrading
 
-nothing
+- Agent sessions now hear their own context: in a Claude Code session, a `bmesh` command ends with one stderr line when the context crosses a nudge, from 250k tokens. Which nudges should this box's sessions get? Choices: the `[context]` defaults (`nudge_from = 250000`, `nudge_every = 50000`, `compact_from = 300000`, `compact_soon = 400000`, which suit a 1M-token window), values of your own for a smaller window, or `nudge_from = 0` for none. Default: the defaults, with nothing set.
+- The work, lead and executor skills change in the same release: update the buildermesh plugin after `bmesh update`.
 
 ## Needs from the operator

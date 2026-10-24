@@ -452,6 +452,12 @@ The stream, subjects and buckets built on node paths:
 
 The map, `watch`, status, the push loop and the activity reader skip subjects whose first token is one of the five reserved words (`mesh.IsMeshInternal`), each keeping the inbox and daemon events it reads; host traffic (`bm.inbox.host.*`, `bm.hostreply.*`) never reaches the map or `watch`. JetStream is addressed in `[mesh] domain` (default `hub`).
 
+## Session context
+
+[Manual: bmesh context](manual.md#bmesh-context)
+
+`internal/session` reads the transcript's last 64 KiB, and while that holds neither a usable assistant message nor a compaction, four times as much, up to 16 MiB; it never reads further. A window's first line, cut by the window, is dropped. From the last line back, a line naming neither `assistant` nor `compact_boundary` is skipped unparsed; a `{"type":"system","subtype":"compact_boundary"}` line ends the search with nothing; an `{"type":"assistant"}` line not `isSidechain`, whose `message.usage` input, cache-read and cache-creation tokens sum above 0, is the reading. `<state dir>/context/<session id>` holds the level last heard as decimal tokens and a newline, written through a temp file and a rename; each write also removes the dir's files unchanged for 7 days. Two commands of one session at once can both say a level.
+
 ## Config
 
 ### config.toml
@@ -550,7 +556,7 @@ These variables swap what bmesh runs or reads (commands split on spaces):
 | `BMESH_KEY_STORE` | the key store default (`keychain` or `file`) when `[hosts] key_store` is unset | `file` |
 | `BMESH_CACHE_DIR` | the user cache dir (`os.UserCacheDir`: `~/.cache` or `$XDG_CACHE_HOME` on Linux, `~/Library/Caches` on macOS), an absolute path, where briefs and a claude session's files go | |
 
-The `cmd/bmesh` tests set `BMESH_UPSTREAM_URL`, `XDG_STATE_HOME`, `BMESH_KEY_STORE`, `BMESH_SECURITY_COMMAND`, `BMESH_CLAUDE_COMMAND`, `BMESH_CODEX_COMMAND` and `BMESH_CACHE_DIR` package-wide (a test's own setting wins), so no test reaches the network, the box's notice or cache, the real Keychain dialog, or the box's own `claude` and `codex`. Leave all ten unset outside tests.
+The `cmd/bmesh` tests set `BMESH_UPSTREAM_URL`, `XDG_STATE_HOME`, `BMESH_KEY_STORE`, `BMESH_SECURITY_COMMAND`, `BMESH_CLAUDE_COMMAND`, `BMESH_CODEX_COMMAND` and `BMESH_CACHE_DIR` package-wide (a test's own setting wins), and unset `CLAUDE_CODE_SESSION_ID`, so no test reaches the network, the box's notice or cache, the real Keychain dialog, the box's own `claude` and `codex`, or the transcript of the session running them. The context tests set `CLAUDE_CODE_SESSION_ID` and `CLAUDE_CONFIG_DIR` to a fake transcript of their own. Leave all ten unset outside tests.
 
 The t3 runner, `bmesh t3 login`, the expiry pushes and the `lead start`, `build`, `ideate` and `node forget` tests run against `internal/runner/t3mcp/t3fake`, an `httptest` T3 0.1.0 (the environment document, the MCP OAuth endpoints and the MCP tools) that answers with shapes recorded from a live 0.1.0 server, kept in `testdata/t3v2/`.
 
