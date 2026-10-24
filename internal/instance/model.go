@@ -17,13 +17,13 @@ import (
 // baseTools are always allowed to a model instance.
 var baseTools = []string{"Read", "Grep", "Glob"}
 
-// sessionFlags are the claude flags that give a model instance only what its
+// SessionFlags are the claude flags that give a model instance only what its
 // kind's allow names: --tools lists the built-in tools of baseTools and allow
 // (each entry cut at "(", MCP tools left out), --strict-mcp-config loads no
 // MCP servers unless allow names an mcp__ tool, and --disable-slash-commands
 // loads no skills unless allow names Skill. --allowedTools grants permission
 // to the same entries.
-func sessionFlags(allow []string) []string {
+func SessionFlags(allow []string) []string {
 	var builtin []string
 	seen := map[string]bool{}
 	mcp, skill := false, false
@@ -118,7 +118,7 @@ func (m *Model) Run(ctx context.Context, j Job) Reply {
 	m.mu.Unlock()
 
 	argv := append(append([]string{}, m.claude...), "-p", "--model", m.model, "--output-format", "json")
-	text := jobText(j)
+	text := JobText(j)
 	if first {
 		argv = append(argv, "--session-id", session)
 		text = m.k.Prompt + "\n\n" + text
@@ -130,7 +130,7 @@ func (m *Model) Run(ctx context.Context, j Job) Reply {
 	}
 	// No --max-turns: the kind's timeout bounds a run, and a review that
 	// reads past a large diff needs more turns than any fixed cap allows.
-	argv = append(argv, sessionFlags(m.k.Allow)...)
+	argv = append(argv, SessionFlags(m.k.Allow)...)
 
 	var stdout, stderr bytes.Buffer
 	note, err := run(ctx, m.k.Timeout, j, func(ctx context.Context) *exec.Cmd { return exec.CommandContext(ctx, argv[0], argv[1:]...) },
@@ -180,8 +180,8 @@ func (m *Model) Run(ctx context.Context, j Job) Reply {
 	return Reply{OK: ok, Judged: true, Output: res.Result, Context: res.Usage.InputTokens + res.Usage.CacheReadInputTokens}
 }
 
-// jobText is what a model sees of a job: a header line, the text and the args.
-func jobText(j Job) string {
+// JobText is what a model sees of a job: a header line, the text and the args.
+func JobText(j Job) string {
 	s := "job: " + j.ID + " commit: " + j.Commit + " tree: " + j.Tree + "\n"
 	if j.Text != "" {
 		s += j.Text + "\n"

@@ -196,6 +196,7 @@ func summary(res Results) string {
 		b.WriteString(" Rescored from the kept cells.")
 	}
 	b.WriteString("\n\nPass is every expectation held; steers are the go-aheads the scripted operator had to send; commits are on the sandbox origin's main; cost and tokens are what the CLI stated for each turn; time is the turns' wall clock.\n\n")
+	b.WriteString(flips(res))
 	b.WriteString("| case | arm | runs | pass | steers | commits | cost | time | tokens | turns |\n|---|---|--:|--:|--:|--:|--:|--:|--:|--:|\n")
 	type key struct{ k, a string }
 	groups := map[key]*tally{}
@@ -225,6 +226,9 @@ func summary(res Results) string {
 		t := perArm[a]
 		fmt.Fprintf(&b, "| %s | %d | %.0f%% | %d | %d | $%.2f | %.0fs |\n", a, t.n, 100*float64(t.pass)/float64(max(1, t.n)), t.steers, t.commits, t.cost, float64(t.ms)/1000)
 	}
+	if named := plantedLines(res.Rows); len(named) > 0 {
+		b.WriteString("\n## Planted defects\n\n" + strings.Join(named, "\n") + "\n")
+	}
 	var missed []string
 	for _, r := range res.Rows {
 		for _, p := range r.Predicates {
@@ -247,4 +251,107 @@ func kilo(n int64) string {
 		return fmt.Sprintf("%.0fk", float64(n)/1000)
 	}
 	return fmt.Sprint(n)
+}
+
+// armNames are the arms in the order the run named them, then any a row
+// names that the run's list lacks (a rescore with no results.json).
+func armNames(res Results) []string {
+	var out []string
+	for _, a := range res.Arms {
+		out = append(out, a.Name)
+	}
+	var extra []string
+	for _, r := range res.Rows {
+		if !slices.Contains(out, r.Arm) && !slices.Contains(extra, r.Arm) {
+			extra = append(extra, r.Arm)
+		}
+	}
+	sort.Strings(extra)
+	return append(out, extra...)
+}
+
+// flips is summary.md's opening section when the run has two arms or
+// more: each case whose pass differs between the arms on the same run, run
+// by run, so a comparison is read by which cases flipped before its totals.
+func flips(res Results) string {
+	arms := armNames(res)
+	if len(arms) < 2 {
+		return ""
+	}
+	type key struct {
+		k   string
+		run int
+	}
+	rows := map[key]map[string]Row{}
+	var keys []key
+	for _, r := range res.Rows {
+		kk := key{r.Case, r.Run}
+		if rows[kk] == nil {
+			rows[kk] = map[string]Row{}
+			keys = append(keys, kk)
+		}
+		rows[kk][r.Arm] = r
+	}
+	var lines []string
+	for _, kk := range keys {
+		var words []string
+		seen := map[bool]bool{}
+		for _, a := range arms {
+			// A cell that never ran or errored proves nothing either way.
+			r, ok := rows[kk][a]
+			switch {
+			case !ok:
+				words = append(words, a+" not run")
+			case r.Error != "":
+				words = append(words, a+" error")
+			case r.Pass:
+				words = append(words, a+" pass")
+			default:
+				words = append(words, a+" fail")
+			}
+			if ok && r.Error == "" {
+				seen[r.Pass] = true
+			}
+		}
+		if len(seen) == 2 {
+			lines = append(lines, fmt.Sprintf("- %s run %d: %s", kk.k, kk.run, strings.Join(words, ", ")))
+		}
+	}
+	if len(lines) == 0 {
+		return "## Flipped\n\nNo case flipped between the arms.\n\n"
+	}
+	return "## Flipped\n\n" + strings.Join(lines, "\n") + "\n\n"
+}
+
+// plantedPrefix names a review case's expectations, one per planted defect.
+const plantedPrefix = "caught_"
+
+// planted are the planted defects a row's reply named and missed, by name.
+func planted(r Row) (named, missed []string) {
+	for _, p := range r.Predicates {
+		id, ok := strings.CutPrefix(p.Name, plantedPrefix)
+		switch {
+		case !ok:
+		case p.OK:
+			named = append(named, id)
+		default:
+			missed = append(missed, id)
+		}
+	}
+	return named, missed
+}
+
+// plantedLines are a line per row of a case with planted defects: which
+// ones its reply named and which it missed.
+func plantedLines(rows []Row) []string {
+	var out []string
+	for _, r := range rows {
+		named, missed := planted(r)
+		if len(named)+len(missed) == 0 {
+			continue
+		}
+		out = append(out, fmt.Sprintf("- %s / %s #%d: named %d of %d [%s]; missed [%s]", r.Case, r.Arm, r.Run,
+			len(named), len(named)+len(missed), strings.Join(named, " "), strings.Join(missed, " ")))
+	}
+	return out
 }

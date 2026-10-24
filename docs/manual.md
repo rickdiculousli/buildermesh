@@ -3948,6 +3948,6 @@ To check a UI change:
 2. Run the printed `node scripts/check.mjs ... 390 844 shot.png`, and the same at `1280 800`.
 3. Run `scripts/seed.sh stop`.
 
-**`go run ./scripts/skilltest --arm <name>=<ref or dir> ...`** measures the plugin's skills: scripted operator asks, and a lead's build brief, run as headless Claude Code sessions, one arm per version of the plugin, each in a sandbox repo with a local origin and a fake `bmesh` first on PATH, and each cell is scored on what landed, what it ran, what it replied and how often it had to be steered (`scripts/skilltest/README.md`). Its Go tests check its scorers offline and run with the rest; no test starts a session.
+**`go run ./scripts/skilltest --arm <name>=<ref or dir> ...`** measures the plugin's skills and the review prompt `bmesh scaffold` seeds: scripted operator asks, a lead's build brief, the fix lead's brief and a review of a change with planted defects, run as headless Claude Code sessions, one arm per version of the plugin, twice each by default, each in a sandbox repo with a local origin and a fake `bmesh` first on PATH, and each cell is scored on what landed, what it ran, what it replied and how often it had to be steered, and its summary opens with the cases whose pass flipped between the arms (`scripts/skilltest/README.md`). Its Go tests check its scorers offline and run with the rest; no test starts a session.
 
 Internals: [internals](internals.md#testing)
