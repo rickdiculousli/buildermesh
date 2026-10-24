@@ -801,7 +801,7 @@ A failed start is the runner's error (exit 1 with one id), with the hold `--hold
 - Sized: `refused: spec NNN is ruled and sized <size> (reversible: anything sized L is proposed, never built); set it proposed`, for example `refused: spec NNN is ruled and sized L (reversible: anything sized L is proposed, never built); set it proposed`.
 - Fix chain: a spec's `fix_of` chain is each spec's `fix_of` (its first three-digit id) followed until a spec without one. Three deep is refused with `refused: spec NNN is fix 3 on one premise (NNN fixes MMM fixes KKK fixes JJJ) (premise: no third fix on one premise); set it proposed with the belief the fixes assumed`. Two deep builds.
 
-With several ids, the step 1 and 2 refusals above the `done` row refuse the command; from `done` down, each is that spec's line.
+With several ids, the rows above `Spec done` refuse the command before anything starts. A spec's own refusals (`Spec done` to `No --model`) and the node and start rows (`Live node at the path` to `Start failed`) are that spec's `not started` line instead (a live lead's is its `building` line), and the rest go on. Held prints its `held` line and exits 0; a red `main` or a failed setup refuses the command, as with one id.
 
 **Details.**
 
