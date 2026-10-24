@@ -130,10 +130,18 @@ func (a *app) cmdFeedbackList(args []string) error {
 	for _, f := range list {
 		fmt.Fprintln(a.stdout, feedbackLine(f, *repo != ""))
 	}
-	if *repo == "" && len(list) > 0 {
+	if *repo == "" && len(list) > 0 && !a.fixerFamily(ctx, pos[0]) {
 		a.drainSteps(pos[0])
 	}
 	return nil
+}
+
+// fixerFamily reports a family that is a fixer's (its path is the
+// fixer's node): what its fix leads left about other repos waits for the
+// operator, so no drain steps are said for it.
+func (a *app) fixerFamily(ctx context.Context, family string) bool {
+	n, ok, err := mesh.GetNode(ctx, a.client, family)
+	return err == nil && ok && n.Role == "fixer"
 }
 
 // drainSteps is how the coordinator rules on a family's feedback and

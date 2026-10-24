@@ -270,14 +270,24 @@ func TestFakeBuild(t *testing.T) {
 	if _, _, stderr := fake(t, dir, sandbox, "ideate", "shop"); !strings.HasPrefix(stderr, "next: bmesh watch --nodes shop-round-1 --timeout 30m,") {
 		t.Errorf("ideate's next line: %q", stderr)
 	}
+	done := "2026-10-24T10:00:00Z shop-012 done 012 landed at 3d5f7a9b\nwatch-done; next: bmesh feedback list shop-build-1\n"
+	if err := os.WriteFile(filepath.Join(dir, "canned", "watch"), []byte(done), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, stdout, _ := fake(t, dir, sandbox, "watch", "--nodes", "shop-012"); stdout != done {
+		t.Errorf("watch: %q, want the canned lines whole", stdout)
+	}
 	// An arm whose manual documents --accepted gets the canned answer.
-	old := "### `bmesh build`\n\n```\nbmesh build --accepted <repo> [--model M]\n```\n\n### `bmesh land`\n"
+	old := "### `bmesh build`\n\n```\nbmesh build --accepted <repo> [--model M]\n```\n\n### `bmesh land`\n\n### `bmesh watch`\n\nThe last line is `watch-done`.\n"
 	if err := os.WriteFile(filepath.Join(dir, "commands.txt"), []byte(strings.Join(commandsFromManual(old), "\n")+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	expect("no accepted specs in shop", 0, "build", "--accepted", "shop")
 	if _, _, stderr := fake(t, dir, sandbox, "build", "shop", "012"); stderr != "" {
 		t.Errorf("an arm whose manual has no next: lines got %q", stderr)
+	}
+	if _, stdout, _ := fake(t, dir, sandbox, "watch", "--nodes", "shop-012"); !strings.HasSuffix(stdout, "landed at 3d5f7a9b\nwatch-done\n") {
+		t.Errorf("watch on an arm whose manual has no next: lines: %q", stdout)
 	}
 	if _, stdout, _ := fake(t, dir, sandbox, "help"); strings.Contains(stdout, "--accepted") || !strings.Contains(stdout, "  build\n") {
 		t.Errorf("help lists:\n%s", stdout)

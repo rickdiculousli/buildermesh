@@ -101,6 +101,21 @@ func TestFeedbackPublishesWithTheNodesFamily(t *testing.T) {
 	if out, _, _ := runCLI(t, nil, "watch", "--nodes", "demo-007", "--timeout", "10s"); out != "watch-done\n" {
 		t.Fatalf("watch with nothing pending: %q", out)
 	}
+
+	// A fixer's family waits for the operator: no drain steps, and its
+	// leads' watch-done names none.
+	putNode(t, c, ctx, mesh.Node{Path: "buildermesh-fix-1", Role: "fixer", Family: "buildermesh-fix-1"})
+	putNode(t, c, ctx, mesh.Node{Path: "demo-008", Role: "lead", Repo: "demo", Spec: "008", Family: "buildermesh-fix-1"})
+	meshtest.ForceState(t, c, "demo-008", mesh.State{State: "done", By: "node"})
+	if _, errs, code := runCLI(t, as("demo-008"), "feedback", "the brief names a dead flag"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	if out, errs, code := runCLI(t, nil, "feedback", "list", "buildermesh-fix-1"); code != 0 || out == "" || errs != "" {
+		t.Fatalf("fixer's family: %d %q %q", code, out, errs)
+	}
+	if out, _, _ := runCLI(t, nil, "watch", "--nodes", "demo-008", "--timeout", "10s"); out != "watch-done\n" {
+		t.Fatalf("watch on a fixer's lead: %q", out)
+	}
 	if _, _, code := runCLI(t, nil, "feedback", "list", "a.b"); code != 2 {
 		t.Fatalf("bad family: %d", code)
 	}
