@@ -276,16 +276,6 @@ func (s *State) NewCommits() []string {
 	return strings.Fields(out)
 }
 
-// AddedSpecs are the files under docs/proposals/ that origin's main added
-// since the base.
-func (s *State) AddedSpecs() []string {
-	out, err := s.git("diff", "--name-only", "--diff-filter=A", s.Cell.Base, "refs/heads/main", "--", "docs/proposals/")
-	if err != nil {
-		return nil
-	}
-	return strings.Fields(out)
-}
-
 // ArmHas reports whether the cell's arm documents the command, as the
 // fake reads its commands.txt.
 func (s *State) ArmHas(cmd string) bool {

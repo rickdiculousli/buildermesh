@@ -43,6 +43,7 @@ func TestAuditThisSession(t *testing.T) {
 	}
 	for _, want := range []string{
 		"audit s-here (claude, ",
+		"ran in /nowhere; rules: unknown (/nowhere is gone or its checkout has no AGENTS.md)\n",
 		`said: here ("Making it here, XS: one line in cart.go")`,
 		"did: here (pushed to main, no new spec)\n",
 		"first action: Edit /r/cart.go, at context 52k; read before it:\n    file /r/cart.go (whole), 9 words\n",

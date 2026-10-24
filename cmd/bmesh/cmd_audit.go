@@ -69,7 +69,7 @@ func (a *app) cmdAudit(args []string) error {
 	if err != nil {
 		return err
 	}
-	au.Rules = rulesAt(au.Cwd)
+	au.Agents, au.Rules = rulesAt(au.Cwd)
 	if a.json {
 		return a.printJSON(au)
 	}
@@ -77,32 +77,36 @@ func (a *app) cmdAudit(args []string) error {
 	return nil
 }
 
-// rulesAt are the rule sets on the bmesh:rules marker of the AGENTS.md at
-// the top of dir's checkout; nil when dir is gone or has none.
-func rulesAt(dir string) []string {
+// rulesAt is the AGENTS.md at the top of dir's checkout and the rule sets
+// on its bmesh:rules marker; "" when dir is gone or its checkout has none.
+func rulesAt(dir string) (string, []string) {
 	if dir == "" {
-		return nil
+		return "", nil
 	}
 	top, err := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel").Output()
 	if err != nil {
-		return nil
+		return "", nil
 	}
-	b, err := os.ReadFile(filepath.Join(strings.TrimSpace(string(top)), scaffold.Agents))
+	p := filepath.Join(strings.TrimSpace(string(top)), scaffold.Agents)
+	b, err := os.ReadFile(p)
 	if err != nil {
-		return nil
+		return "", nil
 	}
 	sets, _ := scaffold.Rules(string(b))
-	return sets
+	return p, sets
 }
 
 func printAudit(a *app, au *audit.Audit) {
 	w := a.stdout
 	fmt.Fprintf(w, "audit %s (claude, %s)\n", short8(au.Session), au.Transcript)
 	rules := "none on its AGENTS.md's bmesh:rules marker"
-	if len(au.Rules) > 0 {
-		rules = strings.Join(au.Rules, ", ")
-	} else if au.Cwd == "" {
+	switch {
+	case au.Cwd == "":
 		rules = "unknown (no cwd in the transcript)"
+	case au.Agents == "":
+		rules = "unknown (" + au.Cwd + " is gone or its checkout has no AGENTS.md)"
+	case len(au.Rules) > 0:
+		rules = strings.Join(au.Rules, ", ")
 	}
 	fmt.Fprintf(w, "ran in %s; rules: %s\n", cmp.Or(au.Cwd, "an unknown dir"), rules)
 	fmt.Fprintf(w, "main thread: %d calls, context %s at the last, %s read; subagents: %d, %d calls, %s read\n",

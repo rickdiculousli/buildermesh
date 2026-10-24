@@ -1369,9 +1369,9 @@ Prints what a Claude Code session did, request by request, beside what it said i
 | its last reply ends on a question (its last paragraph has a `?`) and nothing was pushed | plan |
 | none of these | answer |
 
-Commands are read from the Bash calls the main thread made, with quotes, heredocs, redirects, `bash -c` and `ssh`'s command line taken as a shell takes them; a call whose result is an error did nothing. A named rung that differs from the implied one is printed as a `mismatch`, with both sides and the rule: a verdict to read, never a pass or a fail.
+Commands are read from the Bash calls the main thread made, and its subagents' (a change handed to a subagent is pushed from the subagent's transcript: its facts are the request's it started in, the newest that began before the subagent's first line), with quotes, heredocs, redirects, `bash -c` and `ssh`'s command line taken as a shell takes them; a call whose result is an error did nothing. A named rung that differs from the implied one is printed as a `mismatch`, with both sides and the rule: a verdict to read, never a pass or a fail.
 
-**What it read before it acted.** A request's first action is its first call that changes something: an Edit or Write, a `git commit` or `git push`, or a `bmesh` command that starts or changes something (every command but `--help` or `-h`, the reports `started`, `progress`, `ask`, `blocked` and `held`, and the reads: `mesh-status`, `inbox`, `watch`, `context`, `audit`, `whoami`, `thread-status`, `version`, `help`, `plugin`, `repos` and `repos show`, `hosts`, `hosts replies` and `hosts held`, `spec list`, `show`, `steps` (not with `--check`), `template` and `next-id`, `routine list` and `wait`, `executor list`, `feedback list`, `config`). Before it, each call's output, in words (whitespace-separated):
+**What it read before it acted.** A request's first action is its first call that changes something: an Edit or Write, a `git commit` or `git push`, or a `bmesh` command that starts or changes something (every command but one with `--help`, `-h`, `--dry-run` or `--check` (save `spec steps --check`, which ticks steps), the reports `started`, `progress`, `ask`, `blocked` and `held`, and the reads: `mesh-status`, `inbox`, `watch`, `context`, `audit`, `whoami`, `thread-status`, `version`, `help`, `plugin`, `repos` and `repos show`, `hosts`, `hosts replies`, `hosts held` and `hosts ping`, `spec list`, `show`, `steps` (not with `--check`), `template` and `next-id`, `routine list` and `wait`, `executor list`, `feedback list`, `config` and `config check`). Before it, each call's output, in words (whitespace-separated):
 
 - a skill loaded: its name and the words of its text;
 - a file read: the Read tool's, or a Bash call that is only one `cat`, `sed -n 'a,bp'`, `head` or `tail` of one file: its path, `whole` or the lines, and its words;
@@ -1380,7 +1380,7 @@ Commands are read from the Bash calls the main thread made, with quotes, heredoc
 
 With the context, in tokens, of the model call that took the action.
 
-**The rules it had**: the rule sets on the `bmesh:rules` marker of the `AGENTS.md` at the top of the checkout the session ran in (the transcript's first `cwd`); a customized block's, from the sets its body says it came from.
+**The rules it had**: the rule sets on the `bmesh:rules` marker of the `AGENTS.md` at the top of the checkout the session ran in (the transcript's first `cwd`); a customized block's, from the sets its body says it came from. When that checkout is gone (a worktree removed after the session) or has no `AGENTS.md`, the rules read `unknown (<cwd> is gone or its checkout has no AGENTS.md)`.
 
 **Output.**
 
@@ -1400,7 +1400,7 @@ turn 1 2026-10-24T18:56:22.753Z "the cart total shows -5.00 when the cart is emp
     other tool output: 3 calls, 120 words
 ```
 
-A mismatch ends the `did:` line: `did: plan (the last reply ends on a question, nothing pushed); mismatch: said here, did plan`. A request with no action reads `no action that changes something; read:`. `--json` prints the record: `session`, `transcript`, `cwd`, `rules`, `calls`, `tokens`, `read`, `subagents` (`count`, `calls`, `read`) and `turns`, each with `n`, `at`, `words`, `named` and `named_line` (when named), `implied`, `rule`, `mismatch` (when true), `facts` (`Leads`, `Round`, `PushedMain`, `NewSpec`, `EndsAsking`), `read` (`kind` `skill`, `file` or `bmesh`, `name`, `range`, `words`), `other` (`calls`, `words`), `acted` and `context` (when it acted).
+A mismatch ends the `did:` line: `did: plan (the last reply ends on a question, nothing pushed); mismatch: said here, did plan`. A request with no action reads `no action that changes something; read:`. `--json` prints the record: `session`, `transcript`, `cwd`, `agents` (the `AGENTS.md` read, when there is one), `rules`, `calls`, `tokens`, `read`, `subagents` (`count`, `calls`, `read`) and `turns`, each with `n`, `at`, `words`, `named` and `named_line` (when named), `implied`, `rule`, `mismatch` (when true), `facts` (`Leads`, `Round`, `PushedMain`, `NewSpec`, `EndsAsking`), `read` (`kind` `skill`, `file` or `bmesh`, `name`, `range`, `words`), `other` (`calls`, `words`), `acted` and `context` (when it acted).
 
 With no argument and no session it can read: `audit: no session bmesh can read (Claude Code names its session in CLAUDE_CODE_SESSION_ID)`, exit 0.
 

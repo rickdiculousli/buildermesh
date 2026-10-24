@@ -16,11 +16,12 @@ import (
 type Audit struct {
 	Session    string    `json:"session"`
 	Transcript string    `json:"transcript"`
-	Cwd        string    `json:"cwd,omitempty"`   // where the session ran, from its first line that names one
-	Rules      []string  `json:"rules,omitempty"` // the rule sets on the bmesh:rules marker of Cwd's AGENTS.md, filled by the caller
-	Calls      int       `json:"calls"`           // the main thread's model calls
-	Tokens     int       `json:"tokens"`          // its context at its newest call
-	Read       int64     `json:"read"`            // what its calls read, summed
+	Cwd        string    `json:"cwd,omitempty"`    // where the session ran, from its first line that names one
+	Agents     string    `json:"agents,omitempty"` // the AGENTS.md at the top of Cwd's checkout, when there is one, filled by the caller
+	Rules      []string  `json:"rules,omitempty"`  // the rule sets on its bmesh:rules marker
+	Calls      int       `json:"calls"`            // the main thread's model calls
+	Tokens     int       `json:"tokens"`           // its context at its newest call
+	Read       int64     `json:"read"`             // what its calls read, summed
 	Subagents  Subagents `json:"subagents"`
 	Turns      []Turn    `json:"turns"`
 }
@@ -182,11 +183,24 @@ func File(path string) (*Audit, error) {
 		if err != nil {
 			continue
 		}
-		calls, read := spend(sf)
+		sub := subagent(sf)
 		sf.Close()
 		a.Subagents.Count++
-		a.Subagents.Calls += calls
-		a.Subagents.Read += read
+		a.Subagents.Calls += sub.calls
+		a.Subagents.Read += sub.read
+		// A subagent's facts are the turn's it started in (the newest that
+		// began at or before its first line): a change handed to one is
+		// pushed from its transcript.
+		for i := len(a.Turns) - 1; i >= 0; i-- {
+			if t := &a.Turns[i]; sub.first != "" && t.At <= sub.first {
+				t.Facts.Leads = t.Facts.Leads || sub.facts.Leads
+				t.Facts.Round = t.Facts.Round || sub.facts.Round
+				t.Facts.PushedMain = t.Facts.PushedMain || sub.facts.PushedMain
+				t.Facts.NewSpec = t.Facts.NewSpec || sub.facts.NewSpec
+				judge(t)
+				break
+			}
+		}
 	}
 	return a, nil
 }
@@ -214,17 +228,31 @@ func each(r io.Reader, f func(line)) error {
 	}
 }
 
-// spend is a subagent transcript's model calls and what they read.
-func spend(r io.Reader) (calls int, read int64) {
+// sub is what a subagent's transcript says: its model calls, what they
+// read, the facts its tool calls bear out and its first line's time.
+type sub struct {
+	calls int
+	read  int64
+	facts Facts
+	first string
+}
+
+func subagent(r io.Reader) sub {
+	var s sub
 	seen := map[string]bool{}
+	uses := map[string]*use{}
 	each(r, func(l line) {
+		if s.first == "" {
+			s.first = l.Timestamp
+		}
 		if l.Type == "assistant" && l.context() > 0 && !seen[l.Message.ID] {
 			seen[l.Message.ID] = l.Message.ID != ""
-			calls++
-			read += int64(l.context())
+			s.calls++
+			s.read += int64(l.context())
 		}
+		toolFacts(l, uses, &s.facts)
 	})
-	return calls, read
+	return s
 }
 
 // Transcript reads a Claude Code transcript: the turns of its main thread
@@ -233,7 +261,7 @@ func Transcript(r io.Reader) (*Audit, error) {
 	a := &Audit{Turns: []Turn{}}
 	var t *Turn
 	var texts []string
-	uses := map[string]*use{}
+	uses, sideUses := map[string]*use{}, map[string]*use{}
 	seen := map[string]bool{}
 	ctx := 0
 	end := func() {
@@ -263,6 +291,10 @@ func Transcript(r io.Reader) (*Audit, error) {
 			}
 		}
 		if l.IsSidechain {
+			// A subagent's push lands the session's change: its turn's.
+			if t != nil {
+				toolFacts(l, sideUses, &t.Facts)
+			}
 			return
 		}
 		if l.Type == "assistant" && l.context() > 0 {
@@ -345,29 +377,10 @@ func result(t *Turn, u *use, b content, raw json.RawMessage) {
 			u.before = false
 		}
 	}
+	if !b.IsError {
+		takeFacts(&t.Facts, u, b)
+	}
 	cmd, _ := u.input["command"].(string)
-	if u.name == "Bash" && !b.IsError {
-		for _, c := range bmeshCalls(cmd) {
-			switch {
-			case c.cmd == "build" || c.cmd == "lead" && c.sub() == "start":
-				t.Facts.Leads = true
-			case c.cmd == "ideate":
-				t.Facts.Round = true
-			}
-		}
-		if pushesMain(cmd) {
-			t.Facts.PushedMain = true
-		}
-		if strings.Contains(cmd, "docs/proposals/") && newSpec(cmd) {
-			t.Facts.NewSpec = true
-		}
-	}
-	if u.name == "Write" && !b.IsError {
-		p, _ := u.input["file_path"].(string)
-		if strings.Contains(filepath.ToSlash(p), "docs/proposals/") && strings.Contains(resultText(b.Content), "created") {
-			t.Facts.NewSpec = true
-		}
-	}
 	if !u.before {
 		return
 	}
@@ -422,6 +435,48 @@ func result(t *Turn, u *use, b content, raw json.RawMessage) {
 // specWrite is a redirect into a spec file under docs/proposals/.
 var specWrite = regexp.MustCompile(`>\s*['"]?[^\s'";&|]*docs/proposals/[^\s'";&|/]+\.md`)
 
+// takeFacts sets the facts a call that succeeded bears out: a bmesh build
+// or lead start, an ideate, a push to main, a new spec.
+func takeFacts(f *Facts, u *use, b content) {
+	cmd, _ := u.input["command"].(string)
+	if u.name == "Bash" {
+		for _, c := range bmeshCalls(cmd) {
+			switch {
+			case c.cmd == "build" || c.cmd == "lead" && c.sub() == "start":
+				f.Leads = true
+			case c.cmd == "ideate":
+				f.Round = true
+			}
+		}
+		f.PushedMain = f.PushedMain || pushesMain(cmd)
+		f.NewSpec = f.NewSpec || strings.Contains(cmd, "docs/proposals/") && newSpec(cmd)
+	}
+	if u.name == "Write" {
+		p, _ := u.input["file_path"].(string)
+		if strings.Contains(filepath.ToSlash(p), "docs/proposals/") && strings.Contains(resultText(b.Content), "created") {
+			f.NewSpec = true
+		}
+	}
+}
+
+// toolFacts calls f with each tool call of l and each result of l with its
+// call: what a subagent's lines need, its facts and nothing it read.
+func toolFacts(l line, uses map[string]*use, f *Facts) {
+	blocks, _ := l.blocks()
+	for _, b := range blocks {
+		switch {
+		case l.Type == "assistant" && b.Type == "tool_use":
+			u := &use{name: b.Name}
+			json.Unmarshal(b.Input, &u.input)
+			uses[b.ID] = u
+		case l.Type == "user" && b.Type == "tool_result" && !b.IsError:
+			if u := uses[b.ToolUseID]; u != nil {
+				takeFacts(f, u, b)
+			}
+		}
+	}
+}
+
 // newSpec reports whether a command line writes a file under
 // docs/proposals/ through a redirect, cp or mv, as a new spec is made from
 // `bmesh spec template`.
@@ -469,6 +524,11 @@ func finish(t *Turn, texts []string) {
 	if len(texts) > 0 {
 		t.Facts.EndsAsking = EndsAsking(texts[len(texts)-1])
 	}
+	judge(t)
+}
+
+// judge sets a turn's implied rung from its facts, and the mismatch.
+func judge(t *Turn) {
 	t.Implied, t.Rule = Implied(t.Facts)
 	t.Mismatch = t.Named != "" && t.Named != t.Implied
 }

@@ -241,17 +241,17 @@ var reads = map[string][]string{
 	"mesh-status": nil, "inbox": nil, "watch": nil, "context": nil, "audit": nil,
 	"whoami": nil, "thread-status": nil, "version": nil, "help": nil, "plugin": nil,
 	"repos":    {"", "show"},
-	"hosts":    {"", "replies", "held"},
+	"hosts":    {"", "replies", "held", "ping"},
 	"spec":     {"list", "show", "steps", "template", "next-id"},
 	"routine":  {"list", "wait"},
 	"executor": {"list"},
 	"feedback": {"list"},
-	"config":   {"", "get", "show"},
+	"config":   {"", "get", "show", "check"},
 }
 
 // acts reports whether c starts or changes something.
 func (c call) acts() bool {
-	if slices.Contains(reports, c.cmd) || c.has("help") || c.has("h") {
+	if slices.Contains(reports, c.cmd) || c.has("help") || c.has("h") || c.has("dry-run") || c.has("check") && c.cmd != "spec" {
 		return false
 	}
 	subs, ok := reads[c.cmd]

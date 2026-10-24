@@ -508,7 +508,7 @@ The reading is the main thread's when a model call was in flight, or when a `too
 
 Shell command lines are split by a small lexer (`shell.go`): single and double quotes, `\`, `#` comments, heredoc bodies (to the line that is the delimiter), redirects and their targets (`2>&1`, `>/dev/null`) dropped, `;`, `&&`, `||`, `|`, `&`, `(`, `)` and newlines ending a command; leading `VAR=value`, `env`, `nohup`, `time`, `exec` and `timeout <d>` dropped; `bash`/`sh`/`zsh -c`'s argument and `ssh`'s last word split again. A `bmesh` word's global flags (`--node`, `--config` with a value, `--json`) are skipped to find its command; the word after a command with subcommands is its subcommand. `$(...)` and backticks are not expanded.
 
-Token totals are summed over model calls, one per `message.id`: the main thread's, and its subagents' (`isSidechain` lines and `<id>/subagents/*.jsonl`) apart.
+Token totals are summed over model calls, one per `message.id`: the main thread's, and its subagents' (`isSidechain` lines and `<id>/subagents/*.jsonl`) apart. A subagent's successful calls set facts as the main thread's do (step 3): an `isSidechain` line's for the turn it is read in, a subagent file's for the newest turn whose first line's `timestamp` is at or before the file's first, whose implied rung is then judged again. What a subagent read is not listed.
 
 ## Config
 

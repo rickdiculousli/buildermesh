@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -77,5 +78,38 @@ func TestTranscriptLines(t *testing.T) {
 	tn := a.Turns[0]
 	if tn.Acted != "" || tn.Named != Answer || tn.Implied != Answer || tn.Mismatch || len(tn.Read) != 1 || tn.Read[0].Name != "nope" {
 		t.Fatalf("%+v", tn)
+	}
+}
+
+// A change handed to a subagent is pushed from its transcript: the push is
+// the turn's it ran in, so a rung-3 reply reads as made here.
+func TestSubagentPush(t *testing.T) {
+	dir := t.TempDir()
+	main := filepath.Join(dir, "s1.jsonl")
+	write := func(p string, lines ...string) {
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(main,
+		`{"type":"user","uuid":"u1","timestamp":"2026-10-24T10:00:00Z","message":{"role":"user","content":"fix the total"}}`,
+		`{"type":"assistant","uuid":"a1","message":{"id":"m1","content":[{"type":"text","text":"Making it here, XS: one line in cart.go"}],"usage":{"input_tokens":1,"cache_read_input_tokens":100,"cache_creation_input_tokens":0}}}`,
+		`{"type":"user","uuid":"u2","timestamp":"2026-10-24T11:00:00Z","message":{"role":"user","content":"thanks"}}`,
+	)
+	write(filepath.Join(dir, "s1", "subagents", "agent-a.jsonl"),
+		`{"type":"user","uuid":"x0","isSidechain":true,"timestamp":"2026-10-24T10:01:00Z","message":{"role":"user","content":"make it"}}`,
+		`{"type":"assistant","uuid":"x1","isSidechain":true,"message":{"id":"n1","content":[{"type":"tool_use","id":"b1","name":"Bash","input":{"command":"git push origin HEAD:main"}}],"usage":{"input_tokens":7,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}`,
+		`{"type":"user","uuid":"x2","isSidechain":true,"message":{"content":[{"type":"tool_result","tool_use_id":"b1","content":"","is_error":false}]}}`,
+	)
+	a, err := File(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(a.Turns) != 2 || a.Subagents.Count != 1 || a.Subagents.Calls != 1 || a.Subagents.Read != 7 {
+		t.Fatalf("%+v", a)
+	}
+	if t1, t2 := a.Turns[0], a.Turns[1]; t1.Implied != Here || t1.Mismatch || t2.Facts.PushedMain {
+		t.Fatalf("turn 1 %+v; turn 2 %+v", t1, t2)
 	}
 }
