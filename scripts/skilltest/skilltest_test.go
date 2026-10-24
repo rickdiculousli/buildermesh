@@ -263,18 +263,61 @@ func TestFakeBuild(t *testing.T) {
 	}
 }
 
-// fakeCell is a cell set up for the bug case on an arm of this repo.
-func fakeCell(t *testing.T) (string, string) {
-	t.Helper()
-	need(t, "git", "go", "sh")
-	root := repoRoot(t)
-	manual, err := os.ReadFile(filepath.Join(root, "docs", "manual.md"))
+// A call the fake refused did nothing, so it scores as nothing: in pick,
+// with 012 and 014 accepted, build --accepted builds them only on an arm whose manual
+// has --accepted; on one that dropped it, the refused call builds none.
+func TestRefusedCallsScoreNothing(t *testing.T) {
+	manual, err := os.ReadFile(filepath.Join(repoRoot(t), "docs", "manual.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	old := "### `bmesh build`\n\n```\nbmesh build --accepted <repo> [--model M]\n```\n\n### `bmesh spec`\n"
+	for _, arm := range []struct {
+		name, manual string
+		exit         int
+		pass         bool
+	}{{"this manual", string(manual), 2, false}, {"a manual with --accepted", old, 0, true}} {
+		dir, _ := caseCell(t, "pick", arm.manual)
+		sandbox := filepath.Join(dir, sandboxDir)
+		if code, out, errs := fake(t, dir, sandbox, "spec", "set", "--id", "12,14", "--status", "accepted"); code != 0 {
+			t.Fatalf("%s: spec set: exit %d: %s%s", arm.name, code, out, errs)
+		}
+		if code, _, _ := fake(t, dir, sandbox, "build", "--accepted", "shop"); code != arm.exit {
+			t.Errorf("%s: build --accepted exit %d, want %d", arm.name, code, arm.exit)
+		}
+		calls, err := readCalls(filepath.Join(dir, logFile))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(calls) != 2 || calls[0].Exit != 0 || calls[1].Exit != arm.exit {
+			t.Errorf("%s: calls %+v", arm.name, calls)
+		}
+		s := &State{Dir: dir, Calls: calls, memo: map[string]check{}}
+		if ok, why := built(pickPitch, "012", "014").Check(s); ok != arm.pass {
+			t.Errorf("%s: built_012_014 %v (%s), want %v", arm.name, ok, why, arm.pass)
+		}
+	}
+}
+
+// fakeCell is a cell set up for the bug case on an arm of this repo.
+func fakeCell(t *testing.T) (string, string) {
+	t.Helper()
+	manual, err := os.ReadFile(filepath.Join(repoRoot(t), "docs", "manual.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return caseCell(t, "bug", string(manual))
+}
+
+// caseCell is a cell set up for the case on an arm of this repo whose
+// manual is the one given.
+func caseCell(t *testing.T, name, manual string) (string, string) {
+	t.Helper()
+	need(t, "git", "go", "sh")
+	root := repoRoot(t)
 	dir := t.TempDir()
-	arm := Arm{Name: "test", Dir: root, Commands: commandsFromManual(string(manual))}
-	cs, err := setupCell(dir, findCase("bug"), arm, testFixture(t), thisBox(), time.Now())
+	arm := Arm{Name: "test", Dir: root, Commands: commandsFromManual(manual)}
+	cs, err := setupCell(dir, findCase(name), arm, testFixture(t), thisBox(), time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,7 +413,7 @@ func TestFake(t *testing.T) {
 	expect("verify fail t:"+tree[:8], 1, "routine", "run", "verify")
 	expect("kind review is pooled", 3, "routine", "run", "review")
 
-	// Every call is logged with its cwd, its arguments whole.
+	// Every call is logged with its exit status, its cwd, its arguments whole.
 	odd := "a\tb\nc \\ d"
 	fake(t, dir, sandbox, "send", "shop-012", odd)
 	calls, err := readCalls(filepath.Join(dir, logFile))
@@ -378,8 +421,11 @@ func TestFake(t *testing.T) {
 		t.Fatal(err)
 	}
 	last := calls[len(calls)-1]
-	if last.Cwd != sandbox || !reflect.DeepEqual(last.Args, []string{"send", "shop-012", odd}) {
+	if last.Cwd != sandbox || !reflect.DeepEqual(last.Args, []string{"send", "shop-012", odd}) || !last.OK() {
 		t.Errorf("last call %+v", last)
+	}
+	if prev := calls[len(calls)-2]; prev.String() != "routine run review" || prev.Exit != 3 {
+		t.Errorf("a refused call is logged %+v, want its exit 3", prev)
 	}
 	if calls[0].String() != "repos show shop" || !calls[1].Is("repos", "show") {
 		t.Errorf("first calls %v, %v", calls[0], calls[1])

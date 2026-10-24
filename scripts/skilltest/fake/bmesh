@@ -1,8 +1,9 @@
 #!/bin/sh
 # bmesh, faked for scripts/skilltest. A cell puts this first on PATH, so a
 # session under test reaches no mesh, repo or thread: nothing it answers is
-# real. Each call appends one line to $SKILLTEST_LOG: the cwd, then each
-# argument, tab-separated, with \, a tab and a newline written \\, \t and \n.
+# real. Each call appends one line to $SKILLTEST_LOG as it exits: its exit
+# status, the cwd, then each argument, tab-separated, with \, a tab and a
+# newline written \\, \t and \n.
 # It reads the cell's files under $SKILLTEST_CELL: fake.env (the row's name
 # and path, this box's name, and in a lead's cell its node, worktree and
 # spec), commands.txt (the arm's commands), canned/ (the case's outputs, by
@@ -28,7 +29,12 @@ line=$(esc "$PWD")
 for a in "$@"; do
 	line="$line	$(esc "$a")"
 done
-printf '%s\n' "$line" >>"$log"
+# The line is written on the way out, with the status the call exits with;
+# a signal is an exit too, so a killed call is still logged.
+trap 'printf "%s\t%s\n" $? "$line" >>"$log"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 usage() {
 	echo 'usage: bmesh [--config FILE] [--node PATH] [--json] <command> [args]'

@@ -315,6 +315,9 @@ func mustAtoi(s string) int {
 func (p pitchIDs) moves(s *State) (status map[string]string, built map[string]bool) {
 	status, built = map[string]string{}, map[string]bool{}
 	for _, c := range s.AgentCalls() {
+		if !c.OK() {
+			continue // refused: it moved and built nothing
+		}
 		cmd, rest := c.Cmd()
 		switch {
 		case cmd == "choose-ideas":
@@ -445,7 +448,7 @@ func onlyTouches(name, glob string) Pred {
 func called(name string, words []string, args []string, without ...string) Pred {
 	return Pred{name, func(s *State) (bool, string) {
 		for _, c := range s.AgentCalls() {
-			if !c.Is(words...) {
+			if !c.OK() || !c.Is(words...) {
 				continue
 			}
 			_, rest := c.Cmd()

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,9 +17,14 @@ import (
 
 // Call is one call of the fake bmesh, from its log.
 type Call struct {
+	Exit int // the status it exited with; 0 in a log from before the fake wrote it
 	Cwd  string
 	Args []string
 }
+
+// OK reports whether the call succeeded: a call the fake refused (an
+// unknown command or flag, a refusal the binary makes) did nothing.
+func (c Call) OK() bool { return c.Exit == 0 }
 
 // valueFlags are the global flags that take a value; --json takes none.
 var valueFlags = map[string]bool{"config": true, "node": true}
@@ -132,9 +138,9 @@ func unescapeField(s string) string {
 	return b.String()
 }
 
-// logLine is one call as the fake logs it.
+// logLine is one call that succeeded, as the fake logs it.
 func logLine(cwd string, args ...string) string {
-	f := []string{escapeField(cwd)}
+	f := []string{"0", escapeField(cwd)}
 	for _, a := range args {
 		f = append(f, escapeField(a))
 	}
@@ -155,7 +161,13 @@ func readCalls(file string) ([]Call, error) {
 			continue
 		}
 		f := strings.Split(line, "\t")
-		c := Call{Cwd: unescapeField(f[0])}
+		c := Call{}
+		// The status leads the line; a cwd is never all digits, so a log
+		// from before the fake wrote it reads as calls that succeeded.
+		if n, err := strconv.Atoi(f[0]); err == nil && len(f) > 1 {
+			c.Exit, f = n, f[1:]
+		}
+		c.Cwd = unescapeField(f[0])
 		for _, a := range f[1:] {
 			c.Args = append(c.Args, unescapeField(a))
 		}
