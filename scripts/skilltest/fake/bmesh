@@ -7,7 +7,8 @@
 # It reads the cell's files under $SKILLTEST_CELL: fake.env (the row's name
 # and path, this box's name, and in a lead's or a round's cell its node,
 # worktree and a lead's spec), commands.txt (the arm's commands), canned/ (the case's outputs, by
-# command) and state/ (counters, and the commits its land pushed).
+# command) and state/ (counters, the commits its land pushed, and in
+# pushed the commits it landed for a ledger write or another node).
 
 cell=${SKILLTEST_CELL:?SKILLTEST_CELL is not set}
 log=${SKILLTEST_LOG:-$cell/bmesh.log}
@@ -145,8 +146,6 @@ next() {
 
 uuid() { printf '5e7a%04d-0000-4000-8000-%012d\n' "$1" "$1"; }
 
-fakesha() { od -An -N20 -tx1 /dev/urandom | tr -d ' \n'; }
-
 sha8() { git ${2:+-C "$2"} rev-parse --verify -q "$1^{commit}" 2>/dev/null | cut -c1-8; }
 
 pad() {
@@ -155,6 +154,52 @@ pad() {
 	*[!0-9]*) printf '%s' "$1" ;;
 	*) printf '%03d' "${n:-0}" ;;
 	esac
+}
+
+# opts NAME ARGS...: every value of --NAME, one per line.
+opts() {
+	name=$1
+	shift
+	while [ $# -gt 0 ]; do
+		case $1 in
+		--"$name" | -"$name") [ $# -gt 1 ] && printf '%s\n' "$2" && shift ;;
+		--"$name"=* | -"$name"=*) printf '%s\n' "${1#*=}" ;;
+		esac
+		shift
+	done
+}
+
+# follow: the main checkout fast-forwarded to origin's main, as the binary
+# has it follow a landing (a pull when it is on main, else a fetch into
+# main); one that can't follow is left as it is.
+follow() {
+	if [ "$(git -C "$repo_path" branch --show-current 2>/dev/null)" = main ]; then
+		git -C "$repo_path" pull -q --ff-only origin main
+	else
+		git -C "$repo_path" fetch -q origin main:main
+	fi >/dev/null 2>&1 || :
+}
+
+# onmain MSG CMD [ARGS...]: a landing the fake makes for a ledger write or
+# for another node, as the binary or that node makes it: CMD run in a fresh
+# clone of origin's main, committed as MSG and pushed there, the main
+# checkout following. It prints the commit's sha8 and keeps the commit in
+# state/pushed, which scoring leaves out of the session's work.
+onmain() {
+	msg=$1
+	shift
+	clone=$state/clone
+	rm -rf "$clone"
+	ok=1
+	if git clone -q "$cell/origin.git" "$clone" 2>/dev/null && (cd "$clone" && "$@") && git -C "$clone" add -A &&
+		git -C "$clone" commit -qm "$msg" && git -C "$clone" push -q origin HEAD:main 2>/dev/null; then
+		git -C "$clone" rev-parse HEAD >>"$state/pushed"
+		sha8 HEAD "$clone"
+		follow
+		ok=0
+	fi
+	rm -rf "$clone"
+	return $ok
 }
 
 # repodir [R]: the row's path for its name, R itself for a path, else this
@@ -273,6 +318,7 @@ fake_spec() {
 	set)
 		ids=$(opt id "$@" | tr ',' ' ')
 		st=$(opt status "$@")
+		fields=$(opts field "$@")
 		dir=$(repodir "$(opt repo "$@")")
 		for id in $ids; do
 			id=$(pad "$id")
@@ -290,17 +336,22 @@ fake_spec() {
 		for id in $ids; do
 			id=$(pad "$id")
 			# Without --land the checkout's files are edited, as the binary
-			# edits them; with it the edit is a ledger commit, faked.
-			has land "$@" || setstatus "$(specfile "$dir" "$id")" "$st"
+			# edits them; with it the edit lands on origin's main below.
+			has land "$@" || setspec "$(specfile "$dir" "$id")"
 			row=$(grep "^$id " "$canned/spec-list")
 			printf '%s  %-9s  %s\n' "$id" "$st" "$(printf '%s' "$row" | cut -c17-)"
 			landed=${landed:+$landed, }$id
 		done
 		if has land "$@"; then
 			case $landed in
-			*,*) echo "landed $(fakesha | cut -c1-8) on main: Specs $landed: $st" ;;
-			*) echo "landed $(fakesha | cut -c1-8) on main: Spec $landed: $st" ;;
+			*,*) msg="Specs $landed: $st" ;;
+			*) msg="Spec $landed: $st" ;;
 			esac
+			if ! s=$(onmain "$msg" setspecs); then
+				echo "bmesh: refused: push main: origin's main moved; run bmesh spec set --land again" >&2
+				exit 3
+			fi
+			echo "landed $s on main: $msg"
 		fi
 		;;
 	esac
@@ -316,9 +367,29 @@ specrow() {
 # specfile DIR ID: the spec's file in the checkout at DIR, if it has one.
 specfile() { ls "$1"/docs/proposals/"$2"-*.md 2>/dev/null | sed -n 1p; }
 
-# setstatus FILE STATUS: the frontmatter's status line rewritten.
-setstatus() {
-	awk -v st="$2" '/^---$/ { n++ } n == 1 && /^status:/ { print "status: " st; next } { print }' "$1" >"$1.fake" && mv "$1.fake" "$1"
+# setfield FILE KEY VALUE: the frontmatter's KEY line rewritten, or added
+# last when it has none, as the binary writes a field.
+setfield() {
+	awk -v k="$2" -v v="$3" '/^---$/ { n++; if (n == 2 && !set) print k ": " v; print; next }
+		n == 1 && index($0, k ":") == 1 { print k ": " v; set = 1; next } { print }' "$1" >"$1.fake" && mv "$1.fake" "$1"
+}
+
+# setspec FILE: spec set's edit of one file: the status $st and each
+# --field in $fields.
+setspec() {
+	setfield "$1" status "$st" || return 1
+	printf '%s\n' "$fields" | while IFS= read -r kv; do
+		[ -z "$kv" ] || setfield "$1" "${kv%%=*}" "${kv#*=}" || exit 1
+	done
+}
+
+# setspecs: spec set --land's edit, in a clone of origin's main: each id in
+# $ids.
+setspecs() {
+	for id in $ids; do
+		f=$(specfile . "$(pad "$id")")
+		[ -n "$f" ] && setspec "$f" || return 1
+	done
 }
 
 # specstatus FILE: the frontmatter's status.
@@ -705,27 +776,85 @@ fake_feedback_drain() {
 	echo "drained $n from $f"
 }
 
-# fake_watch: the case's canned watch. When the case cans watch-land (a
-# spec id), the lead it watches lands first, once, as a lead's land does:
-# a commit on origin's main that sets the spec done, whose sha8 stands in
-# for @LANDED@ in the watch's lines, so a done line names a real commit.
+# fake_watch: the case's canned watch. When the case cans watch-land (spec
+# ids), what it watches lands first, once: each id with a spec on origin's
+# main is a lead's, landed as its land does, a commit setting the spec done
+# whose sha8 stands in for @LANDED@ on that id's done line; the ids with
+# none are a round's, its pitch lines landed as proposed specs in one
+# commit, as the round's thread lands them.
 fake_watch() {
-	landed=$(cat "$state/watch-landed" 2>/dev/null)
-	if [ -z "$landed" ] && [ -f "$canned/watch-land" ]; then
-		id=$(pad "$(cat "$canned/watch-land")")
-		clone=$state/watch-clone
-		rm -rf "$clone"
-		if git clone -q "$cell/origin.git" "$clone" 2>/dev/null && f=$(specfile "$clone" "$id") && [ -n "$f" ]; then
-			setstatus "$f" done
-			git -C "$clone" commit -qam "$(spectitle "$id")
+	if [ ! -f "$state/watch-landed" ] && [ -f "$canned/watch-land" ]; then
+		: >"$state/watch-landed"
+		new=
+		for id in $(cat "$canned/watch-land"); do
+			id=$(pad "$id")
+			f=$(git --git-dir "$cell/origin.git" ls-tree --name-only main -- docs/proposals/ | grep "/$id-[^/]*\.md$" | sed -n 1p)
+			if [ -n "$f" ]; then
+				s=$(onmain "$(spectitle "$id")
 
-Spec: $id" && git -C "$clone" push -q origin HEAD:main 2>/dev/null &&
-				landed=$(sha8 HEAD "$clone") && echo "$landed" >"$state/watch-landed"
-		fi
-		rm -rf "$clone"
+Spec: $id" setfield "$f" status done) && echo "$id $s" >>"$state/watch-landed"
+			else
+				new=${new:+$new, }$id
+			fi
+		done
+		[ -z "$new" ] || onmain "Proposals $new: proposed" proposespecs >/dev/null
 	fi
 	# An arm whose manual has no next: on watch-done gets the bare line.
-	if saysnext watch; then out watch; else out watch | sed 's/^watch-done; next: .*/watch-done/'; fi | sed "s/@LANDED@/${landed:-00000000}/g"
+	if saysnext watch; then out watch; else out watch | sed 's/^watch-done; next: .*/watch-done/'; fi | {
+		script=
+		[ ! -f "$state/watch-landed" ] || while read -r id s; do
+			script="$script/ done $id /s/@LANDED@/$s/;"
+		done <"$state/watch-landed"
+		sed -e "${script}s/@LANDED@/00000000/g"
+	}
+}
+
+# proposespecs: a round's landing, in a clone of origin's main: a proposed
+# spec for each id in $new, from its line of the watch's pitch
+# (`NNN title (kind, size, judge): why`).
+proposespecs() {
+	for id in $(echo "$new" | tr ',' ' '); do
+		text=$(out watch | awk -v id="$id" '{ p = index(" " $0, " " id " "); if (!p) next
+			r = substr($0, p + length(id) + 1)
+			if (!match(r, / \([a-z]+, [A-Z]+, [a-z]+\): /)) next
+			split(substr(r, RSTART + 2, RLENGTH - 5), f, ", ")
+			printf "---\nid: %s\ntitle: %s\nkind: %s\nsize: %s\njudge: %s\nstatus: proposed\nlens: eng\n---\n\n## Opportunity\n%s\n", id, substr(r, 1, RSTART - 1), f[1], f[2], f[3], substr(r, RSTART + RLENGTH)
+			exit }')
+		[ -n "$text" ] || continue
+		slug=$(printf '%s\n' "$text" | sed -n 's/^title: //p' | tr 'A-Z' 'a-z' | sed -e 's/[^a-z0-9][^a-z0-9]*/-/g' -e 's/^-//' | cut -c1-48 | sed 's/-$//')
+		printf '%s\n' "$text" >"docs/proposals/$id-$slug.md"
+	done
+}
+
+# fake_choose_ideas: the case's canned choose-ideas, its moves
+# (`NNN title: proposed -> <status>`) landed on origin's main, a
+# rejection's --reject NNN=<reason> written as its reason, and the landed
+# line naming that commit.
+fake_choose_ideas() {
+	text=$(out choose-ideas) || {
+		echo "nothing to land"
+		return 0
+	}
+	rejects=$(opts reject "$@")
+	moves=$(printf '%s\n' "$text" | sed -n 's/^\([0-9][0-9]*\) .*: proposed -> \([a-z]*\)$/\1 \2/p')
+	msg=$(printf '%s\n' "$text" | sed -n 's/^landed [0-9a-f]* on main: //p')
+	if ! s=$(onmain "$msg" choose); then
+		echo "bmesh: refused: push main: origin's main moved; run bmesh choose-ideas again" >&2
+		exit 3
+	fi
+	printf '%s\n' "$text" | sed "s/^landed [0-9a-f]* on main: /landed $s on main: /"
+}
+
+# choose: choose-ideas' edit, in a clone of origin's main.
+choose() {
+	printf '%s\n' "$moves" | while read -r id st; do
+		f=$(specfile . "$id")
+		[ -n "$f" ] && setfield "$f" status "$st" || exit 1
+		[ "$st" = rejected ] || continue
+		printf '%s\n' "$rejects" | while IFS= read -r r; do
+			case $r in "$id="* | "${id#0}="* | "${id#00}="*) setfield "$f" reason "${r#*=}" ;; esac
+		done
+	done
 }
 
 case $cmd in
@@ -774,7 +903,7 @@ lead)
 	fi
 	;;
 executor) fake_executor "$@" ;;
-choose-ideas) out choose-ideas || echo "landed $(fakesha | cut -c1-8) on main: Review: $(positionals "$@" | sed -n 2p)" ;;
+choose-ideas) fake_choose_ideas "$@" ;;
 land) fake_land "$@" ;;
 ready) fake_ready "$@" ;;
 held)

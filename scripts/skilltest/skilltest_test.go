@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -330,6 +331,148 @@ func TestRefusedCallsScoreNothing(t *testing.T) {
 	}
 }
 
+// The fake lands what it prints: spec set --land, choose-ideas and the
+// watch of leads or of a round each leave origin's main holding the change
+// their output names, at the sha it prints, the main checkout following;
+// and scoring leaves those commits out, as the fake's, reading only the
+// session's.
+func TestFakeLandsWhatItSays(t *testing.T) {
+	old := "### `bmesh choose-ideas`\n\n### `bmesh spec`\n\n### `bmesh watch`\n"
+	dir, base := caseCell(t, "pick", old)
+	sandbox := filepath.Join(dir, sandboxDir)
+	origin := func(t *testing.T, dir string, args ...string) string {
+		t.Helper()
+		out, err := git(dir, gitEnv(dir), append([]string{"--git-dir", filepath.Join(dir, originDir)}, args...)...)
+		if err != nil {
+			t.Fatalf("git %v: %v", args, err)
+		}
+		return out
+	}
+	fields := func(t *testing.T, dir, rev, file string) map[string]string {
+		t.Helper()
+		s, err := spec.Parse(origin(t, dir, "show", rev+":docs/proposals/"+file), file)
+		if err != nil {
+			t.Fatalf("%s at %s: %v", file, rev, err)
+		}
+		return s.Fields
+	}
+	landedRE := regexp.MustCompile(`(?m)^landed ([0-9a-f]{8}) on main: (.*)$`)
+	landing := func(t *testing.T, out, subject string) {
+		t.Helper()
+		m := landedRE.FindStringSubmatch(out)
+		head := origin(t, dir, "rev-parse", "main")
+		if m == nil || m[1] != head[:8] || m[2] != subject || origin(t, dir, "log", "-1", "--format=%s", "main") != subject {
+			t.Fatalf("output %q, want landed %s on main: %s, origin's main at it with that subject", out, head[:8], subject)
+		}
+	}
+	const (
+		f012 = "012-orders-numbered-under-a-lock.md"
+		f013 = "013-report-details-lists-each-orders-items.md"
+		f014 = "014-catalog-read-from-a-file.md"
+	)
+
+	t.Run("spec set --land", func(t *testing.T) {
+		code, out, errs := fake(t, dir, sandbox, "spec", "set", "--repo", "shop", "--id", "13", "--status", "rejected", "--field", "reason=it duplicates the --verbose flag", "--land")
+		if code != 0 {
+			t.Fatalf("exit %d: %s%s", code, out, errs)
+		}
+		landing(t, out, "Spec 013: rejected")
+		if f := fields(t, dir, "main", f013); f["status"] != "rejected" || f["reason"] != "it duplicates the --verbose flag" || f["kind"] != "feature" {
+			t.Errorf("013 on origin's main: %v", f)
+		}
+	})
+
+	t.Run("choose-ideas", func(t *testing.T) {
+		code, out, errs := fake(t, dir, sandbox, "choose-ideas", "shop", "1 and 3 yes, 2 no", "--reject", "013=it duplicates the --verbose flag")
+		if code != 0 {
+			t.Fatalf("exit %d: %s%s", code, out, errs)
+		}
+		landing(t, out, "Review: 012 accepted, 013 rejected, 014 accepted")
+		for f, want := range map[string]string{f012: "accepted", f013: "rejected", f014: "accepted"} {
+			if got := fields(t, dir, "main", f); got["status"] != want || want == "rejected" && got["reason"] != "it duplicates the --verbose flag" {
+				t.Errorf("%s on origin's main: %v, want it %s", f, got, want)
+			}
+		}
+	})
+
+	t.Run("watch of leads", func(t *testing.T) {
+		_, out, _ := fake(t, dir, sandbox, "watch", "--nodes", "shop-012,shop-014", "--timeout", "30m")
+		done := regexp.MustCompile(`(?m) shop-(\d{3}) done (\d{3}) landed at ([0-9a-f]{8})$`).FindAllStringSubmatch(out, -1)
+		if len(done) != 2 || done[0][3] == done[1][3] {
+			t.Fatalf("watch: %q, want a done line for 012 and 014, each naming its own commit", out)
+		}
+		for _, d := range done {
+			f := map[string]string{"012": f012, "014": f014}[d[2]]
+			if got := fields(t, dir, d[3], f)["status"]; got != "done" {
+				t.Errorf("%s reads %s at %s, the commit its done line names", f, got, d[3])
+			}
+			if _, err := git(dir, gitEnv(dir), "--git-dir", filepath.Join(dir, originDir), "merge-base", "--is-ancestor", d[3], "main"); err != nil {
+				t.Errorf("%s, %s's done commit, is not on origin's main", d[3], d[2])
+			}
+		}
+		if _, again, _ := fake(t, dir, sandbox, "watch", "--nodes", "shop-012,shop-014"); again != out {
+			t.Errorf("a second watch printed %q, want the first's %q: the leads land once", again, out)
+		}
+		head := origin(t, dir, "rev-parse", "main")
+		if got, _ := git(sandbox, gitEnv(dir), "rev-parse", "HEAD"); got != head {
+			t.Errorf("the main checkout is at %s, want origin's main %s: it follows as the binary has it follow", got, head)
+		}
+	})
+
+	t.Run("scoring reads the session's commits", func(t *testing.T) {
+		s := &State{Dir: dir, Cell: &Cell{Base: base}, memo: map[string]check{}}
+		if n := len(strings.Fields(origin(t, dir, "rev-list", base+"..main"))); n != 4 || len(s.NewCommits()) != 0 || len(s.Changed()) != 0 {
+			t.Errorf("%d commits on origin's main, the fake's 4: NewCommits %v, Changed %v, want none", n, s.NewCommits(), s.Changed())
+		}
+		if err := os.WriteFile(filepath.Join(sandbox, "NOTES.md"), []byte("notes\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		for _, args := range [][]string{{"add", "NOTES.md"}, {"commit", "-qm", "Notes"}, {"push", "-q", "origin", "HEAD:main"}} {
+			if _, err := git(sandbox, gitEnv(dir), args...); err != nil {
+				t.Fatalf("git %v: %v", args, err)
+			}
+		}
+		if c, f := s.NewCommits(), s.Changed(); len(c) != 1 || !reflect.DeepEqual(f, []string{"NOTES.md"}) {
+			t.Errorf("after the session's push: NewCommits %v, Changed %v, want its commit and NOTES.md", c, f)
+		}
+	})
+
+	t.Run("watch of a round", func(t *testing.T) {
+		manual, err := os.ReadFile(filepath.Join(repoRoot(t), "docs", "manual.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		idir, ibase := caseCell(t, "ideas", string(manual))
+		fake(t, idir, filepath.Join(idir, sandboxDir), "watch", "--nodes", "shop-round-1", "--timeout", "30m")
+		want := map[string][4]string{
+			"015": {"report --since DATE sums only recent orders", "feature", "S", "sonnet"},
+			"016": {"Checkout names the item a typo was meant to be", "ux", "XS", "sonnet"},
+			"017": {"The store keeps a file per day, so a long history stays fast to read", "refinement", "M", "opus"},
+		}
+		files := strings.Fields(origin(t, idir, "ls-tree", "--name-only", "main", "docs/proposals/"))
+		for id, w := range want {
+			var f string
+			for _, p := range files {
+				if strings.HasPrefix(path.Base(p), id+"-") {
+					f = path.Base(p)
+				}
+			}
+			if f == "" {
+				t.Errorf("no spec %s on origin's main after the round's done: %v", id, files)
+				continue
+			}
+			got := fields(t, idir, "main", f)
+			if got["id"] != id || got["title"] != w[0] || got["kind"] != w[1] || got["size"] != w[2] || got["judge"] != w[3] || got["status"] != "proposed" || got["lens"] != "eng" {
+				t.Errorf("%s on origin's main: %v, want %v, proposed, lens eng", f, got, w)
+			}
+		}
+		is := &State{Dir: idir, Cell: &Cell{Base: ibase}, memo: map[string]check{}}
+		if len(is.NewCommits()) != 0 || len(is.Changed()) != 0 {
+			t.Errorf("the round's landing scores as the session's: NewCommits %v, Changed %v", is.NewCommits(), is.Changed())
+		}
+	})
+}
+
 // fakeCell is a cell set up for the bug case on an arm of this repo.
 func fakeCell(t *testing.T) (string, string) {
 	t.Helper()
@@ -365,7 +508,7 @@ func fake(t *testing.T, dir, cwd string, args ...string) (int, string, string) {
 // The fake answers what the skills ask, logs every call, starts nothing,
 // and refuses a command the arm's binary lacks as that binary would.
 func TestFake(t *testing.T) {
-	dir, base := fakeCell(t)
+	dir, _ := fakeCell(t)
 	sandbox := filepath.Join(dir, sandboxDir)
 	host := thisBox()
 	expect := func(want string, code int, args ...string) string {
@@ -422,7 +565,9 @@ func TestFake(t *testing.T) {
 	if out := expect(`"eng":`, 0, "ideate", "shop", "--idea", "--context", "-"); strings.Contains(out, `"ux"`) || !strings.Contains(out, "shop-round-2") {
 		t.Errorf("ideate --idea: %s", out)
 	}
-	expect("released shop v0.1.0 at "+base[:8]+" (no specs)", 0, "release", "shop")
+	// spec set --land moved origin's main, and the checkout followed it.
+	landedAt, _ := git(sandbox, gitEnv(dir), "rev-parse", "origin/main")
+	expect("released shop v0.1.0 at "+landedAt[:8]+" (no specs)", 0, "release", "shop")
 	expect("--dry-run tags nothing", 0, "release", "shop", "--dry-run")
 	expect("sent ", 0, "--node", "operator", "send", "shop-012", "hi")
 	expect("stopped shop-012", 0, "--node", "operator", "node", "stop", "shop-012", "--text", "why")

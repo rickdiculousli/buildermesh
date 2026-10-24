@@ -112,8 +112,9 @@ func rungNamed() Pred {
 
 // TurnFacts are what turn i did, as audit's rules read a request: the
 // calls the fake logged during it (an OK build or lead start, an OK
-// ideate), origin's main moving during it, a spec it added there, and
-// whether its reply asks.
+// ideate), a commit of the session's reaching origin's main during it (the
+// fake's own landings left out), a spec those added there, and whether its
+// reply asks.
 func (s *State) TurnFacts(i int) audit.Facts {
 	var f audit.Facts
 	if i < 0 || i >= len(s.Cell.Turns) {
@@ -132,9 +133,10 @@ func (s *State) TurnFacts(i int) audit.Facts {
 		f.Round = f.Round || c.OK() && c.Is("ideate")
 	}
 	if after.Origin != "" && origin != "" && after.Origin != origin {
-		f.PushedMain = true
-		out, _ := s.git("diff", "--name-only", "--diff-filter=A", origin, after.Origin, "--", "docs/proposals/")
-		f.NewSpec = len(strings.Fields(out)) > 0
+		if cs := s.sessionCommits(origin, after.Origin); len(cs) > 0 {
+			f.PushedMain = true
+			f.NewSpec = len(s.filesOf(cs, "A", "docs/proposals/")) > 0
+		}
 	}
 	if i < len(s.Replies) {
 		f.EndsAsking = audit.EndsAsking(s.Replies[i])

@@ -563,6 +563,7 @@ func drainCase() *Case {
 	begin := func(r *Rehearsal) {
 		r.Call("build", "shop", "013")
 		r.Call("watch", "--nodes", "shop-013", "--timeout", "30m")
+		r.Lands("report --details lists each order with its items\n\nSpec: 013", setStatus("013-report-details-lists-each-orders-items.md", "done"))
 		r.Call("feedback", "list", drainFamily)
 	}
 	quickFix := func(r *Rehearsal, subject string) {

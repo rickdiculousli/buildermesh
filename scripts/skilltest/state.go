@@ -267,14 +267,51 @@ func (s *State) git(args ...string) (string, error) {
 	return git(s.Dir, gitEnv(s.Dir), append([]string{"--git-dir", filepath.Join(s.Dir, originDir)}, args...)...)
 }
 
-// NewCommits are origin's commits on main that the base lacks, newest first.
-func (s *State) NewCommits() []string {
-	out, err := s.git("rev-list", s.Cell.Base+"..refs/heads/main")
+// pushedFile keeps the commits the fake landed on origin's main for a
+// ledger write or for another node, one per line: not the session's work.
+const pushedFile = "state/pushed"
+
+// sessionCommits are origin's commits in from..to that the session made,
+// newest first: those the fake kept in pushedFile left out.
+func (s *State) sessionCommits(from, to string) []string {
+	out, err := s.git("rev-list", from+".."+to)
 	if err != nil {
 		return nil
 	}
-	return strings.Fields(out)
+	b, _ := os.ReadFile(filepath.Join(s.Dir, pushedFile))
+	fake := strings.Fields(string(b))
+	var cs []string
+	for _, c := range strings.Fields(out) {
+		if !slices.Contains(fake, c) {
+			cs = append(cs, c)
+		}
+	}
+	return cs
 }
+
+// filesOf are the files the commits changed, sorted, once each, limited to
+// a --diff-filter (all when "") and paths; a merge's are those it changed
+// from every parent, its own resolution.
+func (s *State) filesOf(commits []string, filter string, paths ...string) []string {
+	if len(commits) == 0 {
+		return nil
+	}
+	args := []string{"log", "--no-walk", "-c", "--format=", "--name-only"}
+	if filter != "" {
+		args = append(args, "--diff-filter="+filter)
+	}
+	out, err := s.git(append(append(append(args, commits...), "--"), paths...)...)
+	if err != nil {
+		return nil
+	}
+	fs := strings.Fields(out)
+	slices.Sort(fs)
+	return slices.Compact(fs)
+}
+
+// NewCommits are the session's commits on origin's main that the base
+// lacks, newest first.
+func (s *State) NewCommits() []string { return s.sessionCommits(s.Cell.Base, mainRef) }
 
 // ArmHas reports whether the cell's arm documents the command, as the
 // fake reads its commands.txt.
@@ -283,14 +320,9 @@ func (s *State) ArmHas(cmd string) bool {
 	return slices.Contains(strings.Split(string(b), "\n"), cmd)
 }
 
-// Changed are the files origin's main changed since the base.
-func (s *State) Changed() []string {
-	out, err := s.git("diff", "--name-only", s.Cell.Base, "refs/heads/main")
-	if err != nil {
-		return nil
-	}
-	return strings.Fields(out)
-}
+// Changed are the files the session's commits on origin's main changed
+// since the base.
+func (s *State) Changed() []string { return s.filesOf(s.NewCommits(), "") }
 
 const mainRef = "refs/heads/main"
 

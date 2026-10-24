@@ -115,6 +115,74 @@ func (r *Rehearsal) Push() {
 	}
 }
 
+// Lands plays a landing the fake makes for a ledger write or for another
+// node, as it makes it: the edits made in a clone of origin's main,
+// committed as msg and pushed there, the commit kept in the fake's
+// pushedFile, and the main checkout following.
+func (r *Rehearsal) Lands(msg string, edits ...func(dir string) error) {
+	if r.err != nil {
+		return
+	}
+	env := gitEnv(r.Dir)
+	clone, err := os.MkdirTemp(r.Dir, "lands-")
+	if err != nil {
+		r.fail(err)
+		return
+	}
+	defer os.RemoveAll(clone)
+	_, err = git(r.Dir, env, "clone", "-q", filepath.Join(r.Dir, originDir), clone)
+	r.fail(err)
+	for _, edit := range edits {
+		if r.err == nil {
+			r.fail(edit(clone))
+		}
+	}
+	for _, args := range [][]string{{"add", "-A"}, {"commit", "-q", "-m", msg}, {"push", "-q", "origin", "HEAD:main"}} {
+		if r.err != nil {
+			return
+		}
+		_, err := git(clone, env, args...)
+		r.fail(err)
+	}
+	sha, err := git(clone, env, "rev-parse", "HEAD")
+	r.fail(err)
+	if r.err != nil {
+		return
+	}
+	f, err := os.OpenFile(filepath.Join(r.Dir, pushedFile), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		r.fail(err)
+		return
+	}
+	_, err = f.WriteString(sha + "\n")
+	r.fail(err)
+	r.fail(f.Close())
+	main := filepath.Join(r.Dir, sandboxDir)
+	if b, _ := git(main, env, "branch", "--show-current"); b == "main" {
+		_, err = git(main, env, "pull", "-q", "--ff-only", "origin", "main")
+	} else {
+		_, err = git(main, env, "fetch", "-q", "origin", "main:main")
+	}
+	r.fail(err)
+}
+
+// setStatus is an edit for Lands: a spec's status set, whatever it read.
+func setStatus(file, status string) func(dir string) error {
+	return func(dir string) error {
+		p := filepath.Join(dir, "docs", "proposals", file)
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(p, statusRE.ReplaceAll(b, []byte("status: "+status)), 0o644)
+	}
+}
+
+// newFile is an edit for Lands: a file written whole.
+func newFile(rel, text string) func(dir string) error {
+	return func(dir string) error { return writeFile(filepath.Join(dir, rel), text) }
+}
+
 // Call logs a bmesh call from where the session works, as the fake would.
 func (r *Rehearsal) Call(args ...string) {
 	if r.err != nil {

@@ -737,7 +737,8 @@ func ideasCase() *Case {
 		Turns: []string{"what would you improve in shop?"},
 		Steer: goAhead,
 		Canned: func(e Env) map[string]string {
-			return map[string]string{"watch": e.Ago(30*time.Minute) + " shop-round-1.eng started\n" +
+			// The round lands its pitch's specs as the watch runs.
+			return map[string]string{"watch-land": "015 016 017", "watch": e.Ago(30*time.Minute) + " shop-round-1.eng started\n" +
 				e.Ago(30*time.Minute) + " shop-round-1.ux started\n" +
 				e.Ago(1*time.Minute) + " shop-round-1 done 015 report --since DATE sums only recent orders (feature, S, sonnet): the report sums every order ever saved.\n" +
 				"016 Checkout names the item a typo was meant to be (ux, XS, sonnet): `aple=2` says only that it is not in the catalog.\n" +
@@ -750,6 +751,10 @@ func ideasCase() *Case {
 				r.Say("Starting a round on shop")
 				r.Call("ideate", "shop")
 				r.Call("watch", "--nodes", "shop-round-1", "--timeout", "30m")
+				r.Lands("Proposals 015, 016, 017: proposed",
+					newFile("docs/proposals/015-report-since-date-sums-only-recent-orders.md", "---\nid: 015\ntitle: report --since DATE sums only recent orders\nkind: feature\nsize: S\njudge: sonnet\nstatus: proposed\nlens: eng\n---\n"),
+					newFile("docs/proposals/016-checkout-names-the-item-a-typo-was-meant-to-be.md", "---\nid: 016\ntitle: Checkout names the item a typo was meant to be\nkind: ux\nsize: XS\njudge: sonnet\nstatus: proposed\nlens: eng\n---\n"),
+					newFile("docs/proposals/017-the-store-keeps-a-file-per-day-so-a-long-history.md", "---\nid: 017\ntitle: The store keeps a file per day, so a long history stays fast to read\nkind: refinement\nsize: M\njudge: opus\nstatus: proposed\nlens: eng\n---\n"))
 				r.Reply("Round 1 on shop is proposed: 015 report --since, 016 typo hints at checkout, 017 a store file per day.")
 			}},
 			{Name: "a list", Play: func(r *Rehearsal) {
@@ -772,6 +777,17 @@ func pickCase() *Case {
 		"013 report --details lists each order with its items (feature, S, sonnet): the report shows only its totals.\n" +
 		"014 The catalog is read from catalog.json, so a price changes without a rebuild (feature, M, opus): every price change is a code change today."
 	const reply = "1 and 3 yes, 2 no, it duplicates the --verbose flag"
+	const f012, f013, f014 = "012-orders-numbered-under-a-lock.md", "013-report-details-lists-each-orders-items.md", "014-catalog-read-from-a-file.md"
+	// The fake's landings: choose-ideas' canned moves, whatever the call
+	// said; and the watched leads' lands, one commit each.
+	chose := func(r *Rehearsal) {
+		r.Lands("Review: 012 accepted, 013 rejected, 014 accepted", setStatus(f012, "accepted"), setStatus(f013, "rejected"), setStatus(f014, "accepted"))
+	}
+	watched := func(r *Rehearsal) {
+		r.Call("watch", "--nodes", "shop-012,shop-014", "--timeout", "30m")
+		r.Lands("Orders are numbered under a lock\n\nSpec: 012", setStatus(f012, "done"))
+		r.Lands("The catalog is read from catalog.json\n\nSpec: 014", setStatus(f014, "done"))
+	}
 	return &Case{
 		Name:  "pick",
 		Turns: []string{reply},
@@ -790,8 +806,11 @@ func pickCase() *Case {
 			out["build-accepted"] = "started 012 Orders are numbered under a lock, so two checkouts at once never share an id: shop-012 on claude-opus-5-5 (thread 5e7a0002-0000-4000-8000-000000000002, branch bmesh/5e7a0002-0000-4000-8000-000000000002, building 7a3e2c1f, family shop-build-1)\n" +
 				"started 014 The catalog is read from catalog.json, so a price changes without a rebuild: shop-014 on claude-opus-5-5 (thread 5e7a0003-0000-4000-8000-000000000003, branch bmesh/5e7a0003-0000-4000-8000-000000000003, building 9b2d4e6a, family shop-build-1)\n" +
 				"family shop-build-1\n"
+			// The leads land 012 and 014 as the watch runs, so each done line
+			// names a commit on origin's main that sets its spec done.
+			out["watch-land"] = "012 014"
 			out["watch"] = e.Ago(0) + " shop-012 started building 012\n" + e.Ago(0) + " shop-014 started building 014\n" +
-				e.Ago(0) + " shop-012 done 012 landed at 3d5f7a9b\n" + e.Ago(0) + " shop-014 done 014 landed at 8c2e4b6d\nwatch-done\n"
+				e.Ago(0) + " shop-012 done 012 landed at @LANDED@\n" + e.Ago(0) + " shop-014 done 014 landed at @LANDED@\nwatch-done\n"
 			return out
 		},
 		Expect: []Pred{built(pickPitch, "012", "014"), notBuilt(pickPitch, "013"), declined(pickPitch, "013"),
@@ -799,9 +818,11 @@ func pickCase() *Case {
 		Refs: []Ref{
 			{Name: "accepted, then built on a go", Play: func(r *Rehearsal) {
 				r.Call("choose-ideas", "shop", reply)
+				chose(r)
 				r.Reply("012 and 014 accepted, 013 rejected. Build the accepted two?")
 				r.Call("build", "--accepted", "shop")
-				r.Reply("Starting leads for 012 and 014: shop-012 and shop-014 in family shop-build-1.")
+				watched(r)
+				r.Reply("Starting leads for 012 and 014: shop-012 and shop-014 in family shop-build-1. Both landed.")
 			}},
 			{Name: "built by id", Play: func(r *Rehearsal) {
 				r.Call("build", "shop", "012", "014")
@@ -811,10 +832,13 @@ func pickCase() *Case {
 			{Name: "built by id, the decline landed by spec set", Play: func(r *Rehearsal) {
 				r.Call("build", "shop", "012", "014")
 				r.Call("spec", "set", "--repo", "shop", "--id", "013", "--status", "rejected", "--field", "reason=it duplicates the --verbose flag", "--land")
+				r.Lands("Spec 013: rejected", setStatus(f013, "rejected"))
+				watched(r)
 				r.Reply("Starting leads for 012 and 014; 013 is declined on main: it duplicates --verbose.")
 			}},
 			{Name: "flags, one build each", Play: func(r *Rehearsal) {
 				r.Call("choose-ideas", "shop", "--accept", "012,014", "--reject", "013=it duplicates the --verbose flag")
+				chose(r)
 				r.Call("build", "shop", "012")
 				r.Call("build", "shop", "014", "--family", "shop-build-1")
 				r.Reply("Starting leads for 012 and 014; 013 rejected.")
@@ -828,10 +852,12 @@ func pickCase() *Case {
 			}},
 			{Name: "accepted, never built", Fails: "built_012_014", Play: func(r *Rehearsal) {
 				r.Call("choose-ideas", "shop", reply)
+				chose(r)
 				r.Reply("012 and 014 accepted, 013 rejected. Build them with buildermesh:build.")
 			}},
 			{Name: "all accepted", Fails: "not_built_013", Play: func(r *Rehearsal) {
 				r.Call("choose-ideas", "shop", "all yes")
+				chose(r)
 				r.Call("build", "--accepted", "shop")
 				r.Reply("Building all three.")
 			}},
@@ -841,6 +867,7 @@ func pickCase() *Case {
 				r.Push()
 				r.Call("build", "shop", "012", "014")
 				r.Call("spec", "set", "--id", "013", "--status", "rejected")
+				watched(r)
 				r.Reply("Starting leads for 012 and 014; 013 rejected.")
 			}},
 		},
