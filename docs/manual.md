@@ -839,11 +839,12 @@ A failed start is the runner's error (exit 1 with one id), with the hold `--hold
 
 **Output.** One id prints `{"path","thread","branch","worktree","model","spec","family"}` (plus `hold` under `--hold`, and `warnings`). Several print a line per spec (see **Details**). `warnings` are the spec's command clashes, which `build` warns of at dispatch (below). The verify lines of step 5 go to stderr for one id; for several, they go to stdout among its lines.
 
-When any lead started, three lines follow on stderr, so stdout stays the result, saying what the coordinator does next, `<paths>` the started leads' joined by commas:
+When any lead started, four lines follow on stderr, so stdout stays the result, saying what the coordinator does next, `<paths>` the started leads' joined by commas:
 
 - `next: bmesh watch --nodes <paths> --timeout 30m, under a Monitor where your harness has one, else in the background (never poll the runner); on exit 5, run it again with --since <its last line's time>`;
 - `next: an ask goes to the operator in their words, and their answer back with bmesh --node operator send <path> "<answer>"; a blocked is reported with its reason, a done with its commit, a held or landing line only when asked`;
-- `next: to hold one, bmesh --node operator hold <path> --text "<why>" (before it lands; --gate now at once), released with bmesh --node operator unhold <path>; to stop one for good, bmesh --node operator node stop <path> --text "<why>", never a message; to wipe one, stop it, then bmesh node forget <path> --wipe (--dry-run first)`.
+- `next: to hold one, bmesh --node operator hold <path> --text "<why>" (before it lands; --gate now at once), released with bmesh --node operator unhold <path>; to stop one for good, bmesh --node operator node stop <path> --text "<why>", never a message; to wipe one, stop it, then bmesh node forget <path> --wipe (--dry-run first)`;
+- `next: your report on this opens Starting leads for <ids>`, the line the coordinator's report on the pick opens with, `<ids>` the started leads' specs in the order they started, the last joined by `and` (`Starting leads for 012 and 014`; one: `Starting a lead for 013`).
 
 Nothing started (every spec `building`, `waits` or `not started`, or `held`) prints none of them.
 

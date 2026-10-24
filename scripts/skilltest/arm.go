@@ -209,6 +209,9 @@ func commandsFromManual(manual string) []string {
 			if section != "" && (strings.Contains(line, "`next: ") || strings.Contains(line, "next: bmesh")) {
 				set[section+" next:"] = true
 			}
+			if section != "" && strings.Contains(line, "next: your report") {
+				set[section+" next: your report"] = true
+			}
 			continue
 		}
 		section = m[1]

@@ -134,6 +134,10 @@ func TestCommandsFromManual(t *testing.T) {
 	if want := []string{"build", "build next:", "help", "hosts", "land", "version"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("commands %v, want %v", got, want)
 	}
+	got = commandsFromManual("### `bmesh build`\n- `next: your report on this opens Starting leads for <ids>`\n")
+	if want := []string{"build", "build next:", "build next: your report", "help", "hosts", "version"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("commands %v, want %v", got, want)
+	}
 	root := repoRoot(t)
 	manual, err := os.ReadFile(filepath.Join(root, "docs", "manual.md"))
 	if err != nil {
@@ -160,7 +164,7 @@ func TestCommandsFromManual(t *testing.T) {
 	for _, c := range got {
 		gotSet[c] = true
 	}
-	for _, c := range []string{"build next:", "ideate next:", "watch next:", "feedback next:"} {
+	for _, c := range []string{"build next:", "build next: your report", "ideate next:", "watch next:", "feedback next:"} {
 		if !gotSet[c] {
 			t.Errorf("this manual's %q section documents no next: lines", strings.TrimSuffix(c, " next:"))
 		}
@@ -265,8 +269,12 @@ func TestFakeBuild(t *testing.T) {
 	// The leads it started are followed by the binary's next: lines on
 	// stderr, on an arm whose manual documents them.
 	if _, stdout, stderr := fake(t, dir, sandbox, "build", "shop", "012", "014"); strings.Contains(stdout, "next:") ||
-		!strings.HasPrefix(stderr, "next: bmesh watch --nodes shop-012,shop-014 --timeout 30m,") || strings.Count(stderr, "next: ") != 3 {
+		!strings.HasPrefix(stderr, "next: bmesh watch --nodes shop-012,shop-014 --timeout 30m,") || strings.Count(stderr, "next: ") != 4 ||
+		!strings.HasSuffix(stderr, "\nnext: your report on this opens Starting leads for 012 and 014\n") {
 		t.Errorf("build's next lines: stdout %q, stderr %q", stdout, stderr)
+	}
+	if _, _, stderr := fake(t, dir, sandbox, "build", "shop", "013"); !strings.HasSuffix(stderr, "\nnext: your report on this opens Starting a lead for 013\n") {
+		t.Errorf("build of one's last next line: %q", stderr)
 	}
 	if _, _, stderr := fake(t, dir, sandbox, "ideate", "shop"); !strings.HasPrefix(stderr, "next: bmesh watch --nodes shop-round-1 --timeout 30m,") {
 		t.Errorf("ideate's next line: %q", stderr)

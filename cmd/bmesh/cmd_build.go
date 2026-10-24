@@ -221,7 +221,7 @@ func (a *app) cmdBuild(args []string) error {
 	} else if err := a.buildPicked(ctx, b, picked); err != nil {
 		return err
 	}
-	leadsNext(a.stderr, b.paths)
+	leadsNext(a.stderr, b.paths, b.started)
 	return nil
 }
 
@@ -232,15 +232,21 @@ func watchNext(w io.Writer, paths []string) {
 
 // leadsNext is what the coordinator does with the leads a build started
 // (100): the watch that follows them, then how to relay, hold, stop and
-// wipe one, to stderr so stdout stays the command's result. paths are the
-// started leads'; nothing started says nothing.
-func leadsNext(w io.Writer, paths []string) {
+// wipe one, to stderr so stdout stays the command's result, and last the
+// line the coordinator's report opens with (109). paths and ids are the
+// started leads' and their specs'; nothing started says nothing.
+func leadsNext(w io.Writer, paths, ids []string) {
 	if len(paths) == 0 {
 		return
 	}
 	watchNext(w, paths)
 	fmt.Fprintln(w, `next: an ask goes to the operator in their words, and their answer back with bmesh --node operator send <path> "<answer>"; a blocked is reported with its reason, a done with its commit, a held or landing line only when asked`)
 	fmt.Fprintln(w, `next: to hold one, bmesh --node operator hold <path> --text "<why>" (before it lands; --gate now at once), released with bmesh --node operator unhold <path>; to stop one for good, bmesh --node operator node stop <path> --text "<why>", never a message; to wipe one, stop it, then bmesh node forget <path> --wipe (--dry-run first)`)
+	opening := "Starting a lead for " + ids[0]
+	if n := len(ids); n > 1 {
+		opening = "Starting leads for " + strings.Join(ids[:n-1], ", ") + " and " + ids[n-1]
+	}
+	fmt.Fprintf(w, "next: your report on this opens %s\n", opening)
 }
 
 // readWords is the operator's words a flag gives, trimmed; - reads them
