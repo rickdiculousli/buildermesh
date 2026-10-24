@@ -6,7 +6,7 @@ The skills in `skills/` are the plugin every node runs on; `docs/agents-snippet.
 
 Design and decisions live in `docs/design/` (`2026-10-14-buildermesh.md` and `2026-10-15-buildermesh-round2.md`); the specs built here are in `docs/proposals/`.
 
-A change that lands on `main` reaches k16 at the next release, not at its landing: k16's daemon (`[update] repo = "buildermesh"`, `track` at its default `release`) rebuilds and restarts within a couple of minutes of a release being cut, and `journalctl --user -u bmesh` shows `update: v0.4.0 -> v0.4.1`; on the Mac, run `bmesh update` after a release. To run a landed change on the real thing before then, build it from the worktree (`go build -o cache/bmesh ./cmd/bmesh`) and run that binary.
+A change that lands on `main`, a skill's included, reaches k16 at the next release, not at its landing: k16's daemon (`[update] repo = "buildermesh"`, `track` at its default `release`) rebuilds and restarts within a couple of minutes of a release being cut, and `journalctl --user -u bmesh` shows `update: v0.4.0 -> v0.4.1`; the restarted daemon writes the release's plugin to the dir sessions load it from (`bmesh plugin` says which binary wrote it). On the Mac, run `bmesh update` after a release, which brings the binary and the skills. To run a landed change on the real thing before then, build it from the worktree (`go build -o cache/bmesh ./cmd/bmesh`) and run that binary; to try a skill change, run a session with `claude --plugin-dir <worktree>` or measure it with `scripts/skilltest`.
 
 <!-- bmesh:done -->
 ## Definition of done

@@ -4,7 +4,7 @@ title: The binary carries its plugin, so a box's skills always match its bmesh
 kind: maintenance
 size: L
 judge: opus
-status: proposed
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-24
@@ -93,6 +93,8 @@ Judge: opus, because it changes how every box loads what its sessions follow, an
 
 ## Upgrading
 
-Each box runs the switch once. The release's upgrade notes carry a `run` step for every OS: `bmesh plugin --install` (or the command as built). A new session loads the plugin from bmesh's dir after it.
+Each box with Claude Code switches once. Run on every OS, after the update: `bmesh plugin --install`. It writes the plugin this binary carries to `<state dir>/plugin`, removes a `buildermesh` marketplace that reads anything else (a checkout of this repo, or the GitHub repo), adds the dir as the `buildermesh` marketplace and installs `buildermesh@buildermesh` at user scope; a second run changes nothing. A box without `claude` on PATH has nothing to switch: the command is refused there (exit 3) with the dir written, so the step runs only where `claude` is. Check: `bmesh plugin` prints `claude: reads it (buildermesh@buildermesh, user scope)`. A new session loads the plugin from the dir; sessions already open keep what they loaded.
 
 ## Needs from the operator
+
+- Cut a release when you want the boxes to switch (this build lands, it doesn't release); each box's `bmesh update` runs `bmesh plugin --install` from the release's upgrade notes (on a box whose daemon updated itself, `bmesh update` walks the notes it left pending). check: bmesh plugin

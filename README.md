@@ -53,7 +53,7 @@ Agents write half-page specs; you pick the ones to build and decline the rest. A
 
 - **One hub.** `bmesh hub` runs NATS, a message server, inside the binary on an always-on box, over a tailnet such as Tailscale. Boxes share one token; nothing else is installed. A single box runs no `bmesh hub`: its `bmesh serve` embeds the hub.
 - **bmesh on every box.** Only `bmesh` talks to the hub: `bmesh serve`, the daemon, always on, which wakes quiet leads, lands what its leads finished, runs routines, sends phone notifications and draws the map; and the `bmesh` commands sessions run. A box set to update itself installs each bmesh release; on others, each session opens with a line to run `bmesh update`.
-- **Signed jobs.** Boxes joined with `bmesh init --hosts` share a signed roster, and every job between them is signed and checked. The signing and approval keys sit where no agent can read them (on macOS, behind the Keychain password dialog). A secure box holds an update of its plugins, or of the repo bmesh updates itself from, until you approve it there.
+- **Signed jobs.** Boxes joined with `bmesh init --hosts` share a signed roster, and every job between them is signed and checked. The signing and approval keys sit where no agent can read them (on macOS, behind the Keychain password dialog). A secure box holds a move of a repo its sessions load plugins from until you approve it there.
 
 Each picture below plays one of the demo's steps on its own, on a loop. <img src="docs/assets/dot-grey.svg" width="10" height="10" alt="">&nbsp;**Grey** lights a command, <img src="docs/assets/dot-teal.svg" width="10" height="10" alt="">&nbsp;**teal** a message.
 
@@ -158,11 +158,11 @@ You need Go 1.26 or later, git, Claude Code (`claude` on your `PATH`, signed in)
 
 ```sh
 go install github.com/rickdiculousli/buildermesh/cmd/bmesh@latest
-claude plugin marketplace add rickdiculousli/buildermesh
-claude plugin install buildermesh@buildermesh
 cd ~/repos/your-repo
 bmesh init      # press Enter at every prompt
 ```
+
+`bmesh init` also installs the plugin: the binary carries its skills and writes them to a dir of its own, which it makes Claude Code's `buildermesh` marketplace (`claude plugin list` shows `buildermesh@buildermesh` read from it). On a box set up already, `bmesh plugin --install` does the same. The skills move with the binary: `bmesh update` (or the daemon's own update) brings both.
 
 Add the repo's verify commands to the row `bmesh init` wrote in `repos.toml` (it prints the path):
 
@@ -249,6 +249,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 | [`bmesh update --plan`](docs/manual.md#bmesh-update) | `[--json]` |
 | [`bmesh update --walk`](docs/manual.md#bmesh-update) | `--from REV [--to REV] [--dir D] [--before-swap]` |
 | [`bmesh update --notice`](docs/manual.md#bmesh-update) |  |
+| [`bmesh plugin`](docs/manual.md#bmesh-plugin) | `[--install]` |
 
 **Proposals and builds**
 
@@ -346,7 +347,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 
 - **`bmesh`**: the CLI, daemon, map server and NATS hub in one binary.
 - **Runners**: `t3` (a T3 Code thread), `claude` (headless `claude -p` turns) or `tmux` runs each session.
-- **The plugin**: ten Claude Code skills: five for your chat, with `work` taking whatever you bring, and five that the sessions bmesh starts follow.
+- **The plugin**: ten Claude Code skills, carried by the binary: five for your chat, with `work` taking whatever you bring, and five that the sessions bmesh starts follow.
 - **Specs**: `docs/proposals/NNN-slug.md` in each repo, with status, builder, merged commit and `verified` line in the frontmatter.
 
 The [manual](docs/manual.md) covers every command, flag, config key, output and refusal, and the concepts behind them. [Internals](docs/internals.md) covers NATS subjects, buckets, record shapes and signing.
