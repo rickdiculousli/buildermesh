@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 458" width="960" height="458" role="img" aria-label="A lead runs bmesh land: it rebases its branch onto main, runs verify, carries its review across the rebase because the diff is unchanged, writes the verified line, marks the spec done, pushes main, then runs bmesh done">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 458" width="960" height="458" role="img" aria-label="A lead runs bmesh land: it rebases its branch onto main, runs verify, carries its review across the rebase because the diff is unchanged, writes the verified line into the commit as trailers, pushes main, then runs bmesh done">
 <title>bmesh land, then bmesh done</title>
 <defs><clipPath id="k"><rect x=".75" y=".75" width="958.5" height="456.5" rx="10"/></clipPath></defs>
 <style>
@@ -50,8 +50,8 @@ text{font:14px ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation 
 <text class="l6" x="28" y="195" textLength="260.4" lengthAdjust="spacing">verify <tspan class="g">ok</tspan> t:<tspan class="h">3f2a9c1e</tspan> (recorded)</text>
 <text class="l7" x="28" y="216.5" textLength="823.2" lengthAdjust="spacing">review <tspan class="g">ok</tspan> t:<tspan class="h">3f2a9c1e</tspan> m:<tspan class="m">claude-opus-5-5</tspan> c:<tspan class="h">81d0b7a4</tspan> (carried from t:<tspan class="h">81d0b7a4</tspan>: the diff is unchanged)</text>
 <text class="l8" x="28" y="238" textLength="680.4" lengthAdjust="spacing"><tspan class="e">verified:</tspan> review <tspan class="g">ok</tspan> t:<tspan class="h">3f2a9c1e</tspan> m:<tspan class="m">claude-opus-5-5</tspan> c:<tspan class="h">81d0b7a4</tspan>; verify <tspan class="g">ok</tspan> t:<tspan class="h">3f2a9c1e</tspan></text>
-<text class="l9" x="28" y="259.5" textLength="680.4" lengthAdjust="spacing">spec 012 done: merged <tspan class="h">a4c93e07</tspan>, branch bmesh/7c41e2d0-5b9a-4f3e-a1c6-02d8e9b4f713</text>
-<text class="l10" x="28" y="281" textLength="310.8" lengthAdjust="spacing">commit <tspan class="h">9b2e6f15</tspan> 012: done at <tspan class="h">a4c93e07</tspan></text>
+<text class="l9" x="28" y="259.5" textLength="336.0" lengthAdjust="spacing">operator steps: 1 (bmesh spec steps 012)</text>
+<text class="l10" x="28" y="281" textLength="310.8" lengthAdjust="spacing">trailers <tspan class="h">9b2e6f15</tspan>: Spec 012, Verified</text>
 <text class="l11" x="28" y="302.5" textLength="210.0" lengthAdjust="spacing">push origin main <tspan class="h">9b2e6f15</tspan></text>
 <text class="l12" x="28" y="324" textLength="109.2" lengthAdjust="spacing">main <tspan class="h">9b2e6f15</tspan></text>
 <text class="l13" x="28" y="345.5" textLength="142.8" lengthAdjust="spacing">released land.app</text>

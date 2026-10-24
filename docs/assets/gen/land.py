@@ -10,7 +10,6 @@ LH = 21.5
 X0 = 28.0
 TOP = 36.0
 Y0 = TOP + 30.0
-BRANCH = "bmesh/7c41e2d0-5b9a-4f3e-a1c6-02d8e9b4f713"
 TITLE = "app-012 — ~/.t3/worktrees/app/bmesh-7c41e2d0…"
 
 # (kind, text, appear-at seconds). Markup: {h:..} hash, {g:..} ok, {m:..} model, {e:..} emphasis, {L:..} landed.
@@ -24,8 +23,8 @@ LINES = [
     ("out", "verify {g:ok} t:{h:3f2a9c1e} (recorded)", 5.5),
     ("out", "review {g:ok} t:{h:3f2a9c1e} m:{m:claude-opus-5-5} c:{h:81d0b7a4} (carried from t:{h:81d0b7a4}: the diff is unchanged)", 6.1),
     ("out", "{e:verified:} review {g:ok} t:{h:3f2a9c1e} m:{m:claude-opus-5-5} c:{h:81d0b7a4}; verify {g:ok} t:{h:3f2a9c1e}", 6.7),
-    ("out", "spec 012 done: merged {h:a4c93e07}, branch " + BRANCH, 7.2),
-    ("out", "commit {h:9b2e6f15} 012: done at {h:a4c93e07}", 7.7),
+    ("out", "operator steps: 1 (bmesh spec steps 012)", 7.2),
+    ("out", "trailers {h:9b2e6f15}: Spec 012, Verified", 7.7),
     ("out", "push origin main {h:9b2e6f15}", 8.2),
     ("out", "main {h:9b2e6f15}", 8.7),
     ("out", "released land.app", 9.2),
@@ -97,7 +96,7 @@ css.append(f".w{{opacity:0;animation:w {LOOP:g}s infinite steps(1,end)}}"
            f"@keyframes w{{0%,{pct(w0)}%{{opacity:0}}{pct(w0 + 0.01)}%,{pct(w1)}%{{opacity:1}}{pct(w1 + 0.01)}%,100%{{opacity:0}}}}")
 body.append(f'<g class="w"><rect class="cur" x="{X0:g}" y="{Y0 + wi * LH - 13:g}" width="{CW:.1f}" height="17"/></g>')
 H = round(height)
-svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 {H}" width="960" height="{H}" role="img" aria-label="A lead runs bmesh land: it rebases its branch onto main, runs verify, carries its review across the rebase because the diff is unchanged, writes the verified line, marks the spec done, pushes main, then runs bmesh done">
+svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 {H}" width="960" height="{H}" role="img" aria-label="A lead runs bmesh land: it rebases its branch onto main, runs verify, carries its review across the rebase because the diff is unchanged, writes the verified line into the commit as trailers, pushes main, then runs bmesh done">
 <title>bmesh land, then bmesh done</title>
 <defs><clipPath id="k"><rect x=".75" y=".75" width="958.5" height="{H - 1.5:g}" rx="10"/></clipPath></defs>
 <style>

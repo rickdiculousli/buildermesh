@@ -120,7 +120,7 @@ Each picture below plays one of the demo's steps on its own, on a loop. <img src
 ## Proof before main
 
 <p align="center">
-  <img alt="A lead runs bmesh land: rebase, verify, carry the review, write the verified line, push main" src="docs/assets/land.svg" width="100%">
+  <img alt="A lead runs bmesh land: rebase, verify, carry the review, write the verified line into the commit as trailers, push main" src="docs/assets/land.svg" width="100%">
 </p>
 
 `bmesh land` runs `verify` first, queues the Opus review the spec's size calls for when the branch has none and waits for it, then takes the land lease, runs `verify` on the rebased tree and carries the review across the rebase when the diff is unchanged (a changed diff gets a new review, which land queues and waits for), then rewords the lead's last commit to carry the results as two trailers, changing no file:
