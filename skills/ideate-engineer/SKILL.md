@@ -1,7 +1,7 @@
 ---
 name: ideate-engineer
 description: >-
-  Use when you were started as the engineer of a buildermesh proposal round - your brief is headed "Engineer: proposal round" and names your node <repo>-round-<N>.eng. You read the repo, measure, write three to five ranked half-page specs into docs/proposals/, land them on main and report the ranked list with bmesh done.
+  Use when you were started as the engineer of a buildermesh proposal round - your brief is headed "Engineer: proposal round" and names your node <repo>-round-<N>.eng. You read the repo, measure, rank three to five ideas, write the ones sized M or larger as half-page specs into docs/proposals/, land them on main and report the ranked list with bmesh done.
 ---
 
 # Ideate: engineer
@@ -29,13 +29,13 @@ You are the engineer of one proposal round on one repo: a node under the round, 
 
 Before ranking, for each candidate write the two or three other ways the same gap could be closed and say why yours wins; then write the strongest case that the gap isn't worth closing, and drop the candidate when you can't answer it.
 
-Then rank: three to five specs, best first, at least one that isn't a feature.
+Then rank: three to five ideas, best first, at least one that isn't a feature. An idea sized M or larger is a spec (section 4). One sized XS or S is a pitch line, `- <title> (<kind>, XS|S): <what changes, where, and why>`, with no spec file and no id: picked, it is made as a quick fix.
 
 ## 4. Write the half-pagers
 
 - One file per spec at `docs/proposals/NNN-slug.md`, numbered from the ID your brief gives in rank order (`NNN` three digits, slug a few hyphenated lowercase words). Your brief's ID starts a block of ids `bmesh ideate` claimed for you on the mesh, five (three for an idea); the UI/UX engineer has a block of its own, so a gap in the numbering is expected.
 - The shape is `bmesh spec template`. Fill every placeholder in its frontmatter, keep `status: proposed`, delete the `#` guide lines, keep the six headings in order. `proposed_by` is the thread id in your brief; `proposed_on` is today.
-- No product code changes. A one-line fix is a size `XS` proposal, not a change made here.
+- No product code changes. A one-line fix is an XS pitch line, not a change made here.
 - Sizes are relative, never hours: `XS` one file, `S` one module, `M` crosses modules, `L` changes an interface others depend on.
 - Name the judge honestly, the model that should build the spec. `opus` is the default: it builds complex work and work that needs judgment as well as `fable` does. `fable` only when the spec turns on exceptional taste or nuance that opus would visibly miss (a voice, a feel no rule captures), never because the work is large or hard; say what opus would miss. `sonnet` when it's trivial, something a careful junior could do from the spec. Justify it in one clause in the Proposal section: "Judge: opus, because the API is fixed but touches every handler."
 - Half a page each. Evidence over adjectives. "Needs from the operator" stays empty unless a taste call really is theirs, or a config key some box must set to turn the change on (name the key and the file it lives in).
@@ -53,10 +53,10 @@ Change nothing outside `docs/proposals/`. Then:
 
 ## 6. Report
 
-Read `bmesh --node <path> inbox` first. Then `bmesh --node <path> done --commit <the commit on main> --text "<the pitch>"`: the ranked list, one line each, `NNN title (kind, size, judge): why it matters`, readable on a phone. The daemon merges it with the UI/UX engineer's and pushes the round. Your final message is the same pitch and one status line: what landed (the commit on main) and what waits on the operator (their review).
+Read `bmesh --node <path> inbox` first. Then `bmesh --node <path> done --commit <the commit on main> --text "<the pitch>"` (`main`'s head when every idea is a pitch line, so nothing landed): the ranked list, one line each: a spec as `NNN title (kind, size, judge): why it matters`, an XS or S idea as its pitch line, readable on a phone. The daemon merges it with the UI/UX engineer's and pushes the round. Your final message is the same pitch and one status line: what landed (the commit on main) and what waits on the operator (their review).
 
 If you can't finish (the repo won't build, the product doc is missing and nothing stands in), `bmesh --node <path> blocked --text "<why>"` and say what would unblock it. For a question only the operator can settle, `bmesh --node <path> ask --text "<question>"`.
 
 ## 7. The reply
 
-When the operator replies in this thread (plain words: "1 and 3 yes, 2 smaller, 4 no, 5 later, 3 on opus"), run `bmesh choose-ideas <repo> "<their words>"`: it applies the verdicts, lands them on `main`, pushes, and prints one line per spec and anything it couldn't match. For each spec it reports as `adjusting`, rework that spec's body to the note it recorded under Proposal (keep the half-pager shape, drop the note), then `bmesh spec set --repo . --id NNN --status accepted --from adjusting`, and land that on `main` the same way. Report the lines and what it couldn't match; never guess at an unmatched item.
+The operator answers the pitch in their own chat, where picking a spec starts its lead and the leads are watched. When they reply in this thread instead ("1 and 3 yes, 2 no, it duplicates X, 4 later"), map each position to the pitch you reported: land what they declined, `bmesh --node <path> spec set --repo . --id NNN[,NNN] --status rejected --field reason="<their why>" --land`, and what they shelved the same way with `--status later`. Start nothing: say in one line which ones they picked and that the picks start from their chat. A position that could mean two things is asked about in one line, never guessed.
