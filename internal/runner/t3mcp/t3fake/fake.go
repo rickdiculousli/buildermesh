@@ -38,6 +38,7 @@ type Thread struct {
 	Items                                                      []Item // position = index*2
 	Pending                                                    int
 	LastErrorClass, UsageLimitResetAt                          string
+	Settled                                                    bool
 }
 
 // Project is a fake project.
@@ -374,7 +375,7 @@ func (t *Thread) summary() map[string]any {
 	}
 	return map[string]any{"threadId": t.ID, "title": t.Title, "createdBy": "agent", "creationSource": "mcp",
 		"status": t.status(), "latestRunId": latest, "providerInstanceId": "claudeAgent", "model": t.Model,
-		"runtimeMode": t.RuntimeMode, "interactionMode": "default", "linkedPullRequest": nil, "settled": false,
+		"runtimeMode": t.RuntimeMode, "interactionMode": "default", "linkedPullRequest": nil, "settled": t.Settled,
 		"settledAt": nil, "snoozed": false, "snoozedUntil": nil, "parentThreadId": nil, "relationshipToParent": nil,
 		"itemCount": len(t.Items), "createdAt": "2026-10-16T02:21:56.900Z", "updatedAt": "2026-10-16T02:22:49.959Z"}
 }
@@ -543,6 +544,20 @@ func (s *Server) tool(name string, a map[string]any, access string) (map[string]
 			s.sent[id] = res
 		}
 		return res, nil
+	case "t3_thread_organize":
+		t := s.Threads[str(a, "threadId")]
+		if t == nil {
+			return nil, &toolErr{"thread_not_found", "Thread " + str(a, "threadId") + " is no longer available."}
+		}
+		switch str(a, "action") {
+		case "settle": // shortcut: reply shape not recorded from a real T3; the runner reads none
+			t.Settled = true
+		case "unsettle":
+			t.Settled = false
+		default:
+			return nil, &toolErr{"unsupported_action", "the fake organizes only settle and unsettle"}
+		}
+		return map[string]any{"threadId": t.ID, "action": str(a, "action"), "settled": t.Settled, "settlesWhenTurnEnds": false}, nil
 	case "t3_thread_interrupt":
 		t := s.Threads[str(a, "threadId")]
 		if t == nil {

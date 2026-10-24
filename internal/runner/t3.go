@@ -170,3 +170,11 @@ func (r *T3) Interrupt(ctx context.Context, thread string) error {
 	}
 	return r.interrupt(ctx, thread)
 }
+
+// Settle settles the thread (t3_thread_organize, action settle).
+func (r *T3) Settle(ctx context.Context, thread string) error {
+	if err := r.check(ctx, thread); err != nil {
+		return err
+	}
+	return r.call(ctx, "t3_thread_organize", map[string]any{"threadId": thread, "action": "settle"}, nil)
+}

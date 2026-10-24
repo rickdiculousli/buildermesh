@@ -152,7 +152,7 @@ func decodeEvent(data []byte) (mesh.Event, error) {
 }
 
 // Run publishes started (after pushing an update that never started), then
-// starts the activity follower, the poll+wake+rounds and silence loops, the
+// starts the activity follower, the poll+wake+rounds+settle and silence loops, the
 // digest and push loops when [notify] has somewhere to send, the quota
 // reset reminders when [quota] remind_topic is set, and, when
 // [repos] names any repo, the routine loop and (with this binary's module
@@ -189,7 +189,7 @@ func Run(ctx context.Context, d Deps) error {
 	case <-ctx.Done():
 	}
 	start(func() {
-		every(ctx, pollEvery, func() { pollOnce(ctx, d, act); wakeOnce(ctx, d, act); roundsOnce(ctx, d) })
+		every(ctx, pollEvery, func() { pollOnce(ctx, d, act); wakeOnce(ctx, d, act); roundsOnce(ctx, d); settleOnce(ctx, d) })
 	})
 	start(func() { every(ctx, silenceEvery, func() { silenceOnce(ctx, d, act) }) })
 	if d.Cfg.Notify.Ntfy != "" || d.Cfg.Notify.Command != "" {

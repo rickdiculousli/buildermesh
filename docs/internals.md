@@ -144,6 +144,16 @@ A launch has no retry key: after a lost or timed-out reply, `start` reads the pr
 
 **`stop`** is `t3_thread_interrupt`; an idle thread's `no_active_run` counts as success, as does a thread T3 no longer has.
 
+**`settle`** is `t3_thread_organize` with action `settle`; only the `t3` runner has it (`runner.Settler`). The daemon's settle pass runs each minute after the poll, wake and rounds passes:
+
+1. **Units.** It groups `bm-nodes` by unit (`daemon.SettleUnit`): an `engineer` by its `parent` (the round), a `lead` or `fixer` by its `family`, else its own path (a fixer's family is its path, so its fix leads join it). Executors, routines and rounds have no thread of their own to settle.
+2. **Finished.** A unit is finished when every member's state is `done` or stopped (`mesh.Stopped`), no member has a `bm-ready` key (its final wake not yet delivered), and a round unit's round reads `done`.
+3. **Settle.** For each member of a finished unit with `host` this box, `runner.kind` `t3`, a `runner.thread` and no `settled`: `status` first, skipped while running (the closing turn); then `settle`. A `thread_not_found` at either step counts as settled. The node is then re-read and written with `"settled": <RFC 3339>`, unless its `runner.thread` changed.
+4. **Report.** A pass that marked any publishes `bm.daemon.<host>.settled`, `to` the unit's first member, text `<unit>: <n> threads` (`1 thread`), `<n>` the unit's members on this box marked `settled`, with `Nats-Msg-Id` `settled-<unit>-<host>-<n>`.
+5. **Failure.** A failed `status` or `settle` is logged once per thread per distinct error and tried again next pass.
+
+`mesh-status` prints `settled <unit>: <n>` from the nodes' `settled` marks; `watch` prints the event without its `to`.
+
 #### `tmux`
 
 1. `git worktree add -b <thread> <worktrees>/<repo>/<thread>`.
@@ -442,7 +452,7 @@ The stream, subjects and buckets built on node paths:
 | stream | `bm-mesh` | `bm.>` (30 days, file store, 2m duplicate window) |
 | event subject | | `bm.<path>.<event>` |
 | inbox subject | | `bm.inbox.<path>` |
-| daemon subject | | `bm.daemon.<host>.<event>` (`started`, `update`, `wake`, `silent`, `landing`, `land-refused`, `land-withdrawn`, `digest`, `push`, `push-failed`, `refused`, `held`, `level`, `registry`, `fixer`, `wiped`) |
+| daemon subject | | `bm.daemon.<host>.<event>` (`started`, `update`, `wake`, `silent`, `landing`, `land-refused`, `land-withdrawn`, `digest`, `push`, `push-failed`, `refused`, `held`, `level`, `registry`, `fixer`, `wiped`, `settled`) |
 | consumer per inbox | `inbox-<path, "." as "--">` | filter `bm.inbox.<path>` |
 | kind inbox subject | | `bm.inbox.routine.<kind>` (jobs and gos) |
 | consumer per kind | `inbox-routine--<kind>` | filter `bm.inbox.routine.<kind>`, shared by every box that runs the kind; MaxAckPending -1 (each box fetches up to its own instance count), AckWait = timeout + 1m (the last writer's) |
@@ -452,7 +462,7 @@ The stream, subjects and buckets built on node paths:
 | consumer per host | `inbox-host--<host>` | filter `bm.inbox.host.<host>`; MaxAckPending 1, AckWait 10m |
 | host reply subject | | `bm.hostreply.<caller>.<job id>` |
 | join subject | | `bmhosts.join.<id>` (core NATS, outside the stream: an invite's request and reply) |
-| KV | `bm-nodes` | `<path>` to Node (a build's lead carries `repo`, `spec`, `branch`, `host` and `family`: what a spec being built is; a runner that names its own thread, as T3 does, gets the id bmesh chose as `runner.ref`, recorded as the briefs' `proposed_by`) |
+| KV | `bm-nodes` | `<path>` to Node (a build's lead carries `repo`, `spec`, `branch`, `host` and `family`: what a spec being built is; a runner that names its own thread, as T3 does, gets the id bmesh chose as `runner.ref`, recorded as the briefs' `proposed_by`; a thread the daemon settled in T3 adds `settled`, when) |
 | KV | `bm-state` | `<path>` to State |
 | KV | `bm-runner` | `<path>` to RunnerSample |
 | KV | `bm-results` | `<kind>.<tree>[.<args8>][.<model-short>]` to Result (`[routines] keep_results`, default 30 days) |

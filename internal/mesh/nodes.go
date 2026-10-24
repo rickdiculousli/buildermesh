@@ -40,6 +40,7 @@ type Node struct {
 	Idea      bool       `json:"idea,omitempty"`     // a round of the operator's one idea: only its eng thread
 	Children  []string   `json:"children,omitempty"` // a round's threads (eng, or eng and ux); none on a round from before 097
 	StartedAt string     `json:"started_at"`
+	Settled   string     `json:"settled,omitempty"` // when the daemon settled the node's T3 thread (102)
 }
 
 // RunnerSample is the daemon's last reading of a node's runner. Stopped is
