@@ -93,7 +93,7 @@ func (a *app) parentNode(ctx context.Context, cmd string) (mesh.Node, error) {
 	if n.Worktree == "" {
 		top, err := gitRev("--show-toplevel")
 		if err != nil {
-			return mesh.Node{}, fail(exitError, "node %s has no worktree and the cwd is not a git checkout", p)
+			return mesh.Node{}, fail(exitError, "node %s has no worktree and the cwd is not a git checkout; run it in your worktree", p)
 		}
 		n.Worktree = top
 	}
@@ -159,7 +159,7 @@ func (a *app) cmdExecutorNew(args []string) error {
 		return err
 	}
 	if exists && st.State != "done" && st.State != "blocked" {
-		return fail(exitRefused, "refused: executor %s exists (state %s); remove it or pick another name", path, st.State)
+		return fail(exitRefused, "refused: executor %s exists (state %s); remove it (bmesh executor remove %s) or pick another name", path, st.State, *name)
 	}
 	branch := parent.Branch + "-" + *name
 	wt := filepath.Join(a.cfg.Expand(a.cfg.Runner.Worktrees), parent.Repo, path)
@@ -180,7 +180,7 @@ func (a *app) cmdExecutorNew(args []string) error {
 	}
 	// The branch must be ours to roll back: refuse one that already exists.
 	if _, err := gitIn(ctx, parent.Worktree, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
-		return fail(exitRefused, "refused: branch %s already exists; remove it or pick another name", branch)
+		return fail(exitRefused, "refused: branch %s already exists; remove it (git branch -d %s) or pick another name", branch, branch)
 	}
 	if out, err := exec.CommandContext(ctx, "git", "-C", parent.Worktree, "worktree", "add", "-b", branch, wt, sha).CombinedOutput(); err != nil {
 		// Nothing is registered; drop whatever git left behind (a worktree
@@ -310,7 +310,7 @@ func (a *app) cmdExecutorRemove(args []string) error {
 	}
 	// A removed executor keeps its node (and branch name) but no worktree.
 	if !ok || n.Role != "executor" || n.Worktree == "" || n.Branch == "" {
-		return fail(exitRefused, "refused: no executor %s under %s with a worktree", path, parent.Path)
+		return fail(exitRefused, "refused: no executor %s under %s with a worktree; bmesh executor list shows yours", path, parent.Path)
 	}
 	if !*force {
 		merged, err := gitIn(ctx, parent.Worktree, "branch", "--list", "--merged", "HEAD", n.Branch)
@@ -318,7 +318,7 @@ func (a *app) cmdExecutorRemove(args []string) error {
 			return err
 		}
 		if merged == "" {
-			return fail(exitRefused, "refused: branch %s is not merged into %s; merge it or pass --force", n.Branch, parent.Branch)
+			return fail(exitRefused, "refused: branch %s is not merged into %s; merge it (git merge %s), then remove it again, or pass --force to discard it", n.Branch, parent.Branch, n.Branch)
 		}
 	}
 	if n.Host == a.cfg.HostName() {

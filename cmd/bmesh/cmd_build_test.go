@@ -574,7 +574,7 @@ func TestBuildRunsSetupBeforeVerifyingMain(t *testing.T) {
 	broken := commitFileSHA(t, repo, ".bmesh/config.toml", "[setup]\ncommand = \"echo registry down; exit 1\"\n", "Break the setup")
 	brokenTree := gitOut(t, "-C", repo, "rev-parse", "main^{tree}")
 	_, errs, code = runCLI(t, nil, "build", "demo", "009", "--family", got.Family)
-	if code != 3 || !strings.Contains(errs, "bmesh: verify main "+broken[:8]+": setup failed: exit status 1; nothing recorded\nregistry down\n") {
+	if code != 3 || !strings.Contains(errs, "bmesh: verify main "+broken[:8]+": setup failed: exit status 1; nothing recorded: fix the setup (bmesh setup runs it alone), then run it again\nregistry down\n") {
 		t.Fatalf("failing setup: %d %q", code, errs)
 	}
 	if _, ok, err := mesh.GetResult(ctx, c, mesh.ResultKey("verify", brokenTree, nil, "")); err != nil || ok {

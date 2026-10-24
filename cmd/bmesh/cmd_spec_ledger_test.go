@@ -170,7 +170,7 @@ func TestSpecSetLandsOneCommitOnMain(t *testing.T) {
 		t.Fatalf("--from: %d %q", code, errs)
 	}
 	if _, errs, code := runCLI(t, nil, "spec", "set", "--repo", "demo", "--id", "014,099", "--status", "proposed", "--land"); code != 1 ||
-		errs != "bmesh: no spec 099 on main in "+repo+"\n" {
+		errs != "bmesh: no spec 099 on main in "+repo+"; bmesh spec list shows the ids\n" {
 		t.Fatalf("missing: %d %q", code, errs)
 	}
 	if out, _, code := runCLI(t, nil, "spec", "set", "--repo", "demo", "--id", "014", "--status", "later", "--land"); code != 0 || out != "014  later      S   feature      eng  Thing 014\nnothing to land\n" {

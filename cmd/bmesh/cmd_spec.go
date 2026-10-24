@@ -329,6 +329,9 @@ func (a *app) cmdSpecSet(args []string) error {
 		}
 		return msg, nil
 	})
+	if r := (*gitwork.Refused)(nil); errors.As(err, &r) {
+		return fail(exitRefused, "%s; run bmesh spec set --land again once main in %s is level with origin (it levels main first)", r.Msg, repoPath)
+	}
 	if err != nil {
 		return err
 	}
@@ -353,7 +356,7 @@ func (a *app) setSpecs(dir, where string, ids []int, status string, allowed []st
 	for _, n := range ids {
 		s, ok := spec.Find(specs, n)
 		if !ok {
-			return nil, false, fail(exitError, "no spec %03d %s", n, where)
+			return nil, false, fail(exitError, "no spec %03d %s; bmesh spec list shows the ids", n, where)
 		}
 		if err := spec.CheckFrom(s, allowed); err != nil {
 			return nil, false, ledgerFail(err)

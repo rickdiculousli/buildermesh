@@ -78,19 +78,25 @@ func TestDoneChecksTheLandedCommitsTrailers(t *testing.T) {
 		}
 	}
 	verified := "Verified: verify ok t:" + t8 + "; review ok t:" + t8 + " m:claude-opus-5-5"
+	const pass = "pass bmesh done --commit the commit bmesh land printed as landed (git rev-parse HEAD in your worktree after it)"
+	notOn := "; " + pass + ", or land first (bmesh ready, or bmesh land)"
+	record := func(kind, at string) string {
+		return "; record it there (bmesh routine run " + kind + " in a checkout of " + at[:8] + ", or bmesh routine queue " + kind +
+			" --commit " + at[:8] + " --go), then run bmesh done again"
+	}
 
 	local := landedCommit(t, repo, "work\n\nSpec: 012\n"+verified, false)
-	refused(local, "not done: "+local[:8]+" is not on origin/main")
-	refused("0123456789ab", "not done: 01234567 is not on origin/main")
+	refused(local, "not done: "+local[:8]+" is not on origin/main"+notOn)
+	refused("0123456789ab", "not done: 01234567 is not on origin/main"+notOn)
 	meshtest.Git(t, repo, "push", "-q", "origin", "main")
-	refused(local, "not done: verified names verify but no result for tree "+t8)
+	refused(local, "not done: verified names verify but no result for tree "+t8+record("verify", local))
 
 	bare := landedCommit(t, repo, "work\n\nSpec: 012", true)
-	refused(bare, "not done: "+bare[:8]+" has no Verified trailer")
+	refused(bare, "not done: "+bare[:8]+" has no Verified trailer; "+pass+", which carries it")
 	failing := landedCommit(t, repo, "work\n\nSpec: 012\nVerified: verify ok t:"+t8+"; review fail t:"+t8+" m:claude-opus-5-5", true)
-	refused(failing, "not done: verified has a failing entry review")
+	refused(failing, "not done: verified has a failing entry review; "+pass+", whose entries all pass")
 	other := landedCommit(t, repo, "work\n\nSpec: 012\nVerified: verify ok t:0123abcd", true)
-	refused(other, "not done: verified entry verify is for tree 0123abcd, merged tree is "+t8)
+	refused(other, "not done: verified entry verify is for tree 0123abcd, merged tree is "+t8+"; "+pass)
 
 	put := func(r mesh.Result) {
 		t.Helper()
@@ -102,16 +108,16 @@ func TestDoneChecksTheLandedCommitsTrailers(t *testing.T) {
 	// A failed verify, and a review by another model, do not match.
 	put(mesh.Result{Kind: "verify", OK: false})
 	put(mesh.Result{Kind: "review", OK: true, Model: "claude-sonnet-5-5"})
-	refused(local, "not done: verified names verify but no result for tree "+t8)
+	refused(local, "not done: verified names verify but no result for tree "+t8+record("verify", local))
 	put(mesh.Result{Kind: "verify", OK: true, Args: []string{"--all"}})
-	refused(local, "not done: verified names review but no result for tree "+t8)
+	refused(local, "not done: verified names review but no result for tree "+t8+record("review", local))
 	put(mesh.Result{Kind: "review", OK: true, Model: "claude-opus-5-5"})
 
 	// The Spec trailer must name the node's spec.
 	wrong := landedCommit(t, repo, "work\n\nSpec: 013\n"+verified, true)
-	refused(wrong, "not done: "+wrong[:8]+" landed spec 013, not 012")
+	refused(wrong, "not done: "+wrong[:8]+" landed spec 013, not 012; "+pass+" for spec 012")
 	none := landedCommit(t, repo, "work\n\n"+verified, true)
-	refused(none, "not done: "+none[:8]+" has no Spec trailer")
+	refused(none, "not done: "+none[:8]+" has no Spec trailer; "+pass)
 
 	if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", local, "--text", "shipped"); code != 0 || out != "done app-012 "+local[:8]+"\n" {
 		t.Fatalf("code %d out %q err %q", code, out, errs)
@@ -221,7 +227,7 @@ func TestDoneRefusesACommitNotOnMain(t *testing.T) {
 		t.Fatal(code, errs)
 	}
 	_, errs, code := runCLI(t, as("app-012"), "done", "--commit", side)
-	if code != 3 || errs != "bmesh: not done: "+side[:8]+" is not on main\n" {
+	if code != 3 || errs != "bmesh: not done: "+side[:8]+" is not on main; pass bmesh done --commit the commit bmesh land printed as landed (git rev-parse HEAD in your worktree after it), or land first (bmesh ready, or bmesh land)\n" {
 		t.Fatalf("code %d err %q", code, errs)
 	}
 	if got := stateOf(t, c, ctx, "app-012"); got != "working" {
@@ -249,7 +255,7 @@ func TestSpecVerifiedComposes(t *testing.T) {
 	meshtest.Git(t, repo, "commit", "-m", "spec")
 	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 
-	const none = "bmesh: no results for HEAD's tree; run the routines first\n"
+	const none = "bmesh: no results for HEAD's tree; run the routines first (bmesh routine run verify)\n"
 	if _, errs, code := runCLI(t, nil, "spec", "verified"); code != 3 || errs != none {
 		t.Fatalf("no results: %d %q", code, errs)
 	}

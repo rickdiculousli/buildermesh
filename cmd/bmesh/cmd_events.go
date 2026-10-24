@@ -78,7 +78,7 @@ func (a *app) cmdEvent(name string, args []string) error {
 		}
 	}
 	if !mesh.Legal(cur.State, to) {
-		return fail(exitRefused, "refused: %v", mesh.ErrIllegalTransition{From: cur.State, To: to})
+		return illegalMove(cur.State, to, "bmesh "+name)
 	}
 	if n.Role == "executor" && (name == "ask" || name == "done" || name == "blocked") {
 		parent := n.Parent
@@ -105,7 +105,7 @@ func (a *app) cmdEvent(name string, args []string) error {
 	if _, err := mesh.WriteState(ctx, a.client, path, mesh.State{State: to, Text: *text, By: "node"}); err != nil {
 		var ill mesh.ErrIllegalTransition
 		if errors.As(err, &ill) {
-			return fail(exitRefused, "refused: %v", err)
+			return illegalMove(ill.From, ill.To, "bmesh "+name)
 		}
 		return err
 	}
@@ -115,6 +115,22 @@ func (a *app) cmdEvent(name string, args []string) error {
 		fmt.Fprintf(a.stdout, "%s %s\n", name, path)
 	}
 	return nil
+}
+
+// illegalMove refuses a state move the table doesn't allow, naming the
+// next step: none out of done; cancelling the ready request out of
+// landing; else an event that makes the node working first, then again.
+func illegalMove(from, to, again string) error {
+	why := mesh.ErrIllegalTransition{From: from, To: to}
+	switch {
+	case from == "done":
+		return fail(exitRefused, "refused: %v; nothing leaves done", why)
+	case from == "landing":
+		return fail(exitRefused, "refused: %v; your box's daemon is landing you: run bmesh ready --cancel first, then %s again", why, again)
+	case from == "idle" || from == "":
+		return fail(exitRefused, "refused: %v; run bmesh started --text \"<one line>\" first, then %s again", why, again)
+	}
+	return fail(exitRefused, "refused: %v; run bmesh progress --text \"<one line>\" first, then %s again", why, again)
 }
 
 // lastDone is the commit of the node's newest done event.
@@ -188,6 +204,10 @@ func short8(sha string) string {
 	return sha
 }
 
+// passLanded is the next step of a lead's done refused for its commit:
+// the one land printed, reworded to carry the trailers.
+const passLanded = "pass bmesh done --commit the commit bmesh land printed as landed (git rev-parse HEAD in your worktree after it)"
+
 // checkSpecDone refuses a lead's done unless commit is its landing: on
 // main (origin/main when the repo has an origin), with a Verified trailer
 // of no failing entry, every entry matched by a recorded result for the
@@ -206,23 +226,23 @@ func (a *app) checkSpecDone(ctx context.Context, n mesh.Node, commit string) err
 		return err
 	}
 	if lerr != nil || !on {
-		return fail(exitRefused, "not done: %s is not on %s", short8(commit), ref)
+		return fail(exitRefused, "not done: %s is not on %s; %s, or land first (bmesh ready, or bmesh land)", short8(commit), ref, passLanded)
 	}
 	if l.Verified == "" {
-		return fail(exitRefused, "not done: %s has no Verified trailer", short8(l.Commit))
+		return fail(exitRefused, "not done: %s has no Verified trailer; %s, which carries it", short8(l.Commit), passLanded)
 	}
 	entries, err := spec.ParseVerified(l.Verified)
 	if err != nil {
-		return fail(exitRefused, "not done: %s's Verified trailer: %v", short8(l.Commit), err)
+		return fail(exitRefused, "not done: %s's Verified trailer: %v; %s", short8(l.Commit), err, passLanded)
 	}
 	if err := a.checkEntries(ctx, n.RepoPath, l.Commit, entries); err != nil {
 		return err
 	}
 	if want := spec.NormID(n.Spec); l.Spec != want {
 		if l.Spec == "" {
-			return fail(exitRefused, "not done: %s has no Spec trailer", short8(l.Commit))
+			return fail(exitRefused, "not done: %s has no Spec trailer; %s", short8(l.Commit), passLanded)
 		}
-		return fail(exitRefused, "not done: %s landed spec %s, not %s", short8(l.Commit), l.Spec, want)
+		return fail(exitRefused, "not done: %s landed spec %s, not %s; %s for spec %s", short8(l.Commit), l.Spec, want, passLanded, want)
 	}
 	return nil
 }
@@ -250,7 +270,7 @@ func (a *app) checkEntries(ctx context.Context, repoPath, merged string, entries
 	}
 	for _, e := range entries {
 		if !e.OK {
-			return fail(exitRefused, "not done: verified has a failing entry %s", e.Kind)
+			return fail(exitRefused, "not done: verified has a failing entry %s; %s, whose entries all pass", e.Kind, passLanded)
 		}
 	}
 	tree, err := spec.Tree(repoPath, merged+"^{commit}")
@@ -259,7 +279,7 @@ func (a *app) checkEntries(ctx context.Context, repoPath, merged string, entries
 	}
 	for _, e := range entries {
 		if e.Tree8 != tree[:8] {
-			return fail(exitRefused, "not done: verified entry %s is for tree %s, merged tree is %s", e.Kind, e.Tree8, tree[:8])
+			return fail(exitRefused, "not done: verified entry %s is for tree %s, merged tree is %s; %s", e.Kind, e.Tree8, tree[:8], passLanded)
 		}
 		rs, err := mesh.ListResults(ctx, a.client, e.Kind)
 		if err != nil {
@@ -292,7 +312,9 @@ func (a *app) checkEntries(ctx context.Context, repoPath, merged string, entries
 			}
 		}
 		if !matched {
-			return fail(exitRefused, "not done: verified names %s but no result for tree %s", e.Kind, at)
+			return fail(exitRefused, "not done: verified names %s but no result for tree %s; record it there "+
+				"(bmesh routine run %s in a checkout of %s, or bmesh routine queue %s --commit %s --go), then run bmesh done again",
+				e.Kind, at, e.Kind, short8(merged), e.Kind, short8(merged))
 		}
 	}
 	return nil

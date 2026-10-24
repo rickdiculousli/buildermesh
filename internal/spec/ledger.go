@@ -384,7 +384,7 @@ func SetStatus(s *Spec, status string, allowedFrom []string, fields ...Field) (*
 		return nil, err
 	}
 	if n.Status() != status {
-		return nil, ledgerErr("spec %03d: writing status %s would read back as %s; left unchanged", s.ID, status, n.Status())
+		return nil, ledgerErr("spec %03d: writing status %s would read back as %s; left unchanged: keep one status: line in its frontmatter, then run it again", s.ID, status, n.Status())
 	}
 	if err := os.WriteFile(s.Path, []byte(text), 0o644); err != nil {
 		return nil, err

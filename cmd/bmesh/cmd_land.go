@@ -148,7 +148,7 @@ func (a *app) cmdLand(args []string) (err error) {
 	defer unsignal()
 	defer func() {
 		if err != nil && ctx.Err() != nil && l.landed == "" {
-			err = fail(exitError, "interrupted; nothing is pushed")
+			err = fail(exitError, "interrupted; nothing is pushed: run bmesh land again")
 		}
 	}()
 	slot := "land." + l.repo
@@ -230,7 +230,7 @@ func (l *lander) setup(id *string) error {
 	}
 	common, ok := checkout.CommonDir(l.top)
 	if !ok || filepath.Base(common) != ".git" {
-		return fail(exitRefused, "refused: %s is not a worktree of a repo with a main checkout", l.top)
+		return fail(exitRefused, "refused: %s is not a worktree of a repo with a main checkout; run bmesh land in a lead's worktree", l.top)
 	}
 	l.repoPath = filepath.Dir(common)
 	l.repo = repo
@@ -272,7 +272,7 @@ func (a *app) acquireWait(slot, holder string, ttl time.Duration, deadline time.
 			}
 		}
 		if time.Now().After(deadline) {
-			return "", fail(exitTimeout, "timed out waiting for %s, held by %s", slot, by)
+			return "", fail(exitTimeout, "timed out waiting for %s, held by %s; nothing is pushed: run bmesh land again", slot, by)
 		}
 		time.Sleep(landPoll)
 	}
@@ -327,7 +327,7 @@ func (l *lander) pause(ctx context.Context, d time.Duration, what string) error 
 	}
 	left := time.Until(l.deadline)
 	if left <= 0 {
-		return fail(exitTimeout, "timed out waiting for %s; nothing is pushed", what)
+		return fail(exitTimeout, "timed out waiting for %s; nothing is pushed: run bmesh land again, which waits for the same jobs rather than queueing them twice", what)
 	}
 	select {
 	case <-time.After(min(d, left)):
@@ -392,10 +392,10 @@ func (l *lander) prepare(ctx context.Context) error {
 		return err
 	}
 	if b == "" || b == "main" {
-		return fail(exitRefused, "refused: land runs on a lead's branch, not %s", dash(b))
+		return fail(exitRefused, "refused: land runs on a lead's branch, not %s; run it in your worktree, on your own branch", dash(b))
 	}
 	l.branch = b
-	if _, err := landsDone(l.top, l.a.cfg.Spec.Glob, l.id, b); err != nil {
+	if _, err := landsDone(l.top, l.a.cfg.Spec.Glob, l.id, b, "bmesh land"); err != nil {
 		return err
 	}
 	if err := l.mail(ctx, l.waited == ""); err != nil {
@@ -607,7 +607,7 @@ func fromOperator(m mesh.Message) bool { return m.Kind == "message" && m.From ==
 
 // moved refuses a HEAD other than the one land waited on.
 func (l *lander) moved(head string) error {
-	return fail(exitRefused, "refused: HEAD moved while land waited (%.8s, was %.8s); nothing is pushed: run bmesh land again", head, l.waited)
+	return fail(exitRefused, "refused: HEAD moved while land waited (%.8s, was %.8s); nothing is pushed: see what changed (git log -3), then run bmesh land again", head, l.waited)
 }
 
 // kind is the repo's kind name, when it has one.
@@ -646,16 +646,16 @@ func (l *lander) sized() (size, effort string, err error) {
 		}
 		s, ok := spec.Find(specs, l.id)
 		if !ok {
-			return "", "", fail(exitRefused, "refused: no spec %03d in %s", l.id, l.top)
+			return "", "", noSpec(l.id, l.top, "bmesh land")
 		}
 		size = s.Fields["size"]
 		if size == "" {
-			return "", "", fail(exitUsage, "land needs --size: spec %03d has no size", l.id)
+			return "", "", fail(exitUsage, "land needs --size: spec %03d has no size; run bmesh land --size XS|S|M|L, the size as built", l.id)
 		}
 	}
 	effort, ok := reviewEffort(size)
 	if !ok {
-		return "", "", fail(exitUsage, "land needs --size: spec %03d's size %q is none of XS, S, M or L", l.id, size)
+		return "", "", fail(exitUsage, "land needs --size: spec %03d's size %q is none of XS, S, M or L; run bmesh land --size XS|S|M|L, the size as built", l.id, size)
 	}
 	return size, effort, nil
 }
@@ -727,7 +727,8 @@ func (l *lander) queueReview(ctx context.Context, again bool) (waitJob, error) {
 		return waitJob{}, err
 	}
 	if _, ok := l.a.cfg.Repos[l.repo]; !ok {
-		return waitJob{}, fail(exitRefused, "refused: %s is not in the registry, so no daemon takes its review; nothing is pushed", l.repo)
+		return waitJob{}, fail(exitRefused, "refused: %s is not in the registry, so no daemon takes its review; nothing is pushed: "+
+			"ask the operator to add it (bmesh repos propose), then run bmesh land again", l.repo)
 	}
 	head, err := gitIn(ctx, l.top, "rev-parse", "HEAD")
 	if err != nil {
@@ -972,7 +973,7 @@ func (l *lander) land(ctx context.Context) error {
 	if st, err := gitIn(ctx, l.top, "status", "--porcelain"); err != nil {
 		return err
 	} else if st != "" {
-		return fail(exitRefused, "refused: HEAD moved while land waited: the worktree has changes not committed; nothing is pushed: commit and run bmesh land again")
+		return fail(exitRefused, "refused: HEAD moved while land waited: the worktree has changes not committed; nothing is pushed: commit, then run bmesh land again")
 	}
 	if head, err := gitIn(ctx, l.top, "rev-parse", "HEAD"); err != nil {
 		return err
@@ -985,7 +986,7 @@ func (l *lander) land(ctx context.Context) error {
 			return err
 		}
 		if time.Now().After(l.deadline) {
-			return fail(exitTimeout, "timed out waiting for main to stop moving; nothing is pushed")
+			return fail(exitTimeout, "timed out waiting for main to stop moving; nothing is pushed: run bmesh land again")
 		}
 		fmt.Fprintln(l.a.stdout, "main moved; again from the fetch")
 	}
@@ -1043,7 +1044,9 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 	if n, err := git("rev-list", "--count", baseSHA+"..HEAD"); err != nil {
 		return false, err
 	} else if n == "0" {
-		return false, fail(exitRefused, "refused: nothing to land: HEAD is on %s", l.base)
+		head, _ := git("rev-parse", "HEAD")
+		return false, fail(exitRefused, "refused: nothing to land: HEAD is on %s; landed already, it needs only bmesh done --commit %.8s, "+
+			"else commit your change on this branch, then run bmesh land again", l.base, head)
 	}
 	merged, err := git("rev-parse", "HEAD")
 	if err != nil {
@@ -1054,7 +1057,7 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 		return false, err
 	}
 
-	s, err := landsDone(l.top, l.a.cfg.Spec.Glob, l.id, l.branch)
+	s, err := landsDone(l.top, l.a.cfg.Spec.Glob, l.id, l.branch, "bmesh land")
 	if err != nil {
 		return false, err
 	}
@@ -1094,7 +1097,7 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 			if l.mainMoved(ctx, baseSHA) {
 				return true, nil
 			}
-			return false, fmt.Errorf("push main: %v", err)
+			return false, fmt.Errorf("push main: %v; nothing is pushed: run bmesh land again", err)
 		}
 		fmt.Fprintf(out, "push origin main %s\n", rec[:8])
 		// origin has it; the main checkout follows when it can.
@@ -1119,20 +1122,28 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 
 // landsDone reads spec id in the worktree at top and refuses it unless it
 // reads done: a spec lands with its code, set done on the lead's branch.
-func landsDone(top, glob string, id int, branch string) (*spec.Spec, error) {
+func landsDone(top, glob string, id int, branch, again string) (*spec.Spec, error) {
 	specs, err := spec.Scan(top, glob)
 	if err != nil {
 		return nil, landFail(err)
 	}
 	s, ok := spec.Find(specs, id)
 	if !ok {
-		return nil, fail(exitRefused, "refused: no spec %03d in %s", id, top)
+		return nil, noSpec(id, top, again)
 	}
 	if s.Status() != "done" {
 		return nil, fail(exitRefused, "refused: spec %03d reads %s on %s; a spec lands with its code reading done: "+
-			"run bmesh spec set --id %03d --status done, commit it, and land again", id, s.Status(), branch, id)
+			"run bmesh spec set --id %03d --status done, commit it, then run %s again", id, s.Status(), branch, id, again)
 	}
 	return s, nil
+}
+
+// noSpec refuses a landing whose worktree has no spec id: the spec lands
+// with its code, so it is committed on the branch first; again is the
+// command to run after.
+func noSpec(id int, top, again string) error {
+	return fail(exitRefused, "refused: no spec %03d in %s; a spec lands with its code: commit it on this branch "+
+		"(or rebase onto origin/main, if it landed there after you branched), then run %s again", id, top, again)
 }
 
 // reword amends HEAD (head, at tree) so its message ends with the Spec
@@ -1160,7 +1171,7 @@ func (l *lander) reword(ctx context.Context, head, tree, verified string) (strin
 	defer cancel()
 	putBack := func(why string) (string, error) {
 		_, _ = gitIn(c, l.top, "reset", "--quiet", "--keep", head)
-		return "", fail(exitError, "rewording %s %s; it is put back and nothing is pushed", head[:8], why)
+		return "", fail(exitError, "rewording %s %s; it is put back and nothing is pushed: run bmesh land again", head[:8], why)
 	}
 	rec, err := gitIn(c, l.top, "rev-parse", "HEAD")
 	if err != nil {
@@ -1242,7 +1253,9 @@ func (l *lander) scaffolded(ctx context.Context, baseSHA string) error {
 		}
 		fmt.Fprint(l.a.stdout, strings.Join(lines, ""))
 		return fail(exitRefused, "refused: the branch's scaffolded files differ from what bmesh scaffold writes from %s's row; "+
-			"the row's verify and setup are the source: bmesh repos propose with the new verify or setup, or restore the scaffolded files", l.repo)
+			"the row's verify and setup are the source: restore them (git checkout origin/main -- <the files above>), commit, then run bmesh land again; "+
+			"or, when your spec changes the verify or setup commands, bmesh repos propose the new verify or setup, ask the operator to publish it, "+
+			"then run bmesh scaffold %s, commit, and run bmesh land again", l.repo, l.top)
 	case own:
 		fmt.Fprintln(l.a.stdout, "scaffold: the verify kind follows the row (AGENTS.md is rendered by this tree's own bmesh, not checked)")
 	default:
@@ -1309,7 +1322,8 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA, preTree str
 		}
 		src := l.before[name]
 		if src == nil {
-			return nil, fail(exitRefused, "refused: %s has no result for t:%s; run it, then run bmesh land again", name, tree[:8])
+			return nil, fail(exitRefused, "refused: %s has no result for t:%s; run it on this tree (%s), then run bmesh land again",
+				name, tree[:8], rerun(name, byName[name], baseSHA))
 		}
 		if !src.result.OK {
 			return nil, fail(exitRefused, "refused: %s failed at t:%s, before the rebase; fix what it found, commit and run bmesh land again",
@@ -1330,8 +1344,7 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA, preTree str
 		}
 		if !same {
 			return nil, fail(exitRefused, "refused: %s has a result for t:%s but none for t:%s, and the rebase changed the diff: "+
-				"run it again on this tree (for review: bmesh routine queue review --again --go --text \"base: %s\", then routine wait), "+
-				"then run bmesh land again", name, src.tree[:8], tree[:8], baseSHA)
+				"run it again on this tree (%s), then run bmesh land again", name, src.tree[:8], tree[:8], rerun(name, byName[name], baseSHA))
 		}
 		carried, err := l.carry(ctx, src, tree)
 		if err != nil {
@@ -1349,7 +1362,7 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA, preTree str
 		return cmp.Or(strings.Compare(a.Kind, b.Kind), strings.Compare(a.Model, b.Model))
 	})
 	if len(entries) == 0 {
-		return nil, fail(exitRefused, "refused: %v", spec.ErrNoResults)
+		return nil, fail(exitRefused, "refused: %v, then run bmesh land again", spec.ErrNoResults)
 	}
 	for _, e := range entries {
 		if !e.OK {
@@ -1630,7 +1643,25 @@ func (l *lander) abortRebase(cleanup func(...string) (string, error), baseSHA st
 	}
 	l.resolved = nil
 	return fail(exitRefused, "refused: rebase onto %s %s; it is aborted and nothing is pushed. "+
-		"Rebase yourself, resolve it, re-validate, then run bmesh land again", l.base, what)
+		"Rebase yourself (git rebase %s) and resolve it so your spec and every spec that landed since you branched hold, "+
+		"then git rebase --continue (not a commit on top: land reads the head your rebase rewrote, so a review whose diff "+
+		"you left unchanged carries), re-validate, then run bmesh land again", l.base, what, l.base)
+}
+
+// rerun is the command that records kind k's result on HEAD's tree, for a
+// refusal that needs it: a review queued again for the rebased code, a
+// kind that runs on another box's OS queued after the rebased commit is
+// pushed, any other kind queued.
+func rerun(name string, k kind.Kind, baseSHA string) string {
+	switch {
+	case name == reviewKind:
+		return fmt.Sprintf("bmesh routine queue review --again --go --text \"base: %s\", then bmesh routine wait <job id>", baseSHA)
+	case k.Mode == "inline":
+		return "bmesh routine run " + name
+	case !k.RunsOn(hostOS):
+		return fmt.Sprintf("it runs on %s: git push --force-with-lease origin HEAD, then bmesh routine queue %s --go", k.OS, name)
+	}
+	return "bmesh routine queue " + name + " --go"
 }
 
 // rebaseGit runs a git rebase step that may write a commit message, which

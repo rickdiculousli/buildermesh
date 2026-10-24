@@ -34,7 +34,7 @@ func TestQueueOSKindNeedsPushAndSaysWhere(t *testing.T) {
 	onOS(t, "linux")
 	repo := kindRepo(t, map[string]string{"mac-build": "os = \"darwin\"\ndeterministic = true\ncommand = \"make\"\n"})
 	_, errs, code := runCLI(t, as("app-001"), "routine", "queue", "mac-build")
-	if code != 3 || errs != "bmesh: push first: mac-build runs on darwin, which fetches the commit from origin\n" {
+	if code != 3 || errs != "bmesh: push first: mac-build runs on darwin, which fetches the commit from origin: git push origin HEAD, then queue it again\n" {
 		t.Fatalf("unpushed: %d %q", code, errs)
 	}
 	if n, err := mesh.Depth(ctx, c, "mac-build"); err != nil || n != 0 {
@@ -121,7 +121,7 @@ func TestRunRefusesOSKindOfAnotherOS(t *testing.T) {
 	kindRepo(t, map[string]string{"mac-build": "os = \"darwin\"\ndeterministic = true\ncommand = \"touch ran\"\n"})
 	for _, args := range [][]string{{"routine", "run", "mac-build"}, {"routine", "run", "mac-build", "--here"}} {
 		_, errs, code := runCLI(t, as("app-001"), args...)
-		if code != 3 || errs != "bmesh: mac-build runs on darwin; this box is linux: queue it\n" {
+		if code != 3 || errs != "bmesh: mac-build runs on darwin; this box is linux: queue it (git push origin HEAD, then bmesh routine queue mac-build --go)\n" {
 			t.Fatalf("%v: %d %q", args, code, errs)
 		}
 	}
@@ -167,7 +167,7 @@ func TestQueueRunsWhereMainSendsIt(t *testing.T) {
 	meshtest.Git(t, repo, "checkout", "-q", "old")
 	meshtest.CommitFiles(t, repo, map[string]string{"b.txt": "b\n"})
 	_, errs, code = runCLI(t, as("app-001"), "routine", "queue", "build")
-	if code != 3 || errs != "bmesh: push first: build runs on darwin, which fetches the commit from origin\n" {
+	if code != 3 || errs != "bmesh: push first: build runs on darwin, which fetches the commit from origin: git push origin HEAD, then queue it again\n" {
 		t.Fatalf("main's os: %d %q", code, errs)
 	}
 }

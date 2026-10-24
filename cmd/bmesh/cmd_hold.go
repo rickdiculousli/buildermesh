@@ -250,7 +250,7 @@ func (a *app) cmdHeld(args []string) error {
 		return err
 	}
 	if !mesh.Legal(cur.State, "held") {
-		return fail(exitRefused, "refused: %v", mesh.ErrIllegalTransition{From: cur.State, To: "held"})
+		return illegalMove(cur.State, "held", "bmesh held")
 	}
 	text := mesh.GatePhrase(h.Gate) + " by " + h.By
 	if h.Text != "" {

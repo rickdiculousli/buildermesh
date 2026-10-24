@@ -639,14 +639,14 @@ It prints the rows, then `landed <sha8> on main: Specs 012, 013: rejected`, or `
 |---|---|---|
 | `--id` holds something not a number | 2 | `--id "<x>" is not a number` |
 | `--status` is outside the ledger's statuses | 2 | `--status "<s>" is not one of ...` |
-| No spec with that id | 1 | `no spec NNN in <dir>` (`no spec NNN on main in <path>` with `--land`) |
+| No spec with that id | 1 | `no spec NNN in <dir>; bmesh spec list shows the ids` (`no spec NNN on main in <path>; ...` with `--land`) |
 | Two specs share an id, in the checkout or in the commit about to land | 3 | `refused: <file> and <file> share id NNN; renumber the newer with bmesh spec next-id` |
 | With `--from`, a status not listed (named) | 1 | `spec NNN is <status>, not <A or B>; left unchanged` |
-| A write the ledger would read back differently (a duplicated `status:` key) | 1 | `spec NNN: writing status <S> would read back as <X>; left unchanged` |
+| A write the ledger would read back differently (a duplicated `status:` key) | 1 | `spec NNN: writing status <S> would read back as <X>; left unchanged: keep one status: line in its frontmatter, then run it again` |
 | A key that isn't a word, or a value with a line break | 1 | `can't set "<key>" to "<value>": keys are words and values are one line` |
-| `--land`: `main` can't be levelled with origin | 3 | `refused: main in <path> is not level with origin: <git error>` |
-| `--land`: origin refuses the push (its `main` moved); the edit is kept on its branch | 3 | `refused: push main: <git error>; the spec is committed on branch <branch>` |
-| `--land` without an origin: `main` won't fast-forward; the edit is kept on its branch | 3 | `refused: main in <path> did not fast-forward: <git error>; the spec is committed on branch <branch>` |
+| `--land`: `main` can't be levelled with origin | 3 | `refused: main in <path> is not level with origin: <git error>; run bmesh spec set --land again once main in <path> is level with origin (it levels main first)` |
+| `--land`: origin refuses the push (its `main` moved); the edit is kept on its branch | 3 | `refused: push main: <git error>; the spec is committed on branch <branch>; run bmesh spec set --land again once main in <path> is level with origin (it levels main first)` |
+| `--land` without an origin: `main` won't fast-forward; the edit is kept on its branch | 3 | `refused: main in <path> did not fast-forward: <git error>; the spec is committed on branch <branch>; run bmesh spec set --land again once main in <path> is level with origin (it levels main first)` |
 
 #### `bmesh spec template`
 
@@ -723,7 +723,7 @@ Composes the verified line from the results recorded for the tree of the cwd wor
 | When | Exit | Message |
 |---|---|---|
 | `--commit` is not a commit | 2 | `--commit "<C>" is not a commit in <worktree>` |
-| no results for the tree | 3 | `bmesh: no results for HEAD's tree; run the routines first` (`no results for <C>'s tree t:<tree8>` under `--commit`) |
+| no results for the tree | 3 | `bmesh: no results for HEAD's tree; run the routines first (bmesh routine run verify)` (`no results for <C>'s tree t:<tree8>` under `--commit`) |
 
 See also: [The verified line](#the-verified-line), [Results](#results), [`bmesh land`](#bmesh-land).
 
@@ -791,7 +791,7 @@ A failed start is the runner's error (exit 1 with one id), with the hold `--hold
 | No `--model` and no usable `judge` | 3 | `refused: spec NNN has no judge; pass --model` |
 | Held | 3 | one of the `held:` messages below |
 | `main` red | 3 | the `main is red` message below, then the last 30 lines of output |
-| The setup before verifying `main` failed | 3 | `verify main <sha8>: setup failed: <why>; nothing recorded`, then the last 30 lines of its output (`<why>` is `exit status <n>`, `timed out after <d>`, or for a setup that dirtied the tree, `verify main <sha8>: setup dirtied the tree: <paths>; nothing recorded`) |
+| The setup before verifying `main` failed | 3 | `verify main <sha8>: setup failed: <why>; nothing recorded: fix the setup (bmesh setup runs it alone), then run it again`, then the last 30 lines of its output (`<why>` is `exit status <n>`, `timed out after <d>`, or for a setup that dirtied the tree, `verify main <sha8>: setup dirtied the tree: <paths>; nothing recorded: fix the setup (bmesh setup runs it alone), then run it again`) |
 | Live node at the path | 3 | `refused: path <p> is taken (state <s>); use --path <p>-2` |
 | Box at `[runner] max_leads` | 3 | `<N> leads already working on this host` |
 | Start failed | 1 | the runner's error |
@@ -901,7 +901,7 @@ bmesh held
 | `hold` on a path with no node | 3 | `refused: no node <p>` |
 | `hold --family F` with no live lead | 3 | `refused: no live lead in family <F>` |
 | `held` with arguments | 2 | `held takes no arguments: the hold says why` |
-| `held` from a state that can't move to `held` | 3 | `refused: illegal state transition <from> -> held` |
+| `held` from a state that can't move to `held` | 3 | `refused: illegal state transition <from> -> held; <next step>`, the next step as for the [events](#bmesh-started-progress-blocked-ask-done) |
 | `held` with no hold (a release came first) | 3 | `refused: <path> is not held (released already?); run bmesh inbox and carry on` |
 
 See also: [Holds](#holds), [`bmesh build`](#bmesh-build) (`--hold`), [`bmesh land`](#bmesh-land).
@@ -1250,7 +1250,7 @@ A node never registered reads as `idle`. Nothing leaves `done`. A `landing` lead
 | A positional argument is given | 2 | `<event> takes no arguments (use --text)` |
 | `done` without `--commit` | 2 | `done needs --commit SHA` |
 | No node resolves | 2 | `no node for this directory; pass --node or set BMESH_NODE` |
-| The move is not in the table | 3 | `refused: illegal state transition <from> -> <to>` |
+| The move is not in the table | 3 | `refused: illegal state transition <from> -> <to>; <next step>`: from `done`, `nothing leaves done`; from `landing`, `your box's daemon is landing you: run bmesh ready --cancel first, then bmesh <event> again`; from `idle`, `run bmesh started --text "<one line>" first, then bmesh <event> again`; from any other, `run bmesh progress --text "<one line>" first, then bmesh <event> again` |
 | `done` for another commit than the node is done at | 3 | `refused: <path> is already done at <sha8>, not <sha8>` |
 | A lead's spec is not landed and verified | 3 | `not done: <why>` (see [`bmesh land`](#bmesh-land)) |
 | `done` from a node that is not registered | 1 | `node <path> is not registered` |
@@ -1464,8 +1464,8 @@ When `git worktree add` fails (a hook, an unwritable root), nothing is registere
 | `--model` holds a space or `;` | 2 | `model "<M>": want no spaces or ";"` |
 | `--base` is not a commit | 2 | `--base "<REF>" is not a commit in <worktree>` |
 | The caller is a routine path | 3 | `refused: <path> is a routine path; executors belong to leads` |
-| The executor's node is live (neither `done` nor `blocked`) | 3 | `refused: executor <path> exists (state <s>); remove it or pick another name` |
-| The branch exists | 3 | `refused: branch <b> already exists; remove it or pick another name` |
+| The executor's node is live (neither `done` nor `blocked`) | 3 | `refused: executor <path> exists (state <s>); remove it (bmesh executor remove <name>) or pick another name` |
+| The branch exists | 3 | `refused: branch <b> already exists; remove it (git branch -d <b>) or pick another name` |
 
 #### `bmesh executor list`
 
@@ -1501,8 +1501,8 @@ Removes a merged executor's worktree and branch. The executor's parent runs it.
 
 | When | Exit | Message |
 |---|---|---|
-| A branch not merged into the caller's HEAD, without `--force` | 3 | `refused: branch <b> is not merged into <parent branch>; merge it or pass --force` |
-| No such executor with a worktree under the caller | 3 | `refused: no executor <path> under <parent> with a worktree` |
+| A branch not merged into the caller's HEAD, without `--force` | 3 | `refused: branch <b> is not merged into <parent branch>; merge it (git merge <b>), then remove it again, or pass --force to discard it` |
+| No such executor with a worktree under the caller | 3 | `refused: no executor <path> under <parent> with a worktree; bmesh executor list shows yours` |
 
 ### `bmesh node`
 
@@ -1732,13 +1732,13 @@ Queues a job: one run of `<kind>` against a commit, run by a daemon that runs th
 
 | When | Exit | Message |
 |---|---|---|
-| the repo is not in the registry (named by the main repo directory's base name); a node's repo the registry lacks is refused the same way, as no daemon would run its job | 3 | `bmesh: <repo> is not in the registry` |
-| the cwd worktree doesn't define the kind | 3 | `no kind <kind> in <worktree>` |
+| the repo is not in the registry (named by the main repo directory's base name); a node's repo the registry lacks is refused the same way, as no daemon would run its job | 3 | `bmesh: <repo> is not in the registry, so no daemon would run the job; ask the operator to add it (bmesh repos propose)` |
+| the cwd worktree doesn't define the kind | 3 | `no kind <kind> in <worktree>; bmesh routine list shows its kinds` (for `verify`: `no kind verify in <worktree>; run the repo's verify commands, then record them: bmesh result record verify --ok (or --fail)`) |
 | the kind is inline | 3 | `bmesh: <kind> is inline: run it with bmesh routine run` |
 | main's `os` differs from the commit's | 3 | (e.g.) `bmesh: <kind> runs on darwin at <commit8> but anywhere on main, so a job could reach a linux box: land the os change first, or give it a kind name of its own` |
 | main lacks the kind | 3 | `bmesh: <kind> is not on main: land it first` |
 | main can't be read | 3 | `bmesh: cannot read kind <kind> on <ref>: <why>` |
-| another OS, and the commit is on no `origin` branch | 3 | `bmesh: push first: <kind> runs on darwin, which fetches the commit from origin` |
+| another OS, and the commit is on no `origin` branch | 3 | `bmesh: push first: <kind> runs on darwin, which fetches the commit from origin: git push origin HEAD, then queue it again` |
 | the branch already has a `review` result, without `--again` (naming that result, its verdict, commit and time) | 3 | `this branch already has a review: <result key> (<ok\|fail>, commit <sha8>, at <at>). A review's findings are fixed and then landed; the second pass only after a rebase changed the code, with --again` |
 | a `--model` with spaces or `;` | 2 | `model "<m>": want no spaces or ";"` |
 | a `--model` the kind lacks | 2 | `kind <k> has no model "<m>"` |
@@ -1815,14 +1815,14 @@ Runs a kind inline, in the requester's process, on the cwd worktree's HEAD, and 
 
 | When | Exit | Message |
 |---|---|---|
-| the cwd worktree's `.bmesh/routines/` doesn't define the kind | 3 | `no kind <kind> in <worktree>` |
-| the kind's `os` isn't this box's, `--here` included, since the result would stand as the kind's for the tree and answer every later job for it | 3 | `bmesh: mac-build runs on darwin; this box is linux: queue it` |
+| the cwd worktree's `.bmesh/routines/` doesn't define the kind | 3 | `no kind <kind> in <worktree>; bmesh routine list shows its kinds` (for `verify`: `no kind verify in <worktree>; run the repo's verify commands, then record them: bmesh result record verify --ok (or --fail)`) |
+| the kind's `os` isn't this box's, `--here` included, since the result would stand as the kind's for the tree and answer every later job for it | 3 | `bmesh: mac-build runs on darwin; this box is linux: queue it (git push origin HEAD, then bmesh routine queue mac-build --go)` |
 | a fresh or pooled kind without `--here` | 3 | `kind <kind> is <mode>; queue it, or pass --here to run it in this worktree` |
 | a dirty tree, since the verdict, and any result recorded, is for HEAD's tree | 3 | `bmesh: worktree is dirty; commit first` |
 | a `--commit` other than HEAD | 3 | `inline runs run HEAD; check out <commit> or queue the job` |
-| a command kind's setup failed (see Details) | 3 | `setup failed: <why>; nothing recorded`, then the last 30 lines of its output |
-| a command kind's setup left the tree dirty | 3 | `setup dirtied the tree: <paths>; nothing recorded` |
-| a model kind's claude never answered (see Model kinds in [Kinds](#kinds)) | 3 | `model run failed: <why>; nothing recorded` |
+| a command kind's setup failed (see Details) | 3 | `setup failed: <why>; nothing recorded: fix the setup (bmesh setup runs it alone), then run it again`, then the last 30 lines of its output |
+| a command kind's setup left the tree dirty | 3 | `setup dirtied the tree: <paths>; nothing recorded: fix the setup (bmesh setup runs it alone), then run it again` |
+| a model kind's claude never answered (see Model kinds in [Kinds](#kinds)) | 3 | `model run failed: <why>; nothing recorded: run it again` |
 
 It also refuses (exit 2) a `--model` with spaces or `;`, a `--model` the kind lacks, an `--effort` outside the five values, and any effort for a command kind, with the messages of [`bmesh routine queue`](#bmesh-routine-queue).
 
@@ -1947,7 +1947,7 @@ Runs the cwd worktree's `[setup]` (its `.bmesh/config.toml`) when its installs a
 |---|---|---|
 | A positional argument, or `--check` with `--force` | 2 | `usage: bmesh setup [--check] [--force]` |
 | Not in a git worktree | 2 | `bmesh setup runs in a worktree: <git error>` |
-| The setup command failed or timed out | 1 | `setup failed: exit status <n>` or `setup failed: timed out after <d>` |
+| The setup command failed or timed out | 1 | `setup failed: exit status <n>` or `setup failed: timed out after <d>`, then `; its output is above: fix what it says (the command is [setup] in .bmesh/config.toml), then run bmesh setup again` |
 
 **Details.** Unlike a verify's setup, this one doesn't require the tree clean after it: the agent's own edits are its own. The hash is read from the working tree, so an uncommitted lockfile change makes the installs stale.
 
@@ -1974,7 +1974,7 @@ The holder is the node, else the host name. A lead runs `land` in the background
 
 1. Stops (exit 3, nothing pushed) when run from a node held in `bm-holds` at either gate (see [Holds](#holds)).
 2. Refuses (exit 3) a dirty worktree, and one not on a branch or on `main`.
-3. **The spec reads `done`.** The spec must be in the worktree and read `done`: the lead sets it on its branch (`bmesh spec set --id NNN --status done`, committed), so the spec lands with its code. Otherwise it is refused here (exit 3), before anything is queued or waited for: `refused: spec NNN reads <status> on <branch>; a spec lands with its code reading done: run bmesh spec set --id NNN --status done, commit it, and land again`.
+3. **The spec reads `done`.** The spec must be in the worktree and read `done`: the lead sets it on its branch (`bmesh spec set --id NNN --status done`, committed), so the spec lands with its code. Otherwise it is refused here (exit 3), before anything is queued or waited for: `refused: spec NNN reads <status> on <branch>; a spec lands with its code reading done: run bmesh spec set --id NNN --status done, commit it, then run bmesh land again`.
 4. Run from a node, reads its inbox as the daemon's wake does (see [Config: Wake text](#wake-text)), holding and acking nothing. An unread message sent by `operator` with `bmesh send` refuses it (exit 3); there is no `--force`. Anything else unread (a report, a reply, another node's message) is named on one line, each item as the wake names it, `unread: done from <path> (branch <b> at <sha8>); reply to job <id> (<kind> ok|fail); message from <path>`. Outside a node there is no inbox and no check.
 5. Prints the kinds it will require of the landed tree and where each came from, `required: verify (the repo's verify kind), review (t:<tree8> at HEAD)`, or `review (t:<tree8> before the rebase at <sha8>)` for a result from before a rebase by hand (`required: nothing` when none). A kind it doesn't require that has a result on an earlier commit of the branch (its own first-parent commits back to its fork point from main, and those of a head a rebase by hand rewrote) is named after them, from the nearest such commit: `required: verify (the repo's verify kind); left behind by later commits: review ok t:<tree8> at <sha8> (not on the verified line)`, or `review fail ...` for a review that failed and was fixed. It isn't required because a review is one pass, its findings fixed in later commits and landed; a second pass (`routine queue review --again`) is for code a rebase changed.
 6. **Verify first.** Runs the required inline kinds on HEAD, as step 4 under the lease runs them, so a review never reads code that fails its tests. A failing one prints its output and exits 1. Under the lease, a kind ok at the same tree here prints `<entry> (ran before the lease)` and isn't run again.
@@ -1984,7 +1984,7 @@ The holder is the node, else the host name. A lead runs `land` in the background
     - `review: none (size XS|S)`: the change is small enough to land on verify alone.
     - `review: queued <id> (medium|high, size M|L)`: it pushes the branch (`push origin <branch> <sha8>`, so a daemon on any box can fetch the commit; a failing push is said on stderr and `land` goes on) and queues `review` on HEAD on the kind's first model, started at once, its text `base: <merge-base origin/main HEAD>`, at `medium` for size M and `high` for L or larger, bmesh's done rule.
 
-    The size is `--size`, else the spec's `size`. Only when `land` would queue does it need one: a spec with neither is refused (exit 2, `land needs --size: spec NNN has no size`), and so is a repo not in the registry, whose review no daemon would take (exit 3). Outside a node, or in a repo with no queued review kind, this step prints nothing.
+    The size is `--size`, else the spec's `size`. Only when `land` would queue does it need one: a spec with neither is refused (exit 2, `land needs --size: spec NNN has no size; run bmesh land --size XS|S|M|L, the size as built`; a `size` none of these, `land needs --size: spec NNN's size "<size>" is none of XS, S, M or L; ...` the same), and so is a repo not in the registry, whose review no daemon would take (exit 3). Outside a node, or in a repo with no queued review kind, this step prints nothing.
 8. **The node's jobs.** Waits for the reply to every unanswered job the node queued on HEAD of the repo's queued kinds, and to the review job of step 7. A job on an earlier commit is not waited for: its result isn't at HEAD's tree, and `land` requires what it would without it. Each job is named once, `waiting for job <id> (<kind>, waiting|held|running[ on <host>])`, and its reply looked for every 2 s. `land` sends each kind it waits on one `go`, as `routine go` does, so a job queued without `--go` starts. `land` acks each reply it reads, as `routine wait` does, so no wake follows.
     - An ok reply prints `job <id> (<kind>): ok t:<tree8>`.
     - A failing reply prints its output (a review's findings) and is refused (exit 3), so the lead never needs a `routine wait`.
@@ -1994,7 +1994,7 @@ The holder is the node, else the host name. A lead runs `land` in the background
 9. **The main checkout.** While the main checkout's `main` has commits `origin/main` doesn't (someone's unpushed work, which `land` never pushes), prints `waiting for main in <path> to be pushed: it has <n> commits origin/main doesn't (someone's unpushed work; land never pushes it)` once per count and fetches again every 15 s.
 10. While another holder has the lease, prints `waiting for land.<repo> (held by <holder>)` once per holder and retries every 2 s.
 
-**Waiting.** Every wait (steps 8 to 10, and the main checkout and a moving `main` under the lease) reads the node's hold and its mail again at each poll: a hold refuses at once, as step 1 does, and so does an unread operator message, or any the operator sent since `land` started, read or not, since a lead woken mid-land can't act on it before the push (`refused: <n> message(s) from the operator since land started; ...`). `--wait` bounds all of the waiting together; past it, `land` exits 5 with `timed out waiting for <what>; nothing is pushed`, `<what>` the job, the main checkout or `main` it waited for (`timed out waiting for land.<repo>, held by <holder>` for the lease). Run again, it waits for the same jobs rather than queueing them twice. Run from a node, `land` publishes a `land` event under the node when it starts and then once a minute until it ends, its text what it is doing (`waiting for job <id> (review)`, `landing under land.<repo>`). It sets no state, but it is the node's activity, so a lead waiting in `land` isn't called silent, and `watch` shows where it is.
+**Waiting.** Every wait (steps 8 to 10, and the main checkout and a moving `main` under the lease) reads the node's hold and its mail again at each poll: a hold refuses at once, as step 1 does, and so does an unread operator message, or any the operator sent since `land` started, read or not, since a lead woken mid-land can't act on it before the push (`refused: <n> message(s) from the operator since land started; ...`). `--wait` bounds all of the waiting together; past it, `land` exits 5 with `timed out waiting for <what>; nothing is pushed: run bmesh land again, which waits for the same jobs rather than queueing them twice`, `<what>` the job or the main checkout it waited for (`timed out waiting for land.<repo>, held by <holder>; nothing is pushed: run bmesh land again` for the lease). Run again, it waits for the same jobs rather than queueing them twice. Run from a node, `land` publishes a `land` event under the node when it starts and then once a minute until it ends, its text what it is doing (`waiting for job <id> (review)`, `landing under land.<repo>`). It sets no state, but it is the node's activity, so a lead waiting in `land` isn't called silent, and `watch` shows where it is.
 
 The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander blocks the next for at most that long. Holding it, `land` checks that the worktree is clean and that HEAD is the commit it waited on (or its own rebase of it), refusing `HEAD moved while land waited` (exit 3) otherwise, and reads the hold and the inbox again. A message arriving during the rebase and checks is not seen. It prints `lease land.<repo>`, then a line per step:
 
@@ -2017,7 +2017,7 @@ The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander b
     - Any failing entry for the tree is refused too.
 5. `verified: ...`: the verified line, as `spec verified` composes it, from the entries of step 4. A line that wouldn't read back as the same entries (a model with a `;` or a space) exits 1. A spec whose `## Needs from the operator` section has steps prints `operator steps: N (bmesh spec steps NNN)`; land copies nothing into the spec, and the steps are read from the landed spec (see [`bmesh spec steps`](#bmesh-spec-steps)).
 6. `trailers <sha8>: Spec NNN, Verified`: HEAD reworded so its message ends with two trailers, `Spec: NNN` and `Verified: <the line>` (`git interpret-trailers --if-exists replace`, then `git commit --amend --no-verify --allow-empty`), replacing any a pass before wrote, never doubling them. Rewording changes no file, so the tree, and every result recorded for it, still match: `land` checks the tree is unchanged and, if not, puts HEAD back and exits 1. `<sha8>` is the reworded commit.
-7. `push origin main <sha8>`: `git push origin HEAD:refs/heads/main`, a fast-forward or nothing. When the push is refused because `origin/main` moved, `land` takes the reword back (`git reset --keep` to the commit before it), prints `main moved; again from the fetch` and restarts at step 1, as often as `main` moves while `--wait` lasts (past it, exit 5, `timed out waiting for main to stop moving; nothing is pushed`). Step 4 then carries the verify it just ran when what moved `main` is outside the code (a coordinator's commit, or, with `code` set, a README commit). Any other failure takes the reword back and exits 1.
+7. `push origin main <sha8>`: `git push origin HEAD:refs/heads/main`, a fast-forward or nothing. When the push is refused because `origin/main` moved, `land` takes the reword back (`git reset --keep` to the commit before it), prints `main moved; again from the fetch` and restarts at step 1, as often as `main` moves while `--wait` lasts (past it, exit 5, `timed out waiting for main to stop moving; nothing is pushed: run bmesh land again`). Step 4 then carries the verify it just ran when what moved `main` is outside the code (a coordinator's commit, or, with `code` set, a README commit). Any other failure takes the reword back and exits 1.
 8. `main <sha8>`: the main checkout's `main` fast-forwarded as `spec set --land` does (`merge --ff-only` when it is on `main`, else `fetch . <branch>:main`). When it can't, `land` says so on stderr and the landing stands, `origin/main` holding the commit. Without an origin this step is the landing, and a `main` that moved is retried as a refused push is.
 
 **Output.** It ends `released land.<repo>` and `landed <sha8>`, the reworded commit that carries the trailers: the one `bmesh done --commit` names.
@@ -2029,42 +2029,42 @@ The lease lasts `--ttl` unrenewed and is renewed every ttl/3, so a dead lander b
 | `--ttl` under 3 s | 2 | `land: --ttl must be at least 3s` |
 | no `--spec` and no node spec | 2 | `land needs --spec NNN (no node spec resolves)` |
 | `--spec` is not a number | 2 | `--spec "<NNN>" is not a number` |
-| the worktree has no such spec | 3 | `refused: no spec NNN in <top>` |
-| the spec doesn't read `done` in the worktree | 3 | `refused: spec NNN reads <status> on <branch>; a spec lands with its code reading done: run bmesh spec set --id NNN --status done, commit it, and land again` |
+| the worktree has no such spec | 3 | `refused: no spec NNN in <top>; a spec lands with its code: commit it on this branch (or rebase onto origin/main, if it landed there after you branched), then run bmesh land again` |
+| the spec doesn't read `done` in the worktree | 3 | `refused: spec NNN reads <status> on <branch>; a spec lands with its code reading done: run bmesh spec set --id NNN --status done, commit it, then run bmesh land again` |
 | `--size` is none of XS, S, M, L (or XL and up) | 2 | `land: --size "<size>": want XS, S, M or L` |
-| a review to queue and no size | 2 | `land needs --size: spec NNN has no size` |
-| not a worktree of a repo with a main checkout | 3 | `refused: <top> is not a worktree of a repo with a main checkout` |
+| a review to queue and no size | 2 | `land needs --size: spec NNN has no size; run bmesh land --size XS|S|M|L, the size as built` |
+| not a worktree of a repo with a main checkout | 3 | `refused: <top> is not a worktree of a repo with a main checkout; run bmesh land in a lead's worktree` |
 | a hold at either gate | 3 | `held <gate phrase> by <by> <age> ago: <why>; nothing is pushed: run bmesh held and end your turn, and run bmesh land again once the release wakes you` (e.g. `bmesh: held before land by <by> <age> ago: <why>; ...`) |
 | a dirty worktree | 3 | `worktree is dirty; commit first` |
-| not on a branch, or on `main` | 3 | `refused: land runs on a lead's branch, not <branch\|->` |
+| not on a branch, or on `main` | 3 | `refused: land runs on a lead's branch, not <branch\|->; run it in your worktree, on your own branch` |
 | an unread message from the operator | 3 | `bmesh: refused: <n> unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh land again` |
 | a message from the operator since `land` started, read or not | 3 | `bmesh: refused: <n> message(s) from the operator since land started; nothing is pushed: run bmesh inbox, act on them, then run bmesh land again` |
-| a review to queue in a repo not in the registry | 3 | `refused: <repo> is not in the registry, so no daemon takes its review; nothing is pushed` |
+| a review to queue in a repo not in the registry | 3 | `refused: <repo> is not in the registry, so no daemon takes its review; nothing is pushed: ask the operator to add it (bmesh repos propose), then run bmesh land again` |
 | a failing reply to a job it waited for | 3 | its output, then `refused: <kind> failed at t:<tree8> (job <id>); nothing is pushed: fix what it found, commit and run bmesh land again` |
 | a reply that recorded nothing, a second time after a model run that never answered, or once for any other reason | 3 | its output, then `refused: job <id> (<kind>) recorded nothing; nothing is pushed: see its output above, then run bmesh land again` |
-| HEAD or the worktree changed while it waited | 3 | `refused: HEAD moved while land waited (<sha8>, was <sha8>); nothing is pushed: run bmesh land again`, or `refused: HEAD moved while land waited: the worktree has changes not committed; ...` |
-| `--wait` passes while another holder has the lease | 5 | `bmesh: timed out waiting for land.<repo>, held by <holder>` |
-| `--wait` passes while it waits for anything else | 5 | `bmesh: timed out waiting for <what>; nothing is pushed`, `<what>` `job <id> (<kind>)`, `main in <path> to be pushed` or `main to stop moving` |
+| HEAD or the worktree changed while it waited | 3 | `refused: HEAD moved while land waited (<sha8>, was <sha8>); nothing is pushed: see what changed (git log -3), then run bmesh land again`, or `refused: HEAD moved while land waited: the worktree has changes not committed; nothing is pushed: commit, then run bmesh land again` |
+| `--wait` passes while another holder has the lease | 5 | `bmesh: timed out waiting for land.<repo>, held by <holder>; nothing is pushed: run bmesh land again` |
+| `--wait` passes while it waits for anything else | 5 | `bmesh: timed out waiting for <what>; nothing is pushed: run bmesh land again, which waits for the same jobs rather than queueing them twice`, `<what>` `job <id> (<kind>)` or `main in <path> to be pushed`; for `main to stop moving`, it ends `nothing is pushed: run bmesh land again` |
 | the rebase fails | 3 | see below |
-| nothing beyond the base | 3 | `refused: nothing to land: HEAD is on <base>` |
+| nothing beyond the base | 3 | `refused: nothing to land: HEAD is on <base>; landed already, it needs only bmesh done --commit <sha8>, else commit your change on this branch, then run bmesh land again` (`<sha8>` HEAD) |
 | the rebased ledger has two specs sharing an id (another writer landed the same number) | 3 | `refused: <file> and <file> share id NNN; renumber the newer with bmesh spec next-id` |
 | scaffold drift | 3 | see below |
 | a failing inline kind | 1 | `<kind> failed at t:<tree8>; fix it, commit and run bmesh land again`; after a resolution, see below |
 | an inline command kind's setup failed | 3 | as [`bmesh routine run`](#bmesh-routine-run) says |
 | a failing result or a changed diff; a failing entry for the tree | 3 | names the kind and how to re-run it; see below |
-| any other push failure | 1 | `push main: <git error>` |
-| the reword changed the tree | 1 | `rewording <sha8> changed its tree (t:<tree8>, was t:<tree8>); it is put back and nothing is pushed` |
-| the reworded commit's trailers don't read back as written | 1 | `rewording <sha8> left trailers that read Spec "<id>", Verified "<line>"; it is put back and nothing is pushed` |
-| an interrupt (SIGINT or SIGTERM: Ctrl-C, or the daemon cancelling a [`bmesh ready`](#bmesh-ready) step) before the push | 1 | `interrupted; nothing is pushed`; under the lease, the rebase is aborted and the lease released first. An interrupt once the push to `main` has begun lets the push and the main checkout's fast-forward finish, and `land` reports what happened. |
+| any other push failure | 1 | `push main: <git error>; nothing is pushed: run bmesh land again` |
+| the reword changed the tree | 1 | `rewording <sha8> changed its tree (t:<tree8>, was t:<tree8>); it is put back and nothing is pushed: run bmesh land again` |
+| the reworded commit's trailers don't read back as written | 1 | `rewording <sha8> left trailers that read Spec "<id>", Verified "<line>"; it is put back and nothing is pushed: run bmesh land again` |
+| an interrupt (SIGINT or SIGTERM: Ctrl-C, or the daemon cancelling a [`bmesh ready`](#bmesh-ready) step) before the push | 1 | `interrupted; nothing is pushed: run bmesh land again`; under the lease, the rebase is aborted and the lease released first. An interrupt once the push to `main` has begun lets the push and the main checkout's fast-forward finish, and `land` reports what happened. |
 
-- Rebase conflict: `bmesh: refused: rebase onto origin/main conflicts in <files>; it is aborted and nothing is pushed. Rebase yourself, resolve it, re-validate, then run bmesh land again`, `<files>` those no rule resolves. When a rule resolved other files, at this stop or an earlier one, `<files>` is followed by `, which no rule resolves (a rule resolves <files>)`. When no file conflicts, it reads `rebase onto <base> fails` in place of `rebase onto origin/main conflicts in <files>`.
+- Rebase conflict: `bmesh: refused: rebase onto origin/main conflicts in <files>; it is aborted and nothing is pushed. Rebase yourself (git rebase origin/main) and resolve it so your spec and every spec that landed since you branched hold, then git rebase --continue (not a commit on top: land reads the head your rebase rewrote, so a review whose diff you left unchanged carries), re-validate, then run bmesh land again`, `<files>` those no rule resolves. When a rule resolved other files, at this stop or an earlier one, `<files>` is followed by `, which no rule resolves (a rule resolves <files>)`. When no file conflicts, it reads `rebase onto <base> fails` in place of `rebase onto origin/main conflicts in <files>`.
 - A failing inline kind after a resolution: `<kind> failed at t:<tree8>, after the rebase resolved <files> by rule: that is land's merge, and the branch is left rebased; fix it forward, commit, then run bmesh land again, which queues the review the new diff needs` (exit 1). Run again from a node, `land` finds no review on the branch (the reviewed commits are not under the fix) and queues one, as step 7 before the lease says.
-- A required kind with no result for the tree: `refused: <kind> has no result for t:<tree8>; run it, then run bmesh land again`
+- A required kind with no result for the tree: `refused: <kind> has no result for t:<tree8>; run it on this tree (<command>), then run bmesh land again`, `<command>` the one that records it: `bmesh routine queue review --again --go --text "base: <sha>", then bmesh routine wait <job id>` for review; `bmesh routine run <kind>` for an inline kind; `it runs on <os>: git push --force-with-lease origin HEAD, then bmesh routine queue <kind> --go` for a kind whose `os` isn't this box's; else `bmesh routine queue <kind> --go`
 - A required kind that failed before the rebase: `refused: <kind> failed at t:<tree8>, before the rebase; fix what it found, commit and run bmesh land again`
-- A changed diff (a review that `land` doesn't queue again: run outside a node, or the repo's review kind is inline): `refused: <kind> has a result for t:<old8> but none for t:<new8>, and the rebase changed the diff: run it again on this tree (for review: bmesh routine queue review --again --go --text "base: <sha>", then routine wait), then run bmesh land again`
-- No results at all: `refused: no results for HEAD's tree; run the routines first`
+- A changed diff (a review that `land` doesn't queue again: run outside a node, or the repo's review kind is inline): `refused: <kind> has a result for t:<old8> but none for t:<new8>, and the rebase changed the diff: run it again on this tree (<command>), then run bmesh land again`, `<command>` as for a kind with no result
+- No results at all: `refused: no results for HEAD's tree; run the routines first (bmesh routine run verify), then run bmesh land again`
 - A failing entry: `refused: <kind> fails at t:<tree8>; fix it, commit and run bmesh land again` (for a carried entry, `t:<c tree8>, the same diff`)
-- Scaffold drift: `bmesh: refused: the branch's scaffolded files differ from what bmesh scaffold writes from <repo>'s row; the row's verify and setup are the source: bmesh repos propose with the new verify or setup, or restore the scaffolded files`
+- Scaffold drift: `bmesh: refused: the branch's scaffolded files differ from what bmesh scaffold writes from <repo>'s row; the row's verify and setup are the source: restore them (git checkout origin/main -- <the files above>), commit, then run bmesh land again; or, when your spec changes the verify or setup commands, bmesh repos propose the new verify or setup, ask the operator to publish it, then run bmesh scaffold <worktree>, commit, and run bmesh land again`
 
 **Conflicts.** At each stop, every conflicted file is merged again from its three sides in diff3 style, and each conflict region is resolved by the first rule that applies:
 
@@ -2115,17 +2115,19 @@ While land runs, the daemon reads the request, the lead's state and its mail eve
 |---|---|---|
 | no `--text`, or `--cancel` with `--text` or `--size` | 2 | `usage: bmesh ready --text "<done line>" [--size XS\|S\|M\|L] \| bmesh ready --cancel` |
 | `--size` is none of XS, S, M, L | 2 | `ready: --size "<size>": want XS, S, M or L` |
-| the node isn't a lead (a fixer, an executor, an engineer) | 3 | `refused: <path> is a <role>; only a lead's daemon lands it` |
-| the node runs on another box | 3 | `refused: <path> runs on <host>, not this box (<this>); its daemon is there` |
+| no node resolves for the path | 3 | `refused: no node <path>; run bmesh ready in your worktree, or pass --node <your path>` |
+| the node isn't a lead (a fixer, an executor, an engineer) | 3 | `refused: <path> is a <role>; only a lead's daemon lands it: run bmesh land` (an executor: `...: report to your lead with bmesh done --commit <sha>`) |
+| the node runs on another box | 3 | `refused: <path> runs on <host>, not this box (<this>); its daemon is there: run bmesh ready on <host>, or bmesh land here` |
 | the node has no thread | 3 | `refused: <path> has no thread for the daemon to wake; run bmesh land` |
-| the node's registered worktree isn't this checkout | 3 | `refused: <path>'s worktree is <worktree>, not this checkout <top>` |
+| the node's registered worktree isn't this checkout | 3 | `refused: <path>'s worktree is <worktree>, not this checkout <top>; run bmesh ready in <worktree>` |
 | a dirty worktree | 3 | `refused: the worktree has changes not committed; commit them, then run bmesh ready again` |
-| the spec doesn't read `done` in the worktree | 3 | `refused: spec NNN reads <status> on <branch>; a spec lands with its code reading done: run bmesh spec set --id NNN --status done, commit it, and land again` (or `refused: no spec NNN in <top>`) |
+| the node names no spec | 3 | `refused: <path> names no spec ("<spec>"); run bmesh land --spec NNN` |
+| the spec doesn't read `done` in the worktree | 3 | `refused: spec NNN reads <status> on <branch>; a spec lands with its code reading done: run bmesh spec set --id NNN --status done, commit it, then run bmesh ready again` (or `refused: no spec NNN in <top>; a spec lands with its code: commit it on this branch (or rebase onto origin/main, if it landed there after you branched), then run bmesh ready again`) |
 | an unread message from the operator | 3 | `refused: <n> unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh ready again` |
 | a request already stands | 3 | `already ready; bmesh ready --cancel first` |
 | this box's daemon doesn't land for leads: its newest `started` event has no `can` naming `land` (an older release, or no daemon ever started) | 3 | `this box's daemon doesn't land for leads; run bmesh land` |
-| a state that can't move to `landing` | 3 | `refused: illegal state transition <from> -> landing` |
-| `--cancel` with no request | 3 | `refused: <path> has no ready request` |
+| a state that can't move to `landing` | 3 | `refused: illegal state transition <from> -> landing; <next step>`, the next step as for the [events](#bmesh-started-progress-blocked-ask-done) (`run bmesh progress --text "<one line>" first, then bmesh ready again` from `blocked`, `asking` or `silent`) |
+| `--cancel` with no request | 3 | `refused: <path> has no ready request; there is nothing to cancel` |
 | `--cancel` and the daemon holds the claim for 3 minutes | 5 | `timed out waiting for the daemon to cancel the step; the request reads cancelled, and the daemon ends it` |
 
 **Where a request shows.** `mesh-status` prints the state and, after the table, one line per request: `<path> landing 6m: <the landing text>` (or the wake still owed, `landed <sha8> ...` or `land refused ...`); `--json` carries the row's `ready`, `{"phase","head","at"}`. The map draws a `landing` lead with a calm badge, counts it on the strip (`1 landing`), and never puts it in the needs-you band (see [Map](#map)).
@@ -3111,10 +3113,12 @@ Verified: review ok t:3f2a9c1e m:claude-opus-5-5 c:81d0b7a4; verify ok t:3f2a9c1
 
 `bmesh done --commit <landed>` checks, in order, and refuses with exit 3 at the first that fails:
 
-1. The commit is on main (`git merge-base --is-ancestor <commit> <ref>`, `ref` = `origin/main` when the repo has an origin, after a fetch, else `main`). Else `bmesh: not done: <sha8> is not on <ref>`.
-2. It has a `Verified:` trailer (`bmesh: not done: <sha8> has no Verified trailer`) with no `fail` entry (`bmesh: not done: verified has a failing entry <kind>`).
-3. Each entry is for the commit's tree (`bmesh: not done: verified entry <kind> is for tree <t>, merged tree is <m>`) and is matched by a record of that kind at that tree with the same `ok` (and model, when the entry names one), whatever its args. A carried entry is matched by a model record at the tree its `c:` names, with the same `ok` and model, whose patch-id is the diff the commit landed. Else `bmesh: not done: verified names <kind> but no result for tree <t>` (`<t>` is the `c:` tree for a carried entry).
-4. Its `Spec:` trailer names the node's spec: `bmesh: not done: <sha8> landed spec MMM, not NNN` (`bmesh: not done: <sha8> has no Spec trailer` without one).
+Each refusal for the commit names its next step, `<pass>` below: `pass bmesh done --commit the commit bmesh land printed as landed (git rev-parse HEAD in your worktree after it)`.
+
+1. The commit is on main (`git merge-base --is-ancestor <commit> <ref>`, `ref` = `origin/main` when the repo has an origin, after a fetch, else `main`). Else `bmesh: not done: <sha8> is not on <ref>; <pass>, or land first (bmesh ready, or bmesh land)`.
+2. It has a `Verified:` trailer (`bmesh: not done: <sha8> has no Verified trailer; <pass>, which carries it`) with no `fail` entry (`bmesh: not done: verified has a failing entry <kind>; <pass>, whose entries all pass`).
+3. Each entry is for the commit's tree (`bmesh: not done: verified entry <kind> is for tree <t>, merged tree is <m>; <pass>`) and is matched by a record of that kind at that tree with the same `ok` (and model, when the entry names one), whatever its args. A carried entry is matched by a model record at the tree its `c:` names, with the same `ok` and model, whose patch-id is the diff the commit landed. Else `bmesh: not done: verified names <kind> but no result for tree <t>; record it there (bmesh routine run <kind> in a checkout of <sha8>, or bmesh routine queue <kind> --commit <sha8> --go), then run bmesh done again` (`<t>` is the `c:` tree for a carried entry).
+4. Its `Spec:` trailer names the node's spec: `bmesh: not done: <sha8> landed spec MMM, not NNN; <pass> for spec NNN` (`bmesh: not done: <sha8> has no Spec trailer; <pass>` without one).
 
 A commit whose subject is the old `NNN: done at <sha8>` record (a lead that landed with the release before) is checked as it was: the spec on main reads `done` with a `merged` commit main contains (else `bmesh: not done: status is <status>`, `merged is empty` or `merged <sha> is not on <ref>`), and its `verified` line passes 2 and 3 for `merged`, an empty one refused with `bmesh: not done: verified is empty`.
 

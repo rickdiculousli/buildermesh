@@ -44,7 +44,7 @@ func TestSetupCommand(t *testing.T) {
 		t.Fatalf("--force: %d %q", code, errs)
 	}
 	commitAll(t, repo, map[string]string{"lock.json": "2\n", ".bmesh/config.toml": "[setup]\ncommand = \"echo down; exit 2\"\n"})
-	if out, errs, code := runCLI(t, nil, "setup"); code != 1 || out != "down\n" || errs != "bmesh: setup failed: exit status 2\n" {
+	if out, errs, code := runCLI(t, nil, "setup"); code != 1 || out != "down\n" || errs != "bmesh: setup failed: exit status 2; its output is above: fix what it says (the command is [setup] in .bmesh/config.toml), then run bmesh setup again\n" {
 		t.Fatalf("failing: %d %q %q", code, out, errs)
 	}
 	if _, _, code := runCLI(t, nil, "setup", "--check"); code != 1 {

@@ -150,8 +150,22 @@ func TestLandCleanThenDone(t *testing.T) {
 		t.Fatalf("done: %d %q %q", code, out, errs)
 	}
 	// Landed, it refuses a second land.
-	if _, errs, code := runCLI(t, as("app-012"), "land"); code != 3 || !strings.Contains(errs, "refused: nothing to land") {
+	if _, errs, code := runCLI(t, as("app-012"), "land"); code != 3 || errs != "bmesh: refused: nothing to land: HEAD is on origin/main; "+
+		"landed already, it needs only bmesh done --commit "+rec[:8]+", else commit your change on this branch, then run bmesh land again\n" {
 		t.Fatalf("second land: %d %q", code, errs)
+	}
+}
+
+// A worktree without the spec is refused with the step that brings it.
+func TestLandRefusesASpecNotOnTheBranch(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-013", RepoPath: r.repo, Spec: "013"})
+	_, errs, code := runCLI(t, as("app-013"), "land")
+	if code != 3 || !strings.HasSuffix(errs, "; a spec lands with its code: commit it on this branch "+
+		"(or rebase onto origin/main, if it landed there after you branched), then run bmesh land again\n") ||
+		!strings.HasPrefix(errs, "bmesh: refused: no spec 013 in ") {
+		t.Fatalf("land: %d %q", code, errs)
 	}
 }
 
@@ -167,7 +181,7 @@ func TestLandRefusesASpecNotReadingDone(t *testing.T) {
 	base := r.originMain(t)
 	out, errs, code := runCLI(t, as("app-012"), "land")
 	if code != 3 || out != "" || errs != "bmesh: refused: spec 012 reads accepted on lead; a spec lands with its code reading done: "+
-		"run bmesh spec set --id 012 --status done, commit it, and land again\n" {
+		"run bmesh spec set --id 012 --status done, commit it, then run bmesh land again\n" {
 		t.Fatalf("land: %d %q %q", code, out, errs)
 	}
 	if runs() != 0 || r.originMain(t) != base {
@@ -287,7 +301,7 @@ func TestLandTimesOutWhenMainKeepsMoving(t *testing.T) {
 	writeFile(t, os.Getenv("HOOK"), "cd '"+other+"' && date +%s%N >> c.txt && git add c.txt && git commit -qm 'other c' && git push -q origin HEAD:main\n")
 
 	out, errs, code := runCLI(t, as("app-012"), "land", "--wait", "1s")
-	if code != exitTimeout || errs != "bmesh: timed out waiting for main to stop moving; nothing is pushed\n" || !strings.Contains(out, "main moved; again") {
+	if code != exitTimeout || errs != "bmesh: timed out waiting for main to stop moving; nothing is pushed: run bmesh land again\n" || !strings.Contains(out, "main moved; again") {
 		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
 	}
 	if r.originMain(t) != gitOut(t, "-C", other, "rev-parse", "HEAD") {
@@ -353,7 +367,7 @@ func TestLandWaitsForHeldLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, errs, code := runCLI(t, as("app-012"), "land", "--spec", "012", "--wait", "100ms"); code != exitTimeout ||
-		errs != "bmesh: timed out waiting for land.repo, held by app-011\n" {
+		errs != "bmesh: timed out waiting for land.repo, held by app-011; nothing is pushed: run bmesh land again\n" {
 		t.Fatalf("held: %d %q", code, errs)
 	}
 }
@@ -371,7 +385,8 @@ func TestLandStopsOnConflict(t *testing.T) {
 
 	out, errs, code := runCLI(t, as("app-012"), "land")
 	if code != 3 || errs != "bmesh: refused: rebase onto origin/main conflicts in a.txt; it is aborted and nothing is pushed. "+
-		"Rebase yourself, resolve it, re-validate, then run bmesh land again\n" {
+		"Rebase yourself (git rebase origin/main) and resolve it so your spec and every spec that landed since you branched hold, "+
+		"then git rebase --continue (not a commit on top: land reads the head your rebase rewrote, so a review whose diff you left unchanged carries), re-validate, then run bmesh land again\n" {
 		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
 	}
 	if r.originMain(t) != moved || gitOut(t, "rev-parse", "HEAD") != work || gitOut(t, "status", "--porcelain") != "" {
@@ -949,7 +964,9 @@ func TestLandRefusesAVerifyKindTheRowDoesntWrite(t *testing.T) {
 	base := r.originMain(t)
 	out, errs, code := runCLI(t, as("app-012"), "land")
 	if code != 3 || errs != "bmesh: refused: the branch's scaffolded files differ from what bmesh scaffold writes from repo's row; "+
-		"the row's verify and setup are the source: bmesh repos propose with the new verify or setup, or restore the scaffolded files\n" {
+		"the row's verify and setup are the source: restore them (git checkout origin/main -- <the files above>), commit, then run bmesh land again; "+
+		"or, when your spec changes the verify or setup commands, bmesh repos propose the new verify or setup, ask the operator to publish it, "+
+		"then run bmesh scaffold "+r.wt+", commit, and run bmesh land again\n" {
 		t.Fatalf("land: %d\n%s\n%q", code, out, errs)
 	}
 	for _, w := range []string{"--- a/.bmesh/routines/verify.toml\n", "-command = \"sh \\\"$HOOK\\\" && true\"\n", "+command = \"sh \\\"$HOOK\\\"\"\n"} {
@@ -1351,7 +1368,8 @@ func TestLandNamesTheFilesNoRuleResolves(t *testing.T) {
 
 	out, errs, code := runCLI(t, as("app-012"), "land")
 	if code != 3 || errs != "bmesh: refused: rebase onto origin/main conflicts in a.txt, which no rule resolves (a rule resolves x.go); "+
-		"it is aborted and nothing is pushed. Rebase yourself, resolve it, re-validate, then run bmesh land again\n" {
+		"it is aborted and nothing is pushed. Rebase yourself (git rebase origin/main) and resolve it so your spec and every spec that landed since you branched hold, "+
+		"then git rebase --continue (not a commit on top: land reads the head your rebase rewrote, so a review whose diff you left unchanged carries), re-validate, then run bmesh land again\n" {
 		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
 	}
 	if r.originMain(t) != moved || gitOut(t, "rev-parse", "HEAD") != work || gitOut(t, "status", "--porcelain") != "" {
@@ -1559,11 +1577,22 @@ func TestLandSizesTheReview(t *testing.T) {
 		r := reviewLandRepo(t, c, ctx, "")
 		base := r.originMain(t)
 		_, errs, code := runCLI(t, as("app-012"), "land")
-		if code != exitUsage || errs != "bmesh: land needs --size: spec 012 has no size\n" || r.originMain(t) != base {
+		if code != exitUsage || errs != "bmesh: land needs --size: spec 012 has no size; run bmesh land --size XS|S|M|L, the size as built\n" || r.originMain(t) != base {
 			t.Fatalf("land: %d %q", code, errs)
 		}
 		if _, errs, code := runCLI(t, as("app-012"), "land", "--size", "Q"); code != exitUsage || !strings.Contains(errs, `--size "Q"`) {
 			t.Fatalf("bad size: %d %q", code, errs)
+		}
+	})
+	t.Run("not in the registry", func(t *testing.T) {
+		c, ctx := setup(t)
+		r := reviewLandRepo(t, c, ctx, "M")
+		writeRepos(t, "")
+		base := r.originMain(t)
+		_, errs, code := runCLI(t, as("app-012"), "land")
+		if code != 3 || errs != "bmesh: refused: repo is not in the registry, so no daemon takes its review; nothing is pushed: "+
+			"ask the operator to add it (bmesh repos propose), then run bmesh land again\n" || r.originMain(t) != base {
+			t.Fatalf("land: %d %q", code, errs)
 		}
 	})
 }
@@ -1599,7 +1628,7 @@ func TestLandWaitsForAReviewAlreadyQueued(t *testing.T) {
 		base := r.originMain(t)
 		out, errs, code := runCLI(t, as("app-012"), "land", "--wait", "200ms")
 		m := queuedRE.FindStringSubmatch(out)
-		if code != exitTimeout || m == nil || errs != "bmesh: timed out waiting for job "+m[1]+" (review); nothing is pushed\n" || r.originMain(t) != base {
+		if code != exitTimeout || m == nil || errs != "bmesh: timed out waiting for job "+m[1]+" (review); nothing is pushed: run bmesh land again, which waits for the same jobs rather than queueing them twice\n" || r.originMain(t) != base {
 			t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
 		}
 		bout, berr, res := landBG(t, "app-012")
@@ -1823,7 +1852,7 @@ func TestLandStopsForWhatNeedsTheLead(t *testing.T) {
 		}
 		landEnds(t, res, 3, out, errb)
 		if errb.String() != "bmesh: refused: HEAD moved while land waited ("+gitOut(t, "rev-parse", "HEAD")[:8]+", was "+was[:8]+
-			"); nothing is pushed: run bmesh land again\n" || r.originMain(t) != base {
+			"); nothing is pushed: see what changed (git log -3), then run bmesh land again\n" || r.originMain(t) != base {
 			t.Fatalf("land:\n%s\nerr %q", out.String(), errb.String())
 		}
 		assertNoLeases(t, c, ctx)

@@ -316,7 +316,7 @@ func (a *app) cmdRoutineQueue(args []string) error {
 	}
 	i := slices.IndexFunc(kinds, func(k kind.Kind) bool { return k.Name == name })
 	if i < 0 {
-		return fail(exitRefused, "no kind %s in %s", name, top)
+		return noKind(name, top)
 	}
 	k := kinds[i]
 	if err := checkModel(*model); err != nil {
@@ -386,7 +386,7 @@ func (a *app) cmdRoutineQueue(args []string) error {
 			return err
 		}
 		if on == "" {
-			return fail(exitRefused, "push first: %s runs on %s, which fetches the commit from origin", name, runsOn)
+			return fail(exitRefused, "push first: %s runs on %s, which fetches the commit from origin: git push origin HEAD, then queue it again", name, runsOn)
 		}
 	}
 	repo, err := a.repoName(ctx, self, top)
@@ -396,7 +396,7 @@ func (a *app) cmdRoutineQueue(args []string) error {
 	// A daemon defers a repo its registry lacks to a box whose registry has
 	// it, so a repo no registry names would wait for nobody.
 	if _, ok := a.cfg.Repos[repo]; !ok {
-		return fail(exitRefused, "%s is not in the registry", repo)
+		return fail(exitRefused, "%s is not in the registry, so no daemon would run the job; ask the operator to add it (bmesh repos propose)", repo)
 	}
 	j := mesh.Job{ID: newID(), Kind: name, Repo: repo, Commit: *commit, Args: jobArgs,
 		Model: *model, Effort: *effort, Text: *text, Go: *goNow, Rerun: *rerun}
@@ -631,12 +631,12 @@ func (a *app) cmdRoutineRun(args []string) error {
 	}
 	i := slices.IndexFunc(kinds, func(k kind.Kind) bool { return k.Name == name })
 	if i < 0 {
-		return fail(exitRefused, "no kind %s in %s", name, top)
+		return noKind(name, top)
 	}
 	k := kinds[i]
 	// Run here, it would record this OS's result as the kind's for the tree.
 	if !k.RunsOn(hostOS) {
-		return fail(exitRefused, "%s runs on %s; this box is %s: queue it", name, k.OS, hostOS)
+		return fail(exitRefused, "%s runs on %s; this box is %s: queue it (git push origin HEAD, then bmesh routine queue %s --go)", name, k.OS, hostOS, name)
 	}
 	if k.Mode != "inline" && !*here {
 		return fail(exitRefused, "kind %s is %s; queue it, or pass --here to run it in this worktree", name, k.Mode)
@@ -785,7 +785,7 @@ func (a *app) runKind(ctx context.Context, k kind.Kind, top, head, tree, self, m
 	// A model run whose claude never answered is an infrastructure error,
 	// like a failed setup: refused, never a recorded result.
 	if !reply.Judged {
-		return instance.Reply{}, fail(exitRefused, "%s", reply.Unjudged())
+		return instance.Reply{}, fail(exitRefused, "%s: run it again", reply.Unjudged())
 	}
 	return reply, nil
 }
@@ -800,7 +800,7 @@ func (a *app) runSetup(ctx context.Context, top string, s kind.Setup) error {
 	ran, out, err := wsetup.Ensure(context.WithoutCancel(ctx), top, s, wsetup.Options{Clean: true})
 	var se *wsetup.Error
 	if errors.As(err, &se) {
-		msg := se.Msg + "; nothing recorded"
+		msg := se.Msg + "; nothing recorded: fix the setup (bmesh setup runs it alone), then run it again"
 		if tail := wsetup.Tail(out, redTail); tail != "" {
 			msg += "\n" + tail
 		}
@@ -844,6 +844,16 @@ func (a *app) printRunVerdict(name, tree, model string, ok bool, out, how string
 		return fail(exitError, "")
 	}
 	return nil
+}
+
+// noKind refuses a kind the worktree at top doesn't define, naming where
+// its kinds are listed; a repo with no verify kind records the outcome of
+// its verify commands by hand.
+func noKind(name, top string) error {
+	if name == "verify" {
+		return fail(exitRefused, "no kind verify in %s; run the repo's verify commands, then record them: bmesh result record verify --ok (or --fail)", top)
+	}
+	return fail(exitRefused, "no kind %s in %s; bmesh routine list shows its kinds", name, top)
 }
 
 // refuseDirty refuses (exit 3) when the cwd's worktree has uncommitted

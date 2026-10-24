@@ -42,7 +42,7 @@ func (e Entry) String() string {
 }
 
 // ErrNoResults is the refusal of an empty entry list.
-var ErrNoResults = errors.New("no results for HEAD's tree; run the routines first")
+var ErrNoResults = errors.New("no results for HEAD's tree; run the routines first (bmesh routine run verify)")
 
 var tree8RE = regexp.MustCompile(`^[0-9a-f]{8}$`)
 

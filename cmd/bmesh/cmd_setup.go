@@ -65,7 +65,7 @@ func (a *app) cmdSetup(args []string) error {
 	start := time.Now()
 	ran, _, err := wsetup.Ensure(ctx, top, s, wsetup.Options{Always: *force, Out: a.stdout})
 	if se := (*wsetup.Error)(nil); errors.As(err, &se) {
-		return fail(exitError, "%s", se.Msg)
+		return fail(exitError, "%s; its output is above: fix what it says (the command is [setup] in %s), then run bmesh setup again", se.Msg, kind.ConfigFile)
 	}
 	if err != nil {
 		return err

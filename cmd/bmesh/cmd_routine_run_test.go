@@ -153,7 +153,8 @@ func TestInlineRefusesNonInlineWithoutHere(t *testing.T) {
 	if _, errs, code := runCLI(t, nil, "routine", "run", "verify", "--here"); code != 0 || !exists(mark) {
 		t.Fatalf("--here: %d %q", code, errs)
 	}
-	if _, errs, code := runCLI(t, nil, "routine", "run", "lint"); code != 3 || !strings.HasPrefix(errs, "bmesh: no kind lint in ") {
+	if _, errs, code := runCLI(t, nil, "routine", "run", "lint"); code != 3 || !strings.HasPrefix(errs, "bmesh: no kind lint in ") ||
+		!strings.HasSuffix(errs, "; bmesh routine list shows its kinds\n") {
 		t.Fatalf("unknown kind: %d %q", code, errs)
 	}
 	if _, errs, code := runCLI(t, nil, "routine", "run", "verify", "--here", "--model", "m1"); code != 2 {
@@ -161,6 +162,17 @@ func TestInlineRefusesNonInlineWithoutHere(t *testing.T) {
 	}
 	if _, errs, code := runCLI(t, nil, "routine", "run", "verify", "--here", "--effort", "high"); code != 2 || !strings.Contains(errs, "--effort is for a model kind") {
 		t.Fatalf("effort on a command kind: %d %q", code, errs)
+	}
+}
+
+// A repo with no verify kind is told how its verify is recorded.
+func TestInlineRunNamesHowAVerifyWithNoKindIsRecorded(t *testing.T) {
+	setup(t)
+	kindRepo(t, map[string]string{"lint": "mode = \"inline\"\ncommand = \"true\"\n"})
+	_, errs, code := runCLI(t, nil, "routine", "run", "verify")
+	if code != 3 || !strings.HasPrefix(errs, "bmesh: no kind verify in ") ||
+		!strings.HasSuffix(errs, "; run the repo's verify commands, then record them: bmesh result record verify --ok (or --fail)\n") {
+		t.Fatalf("no verify kind: %d %q", code, errs)
 	}
 }
 
@@ -308,7 +320,7 @@ func TestInlineModelRunThatNeverAnsweredRecordsNothing(t *testing.T) {
 	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 
 	out, errs, code := runCLI(t, nil, "routine", "run", "review", "--here")
-	if code != 3 || out != "" || errs != "bmesh: model run failed: Failed to authenticate: OAuth session expired; nothing recorded\n" {
+	if code != 3 || out != "" || errs != "bmesh: model run failed: Failed to authenticate: OAuth session expired; nothing recorded: run it again\n" {
 		t.Fatalf("run: %d %q %q", code, out, errs)
 	}
 	if r, ok, err := mesh.GetResult(ctx, c, "review."+tree+".m1"); err != nil || ok {
@@ -387,7 +399,7 @@ func TestInlineRunsSetupWhenStale(t *testing.T) {
 	commitAll(t, repo, map[string]string{".bmesh/config.toml": "[setup]\ncommand = \"touch stray.txt\"\n"})
 	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 	out, errs, code := runCLI(t, nil, "routine", "run", "verify")
-	if code != 3 || out != "" || errs != "bmesh: setup dirtied the tree: stray.txt; nothing recorded\n" {
+	if code != 3 || out != "" || errs != "bmesh: setup dirtied the tree: stray.txt; nothing recorded: fix the setup (bmesh setup runs it alone), then run it again\n" {
 		t.Fatalf("dirty: %d %q %q", code, out, errs)
 	}
 	if _, ok, err := mesh.GetResult(ctx, c, mesh.ResultKey("verify", tree, nil, "")); err != nil || ok {

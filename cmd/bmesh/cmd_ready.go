@@ -65,11 +65,15 @@ func (a *app) cmdReady(args []string) error {
 	host := a.cfg.HostName()
 	switch {
 	case !ok:
-		return fail(exitRefused, "refused: no node %s", path)
+		return fail(exitRefused, "refused: no node %s; run bmesh ready in your worktree, or pass --node <your path>", path)
 	case n.Role != "lead" && n.Role != "":
-		return fail(exitRefused, "refused: %s is a %s; only a lead's daemon lands it", path, n.Role)
+		next := "run bmesh land"
+		if n.Role == "executor" {
+			next = "report to your lead with bmesh done --commit <sha>"
+		}
+		return fail(exitRefused, "refused: %s is a %s; only a lead's daemon lands it: %s", path, n.Role, next)
 	case n.Host != host:
-		return fail(exitRefused, "refused: %s runs on %s, not this box (%s); its daemon is there", path, n.Host, host)
+		return fail(exitRefused, "refused: %s runs on %s, not this box (%s); its daemon is there: run bmesh ready on %s, or bmesh land here", path, n.Host, host, n.Host)
 	case n.Runner.Thread == "":
 		return fail(exitRefused, "refused: %s has no thread for the daemon to wake; run bmesh land", path)
 	}
@@ -78,7 +82,7 @@ func (a *app) cmdReady(args []string) error {
 		return err
 	}
 	if n.Worktree == "" || !mesh.SameDir(n.Worktree, top) {
-		return fail(exitRefused, "refused: %s's worktree is %s, not this checkout %s", path, dash(n.Worktree), top)
+		return fail(exitRefused, "refused: %s's worktree is %s, not this checkout %s; run bmesh ready in %s", path, dash(n.Worktree), top, dash(n.Worktree))
 	}
 	if st, err := gitIn(ctx, top, "status", "--porcelain"); err != nil {
 		return err
@@ -87,13 +91,13 @@ func (a *app) cmdReady(args []string) error {
 	}
 	id, err := strconv.Atoi(n.Spec)
 	if err != nil {
-		return fail(exitRefused, "refused: %s names no spec (%q)", path, n.Spec)
+		return fail(exitRefused, "refused: %s names no spec (%q); run bmesh land --spec NNN", path, n.Spec)
 	}
 	branch, err := gitIn(ctx, top, "branch", "--show-current")
 	if err != nil {
 		return err
 	}
-	if _, err := landsDone(top, a.cfg.Spec.Glob, id, dash(branch)); err != nil {
+	if _, err := landsDone(top, a.cfg.Spec.Glob, id, dash(branch), "bmesh ready"); err != nil {
 		return err
 	}
 	pending, err := mesh.Pending(ctx, a.client, p)
@@ -118,7 +122,7 @@ func (a *app) cmdReady(args []string) error {
 		return err
 	}
 	if !mesh.Legal(cur.State, "landing") {
-		return fail(exitRefused, "refused: %v", mesh.ErrIllegalTransition{From: cur.State, To: "landing"})
+		return illegalMove(cur.State, "landing", "bmesh ready")
 	}
 	head, err := gitIn(ctx, top, "rev-parse", "HEAD")
 	if err != nil {
@@ -134,7 +138,7 @@ func (a *app) cmdReady(args []string) error {
 	if _, err := mesh.WriteState(ctx, a.client, path, mesh.State{State: "landing", Text: "ready to land " + short8(head), By: "node", At: now}); err != nil {
 		var ill mesh.ErrIllegalTransition
 		if errors.As(err, &ill) {
-			return fail(exitRefused, "refused: %v", err)
+			return illegalMove(ill.From, ill.To, "bmesh ready")
 		}
 		return err
 	}
@@ -169,7 +173,7 @@ func (a *app) readyCancel() error {
 		return err
 	}
 	if !ok {
-		return fail(exitRefused, "refused: %s has no ready request", path)
+		return fail(exitRefused, "refused: %s has no ready request; there is nothing to cancel", path)
 	}
 	switch r.Phase {
 	case mesh.PhaseLanded:

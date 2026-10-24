@@ -151,10 +151,11 @@ func TestReadyRefusedLandWakesTheLead(t *testing.T) {
 func TestReadyRefusals(t *testing.T) {
 	c, ctx := setup(t)
 	r := newLandRepo(t)
+	// Each refusal ends with its next step.
 	refused := func(node, want string) {
 		t.Helper()
 		_, errs, code := runCLI(t, as(node), "ready", "--text", "x")
-		if code != 3 || !strings.Contains(errs, want) {
+		if code != 3 || !strings.HasSuffix(errs, want+"\n") {
 			t.Fatalf("%s: %d %q, want %q", node, code, errs, want)
 		}
 	}
@@ -170,16 +171,16 @@ func TestReadyRefusals(t *testing.T) {
 	daemonStarted(t, c, ctx, testHost, daemon.CanLand)
 
 	putNode(t, c, ctx, mesh.Node{Path: "app-012.web", Role: "executor", Worktree: r.wt, Runner: mesh.NodeRunner{Thread: "x"}})
-	refused("app-012.web", "is a executor; only a lead's daemon lands it")
+	refused("app-012.web", "is a executor; only a lead's daemon lands it: report to your lead with bmesh done --commit <sha>")
 	putNode(t, c, ctx, mesh.Node{Path: "app-013", Host: "other", Worktree: r.wt, Spec: "012", Runner: mesh.NodeRunner{Thread: "x"}})
-	refused("app-013", "runs on other, not this box (testhost)")
+	refused("app-013", "runs on other, not this box (testhost); its daemon is there: run bmesh ready on other, or bmesh land here")
 	putNode(t, c, ctx, mesh.Node{Path: "app-014", Worktree: r.wt, Spec: "012"})
-	refused("app-014", "has no thread for the daemon to wake")
+	refused("app-014", "has no thread for the daemon to wake; run bmesh land")
 	putNode(t, c, ctx, mesh.Node{Path: "app-015", Worktree: r.repo, Spec: "012", Runner: mesh.NodeRunner{Thread: "x"}})
-	refused("app-015", "not this checkout")
+	refused("app-015", "; run bmesh ready in "+r.repo)
 
 	writeFile(t, r.wt+"/dirty.txt", "x\n")
-	refused("app-012", "the worktree has changes not committed")
+	refused("app-012", "the worktree has changes not committed; commit them, then run bmesh ready again")
 	if err := os.Remove(r.wt + "/dirty.txt"); err != nil {
 		t.Fatal(err)
 	}
@@ -187,13 +188,22 @@ func TestReadyRefusals(t *testing.T) {
 	spec := r.wt + "/docs/proposals/012-thing.md"
 	writeFile(t, spec, "---\nid: 12\nstatus: accepted\n---\nbody\n")
 	meshtest.Git(t, r.wt, "commit", "-qam", "not done")
-	refused("app-012", "refused: spec 012 reads accepted on lead; a spec lands with its code reading done: run bmesh spec set --id 012 --status done")
+	refused("app-012", "refused: spec 012 reads accepted on lead; a spec lands with its code reading done: run bmesh spec set --id 012 --status done, commit it, then run bmesh ready again")
 	meshtest.Git(t, r.wt, "reset", "-q", "--hard", "HEAD~1")
 
 	sendTo(t, c, ctx, "app-012", mesh.Message{From: "operator", Kind: "message", Text: "wait"})
-	refused("app-012", "1 unread message(s) from the operator")
+	refused("app-012", "1 unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh ready again")
 	if _, _, code := runCLI(t, as("app-012"), "inbox"); code != 0 {
 		t.Fatal(code)
+	}
+
+	// A lead that can't move to landing is told the event that moves it.
+	if _, errs, code := runCLI(t, as("app-012"), "blocked", "--text", "stuck"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	refused("app-012", `refused: illegal state transition blocked -> landing; run bmesh progress --text "<one line>" first, then bmesh ready again`)
+	if _, errs, code := runCLI(t, as("app-012"), "progress"); code != 0 {
+		t.Fatal(code, errs)
 	}
 
 	// Held: accepted, and the daemon waits for the release.

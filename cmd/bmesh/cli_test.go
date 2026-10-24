@@ -104,10 +104,17 @@ func TestEventsMoveState(t *testing.T) {
 	if err != nil || len(hist) != 3 || hist[2].Subject != "bm.app-001.blocked" {
 		t.Fatalf("history %v %v", hist, err)
 	}
-	// blocked -> asking is illegal: refused, nothing published.
+	// blocked -> asking is illegal: refused, naming the event that moves
+	// it on, and nothing published.
 	_, errs, code := runCLI(t, as("app-001"), "ask", "--text", "late")
-	if code != 3 || !strings.HasPrefix(errs, "bmesh: refused: ") {
+	if code != 3 || errs != "bmesh: refused: illegal state transition blocked -> asking; run bmesh progress --text \"<one line>\" first, then bmesh ask again\n" {
 		t.Fatalf("code %d err %q", code, errs)
+	}
+	// A node never started is told to start; nothing leaves done.
+	putNode(t, c, ctx, mesh.Node{Path: "app-002"})
+	if _, errs, code := runCLI(t, as("app-002"), "ask", "--text", "early"); code != 3 ||
+		errs != "bmesh: refused: illegal state transition idle -> asking; run bmesh started --text \"<one line>\" first, then bmesh ask again\n" {
+		t.Fatalf("idle: %d %q", code, errs)
 	}
 	if hist, _ := mesh.History(ctx, c, "bm.>", time.Time{}); len(hist) != 3 {
 		t.Fatalf("refused event published: %v", hist)
@@ -150,7 +157,7 @@ func TestDoneRefusesUnlandedSpec(t *testing.T) {
 		t.Fatal(code, errs)
 	}
 	_, errs, code := runCLI(t, as("app-012"), "done", "--commit", "abc123")
-	if code != 3 || errs != "bmesh: not done: abc123 is not on origin/main\n" {
+	if code != 3 || errs != "bmesh: not done: abc123 is not on origin/main; pass bmesh done --commit the commit bmesh land printed as landed (git rev-parse HEAD in your worktree after it), or land first (bmesh ready, or bmesh land)\n" {
 		t.Fatalf("code %d err %q", code, errs)
 	}
 	if hist, _ := mesh.History(ctx, c, "bm.app-012.done", time.Time{}); len(hist) != 0 {

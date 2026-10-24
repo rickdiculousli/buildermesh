@@ -64,7 +64,7 @@ func TestQueueAnswersFromRecordEvenWhenFailed(t *testing.T) {
 		t.Fatalf("depth after rerun %d %v", n, err)
 	}
 	_, errs, code = runCLI(t, as("app-001"), "routine", "queue", "lint")
-	if code != 3 || !strings.HasPrefix(errs, "bmesh: no kind lint in ") {
+	if code != 3 || !strings.HasPrefix(errs, "bmesh: no kind lint in ") || !strings.HasSuffix(errs, "; bmesh routine list shows its kinds\n") {
 		t.Fatalf("unknown kind: %d %q", code, errs)
 	}
 	if _, errs, code := runCLI(t, as("app-001"), "routine", "queue", "verify", "--model", "m1"); code != 2 {
@@ -236,7 +236,7 @@ func TestQueueFromLinkedWorktreeNamesConfiguredRepo(t *testing.T) {
 	other := "[repos.other]\npath = \"" + t.TempDir() + "\"\n"
 	writeRepos(t, other)
 	if _, errs, code := runCLI(t, as("app-001"), "routine", "queue", "verify"); code != 3 ||
-		errs != "bmesh: "+filepath.Base(repo)+" is not in the registry\n" {
+		errs != "bmesh: "+filepath.Base(repo)+" is not in the registry, so no daemon would run the job; ask the operator to add it (bmesh repos propose)\n" {
 		t.Fatalf("no [repos]: %d %q", code, errs)
 	}
 	writeRepos(t, other+"[repos.demo]\npath = \""+repo+"\"\n")
@@ -247,7 +247,7 @@ func TestQueueFromLinkedWorktreeNamesConfiguredRepo(t *testing.T) {
 	// registry lacks that repo.
 	putNode(t, c, ctx, mesh.Node{Path: "app-001", Repo: "named"})
 	if _, errs, code := runCLI(t, as("app-001"), "routine", "queue", "verify"); code != 3 ||
-		errs != "bmesh: named is not in the registry\n" {
+		errs != "bmesh: named is not in the registry, so no daemon would run the job; ask the operator to add it (bmesh repos propose)\n" {
 		t.Fatalf("unregistered node repo: %d %q", code, errs)
 	}
 	writeRepos(t, other+"[repos.named]\npath = \""+repo+"\"\n")

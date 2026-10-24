@@ -191,7 +191,7 @@ func TestExecutorNewRefusesDuplicateName(t *testing.T) {
 	}
 	before := gitLines(t, repo, "branch", "--list")
 	out, errs, code := runCLI(t, nil, "executor", "new", "--name", "alpha", "--json")
-	if code != 3 || out != "" || errs != "bmesh: refused: executor demo-012.alpha exists (state idle); remove it or pick another name\n" {
+	if code != 3 || out != "" || errs != "bmesh: refused: executor demo-012.alpha exists (state idle); remove it (bmesh executor remove alpha) or pick another name\n" {
 		t.Fatalf("second: %d %q %q", code, out, errs)
 	}
 	if after := gitLines(t, repo, "branch", "--list"); strings.Join(after, " ") != strings.Join(before, " ") {
@@ -319,7 +319,7 @@ func TestExecutorRemoveRefusesUnmerged(t *testing.T) {
 	meshtest.Git(t, wt, "add", "-A")
 	meshtest.Git(t, wt, "commit", "-m", "b")
 	out, errs, code := runCLI(t, nil, "executor", "remove", "alpha")
-	if code != 3 || out != "" || errs != "bmesh: refused: branch t3code/lead-alpha is not merged into t3code/lead; merge it or pass --force\n" {
+	if code != 3 || out != "" || errs != "bmesh: refused: branch t3code/lead-alpha is not merged into t3code/lead; merge it (git merge t3code/lead-alpha), then remove it again, or pass --force to discard it\n" {
 		t.Fatalf("unmerged: %d %q %q", code, out, errs)
 	}
 	if !exists(wt) {
@@ -339,7 +339,7 @@ func TestExecutorRemoveRefusesUnmerged(t *testing.T) {
 	if s := stateOf(t, c, ctx, "demo-012.alpha"); s != "done" {
 		t.Fatalf("state %s", s)
 	}
-	if _, errs, code := runCLI(t, nil, "executor", "remove", "alpha"); code != 3 || !strings.Contains(errs, "no executor demo-012.alpha") {
+	if _, errs, code := runCLI(t, nil, "executor", "remove", "alpha"); code != 3 || errs != "bmesh: refused: no executor demo-012.alpha under demo-012 with a worktree; bmesh executor list shows yours\n" {
 		t.Fatalf("remove twice: %d %q", code, errs)
 	}
 	// Mail sent to the removed executor does not reach a successor of its name.
