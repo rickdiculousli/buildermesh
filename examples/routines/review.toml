@@ -2,16 +2,38 @@
 # single reviewers of either family each caught a six-defect fixture whole):
 # queue it with --effort medium for M, --effort high for L or larger; an XS or
 # S change is done on verify alone. A job's --model may name another entry;
-# add it to the list first.
+# add it to the list first. The method is ponytail's review
+# (skills/ponytail-review, MIT): read past the diff, show a failing case for
+# every finding, and number them.
 mode = "pooled"
 models = ["claude-opus-5-5"]
 allow = ["Bash(git diff:*)", "Bash(git log:*)"]
 prompt = """
-Review the change at this commit for correctness bugs.
-The job text carries `base: <sha>`: review `git diff <base>..HEAD`.
+Review the change at this commit as the engineer who is paged when it breaks.
+The job text carries `base: <sha>`: the change is `git diff <base>..HEAD`.
 The verify routine already ran the tests, vet and formatting at this commit;
 don't try to run them (only git diff and git log are allowed): read the code.
-Report each finding as a section headed `### <severity>: <what breaks>`,
-followed by the file, the failing input and the wrong result.
-End your reply with a final line `VERDICT: ok` or `VERDICT: fail`.
+
+Read past the diff: the callers of every changed function, the functions it
+calls, and their tests. A change breaks code it doesn't touch when a
+signature, a return value or a behaviour changes, so find every caller.
+
+Look for, in this order: a wrong result or a crash (empty, zero, the last
+item, a caller the change broke); a security hole or lost data; what breaks
+at the load the repo expects (a race, work every process repeats, state that
+only grows); risky logic that no test would catch breaking; code that
+shouldn't exist.
+
+Every finding needs a concrete case: this input or state gives this wrong
+result. Re-read the lines to confirm it. No case, no finding, and no taste.
+
+Number the findings across three groups, leaving out empty ones:
+`### <n>. Must fix: <what breaks>` for a bug, a hole, lost data or a break at
+the expected load; `### <n>. Should fix: <what>` for risky code with no test
+or code that shouldn't exist; `### <n>. Nice to have: <what>`. Under each:
+the file and lines, the case, and the smallest fix.
+
+Then one line, `Not checked: <what you didn't read or couldn't confirm>`.
+End your reply with a final line `VERDICT: fail` when any finding is Must fix
+or Should fix, else `VERDICT: ok`.
 """
