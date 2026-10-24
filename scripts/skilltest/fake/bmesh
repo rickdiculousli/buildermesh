@@ -34,7 +34,7 @@ usage() {
 	echo 'usage: bmesh [--config FILE] [--node PATH] [--json] <command> [args]'
 	echo
 	echo 'commands:'
-	sed 's/^/  /' "$cell/commands.txt"
+	grep -v ' ' "$cell/commands.txt" | sed 's/^/  /'
 }
 
 # The flags that take no value; every other flag takes the next argument
@@ -478,21 +478,82 @@ fake_ideate() {
 	fi
 }
 
+# jstr S: S as a JSON string's body, escaped as Go's encoding/json does.
+jstr() {
+	printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/</\\u003c/g' -e 's/>/\\u003e/g' -e 's/&/\\u0026/g'
+}
+
+# spectitle ID: the spec's title on origin's main, else the ledger's.
+spectitle() {
+	f=$(git -C "$repo_path" ls-tree --name-only origin/main -- docs/proposals/ 2>/dev/null | grep "/$1-[^/]*\.md$" | sed -n 1p)
+	if [ -n "$f" ]; then
+		t=$(git -C "$repo_path" show "origin/main:$f" | awk 'NR == 1 && /^---$/ { fm = 1; next } fm && /^---$/ { exit } fm && /^title:/ { sub(/^title: */, ""); print; exit }')
+		[ -n "$t" ] || t=$(basename "$f" .md | sed "s/^$1-//")
+		printf '%s\n' "$t"
+		return
+	fi
+	grep "^$1 " "$canned/spec-list" 2>/dev/null | cut -c39-
+}
+
+# fake_build: a lead started for each id, as the binary starts one whose
+# spec nothing refuses (the fake has no live leads). One id prints its JSON
+# object; several print a started line each and the family, or with
+# --json one array of their objects. --accepted is answered from canned/
+# only on an arm whose manual documents it; elsewhere it is the binary's
+# unknown-flag refusal.
 fake_build() {
 	r=$(first "$@")
 	if has accepted "$@"; then
+		if ! grep -qxF -- 'build --accepted' "$cell/commands.txt"; then
+			echo "bmesh: build: flag provided but not defined: -accepted" >&2
+			exit 2
+		fi
 		out build-accepted || echo "no accepted specs in $r"
 		return 0
 	fi
+	for id in $(positionals "$@" | sed 1d); do
+		case $id in
+		*[!0-9]*)
+			echo "bmesh: spec id \"$id\" is not a number" >&2
+			exit 2
+			;;
+		esac
+	done
+	ids=$(positionals "$@" | sed 1d | sed 's/^0*\([0-9]\)/\1/' | sort -n -u)
+	n=$(printf '%s\n' "$ids" | grep -c .)
+	if [ "$n" = 0 ]; then
+		echo "bmesh: usage: bmesh build <repo> <NNN> [<NNN>...] [--model M] [--effort E] [--path P] [--family F] [--hold land|now] [--context <text|->] [--force]" >&2
+		exit 2
+	fi
+	if [ "$n" -gt 1 ] && opt path "$@" >/dev/null; then
+		echo "bmesh: --path names one lead; pick one spec with it" >&2
+		exit 2
+	fi
 	fam=$(opt family "$@") || fam=$r-build-$(next family)
 	model=$(opt model "$@") || model=claude-opus-5-5
-	for id in $(positionals "$@" | sed 1d); do
+	objs=
+	for id in $ids; do
 		id=$(pad "$id")
 		p=$(opt path "$@") || p=$r-$id
 		t=$(uuid "$(next thread)")
-		printf '{"path":"%s","thread":"%s","branch":"bmesh/%s","worktree":"%s/worktrees/%s/%s","model":"%s","spec":"%s","building":"%s","family":"%s"}\n' \
-			"$p" "$t" "$t" "$cell" "$r" "$p" "$model" "$id" "$(fakesha)" "$fam"
+		fields=$(printf '"path":"%s","thread":"%s","branch":"bmesh/%s","worktree":"%s/worktrees/%s/%s","model":"%s","spec":"%s"' \
+			"$p" "$t" "$t" "$cell" "$r" "$p" "$model" "$id")
+		if [ "$n" = 1 ]; then
+			printf '{%s,"family":"%s"}\n' "$fields" "$fam"
+			return 0
+		fi
+		title=$(spectitle "$id")
+		if [ $json = 1 ]; then
+			objs=${objs:+$objs,}$(printf '{"id":"%s","title":"%s","state":"started","family":"%s",%s}' "$id" "$(jstr "$title")" "$fam" "$fields")
+		else
+			printf 'started %s %s: %s on %s (thread %s, branch bmesh/%s, family %s)\n' "$id" "$title" "$p" "$model" "$t" "$t" "$fam"
+		fi
 	done
+	if [ $json = 1 ]; then
+		printf '[%s]\n' "$objs"
+	elif [ "$n" -gt 1 ]; then
+		echo "family $fam"
+	fi
 }
 
 fake_release() {

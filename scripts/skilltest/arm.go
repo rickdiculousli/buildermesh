@@ -166,16 +166,33 @@ var (
 	manualNameRE    = regexp.MustCompile("`([a-z][a-z0-9-]*)`")
 )
 
+// gatedFlags are the flags the fake answers only for an arm whose manual
+// documents them in that command's section: a manual that has dropped one
+// gets the binary's unknown-flag refusal.
+var gatedFlags = map[string][]string{"build": {"accepted"}}
+
 // commandsFromManual is the set of top-level commands a manual documents,
 // from its level-3 headings that name one (the heading of bmesh hold,
-// unhold and held names three), plus help, version and hosts, sorted.
+// unhold and held names three), plus help, version and hosts, and a
+// "<command> --<flag>" entry for each of gatedFlags its command's section
+// names, sorted.
 func commandsFromManual(manual string) []string {
 	set := map[string]bool{"help": true, "version": true, "hosts": true}
+	section := ""
 	for _, line := range strings.Split(manual, "\n") {
 		m := manualHeadingRE.FindStringSubmatch(line)
 		if m == nil {
+			if strings.HasPrefix(line, "### ") || strings.HasPrefix(line, "## ") || strings.HasPrefix(line, "# ") {
+				section = ""
+			}
+			for _, f := range gatedFlags[section] {
+				if strings.Contains(line, "--"+f) {
+					set[section+" --"+f] = true
+				}
+			}
 			continue
 		}
+		section = m[1]
 		set[m[1]] = true
 		for _, n := range manualNameRE.FindAllStringSubmatch(line[len(m[0]):], -1) {
 			set[n[1]] = true

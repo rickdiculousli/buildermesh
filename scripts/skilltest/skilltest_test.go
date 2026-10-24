@@ -125,6 +125,10 @@ func TestCommandsFromManual(t *testing.T) {
 	if want := []string{"a", "b", "c-d", "foo", "help", "hosts", "version"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("commands %v, want %v", got, want)
 	}
+	got = commandsFromManual("### `bmesh build`\nbmesh build --accepted <repo>\n### `bmesh land`\n--accepted\n")
+	if want := []string{"build", "build --accepted", "help", "hosts", "land", "version"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("commands %v, want %v", got, want)
+	}
 	root := repoRoot(t)
 	manual, err := os.ReadFile(filepath.Join(root, "docs", "manual.md"))
 	if err != nil {
@@ -157,7 +161,7 @@ func TestCommandsFromManual(t *testing.T) {
 		}
 	}
 	for _, c := range got {
-		if !want[c] {
+		if !want[c] && !strings.Contains(c, " ") {
 			t.Errorf("the manual heads %s, which bmesh doesn't dispatch", c)
 		}
 	}
@@ -200,6 +204,62 @@ func TestArms(t *testing.T) {
 	}
 	if _, _, err := parseArm("noequals"); err == nil {
 		t.Error("an --arm with no name was taken")
+	}
+}
+
+// The fake's build prints what the binary prints for leads it starts: one
+// id a JSON object, several a started line each and the family (an array
+// with --json); --accepted is the binary's unknown-flag refusal unless the
+// arm's manual documents it.
+func TestFakeBuild(t *testing.T) {
+	dir, _ := fakeCell(t)
+	sandbox := filepath.Join(dir, sandboxDir)
+	expect := func(want string, code int, args ...string) string {
+		t.Helper()
+		got, stdout, stderr := fake(t, dir, sandbox, args...)
+		if got != code || !strings.Contains(stdout+stderr, want) {
+			t.Errorf("bmesh %s: exit %d, want %d, and %q, want it to hold %q", strings.Join(args, " "), got, code, stdout+stderr, want)
+		}
+		return stdout
+	}
+	var one map[string]string
+	if err := json.Unmarshal([]byte(expect(`"path":"shop-012"`, 0, "build", "shop", "012", "--model", "opus")), &one); err != nil ||
+		one["spec"] != "012" || one["family"] != "shop-build-1" || one["model"] != "opus" || len(one) != 7 {
+		t.Errorf("build of one: %v, %v", one, err)
+	}
+	if out := expect(`"spec":"013"`, 0, "build", "shop", "13"); !strings.HasPrefix(out, "{") || strings.Count(out, "\n") != 1 {
+		t.Errorf("build of one without --json:\n%s", out)
+	}
+	out := expect("family shop-build-3\n", 0, "build", "shop", "014", "012", "14")
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	re := regexp.MustCompile(`^started (\d{3}) (.+): shop-(\d{3}) on claude-opus-5-5 \(thread (\S+), branch bmesh/(\S+), family shop-build-3\)$`)
+	if len(lines) != 3 || lines[2] != "family shop-build-3" {
+		t.Fatalf("build of several:\n%s", out)
+	}
+	for i, want := range []string{"012 Orders are numbered under a lock, so two checkouts at once never share an id", "014 "} {
+		m := re.FindStringSubmatch(lines[i])
+		if m == nil || !strings.HasPrefix(m[1]+" "+m[2], want) || m[3] != m[1] || m[4] != m[5] {
+			t.Errorf("line %d %q, want a started line for %q", i, lines[i], want)
+		}
+	}
+	var many []map[string]string
+	if err := json.Unmarshal([]byte(expect(`"state":"started"`, 0, "build", "shop", "012", "013", "--json", "--family", "f1")), &many); err != nil ||
+		len(many) != 2 || many[0]["id"] != "012" || many[1]["spec"] != "013" || many[1]["family"] != "f1" || many[1]["path"] != "shop-013" ||
+		!strings.HasPrefix(many[0]["title"], "Orders are numbered") {
+		t.Errorf("build of several --json: %v, %v", many, err)
+	}
+	expect("--path names one lead", 2, "build", "shop", "012", "013", "--path", "p")
+	expect(`spec id "x" is not a number`, 2, "build", "shop", "x")
+	expect("usage: bmesh build <repo> <NNN>", 2, "build", "shop")
+	expect("bmesh: build: flag provided but not defined: -accepted", 2, "build", "--accepted", "shop")
+	// An arm whose manual documents --accepted gets the canned answer.
+	old := "### `bmesh build`\n\n```\nbmesh build --accepted <repo> [--model M]\n```\n\n### `bmesh land`\n"
+	if err := os.WriteFile(filepath.Join(dir, "commands.txt"), []byte(strings.Join(commandsFromManual(old), "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	expect("no accepted specs in shop", 0, "build", "--accepted", "shop")
+	if _, stdout, _ := fake(t, dir, sandbox, "help"); strings.Contains(stdout, "--accepted") || !strings.Contains(stdout, "  build\n") {
+		t.Errorf("help lists:\n%s", stdout)
 	}
 }
 
@@ -282,12 +342,6 @@ func TestFake(t *testing.T) {
 	if _, out, errs := fake(t, dir, sandbox, "update", "--notice"); out+errs != "" {
 		t.Errorf("update --notice printed %q", out+errs)
 	}
-	var b struct{ Path, Spec, Family, Building string }
-	if err := json.Unmarshal([]byte(expect(`"path":"shop-012"`, 0, "build", "shop", "012", "--model", "opus")), &b); err != nil ||
-		b.Spec != "012" || b.Family != "shop-build-1" || len(b.Building) != 40 {
-		t.Errorf("build: %+v, %v", b, err)
-	}
-	expect("no accepted specs in shop", 0, "build", "--accepted", "shop")
 	if out := expect(`"ux":`, 0, "ideate", "shop"); !strings.Contains(out, `"path":"shop-round-1"`) {
 		t.Errorf("ideate: %s", out)
 	}
