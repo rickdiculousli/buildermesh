@@ -206,8 +206,8 @@ func TestRunFix(t *testing.T) {
 	}
 }
 
-// The drain case's watch lands the lead's spec first, once: its done line
-// names a commit on origin's main that sets 013 done.
+// The drain case's watch lands the lead's spec first, once, after its
+// build: its done line names a commit on origin's main that sets 013 done.
 func TestFakeWatchLands(t *testing.T) {
 	dir, base := caseCell(t, "drain", thisManual(t))
 	sandbox := filepath.Join(dir, sandboxDir)
@@ -215,6 +215,7 @@ func TestFakeWatchLands(t *testing.T) {
 		sha, _ := git(dir, gitEnv(dir), "--git-dir", filepath.Join(dir, originDir), "rev-parse", "main")
 		return sha
 	}
+	fake(t, dir, sandbox, "build", "shop", "013")
 	code, out, errs := fake(t, dir, sandbox, "watch", "--nodes", "shop-013", "--timeout", "30m")
 	landed := origin()
 	if code != 0 || landed == base || !strings.Contains(out, "shop-013 done 013 landed at "+landed[:8]+"\nwatch-done; next: bmesh feedback list "+drainFamily+"\n") {

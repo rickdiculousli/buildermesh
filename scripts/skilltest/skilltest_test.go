@@ -337,7 +337,7 @@ func TestRefusedCallsScoreNothing(t *testing.T) {
 // and scoring leaves those commits out, as the fake's, reading only the
 // session's.
 func TestFakeLandsWhatItSays(t *testing.T) {
-	old := "### `bmesh choose-ideas`\n\n### `bmesh spec`\n\n### `bmesh watch`\n"
+	old := "### `bmesh build`\n\n### `bmesh choose-ideas`\n\n### `bmesh spec`\n\n### `bmesh watch`\n"
 	dir, base := caseCell(t, "pick", old)
 	sandbox := filepath.Join(dir, sandboxDir)
 	origin := func(t *testing.T, dir string, args ...string) string {
@@ -407,6 +407,14 @@ func TestFakeLandsWhatItSays(t *testing.T) {
 			origin(t, dir, "log", "-1", "--format=%s", "main") != "Review: 012 accepted, 013 rejected, 014 accepted" {
 			t.Errorf("watch --help: exit %d, %q, or it landed", code, errs)
 		}
+		// Before a build has run, the leads have nothing to report.
+		if _, out, _ := fake(t, dir, sandbox, "watch", "shop-round-1"); out != "watch-done\n" ||
+			origin(t, dir, "log", "-1", "--format=%s", "main") != "Review: 012 accepted, 013 rejected, 014 accepted" {
+			t.Errorf("watch before a build: %q, or it landed", out)
+		}
+		if code, out, errs := fake(t, dir, sandbox, "build", "shop", "012", "014"); code != 0 {
+			t.Fatalf("build: exit %d: %s%s", code, out, errs)
+		}
 		_, out, _ := fake(t, dir, sandbox, "watch", "--nodes", "shop-012,shop-014", "--timeout", "30m")
 		done := regexp.MustCompile(`(?m) shop-(\d{3}) done (\d{3}) landed at ([0-9a-f]{8})$`).FindAllStringSubmatch(out, -1)
 		if len(done) != 2 || done[0][3] == done[1][3] {
@@ -462,6 +470,7 @@ func TestFakeLandsWhatItSays(t *testing.T) {
 			t.Fatal(err)
 		}
 		idir, ibase := caseCell(t, "ideas", string(manual))
+		fake(t, idir, filepath.Join(idir, sandboxDir), "ideate", "shop")
 		fake(t, idir, filepath.Join(idir, sandboxDir), "watch", "--nodes", "shop-round-1", "--timeout", "30m")
 		want := map[string][4]string{
 			"015": {"report --since DATE sums only recent orders", "feature", "S", "sonnet"},

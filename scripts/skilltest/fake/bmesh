@@ -792,16 +792,24 @@ fake_feedback_drain() {
 	echo "drained $n from $f"
 }
 
+# ran CMD: whether the log holds a call of CMD that succeeded.
+ran() {
+	awk -F '\t' -v c="$1" '$1 == 0 { for (i = 3; i <= NF; i++) { if ($i == "--node" || $i == "--config") { i++; continue }
+		if ($i != "--json") { if ($i == c) found = 1; break } } } END { exit !found }' "$log" 2>/dev/null
+}
+
 # fake_watch: the case's canned watch. When the case cans watch-land (spec
-# ids), what it watches lands first, once: each id with a spec on origin's
-# main is a lead's, landed as its land does, a commit setting the spec done
-# with its trailers (a review entry for an M or larger)
-# whose sha8 stands in for @LANDED@ on that id's done line; the ids with
-# none are a round's, its pitch lines landed as proposed specs in one
-# commit, as the round's thread lands them. Each landed id is kept in
-# state/watch-landed with its commit, so a watch after one that failed
-# lands only what is left.
+# ids), what it watches lands first, once, after it was started: each id
+# with a spec on origin's main is a lead's, landed once a build has run, as
+# its land does, a commit setting the spec done with its trailers (a review
+# entry for an M or larger), whose sha8 stands in for @LANDED@ on that id's
+# done line; the ids with none are a round's, landed once an ideate has
+# run, its pitch lines as proposed specs in one commit, as the round's
+# thread lands them. Until then the watch has nothing to report and prints
+# only its watch-done line. Each landed id is kept in state/watch-landed
+# with its commit, so a later watch lands only what is left.
 fake_watch() {
+	early=0
 	if [ ! -f "$state/watch-done" ] && [ -f "$canned/watch-land" ]; then
 		new=
 		all=1
@@ -810,7 +818,11 @@ fake_watch() {
 			grep -q "^$id " "$state/watch-landed" 2>/dev/null && continue
 			f=$(git --git-dir "$cell/origin.git" ls-tree --name-only main -- docs/proposals/ | grep "/$id-[^/]*\.md$" | sed -n 1p)
 			if [ -z "$f" ]; then
-				new=${new:+$new, }$id
+				if ran ideate; then new=${new:+$new, }$id; else early=1; fi
+				continue
+			fi
+			if ! ran build; then
+				early=1
 				continue
 			fi
 			# An M or larger spec's land records its review too.
@@ -834,10 +846,14 @@ Verified: $v" setfield "$f" status done) && [ -n "$s" ]; then
 		else
 			all=0
 		fi
-		[ "$all" = 0 ] || : >"$state/watch-done"
+		[ "$all" = 0 ] || [ "$early" = 1 ] || : >"$state/watch-done"
 	fi
 	# An arm whose manual has no next: on watch-done gets the bare line.
 	if saysnext watch; then out watch; else out watch | sed 's/^watch-done; next: .*/watch-done/'; fi | {
+		if [ "$early" = 1 ]; then
+			grep '^watch-done'
+			exit 0
+		fi
 		script=
 		[ ! -f "$state/watch-landed" ] || while read -r id s; do
 			script="$script/ done $id /s/@LANDED@/$s/;"
