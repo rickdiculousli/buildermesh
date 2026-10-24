@@ -561,10 +561,16 @@ func (l *lander) gate(ctx context.Context) error {
 // or not (a lead woken mid-land can't act on it before the push); anything
 // else (a report, a reply, another node's message) is named on one line
 // when say, so the lead sees it before the push. Land run outside a node
-// has no inbox and skips it.
+// has no inbox and skips it. The messages since land started are read
+// before the unread ones, so a message arriving between the two reads is
+// seen unread, never as one read since the start.
 func (l *lander) mail(ctx context.Context, say bool) error {
 	if l.node == nil {
 		return nil
+	}
+	since, err := mesh.InboxAfter(ctx, l.a.client, l.node, l.mailSeq)
+	if err != nil {
+		return err
 	}
 	pending, err := mesh.Pending(ctx, l.a.client, l.node)
 	if err != nil {
@@ -581,10 +587,6 @@ func (l *lander) mail(ctx context.Context, say bool) error {
 	}
 	if operator > 0 {
 		return fail(exitRefused, "refused: %d unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh land again", operator)
-	}
-	since, err := mesh.InboxAfter(ctx, l.a.client, l.node, l.mailSeq)
-	if err != nil {
-		return err
 	}
 	if n := len(slices.DeleteFunc(since, func(m mesh.Message) bool { return !fromOperator(m) })); n > 0 {
 		return fail(exitRefused, "refused: %d message(s) from the operator since land started; nothing is pushed: "+
