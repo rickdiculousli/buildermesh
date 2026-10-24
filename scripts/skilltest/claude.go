@@ -356,7 +356,9 @@ func names(raws []json.RawMessage) []string {
 }
 
 // readTurn reads a turn's output: the last result event, and the init
-// event when the output is a stream. Lines that are no JSON are skipped;
+// event when the output is a stream. A turn a background task woke again
+// ends with a result per wake, each stating its own spend, turns and time,
+// so the last carries all of theirs. Lines that are no JSON are skipped;
 // an array of events (an older json output) is read through.
 func readTurn(file string) (Result, *Init, error) {
 	b, err := os.ReadFile(file)
@@ -375,6 +377,15 @@ func readTurn(file string) (Result, *Init, error) {
 		case head.Type == "result":
 			var r Result
 			if json.Unmarshal(raw, &r) == nil {
+				if found {
+					r.NumTurns += last.NumTurns
+					r.DurationMS += last.DurationMS
+					if r.SinceLast != nil && last.SinceLast != nil {
+						for m, sp := range last.SinceLast {
+							r.SinceLast[m] = r.SinceLast[m].plus(sp)
+						}
+					}
+				}
 				last, found = r, true
 			}
 		case head.Type == "system" && head.Subtype == "init" && init == nil:

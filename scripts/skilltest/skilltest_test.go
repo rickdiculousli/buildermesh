@@ -752,6 +752,14 @@ func TestReadTurn(t *testing.T) {
 	if sp := turnSpend(r, &prev); sp.Tokens() != 1 || sp.CostUSD != 0.05 {
 		t.Errorf("totals that started again: %+v", sp)
 	}
+	// A turn a background task woke again ends with a second result, whose
+	// own spend can be empty; the turn's spend, turns and time are both's.
+	woken := `{"type":"result","result":"first","num_turns":13,"duration_ms":60,"total_cost_usd":0.66,"model_usage_since_last_result":{"a":{"inputTokens":4,"costUSD":0.66}}}` + "\n" +
+		`{"type":"result","result":"woken","num_turns":3,"duration_ms":20,"total_cost_usd":0.66,"model_usage_since_last_result":{}}` + "\n"
+	r, _, _ = readTurn(write("woken.json", woken))
+	if sp := turnSpend(r, &prev); r.Result != "woken" || r.NumTurns != 16 || r.DurationMS != 80 || sp.Tokens() != 4 || sp.CostUSD != 0.66 {
+		t.Errorf("a turn woken again: %+v, %+v", r, sp)
+	}
 	if _, _, err := readTurn(write("none.json", "")); err == nil {
 		t.Error("an empty output read as a result")
 	}
