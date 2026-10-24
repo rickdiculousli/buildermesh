@@ -312,9 +312,17 @@ func (a *app) checkEntries(ctx context.Context, repoPath, merged string, entries
 			}
 		}
 		if !matched {
-			return fail(exitRefused, "not done: verified names %s but no result for tree %s; record it there "+
-				"(bmesh routine run %s in a checkout of %s, or bmesh routine queue %s --commit %s --go), then run bmesh done again",
-				e.Kind, at, e.Kind, short8(merged), e.Kind, short8(merged))
+			missing := fmt.Sprintf("not done: verified names %s but no result for tree %s", e.Kind, at)
+			queue := fmt.Sprintf("bmesh routine queue %s --commit %s --go", e.Kind, short8(merged))
+			switch {
+			case e.Carried != "":
+				// Its result was recorded for an older tree; no run now records it there.
+				return fail(exitRefused, "%s; it was carried, so no run can record it again: report it with bmesh blocked --text \"<this line>\"", missing)
+			case e.Model != "":
+				return fail(exitRefused, "%s; record it there (%s --model %s), then run bmesh done again", missing, queue, e.Model)
+			}
+			return fail(exitRefused, "%s; record it there (bmesh routine run %s in a checkout of %s, or %s), then run bmesh done again",
+				missing, e.Kind, short8(merged), queue)
 		}
 	}
 	return nil

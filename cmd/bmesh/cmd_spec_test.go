@@ -110,7 +110,7 @@ func TestDoneChecksTheLandedCommitsTrailers(t *testing.T) {
 	put(mesh.Result{Kind: "review", OK: true, Model: "claude-sonnet-5-5"})
 	refused(local, "not done: verified names verify but no result for tree "+t8+record("verify", local))
 	put(mesh.Result{Kind: "verify", OK: true, Args: []string{"--all"}})
-	refused(local, "not done: verified names review but no result for tree "+t8+record("review", local))
+	refused(local, "not done: verified names review but no result for tree "+t8+"; record it there (bmesh routine queue review --commit "+local[:8]+" --go --model claude-opus-5-5), then run bmesh done again")
 	put(mesh.Result{Kind: "review", OK: true, Model: "claude-opus-5-5"})
 
 	// The Spec trailer must name the node's spec.

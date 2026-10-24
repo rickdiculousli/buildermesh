@@ -1140,10 +1140,14 @@ func landsDone(top, glob string, id int, branch, again string) (*spec.Spec, erro
 
 // noSpec refuses a landing whose worktree has no spec id: the spec lands
 // with its code, so it is committed on the branch first; again is the
-// command to run after.
+// command to run after. The main it names is origin's when top has one.
 func noSpec(id int, top, again string) error {
+	base := "main"
+	if gitwork.HasOrigin(context.Background(), top) {
+		base = "origin/main"
+	}
 	return fail(exitRefused, "refused: no spec %03d in %s; a spec lands with its code: commit it on this branch "+
-		"(or rebase onto origin/main, if it landed there after you branched), then run %s again", id, top, again)
+		"(or rebase onto %s, if it landed there after you branched), then run %s again", id, top, base, again)
 }
 
 // reword amends HEAD (head, at tree) so its message ends with the Spec
@@ -1253,9 +1257,9 @@ func (l *lander) scaffolded(ctx context.Context, baseSHA string) error {
 		}
 		fmt.Fprint(l.a.stdout, strings.Join(lines, ""))
 		return fail(exitRefused, "refused: the branch's scaffolded files differ from what bmesh scaffold writes from %s's row; "+
-			"the row's verify and setup are the source: restore them (git checkout origin/main -- <the files above>), commit, then run bmesh land again; "+
-			"or, when your spec changes the verify or setup commands, bmesh repos propose the new verify or setup, ask the operator to publish it, "+
-			"then run bmesh scaffold %s, commit, and run bmesh land again", l.repo, l.top)
+			"the row's verify and setup are the source: restore them (git checkout %s -- <the files above>), commit, then run bmesh land again; "+
+			"or, when your spec changes the verify or setup commands, ask the operator to change them in the row (repos.toml, then bmesh repos propose, approved with bmesh hosts approve), "+
+			"then run bmesh scaffold %s, commit, and run bmesh land again", l.repo, l.base, l.top)
 	case own:
 		fmt.Fprintln(l.a.stdout, "scaffold: the verify kind follows the row (AGENTS.md is rendered by this tree's own bmesh, not checked)")
 	default:
@@ -1656,8 +1660,6 @@ func rerun(name string, k kind.Kind, baseSHA string) string {
 	switch {
 	case name == reviewKind:
 		return fmt.Sprintf("bmesh routine queue review --again --go --text \"base: %s\", then bmesh routine wait <job id>", baseSHA)
-	case k.Mode == "inline":
-		return "bmesh routine run " + name
 	case !k.RunsOn(hostOS):
 		return fmt.Sprintf("it runs on %s: git push --force-with-lease origin HEAD, then bmesh routine queue %s --go", k.OS, name)
 	}

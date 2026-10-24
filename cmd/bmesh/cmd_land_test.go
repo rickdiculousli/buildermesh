@@ -167,6 +167,11 @@ func TestLandRefusesASpecNotOnTheBranch(t *testing.T) {
 		!strings.HasPrefix(errs, "bmesh: refused: no spec 013 in ") {
 		t.Fatalf("land: %d %q", code, errs)
 	}
+	// With no origin, the main it names is the local one.
+	meshtest.Git(t, r.wt, "remote", "remove", "origin")
+	if _, errs, code := runCLI(t, as("app-013"), "land"); code != 3 || !strings.Contains(errs, "(or rebase onto main, if it landed there after you branched)") {
+		t.Fatalf("land with no origin: %d %q", code, errs)
+	}
 }
 
 // A spec that doesn't read done in the worktree is refused before the
@@ -618,7 +623,7 @@ func TestDoneMatchesCarriedEntryAtItsTree(t *testing.T) {
 	refused := func(what string) {
 		t.Helper()
 		if _, errs, code := runCLI(t, as("app-012"), "done", "--commit", rec); code != 3 ||
-			!strings.Contains(errs, "not done: verified names review but no result for tree "+reviewed[:8]) {
+			!strings.Contains(errs, "not done: verified names review but no result for tree "+reviewed[:8]+"; it was carried, so no run can record it again: report it with bmesh blocked") {
 			t.Fatalf("%s: %d %q", what, code, errs)
 		}
 	}
@@ -965,7 +970,7 @@ func TestLandRefusesAVerifyKindTheRowDoesntWrite(t *testing.T) {
 	out, errs, code := runCLI(t, as("app-012"), "land")
 	if code != 3 || errs != "bmesh: refused: the branch's scaffolded files differ from what bmesh scaffold writes from repo's row; "+
 		"the row's verify and setup are the source: restore them (git checkout origin/main -- <the files above>), commit, then run bmesh land again; "+
-		"or, when your spec changes the verify or setup commands, bmesh repos propose the new verify or setup, ask the operator to publish it, "+
+		"or, when your spec changes the verify or setup commands, ask the operator to change them in the row (repos.toml, then bmesh repos propose, approved with bmesh hosts approve), "+
 		"then run bmesh scaffold "+r.wt+", commit, and run bmesh land again\n" {
 		t.Fatalf("land: %d\n%s\n%q", code, out, errs)
 	}
