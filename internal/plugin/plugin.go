@@ -115,31 +115,39 @@ func Write(dir string, files fs.FS, label string) (wrote bool, err error) {
 	if err := os.WriteFile(filepath.Join(tmp, stampFile), []byte(stamp+"\n"), 0o644); err != nil {
 		return false, err
 	}
-	if err := swap(tmp, dir); err != nil {
+	if err := swap(tmp, dir, stamp); err != nil {
 		return false, fmt.Errorf("write plugin: %w", err)
 	}
 	return true, nil
 }
 
+// oldPrefix names an old dir moved aside by swap: the prefix of its base.
+func oldPrefix(dir string) string { return "." + filepath.Base(dir) + "-old-" }
+
 // swap moves tmp to dir. A dir can't be renamed over a non-empty one, so
 // the old dir moves aside first and is put back when the second rename
-// fails.
-func swap(tmp, dir string) error {
+// fails. When that fails because another writer put a dir with the same
+// stamp in place first, the write has happened: the old dir goes and it
+// succeeds. Old dirs a crash or a race left behind are removed after.
+func swap(tmp, dir, stamp string) error {
 	old := ""
 	if _, err := os.Lstat(dir); err == nil {
-		old = filepath.Join(filepath.Dir(dir), fmt.Sprintf(".%s-old-%d", filepath.Base(dir), time.Now().UnixNano()))
+		old = filepath.Join(filepath.Dir(dir), fmt.Sprintf("%s%d", oldPrefix(dir), time.Now().UnixNano()))
 		if err := os.Rename(dir, old); err != nil {
 			return err
 		}
 	}
 	if err := os.Rename(tmp, dir); err != nil {
-		if old != "" {
-			_ = os.Rename(old, dir)
+		if cur, _, ok := Written(dir); !ok || cur != stamp {
+			if old != "" {
+				_ = os.Rename(old, dir)
+			}
+			return err
 		}
-		return err
 	}
-	if old != "" {
-		_ = os.RemoveAll(old)
+	stale, _ := filepath.Glob(filepath.Join(filepath.Dir(dir), oldPrefix(dir)+"*"))
+	for _, p := range stale {
+		_ = os.RemoveAll(p)
 	}
 	return nil
 }

@@ -175,8 +175,9 @@ func TestLoadsPlugins(t *testing.T) {
 	}
 }
 
-// A claude that fails to answer counts as reading the checkout, so a
-// secure box holds; one that isn't on PATH reads nothing.
+// What it can't ask counts as read, so a secure box holds: a claude that
+// fails to answer reads the checkout, and with no claude on PATH a
+// checkout with a marketplace file is read and one without isn't.
 func TestLoadsPluginsWhenClaudeFails(t *testing.T) {
 	setup(t)
 	ctx := context.Background()
@@ -187,8 +188,12 @@ func TestLoadsPluginsWhenClaudeFails(t *testing.T) {
 		t.Fatal("a failing claude")
 	}
 	t.Setenv("BMESH_CLAUDE_COMMAND", "")
+	t.Setenv("BMESH_CODEX_COMMAND", "")
 	t.Setenv("PATH", t.TempDir())
 	if LoadsPlugins(ctx, d) {
-		t.Fatal("no claude")
+		t.Fatal("no claude, no marketplace file")
+	}
+	if !LoadsPlugins(ctx, checkout(t, "mk")) {
+		t.Fatal("no claude, a marketplace file")
 	}
 }

@@ -28,11 +28,17 @@ func Refresh(ctx context.Context, dir string) ([]string, error) {
 
 // LoadsPlugins reports whether sessions on this box load from the
 // checkout at dir: a Claude Code marketplace reads it (or a dir inside it),
-// or a Codex install's marketplace source is it. A claude on PATH that
-// fails to answer counts as reading it, so a secure box holds what it
-// can't tell rather than move it.
+// or a Codex install's marketplace source is it. What it can't ask it
+// counts as read, so a secure box holds rather than move it: a claude on
+// PATH that fails to answer reads it, and with no claude on PATH (a
+// service's PATH can lack one sessions use) a checkout with
+// .claude-plugin/marketplace.json does.
 func LoadsPlugins(ctx context.Context, dir string) bool {
-	if base := plugin.ClaudeCommand(); base != nil {
+	if base := plugin.ClaudeCommand(); base == nil {
+		if fileExists(claudeMarketplace(dir)) {
+			return true
+		}
+	} else {
 		mks, err := plugin.Marketplaces(ctx, base)
 		if err != nil {
 			return true
@@ -49,6 +55,11 @@ func LoadsPlugins(ctx context.Context, dir string) bool {
 
 func claudeMarketplace(dir string) string {
 	return filepath.Join(dir, ".claude-plugin", "marketplace.json")
+}
+
+func fileExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && !st.IsDir()
 }
 
 // codexCommand is nil when Codex isn't on this box.

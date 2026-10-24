@@ -93,6 +93,10 @@ func TestWriteOnlyOnAnotherStamp(t *testing.T) {
 	if _, err := os.Stat(stray); err != nil {
 		t.Fatal("a current stamp rewrote the dir")
 	}
+	// An old dir a crash or another writer left behind goes with the next write.
+	if err := os.MkdirAll(filepath.Join(filepath.Dir(dir), ".plugin-old-123", "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if wrote, err := Write(dir, v1, "r2"); err != nil || !wrote {
 		t.Fatalf("another binary: %v %v", wrote, err)
 	}
