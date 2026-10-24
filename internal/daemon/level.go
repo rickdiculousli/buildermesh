@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -81,7 +82,7 @@ func (h *hostsNode) levelJob(ctx context.Context, j *hosts.Job) (bool, string) {
 		return true, o.Text()
 	}
 	if !o.OK() && unwaited(until, h.d.Now()) {
-		h.publishLevel(ctx, j.Repo, j.By, o.Text())
+		h.publishLevel(ctx, j.Repo, j.By, o.Text(), h.levelStep(j.Repo, path, o))
 	}
 	return o.OK(), o.Text()
 }
@@ -166,9 +167,31 @@ func (h *hostsNode) hold(ctx context.Context, j *hosts.Job, self bool, o level.O
 		h.d.Log.Warn("hosts: hold", "repo", repo, "err", err)
 		return
 	}
-	text := fmt.Sprintf("%s holds: %s +%d %s (%s)", h.d.Host, repo, o.N, plural(o.N, "commit"), x.From())
-	h.d.Log.Info("hosts: "+text, "id", x.ID)
-	ev := mesh.Event{From: h.d.from(), Event: "held", Text: text, Body: x.ID, At: h.d.Now().UTC().Format(time.RFC3339)}
+	h.d.Log.Info(fmt.Sprintf("hosts: %s holds: %s +%d %s (%s)", h.d.Host, repo, o.N, plural(o.N, "commit"), x.From()), "id", x.ID)
+	h.publishHeld(ctx, x, h.changes(ctx, repo, path))
+}
+
+// changes is what moving repo's checkout at path would change on this
+// box: the sessions that load it, and the bmesh built from it.
+func (h *hostsNode) changes(ctx context.Context, repo, path string) string {
+	var out []string
+	if level.LoadsPlugins(ctx, path) {
+		out = append(out, fmt.Sprintf("New sessions on %s load its skills and plugins.", h.d.Host))
+	}
+	if repo == h.d.Cfg.Update.Repo {
+		out = append(out, fmt.Sprintf("%s's bmesh builds from it.", h.d.Host))
+	}
+	return strings.Join(out, " ")
+}
+
+// publishHeld publishes bm.daemon.<host>.held for hold x: text the push's
+// title, `<host>: <repo> waits for your approval (+<N> commits)`, detail
+// its body, what approving changes then how to answer it, body the id.
+func (h *hostsNode) publishHeld(ctx context.Context, x hosts.Held, changes string) {
+	p := x.Presence()
+	detail := strings.TrimSpace(changes + " " + p.Step(h.d.Host))
+	ev := mesh.Event{From: h.d.from(), Event: "held", Text: p.Waits(h.d.Host), Detail: detail, Body: x.ID,
+		At: h.d.Now().UTC().Format(time.RFC3339)}
 	if err := mesh.PublishEvent(ctx, h.d.Client, ev); err != nil {
 		h.d.Log.Warn("hosts: publish held", "err", err)
 	}
@@ -181,10 +204,31 @@ func plural(n int, word string) string {
 	return word + "s"
 }
 
+// levelStep is what the operator does about a level's refusal: one of
+// the checkout's own (in progress, dirty, other branch, diverged) waits
+// for hands on this box; any other has no step ("").
+func (h *hostsNode) levelStep(repo, path string, o level.Outcome) string {
+	if o.Result != level.Refused {
+		return ""
+	}
+	switch o.Why {
+	case "in progress", "dirty", "other branch", "diverged":
+		return fmt.Sprintf("%s's checkout of %s stays where it is until you settle it. In a terminal on %s: git -C %s status, then bmesh sync --repo %s.",
+			h.d.Host, repo, h.d.Host, path, repo)
+	}
+	return ""
+}
+
 // publishLevel publishes bm.daemon.<host>.level for a received level's
-// refusal or failure no caller waits for, which the push loop pushes once.
-func (h *hostsNode) publishLevel(ctx context.Context, repo, by, text string) {
-	ev := mesh.Event{From: h.d.from(), Event: "level", Text: fmt.Sprintf("%s: %s %s (job from %s)", h.d.Host, repo, text, by),
+// refusal or failure no caller waits for, which the push loop pushes once;
+// step, when there is one, is its push's body after the text.
+func (h *hostsNode) publishLevel(ctx context.Context, repo, by, text, step string) {
+	title := fmt.Sprintf("%s: %s %s (job from %s)", h.d.Host, repo, text, by)
+	detail := ""
+	if step != "" {
+		detail = title + ". " + step
+	}
+	ev := mesh.Event{From: h.d.from(), Event: "level", Text: title, Detail: detail,
 		Body: repo, At: h.d.Now().UTC().Format(time.RFC3339)}
 	if err := mesh.PublishEvent(ctx, h.d.Client, ev); err != nil {
 		h.d.Log.Warn("hosts: publish level", "err", err)

@@ -367,6 +367,10 @@ type Presence struct {
 	Notes    string         `json:"notes"`
 	TS       string         `json:"ts"`
 	Sig      string         `json:"sig"`
+	// Held is the box's holds (093), signed apart in HeldSig so a box on
+	// an older release, which knows only Sig, still verifies the rest.
+	Held    []PresenceHold `json:"held,omitempty"`
+	HeldSig string         `json:"held_sig,omitempty"`
 }
 
 // Bytes encodes the repos sorted by name.
@@ -391,15 +395,41 @@ func (p *Presence) Bytes() []byte {
 	return e.b
 }
 
+// HeldBytes is Bytes followed by the holds, in their order: so HeldSig
+// binds them to this entry's host and ts.
+func (p *Presence) HeldBytes() []byte {
+	e := enc{b: p.Bytes()}
+	e.count(len(p.Held))
+	for _, h := range p.Held {
+		e.str(h.Kind)
+		e.str(h.Repo)
+		e.str(h.From)
+		e.int(int64(h.Commits))
+		e.str(h.ID)
+		e.str(h.Expires)
+	}
+	return e.b
+}
+
 func (p *Presence) Sign(key ed25519.PrivateKey) {
 	p.Type = TagPresence
 	slices.SortFunc(p.Repos, func(a, b PresenceRepo) int { return strings.Compare(a.Name, b.Name) })
 	p.Sig = sign(key, p.Bytes())
+	p.HeldSig = ""
+	if len(p.Held) > 0 {
+		p.HeldSig = sign(key, p.HeldBytes())
+	}
 }
 
 func (p *Presence) Verify(pubHex string) error {
 	if p.Type != TagPresence {
 		return fmt.Errorf("type %q: want %s", p.Type, TagPresence)
 	}
-	return verify(pubHex, p.Sig, p.Bytes())
+	if err := verify(pubHex, p.Sig, p.Bytes()); err != nil {
+		return err
+	}
+	if len(p.Held) == 0 && p.HeldSig == "" {
+		return nil
+	}
+	return verify(pubHex, p.HeldSig, p.HeldBytes())
 }

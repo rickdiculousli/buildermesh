@@ -138,9 +138,10 @@ func (r *routineSet) checkSwapped(dir string) bool {
 		d.writeNotice("bmesh: " + s.heldLine)
 		return false
 	}
-	why := ""
+	why, step := "", ""
 	if line := upgrade.Pending(d.StateDir, selfupdate.Describe(dir, next)); line != "" {
 		why = "its walk is unfinished (" + line + ")"
+		step = "In a terminal on " + d.Host + ": bmesh update, which finishes the walk."
 	} else {
 		pre := []string{}
 		if p := d.Cfg.Path(); p != "" {
@@ -148,11 +149,12 @@ func (r *routineSet) checkSwapped(dir string) bool {
 		}
 		if out, err := r.runBuilt(d.Exe, append(pre, "config", "check")...); err != nil {
 			why = "its config check failed: " + lastLine(out, err)
+			step = "Fix what it names in " + d.Host + "'s config: the daemon checks again when the config changes."
 		}
 	}
 	if why != "" {
 		s.heldAt, s.heldLine = key, fmt.Sprintf("%s is at %s but %s; not restarting onto it", label, d.Exe, why)
-		r.hold(&held{s.heldLine})
+		r.hold(&held{line: s.heldLine, step: step})
 		return false
 	}
 	if s.heldLine != "" {

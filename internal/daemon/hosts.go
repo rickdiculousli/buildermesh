@@ -263,8 +263,8 @@ func (h *hostsNode) roster() hosts.Roster {
 func (h *hostsNode) revision() string { return selfupdate.Short(h.d.Revision) }
 
 // putPresence writes this box's signed presence: revision, OS, whether it
-// runs routines, its registered repos with their origins and its notes
-// (<config dir>/notes.md, cut to 16 KB).
+// runs routines, its registered repos with their origins, its notes
+// (<config dir>/notes.md, cut to 16 KB) and its holds not yet expired.
 func (h *hostsNode) putPresence(ctx context.Context, now time.Time) error {
 	kv, err := hosts.Bucket(ctx, h.d.Client.JS, hosts.BucketHosts)
 	if err != nil {
@@ -289,6 +289,15 @@ func (h *hostsNode) putPresence(ctx context.Context, now time.Time) error {
 	}
 	h.notesCut = cut
 	p.Notes = notes
+	held, err := hosts.ListHeld(h.d.StateDir)
+	if err != nil {
+		h.d.Log.Warn("hosts: holds", "err", err)
+	}
+	for _, x := range held {
+		if !x.Expired(now) {
+			p.Held = append(p.Held, x.Presence())
+		}
+	}
 	p.Sign(h.key)
 	return hosts.PutPresence(ctx, kv, p)
 }

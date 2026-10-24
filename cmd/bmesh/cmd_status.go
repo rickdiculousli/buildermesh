@@ -12,6 +12,7 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/daemon"
+	"github.com/rickdiculousli/buildermesh/internal/hosts"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/runner/t3mcp"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
@@ -221,6 +222,9 @@ func (a *app) cmdMeshStatus(args []string) error {
 	for _, r := range readies {
 		fmt.Fprintf(a.stdout, "%s %s\n", r.Path, readyLine(r, states[r.Path], now))
 	}
+	for _, l := range a.boxHoldLines(ctx, now) {
+		fmt.Fprintln(a.stdout, l)
+	}
 	if err := a.feedbackLines(ctx, nodes, states); err != nil {
 		return err
 	}
@@ -245,6 +249,37 @@ func (a *app) cmdMeshStatus(args []string) error {
 	for _, o := range a.openSteps(ctx, repos) {
 		fmt.Fprintln(a.stdout, o.Line())
 	}
+	return nil
+}
+
+// boxHoldLines are the holds every box's presence carries (093), one line
+// each as waiting on the operator: `<host>: <repo> waits for your approval
+// (+<N> commits): in a terminal on <host>, bmesh hosts approve <id>
+// (expires <day hh:mm>)`. None with [hosts] off or before this box joined;
+// a presence read that fails is said on stderr.
+func (a *app) boxHoldLines(ctx context.Context, now time.Time) []string {
+	if !a.cfg.Hosts.Enabled {
+		return nil
+	}
+	local, ok, err := hosts.LoadLocal(config.StateDir())
+	if err != nil || !ok {
+		return nil
+	}
+	kv, err := hosts.Bucket(ctx, a.client.JS, hosts.BucketHosts)
+	if err == nil {
+		var seen []hosts.Seen
+		if seen, err = hosts.ReadPresence(ctx, kv, local.Roster, now); err == nil {
+			var out []string
+			for _, s := range seen {
+				for _, x := range s.Presence.Held {
+					out = append(out, fmt.Sprintf("%s: in a terminal on %s, bmesh hosts approve %s (expires %s)",
+						x.Waits(s.Host.Name), s.Host.Name, x.ID, x.ExpiresAt()))
+				}
+			}
+			return out
+		}
+	}
+	fmt.Fprintf(a.stderr, "bmesh: holds: %v\n", err)
 	return nil
 }
 

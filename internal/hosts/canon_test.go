@@ -46,6 +46,10 @@ func goldenDocs() []golden {
 			{Name: "buildermesh", Path: "/home/rick/repos/buildermesh", Origin: "git@github.com:r/buildermesh.git"}},
 		TS: "2026-10-16T09:00:00Z"}
 	presence.Sign(k)
+	held := &Presence{Host: "ricks-macbook", Rev: "1a2b3c4d", OS: "darwin", Repos: []PresenceRepo{}, TS: "2026-10-24T09:00:00Z",
+		Held: []PresenceHold{{Repo: "buildermesh", Commits: 62, ID: "j1", Expires: "2026-10-25T09:00:00Z"},
+			{Kind: HeldRegistry, From: "k16", Commits: 2, ID: "j2", Expires: "2026-10-25T08:00:00Z"}}}
+	held.Sign(k)
 	registry := &Registry{Version: 7, AdminKey: testPub(), IssuedAt: "2026-10-16T10:00:00Z",
 		Rows: "[repos.app]\npath = \"~/repos/app\"\nverify = [\"go test ./...\"]\n"}
 	registry.Sign(k)
@@ -55,6 +59,7 @@ func goldenDocs() []golden {
 		{"approve", approve.Bytes, func() string { return approve.Sig }, "a87858c941e359a71b23e9daa043680e4c9c41a8146bfb6231e1dc5cf9fec25a", "d8504f9e1e839209ebac9d635b76869779981225b3a4ac0a345bc6d92ee8ff940e8ba038745d532ae64f892e3b40b81af48c9699c0662f62397dfc95960e5603"},
 		{"roster", roster.Bytes, func() string { return roster.Sig }, "650c40140438c038b0f4265f6fdd6363198baaed7951731185a9f4403ee881e6", "33f413b1090fd1f0d8ecca7712483d2423defb9b2188e2d66723957d6b67bd472ea3501fe2559e053feee0b645e5c547c006371ebcb1ae3dbfab6a2f566df503"},
 		{"registry", registry.Bytes, func() string { return registry.Sig }, "00ff4eb44f9d06d8a2631162cacad3caff41aa0dc9fb29cf600d17b49befa66c", "e819fd74108500e9ff4d3b1424e6b9b165d7834608c7f9bff23996bf670d1fd2f6e20cdd3e70af40598168b1f26470c913933107323c9a0470cf641bac8e1d0c"},
+		{"presence held", held.HeldBytes, func() string { return held.HeldSig }, "e4388f6f233e1a255bd62a651d0117cd6bed4187b279264720b0ef50e1c6fb52", "4d0a7e318cdd12091734471ecf621c662b7ca03b16e1f624ffeff926946a4fc5e5c9398f6364a54f8f631cdd762d082f9739875a623c9dd52aa1905bcf72460f"},
 		{"presence", presence.Bytes, func() string { return presence.Sig }, "17e56cc250c5663f744bebe9557748ffeca6d08765cf4a5ad7f2411e20e303fa", "325e9d77e2cf0e7504fca85adf425046b0fd8efb358a7f10a11beccb8cf24a34c5631c5c264b861d76aed25059c94da0ba982d7300f59d37c9f8dcfdc6e9310f"},
 	}
 }

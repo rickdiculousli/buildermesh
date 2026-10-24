@@ -50,7 +50,9 @@ func (h *hostsNode) syncRegistry(ctx context.Context) error {
 		h.regRefused = res.Refused
 		text := fmt.Sprintf("%s: refused: %v", h.d.Host, res.RefuseErr)
 		h.d.Log.Warn("hosts: "+text, "version", res.Refused)
-		ev := mesh.Event{From: h.d.from(), Event: "registry", Text: text, Body: fmt.Sprint(res.Refused),
+		detail := fmt.Sprintf("%s. %s keeps the rows it has until its bmesh can read v%d. In a terminal on %s: bmesh update.",
+			text, h.d.Host, res.Refused, h.d.Host)
+		ev := mesh.Event{From: h.d.from(), Event: "registry", Text: text, Detail: detail, Body: fmt.Sprint(res.Refused),
 			At: h.d.Now().UTC().Format(time.RFC3339)}
 		if err := mesh.PublishEvent(ctx, h.d.Client, ev); err != nil {
 			h.d.Log.Warn("hosts: publish registry", "err", err)
@@ -160,12 +162,9 @@ func (h *hostsNode) proposeJob(ctx context.Context, j *hosts.Job) (bool, string)
 	if err := hosts.SaveHeld(h.d.StateDir, x); err != nil {
 		return false, "failed: " + err.Error()
 	}
-	text = fmt.Sprintf("%s holds: registry proposal from %s, %d row %s", h.d.Host, j.By, len(diff), plural(len(diff), "change"))
-	h.d.Log.Info("hosts: "+text, "id", x.ID)
-	ev := mesh.Event{From: h.d.from(), Event: "held", Text: text, Body: x.ID, At: h.d.Now().UTC().Format(time.RFC3339)}
-	if err := mesh.PublishEvent(ctx, h.d.Client, ev); err != nil {
-		h.d.Log.Warn("hosts: publish held", "err", err)
-	}
+	h.d.Log.Info(fmt.Sprintf("hosts: %s holds: registry proposal from %s, %d row %s", h.d.Host, j.By, len(diff),
+		plural(len(diff), "change")), "id", x.ID)
+	h.publishHeld(ctx, x, "Approving publishes its rows as the next registry, which every box takes.")
 	return true, fmt.Sprintf("held for approval as %s (%d row %s against registry v%d)", x.ID, len(diff),
 		plural(len(diff), "change"), base)
 }

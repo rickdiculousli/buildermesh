@@ -21,7 +21,10 @@ const gateTimeout = 2 * time.Minute
 // held is a self-update the new binary's checks stopped before its swap:
 // its config check failed, or the notes it would walk need an answer or a
 // yes. The daemon never guesses either; line says what waits.
-type held struct{ line string }
+type held struct {
+	line string
+	step string // what the operator runs about it, for the push's body
+}
 
 func (h *held) Error() string { return h.line }
 
@@ -71,7 +74,8 @@ func (r *routineSet) gate(dir, own string, t selfupdate.Target, steps *bool) sel
 		}
 		out, err := r.runBuilt(built, append(pre, "config", "check")...)
 		if err != nil {
-			return &held{fmt.Sprintf("update to %s: config check failed: %s; keeping this binary", next, lastLine(out, err))}
+			return &held{line: fmt.Sprintf("update to %s: config check failed: %s; keeping this binary", next, lastLine(out, err)),
+				step: "In a terminal on " + r.d.Host + ": bmesh update shows the same refusal; fix what it names, then run it again."}
 		}
 		out, err = r.runBuilt(built, append(pre, "--json", "update", "--plan", "--from", from, "--to", t.Commit, "--dir", dir)...)
 		var p gatePlan
@@ -89,7 +93,8 @@ func (r *routineSet) gate(dir, own string, t selfupdate.Target, steps *bool) sel
 			waits = append(waits, fmt.Sprintf("%d %s that %s first", p.Confirm, plural(p.Confirm, "step"), map[bool]string{true: "asks", false: "ask"}[p.Confirm == 1]))
 		}
 		if len(waits) > 0 {
-			return &held{fmt.Sprintf("update to %s waits on bmesh update (%s)", next, strings.Join(waits, ", "))}
+			return &held{line: fmt.Sprintf("update to %s waits on bmesh update (%s)", next, strings.Join(waits, ", ")),
+				step: "In a terminal on " + r.d.Host + ": bmesh update, which asks you them."}
 		}
 		return nil
 	}
@@ -120,8 +125,8 @@ func lastLine(out string, err error) string {
 	return err.Error()
 }
 
-// hold logs and pushes a held update once per target, and leaves it as
-// the notice for this box's sessions.
+// hold logs and pushes a held update once per target (the body its line,
+// then what to run), and leaves it as the notice for this box's sessions.
 func (r *routineSet) hold(h *held) {
 	d := r.d
 	d.Log.Warn("update: " + h.line)
@@ -129,7 +134,7 @@ func (r *routineSet) hold(h *held) {
 	if d.Cfg.Notify.Ntfy != "" || d.Cfg.Notify.Command != "" {
 		ctx, cancel := r.settleCtx()
 		defer cancel()
-		if err := deliver(ctx, d, notify.Headers{Title: "bmesh update waits on " + d.Host, Tags: "warning"}, h.line); err != nil {
+		if err := deliver(ctx, d, notify.Headers{Title: "bmesh update waits on " + d.Host, Tags: "warning"}, strings.TrimSpace(h.line+". "+h.step)); err != nil {
 			d.Log.Warn("update: push held update", "err", err)
 		}
 	}

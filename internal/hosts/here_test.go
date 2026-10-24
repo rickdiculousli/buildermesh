@@ -29,6 +29,16 @@ func TestHereLine(t *testing.T) {
 	if got := HereLine("k16", Roster{Hosts: []Host{{Name: "k16"}}}, nil, now); !strings.HasSuffix(got, "on the mesh: no other box") {
 		t.Fatal(got)
 	}
+	// The holding box names its holds; another counts them in its entry.
+	seen[0].Presence.Held = []PresenceHold{{Repo: "buildermesh", Commits: 62, ID: "a"}, {Repo: "tools", Commits: 1, ID: "b"}}
+	seen[1].Presence.Notes = ""
+	if got, want := HereLine("k16", r, seen, now), "this box is k16; secure: no; on the mesh: ricks-macbook (asleep 2h, secure, admin, 2 held), pi (unverified)"; got != want {
+		t.Fatalf("got  %q\nwant %q", got, want)
+	}
+	if got, want := HereLine("ricks-macbook", r, seen, now), "this box is ricks-macbook (admin); secure: yes; on the mesh: k16 (awake), pi (unverified)"+
+		"; held for your approval: buildermesh +62 commits, tools +1 commit (bmesh hosts held)"; got != want {
+		t.Fatalf("got  %q\nwant %q", got, want)
+	}
 }
 
 func TestReadNotesCutsAt16K(t *testing.T) {

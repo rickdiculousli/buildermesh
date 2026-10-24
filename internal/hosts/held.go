@@ -70,6 +70,87 @@ func (h Held) Expired(now time.Time) bool {
 	return err != nil || !now.Before(exp)
 }
 
+// Presence is h as the box's presence carries it.
+func (h Held) Presence() PresenceHold {
+	p := PresenceHold{Kind: h.Kind, Commits: h.Commits, ID: h.ID, Expires: h.Job.Expires}
+	if h.Kind == HeldRegistry {
+		p.From = h.Job.By
+	} else {
+		p.Repo = h.Repo
+	}
+	return p
+}
+
+// PresenceHold is one hold as its box's presence carries it (093), so
+// every box's sessions and mesh-status can say it waits on the operator:
+// a level's repo and commits, or a registry proposal's box and row
+// changes (in Commits), with the hold's id and when it expires.
+type PresenceHold struct {
+	Kind    string `json:"kind,omitempty"` // "" a level, HeldRegistry a registry proposal
+	Repo    string `json:"repo,omitempty"` // a level's repo
+	From    string `json:"from,omitempty"` // a proposal's box
+	Commits int    `json:"commits"`
+	ID      string `json:"id"`
+	Expires string `json:"expires"`
+}
+
+// Expired: the hold's job has expired, or its expiry doesn't read.
+func (p PresenceHold) Expired(now time.Time) bool {
+	exp, err := ParseStamp(p.Expires)
+	return err != nil || !now.Before(exp)
+}
+
+// What is the hold in a few words: `buildermesh +62 commits`, or `a
+// registry proposal from k16 (2 row changes)`.
+func (p PresenceHold) What() string {
+	if p.Kind == HeldRegistry {
+		return fmt.Sprintf("a registry proposal from %s (%s)", p.From, rowChanges(p.Commits))
+	}
+	return fmt.Sprintf("%s +%d %s", p.Repo, p.Commits, plural(p.Commits, "commit"))
+}
+
+// Waits is the hold as waiting on the operator, the title of its push:
+// `<host>: buildermesh waits for your approval (+62 commits)`, or
+// `<host>: a registry proposal from k16 waits for your approval (2 row
+// changes)`.
+func (p PresenceHold) Waits(host string) string {
+	if p.Kind == HeldRegistry {
+		return fmt.Sprintf("%s: a registry proposal from %s waits for your approval (%s)", host, p.From, rowChanges(p.Commits))
+	}
+	return fmt.Sprintf("%s: %s waits for your approval (+%d %s)", host, p.Repo, p.Commits, plural(p.Commits, "commit"))
+}
+
+// Step is how the operator answers the hold, and when it expires (in this
+// box's time zone): `In a terminal on <host>: bmesh hosts approve <id> (it
+// shows the commits first), or bmesh hosts deny <id> to leave it as it is.
+// Expires Sat 23:47.`
+func (p PresenceHold) Step(host string) string {
+	shows := "the commits"
+	if p.Kind == HeldRegistry {
+		shows = "the diff"
+	}
+	return fmt.Sprintf("In a terminal on %s: bmesh hosts approve %s (it shows %s first), or bmesh hosts deny %s to leave it as it is. Expires %s.",
+		host, p.ID, shows, p.ID, p.ExpiresAt())
+}
+
+// ExpiresAt is the expiry as `Sat 23:47`, in this box's time zone.
+func (p PresenceHold) ExpiresAt() string {
+	exp, err := ParseStamp(p.Expires)
+	if err != nil {
+		return p.Expires
+	}
+	return exp.Local().Format("Mon 15:04")
+}
+
+func rowChanges(n int) string { return fmt.Sprintf("%d row %s", n, plural(n, "change")) }
+
+func plural(n int, word string) string {
+	if n == 1 {
+		return word
+	}
+	return word + "s"
+}
+
 // Decision is what an approval of h signs: approve and the target the
 // operator saw.
 func (h Held) Decision() string { return "approve " + h.Target }
