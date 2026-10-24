@@ -92,6 +92,32 @@ func rulesBlock(names []string) string {
 	return open + " " + strings.Join(names, " ") + " " + RulesHash(body) + " -->\n" + body + "\n" + end
 }
 
+// fromRE is the body's line naming the sets it came from.
+var fromRE = regexp.MustCompile("From bmesh's rule sets? ([^.]*)\\.")
+
+// Rules are the rule sets text's rules block names: its marker's, or for a
+// customized block, the sets its body says it came from. False when text
+// has no rules block.
+func Rules(text string) ([]string, bool) {
+	m := rulesRE.FindStringSubmatch(text)
+	if m == nil {
+		return nil, false
+	}
+	words := strings.Fields(m[1])
+	if n := len(words); n > 0 && hashRE.MatchString(words[n-1]) {
+		words = words[:n-1]
+	}
+	if len(words) == 1 && words[0] == Customized {
+		words = nil
+		if f := fromRE.FindStringSubmatch(m[2]); f != nil {
+			for _, w := range strings.Split(f[1], ",") {
+				words = append(words, strings.Trim(strings.TrimSpace(w), "`"))
+			}
+		}
+	}
+	return words, true
+}
+
 // ApplyRules is text with its rules block as the marker asks: a missing
 // block appended as DefaultRules, after a blank line; a marker naming sets
 // (with no hash, or with the hash of the body it holds) rendered from them;

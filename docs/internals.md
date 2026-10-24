@@ -465,7 +465,7 @@ The stream, subjects and buckets built on node paths:
 | consumer per host | `inbox-host--<host>` | filter `bm.inbox.host.<host>`; MaxAckPending 1, AckWait 10m |
 | host reply subject | | `bm.hostreply.<caller>.<job id>` |
 | join subject | | `bmhosts.join.<id>` (core NATS, outside the stream: an invite's request and reply) |
-| KV | `bm-nodes` | `<path>` to Node (a build's lead carries `repo`, `spec`, `branch`, `host` and `family`: what a spec being built is; a runner that names its own thread, as T3 does, gets the id bmesh chose as `runner.ref`, recorded as the briefs' `proposed_by`; a thread the daemon settled in T3 adds `settled`, when) |
+| KV | `bm-nodes` | `<path>` to Node (a build's lead carries `repo`, `spec`, `branch`, `host` and `family`: what a spec being built is; a runner that names its own thread, as T3 does, gets the id bmesh chose as `runner.ref`, recorded as the briefs' `proposed_by`; a thread the daemon settled in T3 adds `settled`, when; a node without a parent whose `started` ran from a Claude Code session adds `session`, its id, rewritten by the node's own `started`) |
 | KV | `bm-state` | `<path>` to State |
 | KV | `bm-runner` | `<path>` to RunnerSample |
 | KV | `bm-results` | `<kind>.<tree>[.<args8>][.<model-short>]` to Result (`[routines] keep_results`, default 30 days) |
@@ -494,6 +494,21 @@ The map, `watch`, status, the push loop and the activity reader skip subjects wh
 The reading is the main thread's when a model call was in flight, or when a `tool_use` named `Bash` is unanswered and none named `Agent` or `Task` is.
 
 `<state dir>/context/<session id>` holds `<level> <tokens>` and a newline, written through a temp file and a rename whenever either changes (so once per main-thread command at or past `nudge_from`); each write also removes the dir's files unchanged for 7 days. Two commands of one session at once can both say a line.
+
+## Audit
+
+[Manual: bmesh audit](manual.md#bmesh-audit)
+
+`internal/audit` reads a whole transcript line by line (a line up to what memory holds), each `uuid` once. `rung.go` holds the rules both `bmesh audit` and `scripts/skilltest` score with: `Named` (a reply's rung, by the work skill's words, the `Words` table), `Implied` (the rung a request's `Facts` imply, first rule wins, `Rules` the line `audit` prints) and `EndsAsking` (a last paragraph with a `?`). The skill test fills `Facts` from a cell's end state (the fake's log, origin's `main`); `audit` from the transcript:
+
+1. A `user` line not `isMeta`, `isSidechain` or `isCompactSummary`, with text and no `tool_result`, and not opening `<command-name>`, `<command-message>`, `<local-command-`, `<task-notification>` or `[Request interrupted`, starts a turn. Lines before the first are not read into a turn.
+2. An `assistant` line's `text` blocks are the turn's replies; its `tool_use` blocks are its calls, each with the context of the newest assistant message with usage (`input_tokens + cache_read_input_tokens + cache_creation_input_tokens`). A call that changes something (see the manual) sets the turn's first action, if it has none; calls before it are read.
+3. A `user` line's `tool_result` for a call takes the call's facts when `is_error` is false: a `bmesh` command line `build` or `lead start` (Leads), `ideate` (Round), a `git push` with a refspec to `main` (PushedMain), a Write to a path under `docs/proposals/` whose result says `created`, or a command writing one (NewSpec). For a call before the first action, its words: a Read's from `toolUseResult.file` (`content`, and `startLine`, `numLines`, `totalLines` for the range), a skill's from the `isMeta` user line whose `sourceToolUseID` is the Skill call.
+4. At the next turn: the named rung from the first reply that names one, `EndsAsking` from the last reply, then `Implied`.
+
+Shell command lines are split by a small lexer (`shell.go`): single and double quotes, `\`, `#` comments, heredoc bodies (to the line that is the delimiter), redirects and their targets (`2>&1`, `>/dev/null`) dropped, `;`, `&&`, `||`, `|`, `&`, `(`, `)` and newlines ending a command; leading `VAR=value`, `env`, `nohup`, `time`, `exec` and `timeout <d>` dropped; `bash`/`sh`/`zsh -c`'s argument and `ssh`'s last word split again. A `bmesh` word's global flags (`--node`, `--config` with a value, `--json`) are skipped to find its command; the word after a command with subcommands is its subcommand. `$(...)` and backticks are not expanded.
+
+Token totals are summed over model calls, one per `message.id`: the main thread's, and its subagents' (`isSidechain` lines and `<id>/subagents/*.jsonl`) apart.
 
 ## Config
 

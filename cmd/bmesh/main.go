@@ -96,7 +96,12 @@ commands:
                                            session ec03a02c): <advice>; every other command on a session's main
                                            thread ends with one stderr line when its context crosses a [context]
                                            nudge it hasn't heard, or drops (a compaction)
-  started|progress|blocked|ask [--text T]  report an event; print <event> <path>
+  audit [<path> | --session <id>] [--json]
+                                           what a Claude Code session (this one, a node's, or --session's) read
+                                           and did per request: the rung its reply named, the rung its actions
+                                           imply (mismatch when they differ), what it read before it acted
+  started|progress|blocked|ask [--text T]  report an event; print <event> <path> (started keeps the Claude Code
+                                           session it ran from on the node's record)
   done --commit SHA [--text T]             report done (a lead's commit must be its landing on main, its trailers
                                            matched by results); print
                                            done <path> <sha8>, or already done at <sha8> for a repeat
@@ -374,6 +379,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdWhoami(rest)
 	case "context":
 		return a.cmdContext(rest)
+	case "audit":
+		return a.cmdAudit(rest)
 	case "started", "progress", "blocked", "ask", "done":
 		return a.cmdEvent(cmd, rest)
 	case "send":

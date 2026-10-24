@@ -281,6 +281,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 |---|---|
 | [`bmesh whoami`](docs/manual.md#bmesh-whoami) |  |
 | [`bmesh context`](docs/manual.md#bmesh-context) | `[--json]` |
+| [`bmesh audit [<path>]`](docs/manual.md#bmesh-audit) | `[--session ID] [--json]` |
 | [`bmesh started\|progress\|blocked\|ask`](docs/manual.md#bmesh-started-progress-blocked-ask-done) | `[--text T]` |
 | [`bmesh done`](docs/manual.md#bmesh-started-progress-blocked-ask-done) | `--commit SHA [--text T]` |
 | [`bmesh send <path> <text\|->`](docs/manual.md#bmesh-send) |  |

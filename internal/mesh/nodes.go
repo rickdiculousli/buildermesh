@@ -41,6 +41,7 @@ type Node struct {
 	Children  []string   `json:"children,omitempty"` // a round's threads (eng, or eng and ux); none on a round from before 097
 	StartedAt string     `json:"started_at"`
 	Settled   string     `json:"settled,omitempty"` // when the daemon settled the node's T3 thread (102)
+	Session   string     `json:"session,omitempty"` // the Claude Code session its started ran from (101)
 }
 
 // RunnerSample is the daemon's last reading of a node's runner. Stopped is

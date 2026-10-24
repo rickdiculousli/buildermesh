@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 
 	"github.com/rickdiculousli/buildermesh/internal/checkout"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/session"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
@@ -110,12 +112,34 @@ func (a *app) cmdEvent(name string, args []string) error {
 		}
 		return err
 	}
+	if name == "started" {
+		if err := a.recordSession(ctx, path); err != nil {
+			return err
+		}
+	}
 	if name == "done" {
 		fmt.Fprintf(a.stdout, "done %s %s\n", path, short8(*commit))
 	} else {
 		fmt.Fprintf(a.stdout, "%s %s\n", name, path)
 	}
 	return nil
+}
+
+// recordSession keeps the Claude Code session started ran from on the
+// node's record (101), so its transcript can be found on its box. A node
+// with a parent records none, as it hears no context line: its session may
+// be its lead's. A node never registered has no record to keep it on.
+func (a *app) recordSession(ctx context.Context, path string) error {
+	id, ok := session.ID(os.Getenv)
+	if !ok || strings.Contains(path, ".") {
+		return nil
+	}
+	n, ok, err := mesh.GetNode(ctx, a.client, path)
+	if err != nil || !ok || n.Session == id {
+		return err
+	}
+	n.Session = id
+	return mesh.PutNode(ctx, a.client, n)
 }
 
 // illegalMove refuses a state move the table doesn't allow, naming the

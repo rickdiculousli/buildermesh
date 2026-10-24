@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -155,7 +156,7 @@ type use struct {
 	input   map[string]any
 	before  bool // called before the turn's first action
 	context int
-	skill   int  // a skill's read in its turn's Read, plus one; its words come with its text
+	skill   int // a skill's read in its turn's Read, plus one; its words come with its text
 }
 
 // File reads a transcript, the main thread's from path and its subagents'
@@ -330,7 +331,7 @@ func acts(u *use) string {
 		cmd, _ := u.input["command"].(string)
 		for _, c := range bmeshCalls(cmd) {
 			if c.acts() {
-				return c.String()
+				return "bmesh " + c.String()
 			}
 		}
 		if w := gitActs(cmd); w != "" {
@@ -431,6 +432,10 @@ func result(t *Turn, u *use, b content, raw json.RawMessage) {
 			t.Read = append(t.Read, Read{Kind: "bmesh", Name: strings.Join(names, "; "), Words: words})
 			return
 		}
+		if f, rng, ok := fileRead(cmd); ok {
+			t.Read = append(t.Read, Read{Kind: "file", Name: f, Range: rng, Words: words})
+			return
+		}
 		t.Other.Calls++
 		t.Other.Words += words
 	default:
@@ -439,20 +444,20 @@ func result(t *Turn, u *use, b content, raw json.RawMessage) {
 	}
 }
 
+// specWrite is a redirect into a spec file under docs/proposals/.
+var specWrite = regexp.MustCompile(`>\s*['"]?[^\s'";&|]*docs/proposals/[^\s'";&|/]+\.md`)
+
 // newSpec reports whether a command line writes a file under
 // docs/proposals/ through a redirect, cp or mv, as a new spec is made from
 // `bmesh spec template`.
 func newSpec(s string) bool {
+	if specWrite.MatchString(s) && !strings.Contains(specWrite.FindString(s), "README.md") {
+		return true
+	}
 	for _, words := range commands(s) {
-		for i, w := range words {
-			if strings.Contains(w, "docs/proposals/") && strings.HasSuffix(w, ".md") && !strings.HasSuffix(w, "README.md") {
-				if i > 0 && strings.HasSuffix(words[i-1], ">") || strings.HasPrefix(w, ">") {
-					return true
-				}
-				if base := filepath.Base(words[0]); (base == "cp" || base == "mv") && i == len(words)-1 {
-					return true
-				}
-			}
+		if n := len(words); n > 2 && (filepath.Base(words[0]) == "cp" || filepath.Base(words[0]) == "mv") &&
+			strings.Contains(words[n-1], "docs/proposals/") && strings.HasSuffix(words[n-1], ".md") {
+			return true
 		}
 	}
 	return false

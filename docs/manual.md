@@ -7,7 +7,7 @@ Every `bmesh` command with its flags, output and refusals, then the model behind
 - [Synopsis](#synopsis)
 - [Setup and updates](#setup-and-updates): [`bmesh init`](#bmesh-init) · [`bmesh serve`](#bmesh-serve) · [`bmesh hub`](#bmesh-hub) · [`bmesh config check`](#bmesh-config-check) · [`bmesh t3 login`](#bmesh-t3-login) · [`bmesh version`](#bmesh-version) · [`bmesh update`](#bmesh-update) · [`bmesh plugin`](#bmesh-plugin)
 - [Proposals and builds](#proposals-and-builds): [`bmesh ideate`](#bmesh-ideate) · [`bmesh spec`](#bmesh-spec) · [`bmesh build`](#bmesh-build) · [`bmesh lead start`](#bmesh-lead-start) · [`bmesh hold`, `unhold`, `held`](#bmesh-hold-unhold-held) · [`bmesh feedback`](#bmesh-feedback) · [`bmesh fix`](#bmesh-fix) · [`bmesh release`](#bmesh-release) · [`bmesh scaffold`](#bmesh-scaffold)
-- [Nodes](#nodes): [`bmesh whoami`](#bmesh-whoami) · [`bmesh context`](#bmesh-context) · [`bmesh started`, `progress`, `blocked`, `ask`, `done`](#bmesh-started-progress-blocked-ask-done) · [`bmesh send`](#bmesh-send) · [`bmesh inbox`](#bmesh-inbox) · [`bmesh thread-status`](#bmesh-thread-status) · [`bmesh mesh-status`](#bmesh-mesh-status) · [`bmesh watch`](#bmesh-watch) · [`bmesh executor`](#bmesh-executor) · [`bmesh node`](#bmesh-node)
+- [Nodes](#nodes): [`bmesh whoami`](#bmesh-whoami) · [`bmesh context`](#bmesh-context) · [`bmesh audit`](#bmesh-audit) · [`bmesh started`, `progress`, `blocked`, `ask`, `done`](#bmesh-started-progress-blocked-ask-done) · [`bmesh send`](#bmesh-send) · [`bmesh inbox`](#bmesh-inbox) · [`bmesh thread-status`](#bmesh-thread-status) · [`bmesh mesh-status`](#bmesh-mesh-status) · [`bmesh watch`](#bmesh-watch) · [`bmesh executor`](#bmesh-executor) · [`bmesh node`](#bmesh-node)
 - [Checks and landing](#checks-and-landing): [`bmesh routine`](#bmesh-routine) · [`bmesh result`](#bmesh-result) · [`bmesh lock-lease`](#bmesh-lock-lease) · [`bmesh setup`](#bmesh-setup) · [`bmesh land`](#bmesh-land) · [`bmesh ready`](#bmesh-ready)
 - [Boxes](#boxes): [`bmesh hosts`](#bmesh-hosts) · [`bmesh sync`](#bmesh-sync) · [`bmesh prune`](#bmesh-prune) · [`bmesh repos`](#bmesh-repos)
 - [Concepts](#concepts): [Several boxes](#several-boxes) · [Updates](#updates) · [Upgrading](#upgrading) · [Runners](#runners) · [Build families](#build-families) · [Holds](#holds) · [Briefs](#briefs) · [The fixer](#the-fixer) · [The ledger](#the-ledger) · [Routines](#routines) ([Setup](#setup)) · [Hosts](#hosts) · [The plugin](#the-plugin) · [Names](#names)
@@ -1341,6 +1341,82 @@ With `nudge_every = 0` the first advice reads `You'll hear again at <the next le
 
 Internals: [internals](internals.md#session-context)
 
+### `bmesh audit`
+
+```
+bmesh audit [<node path> | --session <id>] [--json]
+```
+
+Prints what a Claude Code session did, request by request, beside what it said it did: the rung of the work skill's ladder each reply named, the rung its actions imply, and what it read before its first action. It reads only the session's transcript and the session's repo; with `--session` or no argument it needs no daemon and no hub.
+
+| Argument | Session |
+|---|---|
+| none | the session it runs in (`CLAUDE_CODE_SESSION_ID`) |
+| `<node path>` | the session the node's `started` kept on its record (see [`bmesh started`](#bmesh-started-progress-blocked-ask-done)) |
+| `--session <id>` | that session, on this box |
+
+**The transcript** is `<CLAUDE_CONFIG_DIR, else ~/.claude>/projects/*/<id>.jsonl` (the newest when two match), as [`bmesh context`](#bmesh-context) finds it. The main thread's lines are read once each (a resumed session writes earlier lines again); lines marked `isSidechain` and the files in `<id>/subagents/` are its subagents', summed apart. A **request** is a message the main thread got that isn't a tool's result: the operator's, or one a harness sent for them; a slash command's record, a background task's notice, an interrupt and a compaction's summary are not requests.
+
+**What it said.** The rung a request's replies named, from the first of them that names one, by the work skill's words: its first line, or the line after a `Holding for your QA` line, opening with `Answering` (answer), `Making it here` (here), `Plan for your ok` (plan), `Starting leads` (leads) or `Starting a round` (round), past any heading, quote, list or bold mark. A request whose replies name none says `no rung`.
+
+**What it did.** The rung its actions imply, by the first of these rules that holds:
+
+| Rule | Rung |
+|---|---|
+| a `bmesh build` or `bmesh lead start` succeeded | leads |
+| a `bmesh ideate` succeeded | round |
+| a `git push` to `main` (a refspec whose destination is `main` or `refs/heads/main`) succeeded, and no new file under `docs/proposals/` went with it (a Write that created one, or a command that writes one through `>`, `cp` or `mv`) | here |
+| its last reply ends on a question (its last paragraph has a `?`) and nothing was pushed | plan |
+| none of these | answer |
+
+Commands are read from the Bash calls the main thread made, with quotes, heredocs, redirects, `bash -c` and `ssh`'s command line taken as a shell takes them; a call whose result is an error did nothing. A named rung that differs from the implied one is printed as a `mismatch`, with both sides and the rule: a verdict to read, never a pass or a fail.
+
+**What it read before it acted.** A request's first action is its first call that changes something: an Edit or Write, a `git commit` or `git push`, or a `bmesh` command that starts or changes something (every command but the reports `started`, `progress`, `ask`, `blocked` and `held`, and the reads: `mesh-status`, `inbox`, `watch`, `context`, `audit`, `whoami`, `thread-status`, `version`, `help`, `plugin`, `repos` and `repos show`, `hosts`, `hosts replies` and `hosts held`, `spec list`, `show`, `steps` (not with `--check`), `template` and `next-id`, `routine list` and `wait`, `executor list`, `feedback list`, `config`). Before it, each call's output, in words (whitespace-separated):
+
+- a skill loaded: its name and the words of its text;
+- a file read: the Read tool's, or a Bash call that is only one `cat`, `sed -n 'a,bp'`, `head` or `tail` of one file: its path, `whole` or the lines, and its words;
+- a `bmesh` command that reads: the command and its output's words;
+- the rest, summed: `other tool output: <n> calls, <w> words`.
+
+With the context, in tokens, of the model call that took the action.
+
+**The rules it had**: the rule sets on the `bmesh:rules` marker of the `AGENTS.md` at the top of the checkout the session ran in (the transcript's first `cwd`); a customized block's, from the sets its body says it came from.
+
+**Output.**
+
+```
+audit c2d31921 (claude, /home/me/.claude/projects/-home-me-app/c2d31921-38a1-416e-b71c-605e4fc78615.jsonl)
+ran in /home/me/app; rules: core, design
+main thread: 54 calls, context 189k at the last, 6741k read; subagents: 1, 16 calls, 981k read
+implied rung, first rule that holds: build or lead start: leads; ideate: round; a push to main with no new file under docs/proposals/: here; a last reply ending on a question with nothing pushed: plan; none of these: answer
+
+turn 1 2026-10-24T18:56:22.753Z "the cart total shows -5.00 when the cart is empty"
+  said: here ("Making it here, XS: one line in cart/cart.go")
+  did: here (pushed to main, no new spec)
+  first action: Edit /home/me/app/cart/cart.go, at context 52k; read before it:
+    skill buildermesh:work, 1980 words
+    bmesh mesh-status, 4 words
+    file /home/me/app/cart/cart.go (whole), 210 words
+    other tool output: 3 calls, 120 words
+```
+
+A mismatch ends the `did:` line: `did: plan (the last reply ends on a question, nothing pushed); mismatch: said here, did plan`. A request with no action reads `no action that changes something; read:`. `--json` prints the record: `session`, `transcript`, `cwd`, `rules`, `calls`, `tokens`, `read`, `subagents` (`count`, `calls`, `read`) and `turns`, each with `n`, `at`, `words`, `named` and `named_line` (when named), `implied`, `rule`, `mismatch` (when true), `facts` (`Leads`, `Round`, `PushedMain`, `NewSpec`, `EndsAsking`), `read` (`kind` `skill`, `file` or `bmesh`, `name`, `range`, `words`), `other` (`calls`, `words`), `acted` and `context` (when it acted).
+
+With no argument and no session it can read: `audit: no session bmesh can read (Claude Code names its session in CLAUDE_CODE_SESSION_ID)`, exit 0.
+
+**Refusals.**
+
+| When | Exit | Message |
+|---|---|---|
+| Two arguments, or a path and `--session` | 2 | `usage: bmesh audit [<node path> \| --session <id>] [--json]` |
+| The path doesn't parse | 2 | `node "<path>": <why>` |
+| The node is not registered | 1 | `node <path> is not registered` |
+| The node's record names no session | 3 | `refused: <path>'s record names no session (its started ran outside Claude Code, under another node, or before bmesh 101); find its transcript on <host> and run bmesh audit --session <id> there` |
+| The node ran on another box | 3 | `refused: <path> ran on <host>, not this box (<this>); run bmesh audit <path> on <host>` |
+| No transcript of the session on this box | 1 | `no transcript of session <id> on this box (projects/*/<id>.jsonl under CLAUDE_CONFIG_DIR, else ~/.claude)` |
+
+Internals: [internals](internals.md#audit)
+
 ### `bmesh started`, `progress`, `blocked`, `ask`, `done`
 
 ```
@@ -1376,6 +1452,8 @@ A node never registered reads as `idle`. Nothing leaves `done`. A `landing` lead
 4. Checks the state move against the table above. A refused event publishes nothing and sends no message.
 5. For an executor's `ask`, `blocked` and `done`: puts a message in its parent's inbox (see Details). A fix lead's (a lead in the fixer's family) go to the fixer's inbox the same way (see [The fixer](#the-fixer)).
 6. Publishes the event and writes the node's new state.
+
+**The session.** `started` run from a Claude Code session (`CLAUDE_CODE_SESSION_ID` set, as [the context line](#bmesh-context) reads it) keeps the session id on the node's record as `session`, so [`bmesh audit <path>`](#bmesh-audit) finds its transcript on the node's box. A node with a parent (a `.` in its path) keeps none, as it hears no context line: its session may be its lead's. A node never registered has no record to keep it on. A later `started` from another session replaces it.
 
 **Output.** `started`, `progress`, `ask` and `blocked` print `<event> <path>`. `done` prints `done <path> <sha8>` (`<sha8>` the `--commit` given), or `already done at <sha8>` for a repeat.
 

@@ -37,23 +37,40 @@ func (r Reading) Short() string { return r.ID[:min(8, len(r.ID))] }
 // sessionID is what a session id may be before it goes into a path.
 var sessionID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 
-// Measure reads the context of the session this process runs in: Claude
-// Code's, which names its session in CLAUDE_CODE_SESSION_ID. getenv is
-// os.Getenv. False when no harness names a session it can read.
-func Measure(getenv func(string) string) (Reading, bool) {
+// ID is the id of the Claude Code session this process runs in, from
+// CLAUDE_CODE_SESSION_ID; false when none, or one not fit for a path.
+// getenv is os.Getenv.
+func ID(getenv func(string) string) (string, bool) {
 	id := getenv("CLAUDE_CODE_SESSION_ID")
+	return id, sessionID.MatchString(id)
+}
+
+// Transcript is the path of Claude Code session id's transcript on this
+// box, under CLAUDE_CONFIG_DIR, else ~/.claude; false when it has none.
+func Transcript(getenv func(string) string, id string) (string, bool) {
 	if !sessionID.MatchString(id) {
-		return Reading{}, false
+		return "", false
 	}
 	dir := getenv("CLAUDE_CONFIG_DIR")
 	if dir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return Reading{}, false
+			return "", false
 		}
 		dir = filepath.Join(home, ".claude")
 	}
-	path, ok := claudeTranscript(dir, id)
+	return claudeTranscript(dir, id)
+}
+
+// Measure reads the context of the session this process runs in: Claude
+// Code's, which names its session in CLAUDE_CODE_SESSION_ID. getenv is
+// os.Getenv. False when no harness names a session it can read.
+func Measure(getenv func(string) string) (Reading, bool) {
+	id, ok := ID(getenv)
+	if !ok {
+		return Reading{}, false
+	}
+	path, ok := Transcript(getenv, id)
 	if !ok {
 		return Reading{}, false
 	}

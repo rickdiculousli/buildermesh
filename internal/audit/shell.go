@@ -198,16 +198,20 @@ func bmeshCalls(s string) []call {
 	return out
 }
 
-// sub is the call's first positional after its command: `start` of
-// `lead start`.
+// sub is the call's subcommand, `start` of `lead start`: the word right
+// after a command that has subcommands, "" for any other.
 func (c call) sub() string {
-	for _, a := range c.args {
-		if !strings.HasPrefix(a, "-") {
-			return a
+	if _, ok := reads[c.cmd]; ok && reads[c.cmd] != nil || slices.Contains(subcommanded, c.cmd) {
+		if len(c.args) > 0 && !strings.HasPrefix(c.args[0], "-") {
+			return c.args[0]
 		}
 	}
 	return ""
 }
+
+// subcommanded are the commands with subcommands that change something
+// beside those reads lists.
+var subcommanded = []string{"lead", "node", "result", "t3", "lock-lease"}
 
 func (c call) has(flag string) bool {
 	return slices.ContainsFunc(c.args, func(a string) bool {
@@ -216,7 +220,8 @@ func (c call) has(flag string) bool {
 	})
 }
 
-func (c call) String() string { return strings.TrimSpace("bmesh " + c.cmd + " " + c.sub()) }
+// String is the command and its subcommand: `lead start`.
+func (c call) String() string { return strings.TrimSpace(c.cmd + " " + c.sub()) }
 
 // reports are the events a node reports with: they say, never change, what
 // the work is.
@@ -292,3 +297,45 @@ func pushesMain(s string) bool {
 	}
 	return false
 }
+
+// fileRead is the file a shell command line only reads, and how much:
+// one cat, sed -n 'a,bp', head or tail of one file, after any cd.
+func fileRead(s string) (file, rng string, ok bool) {
+	var cmds [][]string
+	for _, words := range commands(s) {
+		if words = unwrap(words); len(words) > 0 && words[0] != "cd" {
+			cmds = append(cmds, words)
+		}
+	}
+	if len(cmds) != 1 {
+		return "", "", false
+	}
+	words := cmds[0]
+	var pos, flags []string
+	for _, w := range words[1:] {
+		if strings.HasPrefix(w, "-") {
+			flags = append(flags, w)
+		} else {
+			pos = append(pos, w)
+		}
+	}
+	switch path.Base(words[0]) {
+	case "cat":
+		if len(pos) == 1 && len(flags) == 0 {
+			return pos[0], "whole", true
+		}
+	case "sed":
+		if len(pos) == 2 && slices.Equal(flags, []string{"-n"}) {
+			if a, b, found := strings.Cut(strings.TrimSuffix(pos[0], "p"), ","); found && digits(a) && digits(b) {
+				return pos[1], "lines " + a + "-" + b, true
+			}
+		}
+	case "head", "tail":
+		if n := len(pos); n == 1 || n == 2 && len(flags) == 1 && flags[0] == "-n" && digits(pos[0]) {
+			return pos[n-1], words[0] + " " + strings.Join(append(flags, pos[:n-1]...), " "), true
+		}
+	}
+	return "", "", false
+}
+
+func digits(s string) bool { return s != "" && strings.Trim(s, "0123456789") == "" }
