@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/rickdiculousli/buildermesh/internal/audit"
 )
 
 // Pred is one named expectation over a cell's end state; why says what it
@@ -72,6 +74,44 @@ func noSpecAdded() Pred {
 		}
 		return true, "docs/proposals/ as it was"
 	}}
+}
+
+// rungNamed is the rung the replies named against the rung the case's end
+// state implies, through internal/audit's rules, as bmesh audit reads a
+// real session (101): the last turn whose texts name a rung, its first
+// text naming one. An arm whose manual has no bmesh audit is from before
+// its skills named a rung, so it passes there.
+func rungNamed() Pred {
+	return Pred{"rung_named", func(s *State) (bool, string) {
+		if !s.ArmHas("audit") {
+			return true, "the arm's manual has no bmesh audit: its skills name no rung"
+		}
+		implied, rule := audit.Implied(s.Facts())
+		said := fmt.Sprintf("implied %s (%s)", implied, rule)
+		for i := len(s.Texts) - 1; i >= 0; i-- {
+			for _, t := range s.Texts[i] {
+				if named, line, ok := audit.Named(t); ok {
+					return named == implied, fmt.Sprintf("named %s (%q), %s", named, clip(line, 80), said)
+				}
+			}
+		}
+		return false, "named none, " + said
+	}}
+}
+
+// Facts are what the case's end state did, as audit's rules read a
+// session: an OK build or lead start, an OK ideate, new commits on
+// origin's main, a spec it added, and whether the last reply asks.
+func (s *State) Facts() audit.Facts {
+	var f audit.Facts
+	for _, c := range s.AgentCalls() {
+		f.Leads = f.Leads || c.OK() && (c.Is("build") || c.Is("lead", "start"))
+		f.Round = f.Round || c.OK() && c.Is("ideate")
+	}
+	f.PushedMain = len(s.NewCommits()) > 0
+	f.NewSpec = len(s.AddedSpecs()) > 0
+	f.EndsAsking = audit.EndsAsking(s.Reply())
+	return f
 }
 
 func testsPass() Pred { return Pred{"tests_pass", (*State).TestsPass} }

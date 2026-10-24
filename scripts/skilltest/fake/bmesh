@@ -790,6 +790,7 @@ started | progress | blocked | ask)
 	[ -n "$gnode" ] || nonode
 	echo "$cmd $gnode"
 	;;
+audit) out audit || echo 'audit: no session bmesh can read (Claude Code names its session in CLAUDE_CODE_SESSION_ID)' ;;
 whoami)
 	[ -n "$gnode" ] || nonode
 	echo "$gnode"
