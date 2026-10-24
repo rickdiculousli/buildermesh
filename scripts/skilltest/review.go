@@ -299,18 +299,15 @@ func caught(d Defect) Pred {
 	}}
 }
 
+// verdictFail is the reply failing the change as the routine reads it
+// (instance.Verdict): a VERDICT line whose value isn't ok.
 func verdictFail() Pred {
 	return Pred{"verdict_fail", func(s *State) (bool, string) {
-		v, found := "", false
-		for _, l := range strings.Split(s.Reply(), "\n") {
-			if rest, ok := strings.CutPrefix(strings.TrimLeft(strings.TrimSpace(l), "*_#`> \t"), "VERDICT:"); ok {
-				v, found = strings.ToLower(strings.Trim(rest, "*_#`> \t")), true
-			}
-		}
+		v, found := instance.Verdict(s.Reply())
 		if !found {
 			return false, "the reply has no VERDICT line"
 		}
-		return v == "fail", "VERDICT: " + v
+		return !strings.EqualFold(v, "ok"), "VERDICT: " + v
 	}}
 }
 
@@ -361,6 +358,9 @@ func reviewCase() *Case {
 	k.Expect = append(k.Expect, verdictFail(), noFalseAlarm(sheet))
 	k.Refs = []Ref{
 		{Name: "named every defect", Play: func(r *Rehearsal) { r.Reply(reviewGoodReply) }},
+		{Name: "named every defect, failed with a note", Play: func(r *Rehearsal) {
+			r.Reply(strings.Replace(reviewGoodReply, "VERDICT: fail", "**VERDICT: fail (four findings)**", 1))
+		}},
 		{Name: "named every defect, as numbered items", Play: func(r *Rehearsal) {
 			r.Reply(regexp.MustCompile(`(?m)^### (\d)\. `).ReplaceAllString(reviewGoodReply, "$1. "))
 		}},
