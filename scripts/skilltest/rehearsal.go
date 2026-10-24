@@ -195,13 +195,14 @@ func landedChange(id string) func(dir string) error {
 }
 
 // cannedLanded copies the change each of a case's watch-land ids has into
-// the cell's canned/landed/<id>, where the fake's watch lays it over.
+// the cell's canned/_landed/<id>, where the fake's watch lays it over (the _
+// keeps a kept cell's Go files out of this repo's ./...).
 func cannedLanded(dir, ids string) error {
 	for _, id := range strings.Fields(ids) {
 		if _, err := fs.Stat(landedFS, landedDir+"/"+id); err != nil {
 			continue // a round's id: its specs are the whole landing
 		}
-		if err := layOver(landedFS, landedDir+"/"+id, filepath.Join(dir, "canned", "landed", id)); err != nil {
+		if err := layOver(landedFS, landedDir+"/"+id, filepath.Join(dir, "canned", "_landed", id)); err != nil {
 			return err
 		}
 	}

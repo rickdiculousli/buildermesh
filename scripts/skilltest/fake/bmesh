@@ -7,7 +7,7 @@
 # It reads the cell's files under $SKILLTEST_CELL: fake.env (the row's name
 # and path, this box's name, and in a lead's or a round's cell its node,
 # worktree and a lead's spec), commands.txt (the arm's commands), canned/
-# (the case's outputs, by command, and in landed/<id> the change a watched
+# (the case's outputs, by command, and in _landed/<id> the change a watched
 # lead lands for spec <id>) and state/ (counters, the commits its land
 # pushed, and in pushed the commits it landed for a ledger write or another
 # node).
@@ -803,7 +803,7 @@ ran() {
 # fake_watch: the case's canned watch. When the case cans watch-land (spec
 # ids), what it watches lands first, once, after it was started: each id
 # with a spec on origin's main is a lead's, landed once a build has run, as
-# its land does, a commit of its change (canned/landed/<id>, its code and
+# its land does, a commit of its change (canned/_landed/<id>, its code and
 # its test) setting the spec done with its trailers (a review entry for an
 # M or larger), whose sha8 stands in for @LANDED@ on that id's
 # done line; the ids with none are a round's, landed once an ideate has
@@ -868,7 +868,7 @@ Verified: $v" leadland "$id" "$f") && [ -n "$s" ]; then
 # leadland ID FILE: a lead's landing of spec ID, in a clone of origin's
 # main: its change laid over, and FILE, its spec, set done.
 leadland() {
-	[ ! -d "$canned/landed/$1" ] || cp -R "$canned/landed/$1/." . || return 1
+	[ ! -d "$canned/_landed/$1" ] || cp -R "$canned/_landed/$1/." . || return 1
 	setfield "$2" status done
 }
 
