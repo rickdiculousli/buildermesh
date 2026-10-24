@@ -1,6 +1,6 @@
 # Build {{spec_path}} in {{repo}}
 
-You are building one accepted spec in `{{repo}}` (`{{repo_path}}`), dispatched {{date}}. You are in a fresh worktree of `{{repo_path}}` on your own branch. Nothing about this build is recorded on main: your node on the mesh says you are building the spec, which reads `accepted` there. The spec is yours to set `done` on your own branch, so it lands with the code: before you land, run `bmesh spec set --id {{spec_id}} --status done` in your worktree and commit it (land refuses a spec that doesn't read `done`). A block is reported with `bmesh blocked`, never recorded in git.
+You are building one spec the operator picked in `{{repo}}` (`{{repo_path}}`), dispatched {{date}}. You are in a fresh worktree of `{{repo_path}}` on your own branch. Nothing about this build is recorded on main: your node on the mesh says you are building the spec, which reads there as it did when it was picked (`proposed`, say). The spec is yours to set `done` on your own branch, so it lands with the code: before you land, run `bmesh spec set --id {{spec_id}} --status done` in your worktree and commit it (land refuses a spec that doesn't read `done`). A block is reported with `bmesh blocked`, never recorded in git.
 
 ## The spec, `{{spec_path}}`
 
@@ -8,7 +8,7 @@ You are building one accepted spec in `{{repo}}` (`{{repo_path}}`), dispatched {
 {{spec}}
 ----- end spec -----
 
-## Read first
+{{operator_words}}## Read first
 
 1. `AGENTS.md`. Its "Definition of done" section governs this work; where it and this brief differ, it wins. The repo's registry row says: {{done_rule}}
 2. The other specs in `docs/proposals/` that touch the same area, so your change stays consistent with them.

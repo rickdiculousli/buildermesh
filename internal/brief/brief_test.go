@@ -67,7 +67,7 @@ func TestBuildBriefEmbedsSpecAndNode(t *testing.T) {
 	v := RowValues(pb, "/home/x/repos/pb")
 	v["date"], v["node"], v["spec_id"], v["spec_path"] = "2026-10-15", "pb-012", "012", "docs/proposals/012-a.md"
 	v["spec"] = "---\nid: 012\n---\n\n## Opportunity\nuses {{nope}} literally\n"
-	v["upgrading"] = ""
+	v["upgrading"], v["operator_words"] = "", ""
 	out, err := Render("", "build", v)
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +87,7 @@ func TestBuildBriefEmbedsSpecAndNode(t *testing.T) {
 			t.Errorf("missing event %s", ev)
 		}
 	}
-	for _, bad := range []string{"proposals.py", "k16", "Rick", "{{spec", "--status blocked", "recorded the spec `building`"} {
+	for _, bad := range []string{"proposals.py", "k16", "Rick", "{{spec", "--status blocked", "recorded the spec `building`", "accepted", "operator's words"} {
 		if strings.Contains(out, bad) {
 			t.Errorf("has %q", bad)
 		}

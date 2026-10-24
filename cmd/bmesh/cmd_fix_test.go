@@ -214,11 +214,11 @@ func TestBuildRefusesRuledLAndAThirdFix(t *testing.T) {
 	if gitOut(t, "-C", repo, "rev-parse", "main") != head {
 		t.Fatal("a refused build recorded on main")
 	}
-	// --accepted says the same per spec and starts the rest.
-	out, errs, code := runCLI(t, nil, "build", "--accepted", "demo")
-	if code != 0 || !strings.Contains(out, "not started 020 Spec 020: refused: spec 020 is ruled and sized L") ||
-		!strings.Contains(out, "not started 023 Spec 023: refused: spec 023 is fix 3 on one premise") {
-		t.Fatalf("--accepted: %d %q %q", code, out, errs)
+	// Several say the same per spec.
+	out, errs, code := runCLI(t, nil, "build", "demo", "020", "023")
+	if code != 0 || !strings.HasPrefix(out, "not started 020 Spec 020: refused: spec 020 is ruled and sized L") ||
+		!strings.Contains(out, "\nnot started 023 Spec 023: refused: spec 023 is fix 3 on one premise") {
+		t.Fatalf("several: %d %q %q", code, out, errs)
 	}
 	// Two deep builds, and an L the operator accepted (no ruled) builds.
 	for _, id := range []string{"024", "025"} {

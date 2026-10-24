@@ -146,6 +146,17 @@ func OperatorContext(text string) string {
 		text + "\n\n"
 }
 
+// OperatorWords is the section a build's briefs carry for the operator's
+// words to the leads they picked the specs for; no words, no section.
+func OperatorWords(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	return "## The operator's words\n\nThe operator picked this spec with these words for its lead. Read them with the spec; where the two disagree, ask before you build past the spec:\n\n" +
+		text + "\n\n"
+}
+
 // OperatorIdea is the section an idea round's engineer gets instead of
 // OperatorContext: the round is the operator's one idea, so the engineer
 // writes that idea's spec, not a ranked list of its own.

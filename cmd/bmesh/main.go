@@ -121,15 +121,13 @@ commands:
                                            puts the operator's words in both briefs; --idea starts only the
                                            engineer, to write the one idea --context gives as its spec
   choose-ideas <repo> "<reply>"            apply the operator's review to the proposed specs and land it on main
-  build <repo> <NNN> [--model M] [--effort E] [--path P] [--family F] [--hold land|now] [--force]
-                                           dispatch an accepted spec: render the build brief and start the lead
-                                           (as lead start), recording nothing on main; the lead joins build family
-                                           F, else a fresh <repo>-build-<N>; --hold writes the lead's hold before
-                                           it starts
-  build --accepted <repo> [--model M] [--effort E] [--family F] [--hold land|now] [--force]
-                                           dispatch every accepted spec, lowest id first, a spec naming a lower id
-                                           after that one is done, three leads at a time; print what waits and
-                                           what a live or blocked lead holds
+  build <repo> <NNN> [<NNN>...] [--model M] [--effort E] [--path P] [--family F] [--hold land|now] [--context <text|->] [--force]
+                                           build the specs the operator picked (any not done or rejected): render
+                                           each build brief and start its lead (as lead start), recording nothing
+                                           on main; several go in id order, a spec naming a lower id after that
+                                           one is done, three leads at a time, printing a line each; the leads
+                                           join build family F, else a fresh <repo>-build-<N>; --context puts the
+                                           operator's words in each brief; --hold writes each lead's hold first
   release <repo> [--minor|--patch] [--dry-run]
                                            tag main's code head as the next vX.Y.Z (v0.1.0 first; minor up when a
                                            feature landed since, else patch) and push the tag; refused while a lead

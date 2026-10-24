@@ -793,44 +793,46 @@ See also: [The verified line](#the-verified-line), [Results](#results), [`bmesh 
 ### `bmesh build`
 
 ```
-bmesh build <repo> <NNN> [--model M] [--effort E] [--path P] [--family F] [--hold land|now] [--force]
-bmesh build --accepted <repo> [--model M] [--effort E] [--family F] [--hold land|now] [--force]
+bmesh build <repo> <NNN> [<NNN>...] [--model M] [--effort E] [--path P] [--family F] [--hold land|now] [--context <text|->] [--force]
 ```
 
-Dispatches an accepted spec to a lead: it writes the build brief and starts the lead as [`bmesh lead start`](#bmesh-lead-start) does. It records nothing on `main`: the lead's node (`bm-nodes`: repo, spec, branch, host, family, state) is what says the spec is being built, and the spec reads `accepted` until its lead lands it `done`. `--accepted` dispatches every accepted spec of the repo that no live lead is building. A coordinator runs it (the `build` skill's session, or the operator).
+Builds the specs you picked: for each, it writes the build brief and starts a lead as [`bmesh lead start`](#bmesh-lead-start) does. Picking is the accept: any spec on `main` that is not `done` or `rejected` is built, whatever it reads (`proposed`, `adjusting`, `later`, or an old `accepted`, `building` or `blocked`). It records nothing on `main`: the lead's node (`bm-nodes`: repo, spec, branch, host, family, state) is what says the spec is being built, and the spec reads as it did until its lead lands it `done`. A coordinator runs it (the `build` skill's session, or the operator).
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--accepted` | off | Dispatch every accepted spec, lowest id first, three leads at a time (see **Details**). |
-| `--model M` | the spec's `judge` | The lead's model. A `judge` of `fable`, `opus` or `sonnet` reads as `claude-fable-5-1`, `claude-opus-5-5` or `claude-sonnet-5-5`. |
-| `--effort E` | `[models] lead_effort` | The lead's effort. |
-| `--path P` | `<repo>-<NNN>` | The lead's node path (single form only). |
+| `--model M` | each spec's `judge` | The leads' model. A `judge` of `fable`, `opus` or `sonnet` reads as `claude-fable-5-1`, `claude-opus-5-5` or `claude-sonnet-5-5`. |
+| `--effort E` | `[models] lead_effort` | The leads' effort. |
+| `--path P` | `<repo>-<NNN>` | The lead's node path; one id only (exit 2 with several). |
 | `--family F` | a fresh `<repo>-build-<N>` | Join build family `F`: one subject token (letters, digits, `-`, `_`); anything else is exit 2. |
 | `--hold land\|now` | no hold | Write each lead's hold before the runner starts it (see **Details**). |
+| `--context <text\|->` | none | Your words for these leads; `-` reads stdin (see **Details**). |
 | `--force` | off | Pass the hold and the verify of `main` (see **What it does**). |
-| `--json` | off | `--accepted` only: print its lines as JSON. A single `build` always prints JSON. |
+| `--json` | off | Several ids only: print their lines as JSON. One id always prints JSON. |
 
-**What it does**, in order. Nothing starts before steps 1 to 7 pass.
+Ids are built in id order, each once, however they are given.
+
+**What it does**, in order. Nothing starts before steps 1 to 5 pass.
 
 1. **Row.** No registry row is exit 2; a row not `ship` is exit 3.
-2. **Spec.** It levels `main` as `ideate` does (see [`bmesh ideate`](#bmesh-ideate)) and reads the ledger there. A missing spec is exit 1. A spec not `accepted` is refused (exit 3), naming its status; one that reads `building` (only the release before wrote it) counts as `accepted`. Then it reads the spec's newest lead: the newest `bm-nodes` node (by `started_at`) with role `lead`, this repo and this spec. A live one (neither `done` nor `blocked`) is refused (exit 3), whatever `--path` says; a `blocked` or `done` one, or none, lets the spec be dispatched again.
-3. **Rulings.** A single `build` checks two of the fixer's rulings here; `--accepted` checks them per spec after steps 4 and 5 (see **Details**). `--force` doesn't pass them. See **Refusals**.
-4. **Hold.** Once the spec can be dispatched, it reads the repo's leads on every box and holds while the repo's last build run is still going (which families hold a build is in [Build families](#build-families)). A held single `build` is refused (exit 3). `--accepted` prints `held <family>: <why>` once (`--json`: `[{"state":"held","family","reason"}]`), exits 0 and starts nothing.
+2. **Specs.** It levels `main` as `ideate` does (see [`bmesh ideate`](#bmesh-ideate)) and reads the ledger there. An id with no spec is exit 1, and nothing starts. Then it reads each spec's newest lead: the newest `bm-nodes` node (by `started_at`) with role `lead`, this repo and this spec. A live one (neither `done` nor `blocked`) is never started again, whatever `--path` says; a `blocked` or `done` one, or none, lets the spec be built again.
+3. **Refusals.** A spec that is `done`, `rejected`, or whose newest lead is live is refused; so are the two fixer's rulings `build` checks, and a spec with no `--model` and no `judge`. With one id these refuse the command (exit 3). With several, each is that spec's `not started` line (a live lead's is `building`), and the rest go on. `--force` passes none of them. See **Refusals**.
+4. **Hold.** It reads the repo's leads on every box and holds while the repo's last build run is still going (which families hold a build is in [Build families](#build-families)). A held build of one id is refused (exit 3). Several print `held <family>: <why>` once (`--json`: `[{"state":"held","family","reason"}]`), exit 0 and start nothing.
 5. **Verify `main`.**
    1. The commit checked is main's code head (see [Updates](#updates)): an old `Dispatch`, `Review` or `done` ledger commit, or with `code` set a README, document or art commit, gets no verify of its own.
    2. A `verify` result recorded for its tree answers: `verify main <sha8>: ok t:<tree8> (answered from the record)`. With none, one is carried from the commits between `main`'s tip and the code head, as `routine run` carries it (see [Carried verify](#bmesh-routine-run)), so a landing that ended in a docs commit answers from that commit's verify: `verify main <sha8>: ok t:<tree8> (carried from t:<old8>: nothing under code changed)`.
    3. Otherwise the repo's `verify` kind, as that commit defines it, runs inline in a bmesh worktree at that commit (`<[runner] worktrees>/<repo>/<repo>-verify-<hex8>`, removed after), as `land` runs it, and records the result: `verify main <sha8>: running at t:<tree8>`, then `... (recorded)`. When that commit names a `[setup]` (see [Setup](#setup)), it runs in the fresh worktree first; a setup that fails refuses the build (exit 3) with the tail of its output and records nothing, so a flaky registry never turns `main` red.
    4. A failing verify refuses the build (exit 3, nothing dispatched; see **Refusals**). A `main` with no verify kind prints `verify: <repo> defines none` and the build goes on.
-6. **Model.** The model is `--model`, else the spec's `judge`; with neither, the build is refused.
-7. **Node.** The path is `--path`, else `<repo>-<NNN>`. A node there that is neither `done` nor `blocked` (live, from here on) is refused (exit 3, `use --path <repo>-<NNN>-2`). A box at `[runner] max_leads` is refused too.
-8. **Brief.** The brief (the spec file, the row's done rule and verify commands, the node path, the standard closing) is written to `<user cache dir>/bmesh/briefs/<path>.md` (see [Briefs](#briefs)). When `main` names a `[setup]`, its first section is `bmesh setup`.
-9. **Start.** The lead starts through the runner with a fresh thread id, titled `[build] <repo> <NNN>: <title>`, as `lead start` would, and its node records the repo, spec, branch, host and family.
 
-A failed start is the runner's error (exit 1), with the hold `--hold` wrote deleted; nothing else was written.
+   Steps 4 and 5 run once per invocation, and only when a spec would start: with several ids, one that passes step 3, waits on nothing (see **Details**) and finds fewer than three of the repo's leads live. A batch where every picked spec has a live lead prints its `building` lines and runs no verify.
+6. **Node.** The path is `--path`, else `<repo>-<NNN>`. A node there that is neither `done` nor `blocked` (live, from here on) is refused (exit 3, `use --path <repo>-<NNN>-2`). A box at `[runner] max_leads` is refused too.
+7. **Brief.** The brief (the spec file, your words, the row's done rule and verify commands, the node path, the standard closing) is written to `<user cache dir>/bmesh/briefs/<path>.md` (see [Briefs](#briefs)). When `main` names a `[setup]`, its first section is `bmesh setup`.
+8. **Start.** The lead starts through the runner with a fresh thread id, titled `[build] <repo> <NNN>: <title>`, as `lead start` would, and its node records the repo, spec, branch, host and family.
+
+A failed start is the runner's error (exit 1 with one id), with the hold `--hold` wrote deleted; nothing else was written.
 
 `--force` passes the hold and the red `main` (as `ideate --force` passes an open round), runs no verify and prints what it passed: `--force: past held: ...`, `--force: past main is red at ...` or `--force: past verify main <sha8>: no result for t:<tree8>`.
 
-**Output.** A single `build` prints `{"path","thread","branch","worktree","model","spec","family"}` (plus `hold` under `--hold`, and `warnings`). `warnings` is what `choose-ideas` warned at accept (a command `main` or another spec already defines), read again from the ledger. The verify lines of step 5 go to stderr; under `--accepted`, they go to stdout among its lines.
+**Output.** One id prints `{"path","thread","branch","worktree","model","spec","family"}` (plus `hold` under `--hold`, and `warnings`). Several print a line per spec (see **Details**). `warnings` are the spec's command clashes, which `build` warns of at dispatch (below). The verify lines of step 5 go to stderr for one id; for several, they go to stdout among its lines.
 
 **Refusals.** Each message prints after `bmesh: `.
 
@@ -838,18 +840,21 @@ A failed start is the runner's error (exit 1), with the hold `--hold` wrote dele
 |---|---|---|
 | `--hold` other than `land` or `now` | 2 | `--hold "<g>": want land or now` |
 | `--family` not one subject token | 2 | `--family: invalid family "<f>": want letters, digits, - or _, starting with a letter or digit` |
+| `--path` with several ids | 2 | `--path names one lead; pick one spec with it` |
+| An id that is not a number | 2 | `spec id "<x>" is not a number` |
 | No registry row | 2 | `<name> is not in repos.toml; a build needs its row (verify, remote, routines)` |
 | Row not `ship` | 3 | `refused: <name> is <mode>; builds are for ship repos only` |
 | No such spec on `main` | 1 | `no spec NNN on main in <path>` |
 | Two specs share an id on `main` | 3 | `refused: <file> and <file> share id NNN; renumber the newer with bmesh spec next-id` |
-| Spec not `accepted` (or `building`) | 3 | `refused: spec NNN is <status>, not accepted` |
+| Spec `done` | 3 | `refused: spec NNN is done` |
+| Spec `rejected` | 3 | `refused: spec NNN was declined: <reason>` (`refused: spec NNN was declined` with no `reason`) |
 | The spec's newest lead is live | 3 | `refused: spec NNN is building: <path> (<state>)` |
 | Spec `ruled` and sized `L` or larger | 3 | the sized message below |
 | `fix_of` chain three deep | 3 | the `fix 3` message below |
+| No `--model` and no usable `judge` | 3 | `refused: spec NNN has no judge; pass --model` |
 | Held | 3 | one of the `held:` messages below |
 | `main` red | 3 | the `main is red` message below, then the last 30 lines of output |
 | The setup before verifying `main` failed | 3 | `verify main <sha8>: setup failed: <why>; nothing recorded`, then the last 30 lines of its output (`<why>` is `exit status <n>`, `timed out after <d>`, or for a setup that dirtied the tree, `verify main <sha8>: setup dirtied the tree: <paths>; nothing recorded`) |
-| No `--model` and no usable `judge` | 3 | `` refused: <err>; pass --model, or `NNN on <judge>` to bmesh choose-ideas `` |
 | Live node at the path | 3 | `refused: path <p> is taken (state <s>); use --path <p>-2` |
 | Box at `[runner] max_leads` | 3 | `<N> leads already working on this host` |
 | Start failed | 1 | the runner's error |
@@ -859,26 +864,31 @@ A failed start is the runner's error (exit 1), with the hold `--hold` wrote dele
 - Sized: `refused: spec NNN is ruled and sized <size> (reversible: anything sized L is proposed, never built); set it proposed`, for example `refused: spec NNN is ruled and sized L (reversible: anything sized L is proposed, never built); set it proposed`.
 - Fix chain: a spec's `fix_of` chain is each spec's `fix_of` (its first three-digit id) followed until a spec without one. Three deep is refused with `refused: spec NNN is fix 3 on one premise (NNN fixes MMM fixes KKK fixes JJJ) (premise: no third fix on one premise); set it proposed with the belief the fixes assumed`. Two deep builds.
 
+With several ids, the step 1 and 2 refusals above the `done` row refuse the command; from `done` down, each is that spec's line.
+
 **Details.**
 
-*`--accepted`.* It dispatches every accepted spec (and one reading `building`), lowest id first, through the same steps; one refusal doesn't stop the next. A spec stays `accepted` while it is built, so a spec whose newest lead is live or blocked is skipped, never dispatched twice. It holds and verifies once per batch, and only when a spec is accepted. Then each spec in turn takes the lead check, the rulings check, the two `waits` checks below, and then the model and node checks and the start. It prints one line per spec:
+*Several ids.* Each spec, in id order, takes the step 3 refusals, then the two `waits` checks below, then the node checks and the start; one refusal doesn't stop the next. It prints one line per spec:
 
-- `building NNN <title>: <path> (<state>)`: its newest lead is live;
-- `blocked NNN <title>: <path>: <why>`: its newest lead is blocked (a single `build` starts it again);
+- `building NNN <title>: <path> (<state>)`: its newest lead is live, so it is not started twice;
 - `started NNN <title>: <path> on <model> (thread, branch, family F)`, then `; warning: <warning>` per warning;
-- `waits NNN <title>: on 004 (accepted)`: its body names a lower id (`004`, or a run `001 to 004`) whose spec is not yet `done`, `rejected` or `later`; a higher id is a pointer, not a dependency;
+- `waits NNN <title>: on 004 (proposed)`: its body names a lower id (`004`, or a run `001 to 004`) whose spec is not yet `done`, `rejected` or `later`, picked in this batch or not; a higher id is a pointer, not a dependency;
 - `waits NNN <title>: 3 leads working on <repo>`: three leads of the repo (on any box) are live, counting those just started;
-- `not started NNN <title>: <the refusal>`, the two ruling refusals included.
+- `not started NNN <title>: <the refusal>`.
 
-With no accepted spec it prints `no accepted specs in <repo>`. When any started, a last line names their family: `family <repo>-build-<N>`. `--json` prints the lines as objects (`id`, `title`, `state`, `reason`, each with `family`; a started one has the single form's fields too), with the same states.
+A spec whose newest lead is blocked is started again. When any started, a last line names their family: `family <repo>-build-<N>`. `--json` prints the lines as an array of objects (`id`, `title`, `state`, `reason`, each with `family`; a started one has the one-id fields too), with the same states.
+
+*Command clashes.* A spec defines a command where its Proposal has a bold run that is a bmesh synopsis and nothing else: ``**`bmesh release <repo> [--minor]`**``, optionally closed inside the bold by `.`, `:`, `,` or `;`. The command is the synopsis's leading bare words: `bmesh spec verified [--commit C]` defines `spec verified`. A bold run that goes on in words (``**`bmesh build` repeats the warning**``), a plain code span, and a bold run with a backtick right outside it (a quote inside a code span) define nothing; a synopsis going straight to a flag (`bmesh build --hold land|now`) adds a flag, and flags aren't checked. Each command a started spec defines is compared with the commands this binary's `bmesh help` lists (`main`'s, on an up-to-date box) and with every other spec being built: one whose newest lead is live, or that this invocation started before it (both read `building`), and one an older release left `accepted`, `adjusting` or `building`. A match is a warning, `002 defines bmesh frob, which 009 (building) also defines` or `046 defines bmesh version, which main already has`; the lead still starts, and you decide. Two specs picked together that define one command warn once, from the higher id.
+
+*`--context`* carries your words for the leads this invocation starts (`-` reads stdin). Each brief gets `## The operator's words` with them, trimmed, after the spec; a repo's own build template without `{{operator_words}}` gets the section appended. No words, no section.
 
 *Families.* Without `--family`, each invocation mints `<repo>-build-<N>` (`<repo>` the repo's node token, see [Names](#names)), `N` one past the highest such family in `bm-nodes` or still holding feedback. The lead's node records it as `family`. A coordinator dispatching several commands or repos passes the first family to the rest (over ssh, on the command line). See [Build families](#build-families).
 
-*`--hold land|now`* (both forms; "build these, land none until I say"). It writes each lead's hold before the runner starts it (`by` the sender, text `held at dispatch (build --hold <gate>)`) and sends the hold message once the lead has started. A failed message goes to stderr, `build: <path> is held before land, but the hold message failed: <err>`, and the start stands. The JSON carries `hold`; `--accepted`'s started line ends `, held before land` (`, held now`). A failed start deletes the hold. A build without `--hold` deletes a hold an earlier lead left on its path. See [Holds](#holds).
+*`--hold land|now`* ("build these, land none until I say"). It writes each lead's hold before the runner starts it (`by` the sender, text `held at dispatch (build --hold <gate>)`) and sends the hold message once the lead has started. A failed message goes to stderr, `build: <path> is held before land, but the hold message failed: <err>`, and the start stands. The JSON carries `hold`; a `started` line ends `, held before land` (`, held now`). A failed start deletes the hold. A build without `--hold` deletes a hold an earlier lead left on its path. See [Holds](#holds).
 
 *Models.* The binary has no model fallback: when the runner rejects a model, you retry with `--model`.
 
-See also: [Build families](#build-families), [Holds](#holds), [`bmesh feedback`](#bmesh-feedback), [The fixer](#the-fixer), [`bmesh release`](#bmesh-release).
+See also: [Build families](#build-families), [Holds](#holds), [`bmesh feedback`](#bmesh-feedback), [The fixer](#the-fixer), [`bmesh release`](#bmesh-release), [`bmesh spec set`](#bmesh-spec-set) (to decline or shelve a spec).
 
 ### `bmesh lead start`
 
@@ -2872,7 +2882,7 @@ Each kind of brief also gets its own values:
 |---|---|
 | A round's | `node`, `round`, `round_n`, `worktree`, `branch`, `thread_id`, `next_id`, `date` and `operator_context` (the operator's focus section, or empty) |
 | The fix brief | `node`, `date` and `plain_words` (the plain-words rule every closing ends with) |
-| A build brief | `spec`, `spec_path`, `spec_id`, `node`, `date` and `upgrading` (empty, except in bmesh's own repo: a bullet asking the lead to fill the spec's `## Upgrading` section as built, with the template's rule) |
+| A build brief | `spec`, `spec_path`, `spec_id`, `node`, `date`, `operator_words` (the `## The operator's words` section `build --context` gives, or empty) and `upgrading` (empty, except in bmesh's own repo: a bullet asking the lead to fill the spec's `## Upgrading` section as built, with the template's rule) |
 
 **Setup first.** When the repo names a `[setup]` (see [Setup](#setup)), a build, fix or round brief gets a section `## First: bmesh setup` before its first `## ` heading (at its end when it has none), a repo's own template included: run `bmesh setup` before anything else (`cd <worktree> && bmesh setup` in a round's brief, whose shell doesn't start there), read its output if it fails, and run it again after changing dependencies. A build or fix brief reads `[setup]` from `main`, which the lead's worktree is made from; a round's, from its worktree. The executor header has the same first step (see [`bmesh executor new`](#bmesh-executor-new)). The runner makes a T3 lead's worktree after the brief is written, so bmesh can't run the setup there itself; a T3 project setup that already runs `bmesh setup` makes the step a no-op.
 

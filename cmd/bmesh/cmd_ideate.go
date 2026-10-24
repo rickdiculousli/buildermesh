@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"os"
 	"os/exec"
@@ -82,14 +81,9 @@ func (a *app) cmdIdeate(args []string) error {
 	if err := checkEffort(*effort); err != nil {
 		return err
 	}
-	if *focus == "-" {
-		b, err := io.ReadAll(a.stdin)
-		if err != nil {
-			return fmt.Errorf("read stdin: %w", err)
-		}
-		*focus = string(b)
+	if *focus, err = a.readWords(*focus); err != nil {
+		return err
 	}
-	*focus = strings.TrimSpace(*focus)
 	if err := a.loadConfig(); err != nil {
 		return err
 	}

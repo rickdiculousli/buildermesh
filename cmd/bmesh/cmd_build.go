@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"maps"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -20,9 +22,10 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
-const buildUsage = "usage: bmesh build <repo> <NNN> [--model M] [--effort E] [--path P] [--family F] [--hold land|now] [--force] | bmesh build --accepted <repo> [--model M] [--effort E] [--family F] [--hold land|now] [--force]"
+const buildUsage = "usage: bmesh build <repo> <NNN> [<NNN>...] [--model M] [--effort E] [--path P] [--family F] [--hold land|now] [--context <text|->] [--force]"
 
-// buildSlots is how many leads --accepted keeps working on one repo.
+// buildSlots is how many leads a build of several specs keeps working on
+// one repo.
 const buildSlots = 3
 
 // idRE finds the three-digit ids a spec body names; rangeRE a run of them.
@@ -41,36 +44,64 @@ type buildStarted struct {
 	Spec   string `json:"spec"`
 	Family string `json:"family"`
 	Hold   string `json:"hold,omitempty"` // the gate build --hold held it at
-	// The spec's command clashes, as choose-ideas warned at its accept.
+	// The spec's command clashes, which build warns of at dispatch.
 	Warnings []string `json:"warnings,omitempty"`
 }
 
-// cmdBuild dispatches an accepted spec: bmesh build <repo> <NNN> renders
-// the build brief and starts the lead through the runner as lead start
-// does, recording nothing on main: the lead's node says the spec is being
-// built. --accepted does that for every accepted spec, lowest id first,
-// a spec that names a lower id after that one is done, at most buildSlots
-// leads working on the repo, and prints what waits, what a live lead is
-// building and what a blocked one stopped at. Every lead one invocation
-// starts is in one build family: --family, else a fresh <repo>-build-<N>.
-// Before anything starts, both forms hold while another family of the
-// repo's still runs or has feedback pending, then verify main's code head
-// (once for a batch); --force goes past both, saying what it passed.
+// buildLine is one spec's line when several are picked: started, waits,
+// building or not started, with why.
+type buildLine struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	State  string `json:"state"`
+	Reason string `json:"reason,omitempty"`
+	Family string `json:"family"`
+	*buildStarted
+}
+
+// cmdBuild builds the specs the operator picked: bmesh build <repo> <NNN>
+// [<NNN>...]. Picking is the accept: any spec on main that is not done or
+// rejected is built, whatever it reads, with nothing recorded on main (the
+// lead's node says the spec is being built). For each spec it renders the
+// build brief and starts the lead through the runner as lead start does.
+// One id prints the started JSON; several print a line per spec in id
+// order: building (its newest lead is live), started, waits (on a named
+// lower spec that is not done, or for one of buildSlots leads on the
+// repo) or not started (the refusal). Every lead one invocation starts is
+// in one build family: --family, else a fresh <repo>-build-<N>. Before
+// anything starts, it holds while another family of the repo's still runs
+// or has feedback pending, then verifies main's code head, once, and only
+// when a spec would start; --force goes past both, saying what it passed.
+// --context puts the operator's words in each brief.
 func (a *app) cmdBuild(args []string) error {
 	fs := a.flags("build")
-	accepted := fs.Bool("accepted", false, "build every accepted spec, in order, up to three at a time")
-	model := fs.String("model", "", "model the lead runs on (default the spec's judge)")
-	effort := fs.String("effort", "", "the lead's effort (default [models] lead_effort)")
-	pathFlag := fs.String("path", "", "node path (default <repo>-<NNN>)")
+	model := fs.String("model", "", "model the leads run on (default each spec's judge)")
+	effort := fs.String("effort", "", "the leads' effort (default [models] lead_effort)")
+	pathFlag := fs.String("path", "", "node path, for one spec (default <repo>-<NNN>)")
 	familyFlag := fs.String("family", "", "join this build family (default a fresh <repo>-build-<N>)")
 	force := fs.Bool("force", false, "dispatch past another family still running and a red main")
 	holdGate := fs.String("hold", "", "dispatch each lead held at this gate (land or now) until bmesh unhold")
+	words := fs.String("context", "", "the operator's words for these leads' briefs (- reads stdin)")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
-	if (*accepted && (len(pos) != 1 || *pathFlag != "")) || (!*accepted && len(pos) != 2) {
+	if len(pos) < 2 {
 		return fail(exitUsage, buildUsage)
+	}
+	var ids []int
+	for _, p := range pos[1:] {
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			return fail(exitUsage, "spec id %q is not a number", p)
+		}
+		if !slices.Contains(ids, n) {
+			ids = append(ids, n)
+		}
+	}
+	slices.Sort(ids)
+	if *pathFlag != "" && len(ids) > 1 {
+		return fail(exitUsage, "--path names one lead; pick one spec with it")
 	}
 	if *holdGate != "" && *holdGate != mesh.GateLand && *holdGate != mesh.GateNow {
 		return fail(exitUsage, "--hold %q: want land or now", *holdGate)
@@ -85,6 +116,9 @@ func (a *app) cmdBuild(args []string) error {
 		if err := mesh.CheckFamily(*familyFlag); err != nil {
 			return fail(exitUsage, "--family: %v", err)
 		}
+	}
+	if *words, err = a.readWords(*words); err != nil {
+		return err
 	}
 	if err := a.loadConfig(); err != nil {
 		return err
@@ -109,65 +143,63 @@ func (a *app) cmdBuild(args []string) error {
 	if err != nil {
 		return landFail(err)
 	}
+	var picked []*spec.Spec
+	for _, n := range ids {
+		s, ok := spec.Find(specs, n)
+		if !ok {
+			return fail(exitError, "no spec %03d on main in %s", n, repoPath)
+		}
+		picked = append(picked, s)
+	}
 	if err := a.connect(ctx, "build"); err != nil {
 		return err
 	}
-	family := *familyFlag
-	if family == "" {
-		if family, err = nextFamily(ctx, a.client, row.Name); err != nil {
+	leads, err := a.specLeads(ctx, row.Name)
+	if err != nil {
+		return err
+	}
+	b := &batch{row: row, repoPath: repoPath, specs: specs, leads: leads, model: *model, effort: *effort,
+		hold: *holdGate, words: *words}
+	one := len(picked) == 1
+	// Its own refusal comes before a hold or a verify.
+	if one {
+		if err := b.refusal(picked[0]); err != nil {
+			return err
+		}
+	}
+	if b.working, err = a.repoLeads(ctx, row.Name); err != nil {
+		return err
+	}
+	if b.family = *familyFlag; b.family == "" {
+		if b.family, err = nextFamily(ctx, a.client, row.Name); err != nil {
 			return err
 		}
 	}
 	// What the gate says goes to stderr, keeping stdout the command's
-	// result, except in --accepted's lines.
+	// result, except among several specs' lines.
 	note := a.stderr
-	if *accepted && !a.json {
+	if !one && !a.json {
 		note = a.stdout
 	}
-	var s *spec.Spec
-	if !*accepted {
-		n, err := strconv.Atoi(pos[1])
-		if err != nil {
-			return fail(exitUsage, "spec id %q is not a number", pos[1])
-		}
-		var ok bool
-		if s, ok = spec.Find(specs, n); !ok {
-			return fail(exitError, "no spec %03d on main in %s", n, repoPath)
-		}
-		// Its own refusal comes before a hold or a verify.
-		leads, err := a.specLeads(ctx, row.Name)
+	// A batch where nothing would start has nothing to hold or verify.
+	if one || b.anyStarts(picked) {
+		hold, err := a.heldBy(ctx, row.Name, b.family)
 		if err != nil {
 			return err
 		}
-		if err := buildable(s, leads[s.IDString()]); err != nil {
-			return err
+		if hold != nil {
+			switch {
+			case *force:
+				fmt.Fprintf(note, "--force: past %s\n", hold.line())
+			case one:
+				return fail(exitRefused, "%s", hold.line())
+			case a.json:
+				return a.printJSON([]map[string]string{{"state": "held", "family": hold.who, "reason": hold.why}})
+			default:
+				fmt.Fprintf(a.stdout, "held %s: %s\n", hold.who, hold.why)
+				return nil
+			}
 		}
-		if err := fixRefusal(s, specs); err != nil {
-			return err
-		}
-	}
-	// A batch with nothing to build has nothing to hold or verify.
-	gate := !*accepted || slices.ContainsFunc(specs, func(s *spec.Spec) bool { return dispatchStatus(s.Status()) })
-	var hold *buildHold
-	if gate {
-		if hold, err = a.heldBy(ctx, row.Name, family); err != nil {
-			return err
-		}
-	}
-	if hold != nil {
-		switch {
-		case *force:
-			fmt.Fprintf(note, "--force: past %s\n", hold.line())
-		case *accepted && a.json:
-			return a.printJSON([]map[string]string{{"state": "held", "family": hold.who, "reason": hold.why}})
-		case *accepted:
-			fmt.Fprintf(a.stdout, "held %s: %s\n", hold.who, hold.why)
-			return nil
-		default:
-			return fail(exitRefused, "%s", hold.line())
-		}
-	}
-	if gate {
 		head, err := a.codeHead(row.Name, repoPath, "main")
 		if err != nil {
 			return err
@@ -179,14 +211,99 @@ func (a *app) cmdBuild(args []string) error {
 	// The dispatch gets its own ten minutes, however long the verify ran.
 	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	if *accepted {
-		return a.buildAccepted(ctx, row, repoPath, specs, *model, *effort, family, *holdGate)
+	if one {
+		started, err := a.buildOne(ctx, b, picked[0], *pathFlag)
+		if err != nil {
+			return err
+		}
+		return a.printJSON(started)
 	}
-	started, err := a.buildOne(ctx, row, repoPath, s, specs, *model, *effort, *pathFlag, family, *holdGate)
-	if err != nil {
+	return a.buildPicked(ctx, b, picked)
+}
+
+// readWords is the operator's words a flag gives, trimmed; - reads them
+// from stdin.
+func (a *app) readWords(v string) (string, error) {
+	if v == "-" {
+		b, err := io.ReadAll(a.stdin)
+		if err != nil {
+			return "", fmt.Errorf("read stdin: %w", err)
+		}
+		v = string(b)
+	}
+	return strings.TrimSpace(v), nil
+}
+
+// batch is one build invocation: the repo, main's ledger, each spec's
+// newest lead, what every lead it starts shares, and the repo's leads
+// working, counting those it started.
+type batch struct {
+	row                        config.Repo
+	repoPath                   string
+	specs                      []*spec.Spec
+	leads                      map[string]*specLead
+	model, effort, hold, words string
+	family                     string
+	working                    int
+	started                    []string // ids this batch started, in order
+}
+
+// refusal is why spec s is not built, whoever picked it: done, declined,
+// its newest lead live, one of the fixer's rulings, or no model.
+func (b *batch) refusal(s *spec.Spec) error {
+	switch s.Status() {
+	case "done":
+		return fail(exitRefused, "refused: spec %s is done", s.IDString())
+	case "rejected":
+		if r := s.Fields["reason"]; r != "" {
+			return fail(exitRefused, "refused: spec %s was declined: %s", s.IDString(), r)
+		}
+		return fail(exitRefused, "refused: spec %s was declined", s.IDString())
+	}
+	if lead := b.leads[s.IDString()]; lead.live() {
+		return fail(exitRefused, "refused: spec %s is building: %s (%s)", s.IDString(), lead.Node.Path, dash(lead.State.State))
+	}
+	if err := fixRefusal(s, b.specs); err != nil {
 		return err
 	}
-	return a.printJSON(started)
+	_, err := b.modelFor(s)
+	return err
+}
+
+// modelFor is the model s's lead runs on: --model, else its judge's.
+func (b *batch) modelFor(s *spec.Spec) (string, error) {
+	if b.model != "" {
+		return b.model, nil
+	}
+	m, err := spec.ModelFor(s)
+	if err != nil {
+		return "", fail(exitRefused, "refused: spec %s has no judge; pass --model", s.IDString())
+	}
+	return m, nil
+}
+
+// anyStarts reports whether a spec of picked would start: one with no
+// refusal and nothing to wait on, with a slot free.
+func (b *batch) anyStarts(picked []*spec.Spec) bool {
+	return b.working < buildSlots && slices.ContainsFunc(picked, func(s *spec.Spec) bool {
+		return b.refusal(s) == nil && len(waitsOn(s, b.specs)) == 0
+	})
+}
+
+// claims is the ledger as the command clashes read it: a spec whose newest
+// lead is live, or that this batch started, reads building.
+func (b *batch) claims() []*spec.Spec {
+	out := make([]*spec.Spec, len(b.specs))
+	for i, s := range b.specs {
+		out[i] = s
+		if b.leads[s.IDString()].live() || slices.Contains(b.started, s.IDString()) {
+			c := *s
+			c.Fields = maps.Clone(s.Fields)
+			c.Fields["status"] = "building"
+			out[i] = &c
+		}
+	}
+	return out
 }
 
 // nextFamily is <repo>-build-<N>, N one past the highest family of that
@@ -224,23 +341,21 @@ func nextFamily(ctx context.Context, c *mesh.Client, repo string) (string, error
 	return fmt.Sprintf("%s-build-%d", base, n+1), nil
 }
 
-// buildOne dispatches one spec the caller found buildable; its judge names
-// the model unless --model does. The node path must be free (exit 3 and
-// the --path <repo>-<NNN>-2 rule, as lead start) and the host under its
-// lead cap before anything starts. Then the brief is rendered to <user
-// cache dir>/bmesh/briefs/<path>.md and the lead is started with a fresh
-// thread id; nothing is recorded on main. With hold (land or now) the
-// lead's bm-holds key is written before the runner starts it, and the hold
-// message follows the start; without, a hold left on the path by an
-// earlier lead is deleted. specs is the ledger on main, which the started
-// line's command clashes are read against.
-func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s *spec.Spec, specs []*spec.Spec, model, effort, pathFlag, family, hold string) (buildStarted, error) {
-	if model == "" {
-		m, err := spec.ModelFor(s)
-		if err != nil {
-			return buildStarted{}, fail(exitRefused, "refused: %v; pass --model, or `%s on <judge>` to bmesh choose-ideas", err, s.IDString())
-		}
-		model = m
+// buildOne dispatches spec s, which b.refusal passed; its judge names the
+// model unless --model does. The node path must be free (exit 3 and the
+// --path <repo>-<NNN>-2 rule, as lead start) and the host under its lead
+// cap before anything starts. Then the brief is rendered to <user cache
+// dir>/bmesh/briefs/<path>.md, with the operator's words when there are
+// any, and the lead is started with a fresh thread id; nothing is recorded
+// on main. With a hold (land or now) the lead's bm-holds key is written
+// before the runner starts it, and the hold message follows the start;
+// without, a hold left on the path by an earlier lead is deleted. The
+// started line's command clashes are read against b.claims.
+func (a *app) buildOne(ctx context.Context, b *batch, s *spec.Spec, pathFlag string) (buildStarted, error) {
+	row, repoPath, family, hold := b.row, b.repoPath, b.family, b.hold
+	model, err := b.modelFor(s)
+	if err != nil {
+		return buildStarted{}, err
 	}
 	p, err := leadPath(row.Name, s.IDString(), pathFlag)
 	if err != nil {
@@ -266,6 +381,7 @@ func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s 
 		values[k] = v
 	}
 	values["upgrading"] = ""
+	values["operator_words"] = brief.OperatorWords(b.words)
 	if ownModuleRepo(repoPath) {
 		values["upgrading"] = brief.UpgradingBullet
 	}
@@ -280,6 +396,11 @@ func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s 
 		return buildStarted{}, err
 	}
 	text = brief.WithSetup(text, brief.SetupStep(rc.Setup.Command, ""))
+	if section := values["operator_words"]; section != "" && !strings.Contains(text, section) {
+		// A repo's own template without {{operator_words}} still gets
+		// the operator's words.
+		text = strings.TrimRight(text, "\n") + "\n\n" + strings.TrimRight(section, "\n") + "\n"
+	}
 	briefPath, err := writeBrief(p, text)
 	if err != nil {
 		return buildStarted{}, err
@@ -296,7 +417,7 @@ func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s 
 		return buildStarted{}, err
 	}
 	started, err := a.startLead(leadStart{Name: row.Name, RepoPath: repoPath, Spec: s.IDString(), BriefPath: briefPath,
-		Model: model, Effort: effort, Title: fmt.Sprintf("[build] %s %s: %s", row.Name, s.IDString(), s.Title()), Path: p, Thread: thread, Family: family})
+		Model: model, Effort: b.effort, Title: fmt.Sprintf("[build] %s %s: %s", row.Name, s.IDString(), s.Title()), Path: p, Thread: thread, Family: family})
 	if err != nil {
 		if hold != "" {
 			_, _ = mesh.DeleteLeadHold(ctx, a.client, p)
@@ -310,8 +431,10 @@ func (a *app) buildOne(ctx context.Context, row config.Repo, repoPath string, s 
 			fmt.Fprintf(a.stderr, "build: %s is held %s, but the hold message failed: %v\n", p, mesh.GatePhrase(hold), err)
 		}
 	}
+	b.working++
+	b.started = append(b.started, s.IDString())
 	return buildStarted{leadStarted: started, Model: model, Spec: s.IDString(), Family: family, Hold: hold,
-		Warnings: spec.CommandClashes(s, specs, mainCommands())}, nil
+		Warnings: spec.CommandClashes(s, b.claims(), mainCommands())}, nil
 }
 
 // specLead is a spec's newest lead: the newest bm-nodes node with role
@@ -354,82 +477,39 @@ func (a *app) specLeads(ctx context.Context, repo string) (map[string]*specLead,
 	return out, nil
 }
 
-// dispatchStatus reports a status build may dispatch: accepted, or
-// building, which only a dispatch by the release before wrote.
-func dispatchStatus(status string) bool { return status == "accepted" || status == "building" }
-
-// buildable refuses a spec build must not dispatch: one that reads
-// neither accepted nor building, and one whose newest lead is live. A spec
-// reading building with no live lead is a dispatch the release before
-// left, and is dispatched again; so is one whose lead is blocked.
-func buildable(s *spec.Spec, lead *specLead) error {
-	if !dispatchStatus(s.Status()) {
-		return fail(exitRefused, "refused: spec %s is %s, not accepted", s.IDString(), s.Status())
-	}
-	if lead.live() {
-		return fail(exitRefused, "refused: spec %s is building: %s (%s)", s.IDString(), lead.Node.Path, dash(lead.State.State))
-	}
-	return nil
-}
-
-// buildAccepted dispatches the repo's accepted specs in id order (and one
-// reading building that the release before left with no live lead),
-// keeping at most buildSlots leads working on the repo (across hosts), and
-// prints one line per spec: building (its newest lead is live: its path
-// and state), blocked (its newest lead is: its path and why), started,
-// waits (on a named lower spec that is not done, or for a slot) or not
-// started (with the refusal), then the family the started leads are in.
-// One spec's refusal does not stop the others.
-func (a *app) buildAccepted(ctx context.Context, row config.Repo, repoPath string, specs []*spec.Spec, model, effort, family, hold string) error {
-	working, err := a.repoLeads(ctx, row.Name)
-	if err != nil {
-		return err
-	}
-	leads, err := a.specLeads(ctx, row.Name)
-	if err != nil {
-		return err
-	}
-	type line struct {
-		ID     string `json:"id"`
-		Title  string `json:"title"`
-		State  string `json:"state"`
-		Reason string `json:"reason,omitempty"`
-		Family string `json:"family"`
-		*buildStarted
-	}
-	var out []line
-	for _, s := range specs {
-		if !dispatchStatus(s.Status()) {
-			continue
-		}
-		l := line{ID: s.IDString(), Title: s.Title(), Family: family}
-		lead := leads[s.IDString()]
+// buildPicked builds several picked specs in id order, keeping at most
+// buildSlots leads working on the repo (across hosts), and prints one line
+// per spec: building (its newest lead is live: its path and state),
+// started, waits (on a named lower spec that is not done, or for a slot)
+// or not started (with the refusal), then the family the started leads
+// are in. One spec's refusal does not stop the others; a spec whose lead
+// is blocked starts again.
+func (a *app) buildPicked(ctx context.Context, b *batch, picked []*spec.Spec) error {
+	var out []buildLine
+	for _, s := range picked {
+		l := buildLine{ID: s.IDString(), Title: s.Title(), Family: b.family}
+		lead := b.leads[s.IDString()]
 		if lead.live() {
 			l.State, l.Reason = "building", fmt.Sprintf("%s (%s)", lead.Node.Path, dash(lead.State.State))
-		} else if lead != nil && lead.State.State == "blocked" {
-			l.State, l.Reason = "blocked", lead.Node.Path+": "+dash(lead.State.Text)
-		} else if err := fixRefusal(s, specs); err != nil {
+		} else if err := b.refusal(s); err != nil {
 			l.State, l.Reason = "not started", err.Error()
-		} else if waits := waitsOn(s, specs); len(waits) > 0 {
+		} else if waits := waitsOn(s, b.specs); len(waits) > 0 {
 			l.State, l.Reason = "waits", "on "+strings.Join(waits, ", ")
-		} else if working >= buildSlots {
-			l.State, l.Reason = "waits", fmt.Sprintf("%d leads working on %s", working, row.Name)
-		} else if started, err := a.buildOne(ctx, row, repoPath, s, specs, model, effort, "", family, hold); err != nil {
+		} else if b.working >= buildSlots {
+			l.State, l.Reason = "waits", fmt.Sprintf("%d leads working on %s", b.working, b.row.Name)
+		} else if started, err := a.buildOne(ctx, b, s, ""); err != nil {
 			l.State, l.Reason = "not started", err.Error()
 		} else {
 			l.State, l.buildStarted = "started", &started
-			working++
 		}
 		out = append(out, l)
 	}
 	if a.json {
 		return a.printJSON(out)
 	}
-	started := false
 	for _, l := range out {
 		switch l.State {
 		case "started":
-			started = true
 			held := ""
 			if l.Hold != "" {
 				held = ", held " + mesh.GatePhrase(l.Hold)
@@ -443,11 +523,8 @@ func (a *app) buildAccepted(ctx context.Context, row config.Repo, repoPath strin
 			fmt.Fprintf(a.stdout, "%s %s %s: %s\n", l.State, l.ID, l.Title, l.Reason)
 		}
 	}
-	if len(out) == 0 {
-		fmt.Fprintf(a.stdout, "no accepted specs in %s\n", row.Name)
-	}
-	if started {
-		fmt.Fprintf(a.stdout, "family %s\n", family)
+	if len(b.started) > 0 {
+		fmt.Fprintf(a.stdout, "family %s\n", b.family)
 	}
 	return nil
 }
