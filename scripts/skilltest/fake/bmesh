@@ -1,0 +1,406 @@
+#!/bin/sh
+# bmesh, faked for scripts/skilltest. A cell puts this first on PATH, so a
+# session under test reaches no mesh, repo or thread: nothing it answers is
+# real. Each call appends one line to $SKILLTEST_LOG: the cwd, then each
+# argument, tab-separated, with \, a tab and a newline written \\, \t and \n.
+# It reads the cell's files under $SKILLTEST_CELL: fake.env (the row's name
+# and path, this box's name), commands.txt (the arm's commands), canned/ (the
+# case's outputs, by command) and state/ (counters).
+
+cell=${SKILLTEST_CELL:?SKILLTEST_CELL is not set}
+log=${SKILLTEST_LOG:-$cell/bmesh.log}
+canned=$cell/canned
+state=$cell/state
+repo=
+repo_path=
+host=
+. "$cell/fake.env"
+
+esc() {
+	printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/	/\\t/g' | sed -e ':a' -e '$!N' -e '$!ba' -e 's/\n/\\n/g'
+}
+line=$(esc "$PWD")
+for a in "$@"; do
+	line="$line	$(esc "$a")"
+done
+printf '%s\n' "$line" >>"$log"
+
+usage() {
+	echo 'usage: bmesh [--config FILE] [--node PATH] [--json] <command> [args]'
+	echo
+	echo 'commands:'
+	sed 's/^/  /' "$cell/commands.txt"
+}
+
+# The flags that take no value; every other flag takes the next argument
+# unless it is written --flag=value.
+bools=' accepted force json idea peek here rerun dry-run minor patch all check write cancel apply yes defaults latest worktree wipe secure admin service no-repo restart detach plan walk before-swap notice notes checkouts ignored-ok '
+
+isbool() {
+	n=${1#-}
+	n=${n#-}
+	case $bools in *" $n "*) return 0 ;; esac
+	return 1
+}
+
+# opt NAME ARGS...: print the value of --NAME, failing when it is absent.
+opt() {
+	name=$1
+	shift
+	while [ $# -gt 0 ]; do
+		case $1 in
+		--"$name" | -"$name")
+			if [ $# -gt 1 ]; then
+				printf '%s\n' "$2"
+				return 0
+			fi
+			;;
+		--"$name"=* | -"$name"=*)
+			printf '%s\n' "${1#*=}"
+			return 0
+			;;
+		esac
+		shift
+	done
+	return 1
+}
+
+# has NAME ARGS...: whether --NAME is given.
+has() {
+	name=$1
+	shift
+	for a in "$@"; do
+		if [ "$a" = "--$name" ] || [ "$a" = "-$name" ]; then
+			return 0
+		fi
+	done
+	return 1
+}
+
+# positionals ARGS...: the arguments that are neither a flag nor a flag's
+# value, one per line.
+positionals() {
+	while [ $# -gt 0 ]; do
+		case $1 in
+		--)
+			shift
+			for a in "$@"; do
+				printf '%s\n' "$a"
+			done
+			return 0
+			;;
+		-*=*) ;;
+		-?*)
+			if ! isbool "$1" && [ $# -gt 1 ]; then
+				shift
+			fi
+			;;
+		*) printf '%s\n' "$1" ;;
+		esac
+		shift
+	done
+}
+
+first() { positionals "$@" | sed -n 1p; }
+
+out() { [ -f "$canned/$1" ] && cat "$canned/$1"; }
+
+# next NAME: a counter in the cell's state, one more on each call.
+next() {
+	n=$(cat "$state/$1" 2>/dev/null || echo 0)
+	n=$((n + 1))
+	echo "$n" >"$state/$1"
+	echo "$n"
+}
+
+uuid() { printf '5e7a%04d-0000-4000-8000-%012d\n' "$1" "$1"; }
+
+fakesha() { od -An -N20 -tx1 /dev/urandom | tr -d ' \n'; }
+
+sha8() { git ${2:+-C "$2"} rev-parse --verify -q "$1^{commit}" 2>/dev/null | cut -c1-8; }
+
+pad() {
+	n=$(printf '%s' "$1" | sed 's/^0*//')
+	case $n in
+	*[!0-9]*) printf '%s' "$1" ;;
+	*) printf '%03d' "${n:-0}" ;;
+	esac
+}
+
+# repodir [R]: the row's path for its name, R itself for a path, else this
+# worktree's top.
+repodir() {
+	case $1 in
+	"") git rev-parse --show-toplevel 2>/dev/null || pwd ;;
+	"$repo") echo "$repo_path" ;;
+	*) echo "$1" ;;
+	esac
+}
+
+nonode() {
+	echo "bmesh: no node for this directory; pass --node or set BMESH_NODE" >&2
+	exit 2
+}
+
+json=0
+gnode=
+while [ $# -gt 0 ]; do
+	case $1 in
+	--json | -json) json=1 ;;
+	--node | -node)
+		gnode=${2-}
+		[ $# -gt 1 ] && shift
+		;;
+	--node=* | -node=*) gnode=${1#*=} ;;
+	--config | -config) [ $# -gt 1 ] && shift ;;
+	--config=* | -config=*) ;;
+	*) break ;;
+	esac
+	shift
+done
+if [ $# -eq 0 ]; then
+	usage >&2
+	exit 2
+fi
+cmd=$1
+shift
+for a in "$@"; do
+	case $a in --json | -json) json=1 ;; esac
+done
+[ -n "$gnode" ] || gnode=$(opt node "$@")
+
+case $cmd in
+-h | -help | --help)
+	usage
+	exit 0
+	;;
+esac
+if ! grep -qxF -- "$cmd" "$cell/commands.txt"; then
+	echo "bmesh: unknown command \"$cmd\" (run \`bmesh help\`)" >&2
+	exit 2
+fi
+
+fake_repos() {
+	case ${1-} in
+	show)
+		name=$(positionals "$@" | sed -n 2p)
+		if [ "$name" != "$repo" ]; then
+			echo "bmesh: no repo \"$name\" in $cell/bmesh-config/repos.toml (bmesh repos lists them)" >&2
+			exit 3
+		fi
+		if [ $json = 1 ]; then out repos-show.json; else out repos-show; fi
+		;;
+	"" | -*)
+		if [ $json = 1 ]; then out repos.json; else out repos; fi
+		;;
+	esac
+}
+
+fake_spec() {
+	sub=${1-}
+	[ $# -gt 0 ] && shift
+	case $sub in
+	list)
+		st=$(opt status "$@")
+		key=spec-list${st:+.$st}
+		[ $json = 1 ] && key=$key.json
+		if [ ! -f "$canned/$key" ]; then
+			echo "bmesh: --status \"$st\" is not one of proposed, accepted, adjusting, later, rejected, building, blocked, done" >&2
+			exit 2
+		fi
+		cat "$canned/$key"
+		;;
+	next-id)
+		dir=$(repodir "$(opt repo "$@")")
+		count=$(opt count "$@") || count=1
+		hi=$({
+			for f in "$dir"/docs/proposals/*.md; do echo "${f##*/}"; done
+			git -C "$dir" ls-tree --name-only origin/main -- docs/proposals/ 2>/dev/null | sed 's|.*/||'
+		} | sed -n 's/^\([0-9][0-9]*\)-.*\.md$/\1/p' | sed 's/^0*//' | sort -n | tail -n 1)
+		hi=${hi:-0}
+		claimed=$(cat "$state/next-id" 2>/dev/null || echo 0)
+		[ "$claimed" -gt "$hi" ] && hi=$claimed
+		has peek "$@" || echo $((hi + count)) >"$state/next-id"
+		if [ "$count" -gt 1 ]; then
+			printf '%03d-%03d\n' $((hi + 1)) $((hi + count))
+		else
+			printf '%03d\n' $((hi + 1))
+		fi
+		;;
+	template) out spec-template ;;
+	set)
+		id=$(pad "$(opt id "$@")")
+		st=$(opt status "$@")
+		row=$(grep "^$id " "$canned/spec-list")
+		if [ -z "$row" ]; then
+			echo "bmesh: no spec $id in $(repodir "$(opt repo "$@")")" >&2
+			exit 1
+		fi
+		printf '%s  %-9s  %s\n' "$id" "$st" "$(printf '%s' "$row" | cut -c17-)"
+		;;
+	esac
+}
+
+fake_routine() {
+	[ "${1-}" = run ] || return 0
+	shift
+	kind=$(first "$@")
+	top=$(git rev-parse --show-toplevel 2>/dev/null) || {
+		echo "bmesh: $PWD is not a git worktree" >&2
+		exit 3
+	}
+	if [ ! -f "$top/.bmesh/routines/$kind.toml" ]; then
+		echo "bmesh: no kind $kind in $top" >&2
+		exit 3
+	fi
+	if [ "$kind" != verify ]; then
+		mode=$(sed -n 's/^mode *= *"\(.*\)".*/\1/p' "$top/.bmesh/routines/$kind.toml")
+		if ! has here "$@" && [ "$mode" != inline ]; then
+			echo "bmesh: kind $kind is $mode; queue it, or pass --here to run it in this worktree" >&2
+		else
+			echo "bmesh: model run failed: no model answers a routine in this sandbox; nothing recorded" >&2
+		fi
+		exit 3
+	fi
+	if [ -n "$(git -C "$top" status --porcelain)" ]; then
+		echo "bmesh: worktree is dirty; commit first" >&2
+		exit 3
+	fi
+	tree=$(git -C "$top" rev-parse 'HEAD^{tree}' | cut -c1-8)
+	if (cd "$top" && go test ./... 2>&1); then
+		echo "verify ok t:$tree (recorded)"
+		exit 0
+	fi
+	echo "verify fail t:$tree (recorded)"
+	exit 1
+}
+
+child() {
+	printf '{"path":"%s.%s","thread":"%s","branch":"%s-%s","worktree":"%s/worktrees/%s/%s-%s","host":"%s"}' \
+		"$1" "$2" "$(uuid "$(next thread)")" "$1" "$2" "$cell" "$repo" "$1" "$2" "$host"
+}
+
+fake_ideate() {
+	r=$(first "$@")
+	n=$(next round)
+	p=$r-round-$n
+	if has idea "$@"; then
+		printf '{"path":"%s","round":%s,"eng":%s}\n' "$p" "$n" "$(child "$p" eng)"
+	else
+		printf '{"path":"%s","round":%s,"eng":%s,"ux":%s}\n' "$p" "$n" "$(child "$p" eng)" "$(child "$p" ux)"
+	fi
+}
+
+fake_build() {
+	r=$(first "$@")
+	if has accepted "$@"; then
+		out build-accepted || echo "no accepted specs in $r"
+		return 0
+	fi
+	fam=$(opt family "$@") || fam=$r-build-$(next family)
+	model=$(opt model "$@") || model=claude-opus-5-5
+	for id in $(positionals "$@" | sed 1d); do
+		id=$(pad "$id")
+		p=$(opt path "$@") || p=$r-$id
+		t=$(uuid "$(next thread)")
+		printf '{"path":"%s","thread":"%s","branch":"bmesh/%s","worktree":"%s/worktrees/%s/%s","model":"%s","spec":"%s","building":"%s","family":"%s"}\n' \
+			"$p" "$t" "$t" "$cell" "$r" "$p" "$model" "$id" "$(fakesha)" "$fam"
+	done
+}
+
+fake_release() {
+	r=$(first "$@")
+	dir=$(repodir "$r")
+	s=$(sha8 origin/main "$dir")
+	[ -n "$s" ] || s=$(sha8 HEAD "$dir")
+	if has dry-run "$@"; then
+		echo "would release $r v0.1.0 at ${s:-00000000} (no specs); --dry-run tags nothing"
+	else
+		echo "released $r v0.1.0 at ${s:-00000000} (no specs)"
+	fi
+}
+
+case $cmd in
+help) usage ;;
+version) echo "bmesh (skilltest's fake)" ;;
+hosts)
+	if has here "$@"; then
+		echo "this box is $host; secure: no; on the mesh: no other box"
+	elif has notes "$@"; then
+		echo "$host: no notes"
+	else
+		printf 'NAME  PRESENCE  ROLE\n%s   awake     admin\n' "$host"
+	fi
+	;;
+update) has notice "$@" || echo "up to date" ;;
+repos) fake_repos "$@" ;;
+mesh-status) if [ $json = 1 ]; then out mesh-status.json; else out mesh-status; fi ;;
+thread-status)
+	p=$(first "$@")
+	[ -n "$p" ] || p=$gnode
+	[ -n "$p" ] || nonode
+	if [ $json = 1 ]; then
+		out "thread-status.$p.json" || echo '{"state":"idle","at":"","text":"","by":""}'
+	else
+		out "thread-status.$p" || echo idle
+	fi
+	;;
+watch) out watch ;;
+inbox) out inbox || { [ $json = 1 ] || echo "inbox: empty"; } ;;
+spec) fake_spec "$@" ;;
+routine) fake_routine "$@" ;;
+ideate) fake_ideate "$@" ;;
+build) fake_build "$@" ;;
+lead)
+	if [ "${1-}" = start ]; then
+		p=$(opt path "$@") || p=$(opt repo "$@")-$(pad "$(opt spec "$@")")
+		t=$(uuid "$(next thread)")
+		printf '{"path":"%s","thread":"%s","branch":"bmesh/%s","worktree":"%s/worktrees/%s/%s"}\n' "$p" "$t" "$t" "$cell" "$repo" "$p"
+	fi
+	;;
+executor)
+	if [ "${1-}" = new ]; then
+		p=${gnode:-operator}.$(opt name "$@")
+		printf '{"path":"%s","branch":"bmesh/%s","worktree":"%s/worktrees/%s/%s"}\n' "$p" "$p" "$cell" "$repo" "$p"
+	fi
+	;;
+choose-ideas) out choose-ideas || echo "landed $(fakesha | cut -c1-8) on main: Review: $(positionals "$@" | sed -n 2p)" ;;
+land) echo "landed $(sha8 HEAD)" ;;
+ready) echo "ready: $host's daemon lands $(sha8 HEAD)" ;;
+done)
+	[ -n "$gnode" ] || nonode
+	echo "done $gnode $(opt commit "$@" | cut -c1-8)"
+	;;
+started | progress | blocked | ask)
+	[ -n "$gnode" ] || nonode
+	echo "$cmd $gnode"
+	;;
+whoami)
+	[ -n "$gnode" ] || nonode
+	echo "$gnode"
+	;;
+release) fake_release "$@" ;;
+hold)
+	p=$(opt family "$@") || p=$(first "$@")
+	if [ "$(opt gate "$@")" = now ]; then
+		echo "holding $p now: $(opt text "$@")"
+	else
+		echo "holding $p before land: $(opt text "$@")"
+	fi
+	;;
+unhold)
+	p=$(opt family "$@") || p=$(first "$@")
+	echo "released $p"
+	;;
+node) [ "${1-}" = stop ] && echo "stopped $(positionals "$@" | sed -n 2p)" ;;
+feedback)
+	case ${1-} in
+	list) ;;
+	drain) echo "drained 0" ;;
+	*) echo "feedback $(next feedback) in $repo-build-1" ;;
+	esac
+	;;
+fix) echo "fix: $repo-fix-$(next fix) started (thread $(uuid "$(next thread)"), claude-opus-5-5, on $host)" ;;
+send) echo "sent $(uuid "$(next message)")" ;;
+esac
+exit 0

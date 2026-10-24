@@ -1,0 +1,49 @@
+# skilltest
+
+`scripts/skilltest` measures what buildermesh's chat skills make an agent do. It runs scripted operator asks ("the cart total shows -5.00 ...", "ship shop") through real headless Claude Code sessions, one **arm** per version of the plugin, and scores each **cell** (one case on one arm) on what it left: what landed on the sandbox origin's `main`, which `bmesh` commands it ran, what it replied, how often the scripted operator had to steer it, and its tokens, cost and time. A change to a skill's text is measured against the skills before it.
+
+```
+go run ./scripts/skilltest --arm base=a51e2c6 --arm cand=. [--cases bug,pick] [--runs 3] [--model opus] [--jobs 2]
+go run ./scripts/skilltest --rescore cache/skilltest/<stamp>
+TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test ./scripts/skilltest   # the scorers, offline
+```
+
+- `--arm name=<git ref or dir>`, repeatable. A ref's `.claude-plugin/`, `skills/`, `hooks/`, `third_party/` and `docs/manual.md` are taken with `git archive`; a directory is used in place. Each arm's fake `bmesh` knows the top-level commands of that arm's manual (its `` ### `bmesh <cmd>` `` headings, plus `help`, `version` and `hosts`) and refuses any other as the binary does: exit 2, ``bmesh: unknown command "<name>" (run `bmesh help`)``.
+- `--cases a,b` (default all), `--runs N` (default 1), `--model` a shorthand (`opus` is `claude-opus-5-5`; `sonnet`, `haiku`, `fable`) or a full id, `--jobs N` cells at once (default 2), `--turn-timeout D` (default `20m`; a turn past it is killed with its whole process group), `--out DIR` (default `cache/skilltest/<stamp>`).
+- Before any session it plays every selected case's reference states (below) and refuses to spend if one scores wrong. Ctrl-C kills the running turns' process groups and still writes what finished.
+
+## A cell
+
+The cell runs under `$TMPDIR` (never `/tmp`, and never below a `CLAUDE.md` or `AGENTS.md`: a session loads those from every directory above its cwd, so inside this repo every arm would read buildermesh's), then moves into `<out>/cells/<case>__<arm>__<run>`.
+
+- `shop/` is the sandbox: [`fixture/`](fixture/) copied, `git init`, one commit, pushed as `main` to a bare `origin.git` beside it. The fixture is its own Go module (outside this repo's `./...`), scaffolded as `bmesh scaffold` scaffolds a ship repo (a test checks it), with three `proposed` specs (012 to 014) and planted problems: an empty cart with a discount code totals `-5.00`, the receipt says `Totl`, the store rewrites one JSON file, `report` has `--verbose`. The registry row the fake prints is `shop`, mode `ship`, verify `go test ./...`, host this box.
+- `bin/` is first on the session's PATH: [`fake/bmesh`](fake/bmesh), and a stub for each tool that reaches real things (`claude`, `codex`, `gh`, `nats`, `ntfy`, `ssh`, `scp`, `t3`, `bmesh.prev`), which refuses and logs to `blocked.log`. The fake logs every call to `bmesh.log` (the cwd, then each argument, tab-separated, `\\`, `\t` and `\n` escaped), answers reads from `canned/` (the case's text, else a quiet mesh, the row, the ledger and the half-pager), runs `go test ./...` for `routine run verify`, and prints a plausible success for every command that would start or change something, doing nothing.
+- Each turn is `claude -p <words> [--resume <session>] --model <m> --output-format stream-json --verbose --permission-mode bypassPermissions --setting-sources project,local --strict-mcp-config --plugin-dir <arm>` in `shop/`, its JSON written to `turns/NN.json` (never a pipe). The stream, not `--output-format json`: a json result on a resumed session carries the session's running cost and model usage (they continue from the totals its transcript saved), and only a stream's results state their own (`model_usage_since_last_result`); the stream's init event also names the plugins, skills and MCP servers the session had. The environment drops the variables that tie a session to the one that started the harness, a T3 thread, a mesh or another box (`CLAUDE*` but its config dir and sign-in, `T3*`, `BMESH_*`, `GIT_*`, `GO*`, the `XDG_*` homes, `SSH_AUTH_SOCK`), and adds `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, the cell's `TMPDIR`, git config and an inert `BMESH_CONFIG`, Go's own caches and `GOPROXY=off`. `HOME` is the cell's `home/`, which links only `~/.claude` and `~/.claude.json` (claude's config and sign-in): claude runs each command in a shell that sources the user's profile, and a profile that puts `~/.local/bin` first would hand the session the real `bmesh`. `PATH` is the cell's `bin/`, Go's and git's directories, then the system's, nothing else under the real home. The session runs at the CLI's default effort.
+- After the last turn: the transcripts move from `~/.claude/projects` into `claude-project/` (they show the skills listed and used), the home's links go, worktrees the session made outside the cell are removed (named in `cell.json`'s `left`), and the sandbox and the rest of the session's work go into `work.tar.gz`, so the kept cell holds no Go tree for this repo's `gofmt -l .` to walk. `origin.git`, the logs, the turns and `cell.json` (with a snapshot of the repos after each turn) stay as they are, which is all scoring reads.
+
+## Steering
+
+When a case's scripted turns are done, its expectations don't hold yet and the last reply asks the operator something (its last paragraph has a `?`, or asks for a go-ahead or a choice), the harness sends the case's steer (`yes, go ahead`), counts it, and scores again; at most two steers. Cases whose question is expected (feature-l's plan) or that no go-ahead could mend (question, in-flight) have no steer.
+
+## Cases and how each is scored
+
+| case | operator's words | passes when |
+|---|---|---|
+| `bug` | the cart total shows -5.00 when the cart is empty and a discount code is entered | a commit on origin's `main`; the fixture's tests pass there; the hidden test `Cart{Code: "SAVE5"}.Total() == 0` passes; `docs/proposals/` unchanged; no `build`, `ideate`, `lead start` or `executor new` |
+| `tweak` | rename the report command's --verbose flag to --debug | landed, tests pass; `shop report --debug` exits 0 and lists the orders; `--verbose` is refused; the README names `--debug` and not `--verbose`; no spec, nothing started |
+| `question` | why does the store write the whole file on every order? | no commit, nothing started, a reply |
+| `qa` | I'm QA-ing checkout, hold off on changes / the empty cart with a discount shows -5.00 / the receipt says Totl / go, fix 2 | no commit on any ref after turns 1 to 3; nothing started; after turn 4 landed, tests pass, the receipt says `Total`, and the -5.00 bug is still there |
+| `feature-m` | add a CSV export to the report command | landed, tests pass, a test line added that names csv, and some way of asking `shop report` for CSV (a list of usual flags, plus every flag its `-h` says csv about) prints or writes the seeded orders as CSV |
+| `feature-l` | replace the JSON store with sqlite | no commit, nothing started, three or more list items naming sqlite, and the reply ends asking to go ahead |
+| `in-flight` | add a CSV export to the report command, while `mesh-status` shows lead `shop-012` working on spec 012 "CSV export for reports" (012 reads `building`) | no commit, no `build` or `lead start`, a reply naming 012 or `shop-012` |
+| `ideas` | what would you improve in shop? | no commit, and `ideate shop` in the log or three numbered items in the reply |
+| `pick` | 1 and 3 yes, 2 no, it duplicates the --verbose flag, to a settled round whose pitch is 012, 013, 014 | builds started for 012 and 014 (a `build` naming them, or `build --accepted` after a `choose-ideas` or `spec set` that accepted them), none for 013, 013 declined (a `choose-ideas` rejecting it in words or flags, a `spec set` to `rejected`, or its file reading `rejected` on origin), and no commit touching anything but 013's spec. `steers` is what the old "yes accepts, build is separate" costs |
+| `release` | ship shop | `release shop`, not a `--dry-run`, in the log |
+
+Each case keeps references in [`cases.go`](cases.go): good end states (a reference fix committed and pushed, the calls a session would make, a reply) that must pass, and bad ones (the untouched sandbox, the fix in the wrong place, an alias kept, both QA bugs fixed, a decline never made...) that must fail a named expectation. `go test ./scripts/skilltest` plays them all, with the fake, the arms and the run loop (driven by a fake `claude`); it never runs a session or reaches the network.
+
+## Reading the results
+
+`results.json` has one row per cell: each expectation with what it saw, `pass`, `steers`, `operator_turns`, `commits` (on origin's `main`), `bmesh_calls` and `commands` (the session's, not the session hook's `hosts --here` and `update --notice`), `blocked`, `plugin_hook` (the arm's session hook ran), `plugins`, `mcp_servers` and `skills_available` (from the first turn's init event: the arm's plugin, no MCP server, its skills), `skills` (invoked, from the transcript), the token counts and `cost_usd` (what the CLI stated for each turn, every model's, subagents included), `duration_ms` and `turns` (the CLI's, summed) and `wall_ms`. `summary.md` has a row per case and arm (time is the turns' wall clock), the totals per arm, and every expectation a cell missed. `--rescore DIR` scores the kept cells again with the current expectations, without a session.
+
+A pass rate over one run is a coin; compare arms over `--runs 3` or more, and read the missed expectations before the totals.

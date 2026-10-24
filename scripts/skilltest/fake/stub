@@ -1,0 +1,9 @@
+#!/bin/sh
+# A tool scripts/skilltest keeps out of a cell, installed under its name
+# first on PATH: the real one reaches the mesh, real repos, threads or
+# people. Each call appends one line to $SKILLTEST_CELL/blocked.log: the
+# cwd, the tool and its arguments.
+name=${0##*/}
+printf '%s\t%s\t%s\n' "$PWD" "$name" "$*" >>"${SKILLTEST_CELL:?SKILLTEST_CELL is not set}/blocked.log"
+echo "$name: not available in this sandbox" >&2
+exit 127
