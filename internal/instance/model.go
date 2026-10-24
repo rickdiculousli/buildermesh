@@ -174,7 +174,7 @@ func (m *Model) Run(ctx context.Context, j Job) Reply {
 	// A reply without a verdict passes by its exit code, unless the prompt
 	// asked for one (R18).
 	ok := !strings.Contains(m.k.Prompt, "VERDICT:")
-	if v, found := verdict(res.Result); found {
+	if v, found := Verdict(res.Result); found {
 		ok = strings.EqualFold(v, "ok")
 	}
 	return Reply{OK: ok, Judged: true, Output: res.Result, Context: res.Usage.InputTokens + res.Usage.CacheReadInputTokens}
@@ -239,10 +239,10 @@ func parseResult(b []byte) (result, bool) {
 // decoration is markdown a model may wrap a verdict line in.
 const decoration = "*_#`> \t"
 
-// verdict returns the value of the last line starting with "VERDICT:",
+// Verdict returns the value of the last line starting with "VERDICT:",
 // markdown decoration around the key and the value ignored:
 // **VERDICT: fail**, **VERDICT:** fail and VERDICT: **ok** all read.
-func verdict(text string) (string, bool) {
+func Verdict(text string) (string, bool) {
 	v, found := "", false
 	for _, line := range strings.Split(text, "\n") {
 		if rest, ok := strings.CutPrefix(strings.TrimLeft(strings.TrimSpace(line), decoration), "VERDICT:"); ok {
