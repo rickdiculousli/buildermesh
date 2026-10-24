@@ -4,7 +4,7 @@ title: A watched lead's landing in the skill test carries its code
 kind: maintenance
 size: M
 judge: opus
-status: accepted
+status: done
 lens: eng
 proposed_by: buildermesh-fix-8
 proposed_on: 2026-10-24
