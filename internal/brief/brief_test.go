@@ -126,6 +126,27 @@ func TestBriefsCarryTheOperatorsFocus(t *testing.T) {
 	}
 }
 
+// A round pitches an XS or S idea as a line with no spec, and writes a
+// spec only for M or larger.
+func TestRoundBriefsPitchSmallIdeasAsLines(t *testing.T) {
+	for _, name := range []string{"engineer", "ux-engineer"} {
+		out, err := Render("", name, proposalValues("007"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"## What you pitch\n", "An idea sized M or larger is a spec",
+			"An idea sized XS or S is one pitch line, `- <title> (<kind>, XS|S): <what changes, where, and why>`, with no spec file and no id.",
+			"The pitch ranks them all together", "pick or decline in a sentence"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("%s lacks %q", name, want)
+			}
+		}
+		if strings.Contains(out, "accept, adjust or reject") {
+			t.Errorf("%s still asks for an accept", name)
+		}
+	}
+}
+
 func TestRepoOverridesATemplate(t *testing.T) {
 	repo := t.TempDir()
 	dir := filepath.Join(repo, ".bmesh", "briefs")

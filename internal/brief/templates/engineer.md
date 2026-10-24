@@ -11,9 +11,15 @@ You are the engineer on `{{repo}}` (`{{repo_path}}`) for this proposal round, {{
 ## The repo's facts
 
 - Verify commands: {{verify}}.
-- Spec IDs: number yours from {{next_id}} in rank order (`NNN` three digits): the mesh claimed a block from it for you.{{ux_ids}}
+- Spec IDs: number yours from {{next_id}} in rank order (`NNN` three digits; a pitch line takes none): the mesh claimed a block from it for you.{{ux_ids}}
 - `proposed_by`: `{{thread_id}}` (this thread). `proposed_on`: {{date}}.
 - The half-pager is `bmesh spec template`; the ledger check is `bmesh spec list --repo .`.
+
+## What you pitch
+
+- An idea sized M or larger is a spec: a half-pager with an id, landed on `main` as `proposed`.
+- An idea sized XS or S is one pitch line, `- <title> (<kind>, XS|S): <what changes, where, and why>`, with no spec file and no id.
+- The pitch ranks them all together, specs and lines in one list.
 
 {{operator_context}}## Closing
 

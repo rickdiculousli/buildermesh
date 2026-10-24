@@ -163,7 +163,8 @@ func OperatorWords(text string) string {
 func OperatorIdea(text string) string {
 	return "## The operator's idea\n\nThis round is one idea, the operator's own, in their words below; there is no UI/UX thread. " +
 		"It replaces the three to five specs of your own: read the repo and its ledger, measure, widen and attack this idea, " +
-		"then write its spec, one half-pager, or two or three in build order when it is too big for one lead, each naming the one before. " +
+		"then write its spec, one half-pager, or two or three in build order when it is too big for one lead, each naming the one before; " +
+		"sized XS or S, it is one pitch line instead, as What you pitch says. " +
 		"Propose nothing else. Your ranked list is those specs.\n\n" + strings.TrimSpace(text) + "\n\n"
 }
 
@@ -173,13 +174,13 @@ func OperatorIdea(text string) string {
 func RoundValues(idea bool) map[string]string {
 	if idea {
 		return map[string]string{
-			"round_ask":     "Write up the operator's one idea, in the section below, as the half-page spec (or two or three in build order) the operator can accept, adjust or reject in a sentence.",
+			"round_ask":     "Write up the operator's one idea, in the section below, as the half-page spec (or two or three in build order) the operator can pick or decline in a sentence.",
 			"round_partner": "There is no UI/UX engineer on this round: it is the operator's one idea, and yours alone.",
 			"ux_ids":        "",
 		}
 	}
 	return map[string]string{
-		"round_ask":     "Find what would most improve this repo and bring back three to five ranked half-page specs that the operator can accept, adjust or reject in a sentence.",
+		"round_ask":     "Find what would most improve this repo and bring back three to five ranked ideas, each a half-page spec or a pitch line (see What you pitch), that the operator can pick or decline in a sentence.",
 		"round_partner": "The UI/UX engineer runs beside you on the same round and lands on the same `main`.",
 		"ux_ids":        " The UI/UX engineer has a block of its own, so a gap is expected.",
 	}

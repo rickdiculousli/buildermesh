@@ -27,8 +27,9 @@ import (
 
 const ideateUsage = "usage: bmesh ideate <repo> [--idea] [--model M] [--effort E] [--context <text|->] [--force]"
 
-// proposedCap is how many proposed specs a repo may hold before a round is
-// refused: they are waiting on the operator's review.
+// proposedCap is how many proposed specs, none of them being built, a
+// repo may hold before a round is refused without --force: they are
+// waiting for the operator to build or decline them.
 const proposedCap = 5
 
 // Children are a round's two threads: eng (the engineer) and ux (the UI/UX
@@ -49,8 +50,9 @@ type childStarted struct {
 // cmdIdeate runs a proposal round on a ship repo: bmesh ideate <repo>
 // [--idea] [--model M] [--effort E] [--context <text|->] [--force]. With
 // --idea the round is the operator's one idea, given in --context: only
-// the engineer starts, and it writes that idea's spec. It refuses five or more proposed specs and,
-// without --force, a round of the repo's that is still open; levels main, picks
+// the engineer starts, and it writes that idea's spec. Without --force it
+// refuses five or more proposed specs no live lead is building and a round
+// of the repo's that is still open; it levels main, picks
 // the next round number from the nodes bucket, registers the round node
 // and starts the two children through the runner on the row's host and
 // ux_host (a remote host runs this command's child form over ssh). The
@@ -66,7 +68,7 @@ func (a *app) cmdIdeate(args []string) error {
 	nextID := fs.Int("next-id", 0, "child form: the first spec id")
 	thread := fs.String("thread-id", "", "child form: the thread's UUID")
 	focus := fs.String("context", "", "the operator's words for both briefs (- reads stdin)")
-	force := fs.Bool("force", false, "start a round while another of the repo's is still open")
+	force := fs.Bool("force", false, "start a round while another of the repo's is still open, or five specs wait")
 	idea := fs.Bool("idea", false, "one idea, the operator's, in --context: start only the engineer, which writes that idea's spec")
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -173,21 +175,27 @@ func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string, f
 	if err != nil {
 		return ledgerFail(err)
 	}
-	var proposed []string
-	for _, s := range specs {
-		if s.Status() == "proposed" {
-			proposed = append(proposed, s.IDString())
-		}
-	}
-	if len(proposed) >= proposedCap {
-		return fail(exitRefused, "refused: %s has %d proposed specs waiting on review (%s); review them first",
-			row.Name, len(proposed), strings.Join(proposed, ", "))
-	}
 	highest := spec.NextID(specs) - 1
 	if err := a.connect(ctx, "ideate"); err != nil {
 		return err
 	}
 	if !force {
+		// A spec being built still reads proposed on main: its live lead
+		// says it isn't waiting.
+		leads, err := a.specLeads(ctx, row.Name)
+		if err != nil {
+			return err
+		}
+		var proposed []string
+		for _, s := range specs {
+			if s.Status() == "proposed" && !leads[s.IDString()].live() {
+				proposed = append(proposed, s.IDString())
+			}
+		}
+		if len(proposed) >= proposedCap {
+			return fail(exitRefused, "refused: %s has %d proposed specs waiting (%s); build or decline them first, or pass --force",
+				row.Name, len(proposed), strings.Join(proposed, ", "))
+		}
 		open, err := openRound(ctx, a.client, row.Name)
 		if err != nil {
 			return err

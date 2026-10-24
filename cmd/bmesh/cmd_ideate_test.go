@@ -329,7 +329,8 @@ func TestIdeateChildFormReadsContextFromStdin(t *testing.T) {
 }
 
 func TestIdeateRefusesFiveProposedAndNonShip(t *testing.T) {
-	_, repo, _ := proposeSetup(t, "")
+	c, repo, _ := proposeSetup(t, "")
+	ctx := t.Context()
 	dir := filepath.Join(repo, "docs", "proposals")
 	for _, id := range []string{"014", "015", "016"} {
 		text := "---\nid: " + id + "\nstatus: proposed\n---\nx\n"
@@ -341,8 +342,21 @@ func TestIdeateRefusesFiveProposedAndNonShip(t *testing.T) {
 	meshtest.Git(t, repo, "commit", "-m", "more")
 	meshtest.Git(t, repo, "push", "origin", "main")
 	_, errs, code := runCLI(t, nil, "ideate", "demo")
-	if code != 3 || !strings.Contains(errs, "5 proposed specs") || !strings.Contains(errs, "012, 013, 014, 015, 016") {
+	if code != 3 || errs != "bmesh: refused: demo has 5 proposed specs waiting (012, 013, 014, 015, 016); build or decline them first, or pass --force\n" {
 		t.Fatalf("code %d err %q", code, errs)
+	}
+	// A spec being built reads proposed but isn't waiting; --force passes
+	// the cap.
+	putNode(t, c, ctx, mesh.Node{Path: "demo-014", Role: "lead", Repo: "demo", Spec: "014"})
+	if _, err := mesh.WriteState(ctx, c, "demo-014", mesh.State{State: "working", By: "node"}); err != nil {
+		t.Fatal(err)
+	}
+	if out, errs, code := runCLI(t, nil, "ideate", "demo"); code != 0 {
+		t.Fatalf("one building: %d %q %q", code, out, errs)
+	}
+	meshtest.ForceState(t, c, "demo-014", mesh.State{State: "done", By: "node"})
+	if out, errs, code := runCLI(t, nil, "ideate", "demo", "--force"); code != 0 {
+		t.Fatalf("--force: %d %q %q", code, out, errs)
 	}
 	writeRepos(t, "[repos.demo]\npath = \""+repo+"\"\nmode = \"companion\"\n")
 	if _, errs, code := runCLI(t, nil, "ideate", "demo"); code != 3 || !strings.Contains(errs, "companion") {

@@ -481,7 +481,7 @@ Propose specs, pick the ones to build or decline them, build them, and release w
 bmesh ideate <repo> [--idea] [--model M] [--effort E] [--context <text|->] [--force]
 ```
 
-Starts a proposal round on one ship repo. A round is two threads, an engineer and a UI/UX engineer. Each thread writes three to five ranked half-page specs into `docs/proposals/` and lands them on `main` as `proposed`.
+Starts a proposal round on one ship repo. A round is two threads, an engineer and a UI/UX engineer. Each thread brings back three to five ranked ideas. An idea sized M or larger is a half-page spec, written into `docs/proposals/` and landed on `main` as `proposed`; one sized XS or S is a line of the pitch, `- <title> (<kind>, XS|S): <what changes, where, and why>`, with no spec file and no id. The pitch ranks them all together. You build what you pick with [`bmesh build`](#bmesh-build) and decline the rest with [`bmesh spec set --land`](#bmesh-spec-set).
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -489,7 +489,7 @@ Starts a proposal round on one ship repo. A round is two threads, an engineer an
 | `--model M` | `[models] proposer` | The model both threads run on. |
 | `--effort E` | `[models] proposer_effort` | The threads' effort. |
 | `--context <text\|->` | none | What you ask of the round; `-` reads stdin. |
-| `--force` | off | Start a round while another round of the repo is still open. |
+| `--force` | off | Start a round while another round of the repo is still open, or five specs wait. |
 
 **What it does.** `ideate` needs the repo's registry row (`host`, `ux_host`, `verify`, `surfaces`). Before anything starts, it checks the refusals below, both hosts included. Then, from `main`, it:
 
@@ -510,7 +510,7 @@ Starts a proposal round on one ship repo. A round is two threads, an engineer an
 | An open round (a live node) | 3 | `refused: <repo>-round-<N> is still open (eng working, ux working); wait for it, or pass --force to start another` |
 | A host it cannot reach (both hosts are checked before anything starts) | 3 | `refused: host <host> (the eng\|ux thread's) is unreachable from <this box>: <error>` |
 | A `main` it cannot level with origin | 3 | `refused: main in <path> is not level with origin: <git error>` |
-| Five or more `proposed` specs on `main`; they wait on review | 3 | `refused: <repo> has <n> proposed specs waiting on review (<NNN, NNN>); review them first` |
+| Five or more `proposed` specs on `main` that no live lead is building (without `--force`) | 3 | `refused: <repo> has <n> proposed specs waiting (<NNN, NNN, ...>); build or decline them first, or pass --force` |
 | A round branch that already exists | 3 | `refused: branch <b> already exists in <path>` |
 | A round worktree path that already exists | 3 | `refused: <wt> already exists; remove it first` |
 
@@ -518,7 +518,7 @@ To level `main`, `ideate` runs `fetch origin +refs/heads/main:refs/remotes/origi
 
 **Details.**
 
-- `--force` starts a round anyway, with blocks of its own, running the repo's tests beside the first round.
+- `--force` starts a round anyway, past an open round (with blocks of its own, running the repo's tests beside the first round) and past five waiting specs. A spec being built reads `proposed` on `main` until it lands, so a spec whose newest lead is live (see [`bmesh build`](#bmesh-build)) is not counted as waiting.
 - Briefs are kept under `<user cache dir>/bmesh/briefs/<round>-<child>.md`.
 - On another host, `ideate` makes the thread, worktree and brief there over ssh. A child whose node is live or whose branch exists is refused there too.
 - Each child starts whatever happens to the other. A child that doesn't start is marked `blocked` (`did not start: <error>`), the round reads `blocked` naming it, and the command exits 1. The other thread runs on, and its pitch arrives when the daemon resettles the round.
@@ -531,7 +531,7 @@ To level `main`, `ideate` runs `fetch origin +refs/heads/main:refs/remotes/origi
 **`--idea`** makes the round your one idea, given in `--context` (refused without it, exit 2):
 
 - Only the engineer starts (`ux_host` is neither checked nor prompted for).
-- Its brief gets `## The operator's idea` instead of the focus section: write that idea's spec, one half-pager or two or three in build order, and nothing else. Its opening, partner and numbering lines match (`{{round_ask}}`, `{{round_partner}}`, `{{ux_ids}}` for a repo's own engineer template).
+- Its brief gets `## The operator's idea` instead of the focus section: write that idea's spec, one half-pager or two or three in build order (an idea sized XS or S is a pitch line instead), and nothing else. Its opening, partner and numbering lines match (`{{round_ask}}`, `{{round_partner}}`, `{{ux_ids}}` for a repo's own engineer template).
 - The `started` text reads `round <N> on <repo>: one idea, eng on <host>`, and the output has no `ux`.
 - The round settles on the engineer alone; its pitch is the engineer's line.
 
