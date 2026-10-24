@@ -1357,7 +1357,7 @@ Prints what a Claude Code session did, request by request, beside what it said i
 
 **The transcript** is `<CLAUDE_CONFIG_DIR, else ~/.claude>/projects/*/<id>.jsonl` (the newest when two match), as [`bmesh context`](#bmesh-context) finds it. The main thread's lines are read once each (a resumed session writes earlier lines again); lines marked `isSidechain` and the files in `<id>/subagents/` are its subagents', summed apart. A **request** is a message the main thread got that isn't a tool's result: the operator's, or one a harness sent for them; a slash command's record, a background task's notice, an interrupt and a compaction's summary are not requests.
 
-**What it said.** The rung a request's replies named, from the first of them that names one, by the work skill's words: its first line, or the line after a `Holding for your QA` line, opening with `Answering` (answer), `Making it here` (here), `Plan for your ok` (plan), `Starting leads` (leads) or `Starting a round` (round), past any heading, quote, list or bold mark. A request whose replies name none says `no rung`.
+**What it said.** The rung a request's replies named, from the first of them that names one, by the work skill's words: its first line, or the line after a `Holding for your QA` line, opening with `Answering`, `Already being built` or `Already done` (answer), `Making it here` (here), `Plan for your ok` (plan), `Starting leads` or `Starting a lead` (leads), or `Starting a round` (round), past any heading, quote, list or bold mark. A request whose replies name none says `no rung`.
 
 **What it did.** The rung its actions imply, by the first of these rules that holds:
 

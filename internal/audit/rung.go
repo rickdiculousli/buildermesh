@@ -23,17 +23,21 @@ const (
 )
 
 // Words are the openings a reply names each rung with, the work skill's
-// words: `Answering, no change`, `Making it here, S: <evidence>`, `Plan for
-// your ok, L: <evidence>`, `Starting leads for 012 and 014`, `Starting a
-// round on <repo>`.
+// words: `Answering, no change`, `Already being built: <lead>`, `Already
+// done: <commit>`, `Making it here, S: <evidence>`, `Plan for your ok, L:
+// <evidence>`, `Starting leads for 012 and 014`, `Starting a lead for 013`,
+// `Starting a round on <repo>`.
 var Words = []struct {
 	Rung Rung
 	Says string
 }{
 	{Answer, "Answering"},
+	{Answer, "Already being built"},
+	{Answer, "Already done"},
 	{Here, "Making it here"},
 	{Plan, "Plan for your ok"},
 	{Leads, "Starting leads"},
+	{Leads, "Starting a lead"},
 	{Round, "Starting a round"},
 }
 
