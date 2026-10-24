@@ -198,6 +198,19 @@ func RowValues(r config.Repo, repoPath string) map[string]string {
 	}
 }
 
+// BuildValues are the build brief's placeholders: the row's, the spec's
+// (its text, its path, its id), the lead's node and the date it is
+// dispatched, with no operator words and no upgrading bullet, which the
+// caller sets when it has them.
+func BuildValues(r config.Repo, repoPath, specText, specPath, specID, node, date string) map[string]string {
+	values := RowValues(r, repoPath)
+	for k, v := range map[string]string{"spec": strings.TrimRight(specText, "\n"), "spec_path": filepath.ToSlash(specPath),
+		"spec_id": specID, "node": node, "date": date, "upgrading": "", "operator_words": ""} {
+		values[k] = v
+	}
+	return values
+}
+
 // SetupStep is the section a brief opens with when the repo names a setup
 // command (its .bmesh/config.toml [setup]): the thread's first command is
 // bmesh setup in its worktree, from inside it when worktree is given (a

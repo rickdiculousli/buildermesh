@@ -266,9 +266,14 @@ func (s *State) Changed() []string {
 	return strings.Fields(out)
 }
 
+const mainRef = "refs/heads/main"
+
 // Show is a file on origin's main, or "" when it has none.
-func (s *State) Show(path string) string {
-	out, _ := s.git("show", "refs/heads/main:"+path)
+func (s *State) Show(path string) string { return s.ShowAt(mainRef, path) }
+
+// ShowAt is a file at a ref of origin, or "" when it has none.
+func (s *State) ShowAt(ref, path string) string {
+	out, _ := s.git("show", ref+":"+path)
 	return out
 }
 
@@ -296,27 +301,38 @@ func (s *State) once(key string, f func() (bool, string)) (bool, string) {
 }
 
 // checkout is a clone of origin's main in the scratch.
-func (s *State) checkout() (string, error) {
-	if c, ok := s.memo["checkout"]; ok {
+func (s *State) checkout() (string, error) { return s.checkoutAt(mainRef) }
+
+// checkoutAt is a clone of origin in the scratch, checked out at ref.
+func (s *State) checkoutAt(ref string) (string, error) {
+	key := "checkout " + ref
+	if c, ok := s.memo[key]; ok {
 		if !c.ok {
 			return "", fmt.Errorf("%s", c.why)
 		}
 		return c.why, nil
 	}
 	dir, err := func() (string, error) {
+		sha, err := s.git("rev-parse", "--verify", "-q", ref+"^{commit}")
+		if err != nil {
+			return "", fmt.Errorf("origin has no %s", ref)
+		}
 		root, err := s.scratchDir()
 		if err != nil {
 			return "", err
 		}
-		dir := filepath.Join(root, "main")
-		_, err = git(root, gitEnv(s.Dir), "clone", "-q", "--branch", "main", filepath.Join(s.Dir, originDir), dir)
+		dir := filepath.Join(root, strings.ReplaceAll(strings.TrimPrefix(ref, "refs/"), "/", "-"))
+		if _, err := git(root, gitEnv(s.Dir), "clone", "-q", "--no-checkout", filepath.Join(s.Dir, originDir), dir); err != nil {
+			return "", err
+		}
+		_, err = git(dir, gitEnv(s.Dir), "-c", "advice.detachedHead=false", "checkout", "-q", sha)
 		return dir, err
 	}()
 	if err != nil {
-		s.memo["checkout"] = check{false, err.Error()}
+		s.memo[key] = check{false, err.Error()}
 		return "", err
 	}
-	s.memo["checkout"] = check{true, dir}
+	s.memo[key] = check{true, dir}
 	return dir, nil
 }
 
@@ -376,9 +392,13 @@ func tail(out string, n int) string {
 }
 
 // TestsPass runs the fixture's own tests on origin's main.
-func (s *State) TestsPass() (bool, string) {
-	return s.once("tests", func() (bool, string) {
-		dir, err := s.checkout()
+func (s *State) TestsPass() (bool, string) { return s.TestsPassAt(mainRef, "origin's main") }
+
+// TestsPassAt runs the fixture's own tests at a ref of origin, which where
+// names.
+func (s *State) TestsPassAt(ref, where string) (bool, string) {
+	return s.once("tests "+ref, func() (bool, string) {
+		dir, err := s.checkoutAt(ref)
 		if err != nil {
 			return false, err.Error()
 		}
@@ -388,18 +408,23 @@ func (s *State) TestsPass() (bool, string) {
 		}
 		code, out, errs := run(dir, 5*time.Minute, env, "go", "test", "./...")
 		if code != 0 {
-			return false, "go test ./... on origin's main: " + tail(out+errs, 6)
+			return false, "go test ./... on " + where + ": " + tail(out+errs, 6)
 		}
-		return true, "go test ./... passes on origin's main"
+		return true, "go test ./... passes on " + where
 	})
 }
 
-// Hidden runs one hidden test against origin's main: the files under
-// testdata/hidden/<pkg> are copied into the package for the run and taken
-// out after it, so the shared checkout holds only origin's main.
+// Hidden runs one hidden test against origin's main.
 func (s *State) Hidden(pkg, test string) (bool, string) {
-	return s.once("hidden "+test, func() (bool, string) {
-		dir, err := s.checkout()
+	return s.HiddenAt(mainRef, "origin's main", pkg, test)
+}
+
+// HiddenAt runs one hidden test at a ref of origin, which where names: the
+// files under testdata/hidden/<pkg> are copied into the package for the
+// run and taken out after it, so the shared checkout holds only the ref.
+func (s *State) HiddenAt(ref, where, pkg, test string) (bool, string) {
+	return s.once("hidden "+ref+" "+test, func() (bool, string) {
+		dir, err := s.checkoutAt(ref)
 		if err != nil {
 			return false, err.Error()
 		}
@@ -426,7 +451,7 @@ func (s *State) Hidden(pkg, test string) (bool, string) {
 		if code != 0 {
 			return false, test + ": " + tail(out+errs, 4)
 		}
-		return true, test + " passes on origin's main"
+		return true, test + " passes on " + where
 	})
 }
 

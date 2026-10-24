@@ -410,8 +410,11 @@ func declined(p pitchIDs, id string) Pred {
 }
 
 // files are origin's main's files under a prefix.
-func (s *State) files(prefix string) []string {
-	out, err := s.git("ls-tree", "-r", "--name-only", "refs/heads/main")
+func (s *State) files(prefix string) []string { return s.filesAt(mainRef, prefix) }
+
+// filesAt are the files under a prefix at a ref of origin.
+func (s *State) filesAt(ref, prefix string) []string {
+	out, err := s.git("ls-tree", "-r", "--name-only", ref)
 	if err != nil {
 		return nil
 	}

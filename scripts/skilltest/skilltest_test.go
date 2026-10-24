@@ -214,11 +214,11 @@ func fakeCell(t *testing.T) (string, string) {
 	}
 	dir := t.TempDir()
 	arm := Arm{Name: "test", Dir: root, Commands: commandsFromManual(string(manual))}
-	base, err := setupCell(dir, findCase("bug"), arm, testFixture(t), thisBox(), time.Now())
+	cs, err := setupCell(dir, findCase("bug"), arm, testFixture(t), thisBox(), time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	return dir, base
+	return dir, cs.Base
 }
 
 func fake(t *testing.T, dir, cwd string, args ...string) (int, string, string) {
@@ -261,6 +261,14 @@ func TestFake(t *testing.T) {
 	expect("013  proposed", 0, "spec", "list", "--status", "proposed")
 	expect("is not one of", 2, "spec", "list", "--status", "bogus")
 	expect("013  rejected   S   feature", 0, "spec", "set", "--id", "13", "--status", "rejected")
+	// Without --land the checkout's file is edited, as the binary edits it.
+	spec13 := filepath.Join(sandbox, "docs", "proposals", "013-report-details-lists-each-orders-items.md")
+	if b, _ := os.ReadFile(spec13); !strings.Contains(string(b), "\nstatus: rejected\n") || !strings.Contains(string(b), "\nkind: feature\n") {
+		t.Errorf("spec set left 013:\n%s", b)
+	}
+	if _, err := git(sandbox, gitEnv(dir), "checkout", "-q", "--", "docs"); err != nil {
+		t.Fatal(err)
+	}
 	if out := expect("landed ", 0, "spec", "set", "--id", "13,14", "--status", "later", "--land"); !strings.Contains(out, "014  later") || !strings.HasSuffix(out, " on main: Specs 013, 014: later\n") {
 		t.Errorf("spec set --land:\n%s", out)
 	}
@@ -330,6 +338,95 @@ func TestFake(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, blockedLog)); !strings.Contains(string(b), "claude\t-p hi") {
 		t.Errorf("blocked.log: %q", b)
+	}
+}
+
+// A lead's cell: the session runs in the lead's worktree on its own
+// branch, its one turn is the build brief, and the fake answers a lead's
+// commands as the binary does for a lead whose land succeeds; in lead-stop
+// its first ready refuses for the spec.
+func TestFakeLead(t *testing.T) {
+	need(t, "git", "go", "sh")
+	root := repoRoot(t)
+	manual, err := os.ReadFile(filepath.Join(root, "docs", "manual.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	arm := Arm{Name: "test", Dir: root, Commands: commandsFromManual(string(manual))}
+	k := findCase("lead-stop")
+	cs, err := setupCell(dir, k, arm, testFixture(t), thisBox(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(dir, cs.Cwd)
+	sandbox := filepath.Join(dir, sandboxDir)
+	if b, _ := git(wt, gitEnv(dir), "branch", "--show-current"); cs.Cwd != filepath.Join("worktrees", "shop", "shop-012") || b != "bmesh/shop-012" {
+		t.Fatalf("the lead's worktree %s is on %q", cs.Cwd, b)
+	}
+	if len(cs.Words) != 1 || !strings.Contains(cs.Words[0], "Your node is `shop-012`.") || !strings.Contains(cs.Words[0], "title: The receipt says Total") ||
+		!strings.Contains(cs.Words[0], "`bmesh spec set --id 012 --status done`") || !strings.Contains(cs.Words[0], "(`"+sandbox+"`)") {
+		t.Errorf("the lead's words aren't the build brief:\n%.600s", cs.Words)
+	}
+	expect := func(want string, code int, args ...string) string {
+		t.Helper()
+		got, stdout, stderr := fake(t, dir, wt, args...)
+		if got != code || !strings.Contains(stdout+stderr, want) {
+			t.Errorf("bmesh %s: exit %d, want %d, and %q, want it to hold %q", strings.Join(args, " "), got, code, stdout+stderr, want)
+		}
+		return stdout
+	}
+	commit := func(msg string) {
+		t.Helper()
+		if _, err := git(wt, gitEnv(dir), "commit", "-qam", msg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	expect("started shop-012", 0, "started", "--text", "012")
+	// The stop comes first, whatever the branch reads.
+	expect("bmesh: refused: spec 012 reads proposed on bmesh/shop-012; a spec lands with its code reading done: "+
+		"run bmesh spec set --id 012 --status done, commit it, then run bmesh ready again", 3, "ready", "--text", "x")
+	expect("012  done", 0, "spec", "set", "--id", "012", "--status", "done")
+	if b, _ := os.ReadFile(filepath.Join(wt, leadSpecFile)); !strings.Contains(string(b), "\nstatus: done\n") {
+		t.Errorf("spec set left 012:\n%s", b)
+	}
+	expect("the worktree has changes not committed; commit them, then run bmesh ready again", 3, "ready", "--text", "x")
+	commit("012: done")
+	head, _ := git(wt, gitEnv(dir), "rev-parse", "HEAD")
+	expect("ready: "+thisBox()+"'s daemon lands "+head[:8]+"; it wakes you only if land needs you", 0, "ready", "--text", "x")
+	expect("is not held (released already?); run bmesh inbox and carry on", 3, "held")
+
+	if out := expect(`"branch":"bmesh/shop-012-a"`, 0, "executor", "new", "--name", "a"); !strings.Contains(out, "You are executor shop-012.a in buildermesh.") {
+		t.Errorf("executor new:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "worktrees", "shop", "shop-012.a")); err != nil {
+		t.Errorf("executor new made no worktree: %v", err)
+	}
+	expect("removed shop-012.a", 0, "executor", "remove", "a")
+	expect("no executor shop-012.a under shop-012 with a worktree", 3, "executor", "remove", "a")
+
+	out := expect("landed ", 0, "land")
+	landed, _ := git(wt, gitEnv(dir), "rev-parse", "HEAD")
+	origin, _ := git(dir, gitEnv(dir), "--git-dir", filepath.Join(dir, originDir), "rev-parse", "refs/heads/main")
+	msg, _ := git(wt, gitEnv(dir), "log", "-1", "--format=%B")
+	if !strings.HasSuffix(out, "landed "+landed[:8]+"\n") || origin != landed || !strings.Contains(msg, "Spec: 012\nVerified: verify ok t:") {
+		t.Errorf("land: %s\norigin's main %s, HEAD %s:\n%s", out, origin, landed, msg)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "state", "landed")); strings.TrimSpace(string(b)) != landed {
+		t.Errorf("state/landed: %q", b)
+	}
+	if m, _ := git(sandbox, gitEnv(dir), "rev-parse", "main"); m != landed {
+		t.Errorf("the main checkout is at %s, not %s", m, landed)
+	}
+
+	// From the sandbox, no node resolves, and main is no lead's branch.
+	got, _, errs := fake(t, dir, sandbox, "land")
+	if got != 2 || !strings.Contains(errs, "land needs --spec NNN") {
+		t.Errorf("land from the sandbox: %d %q", got, errs)
+	}
+	got, _, errs = fake(t, dir, sandbox, "land", "--spec", "012")
+	if got != 3 || !strings.Contains(errs, "refused: land runs on a lead's branch, not main") {
+		t.Errorf("land on main: %d %q", got, errs)
 	}
 }
 
@@ -617,6 +714,46 @@ func TestRun(t *testing.T) {
 	}
 	if failed, err := scoreCell(cell, findCase("bug")); err != nil || failed.Pass {
 		t.Errorf("a cell whose turn failed scored pass %v, %v", failed.Pass, err)
+	}
+}
+
+const fakeLeadClaude = `#!/bin/sh
+# A fake lead: in its worktree it starts, fixes the receipt, sets its spec
+# done, commits, reads its inbox and readies, all through the fake bmesh.
+pwd >"$FAKE_CLAUDE_DIR/cwd"
+bmesh started --text "012" >/dev/null
+sed 's/"Totl"/"Total"/' cart/receipt.go >cart/receipt.go.new && mv cart/receipt.go.new cart/receipt.go
+bmesh spec set --id 012 --status done >/dev/null
+git commit -qam "The receipt says Total" && bmesh routine run verify >/dev/null && bmesh inbox >/dev/null && bmesh ready --text "012 ready" >/dev/null
+printf '{"type":"result","subtype":"success","is_error":false,"result":"Ready: the daemon lands it.","session_id":"fake-lead","num_turns":5,"duration_ms":1000,"total_cost_usd":0.01}\n'
+`
+
+// A lead's cell runs in the lead's worktree, keeps its branch for scoring
+// and scores on it.
+func TestRunLead(t *testing.T) {
+	need(t, "git", "go", "sh")
+	root := repoRoot(t)
+	arm, err := prepareArm("cand", root, root, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := t.TempDir()
+	claude := filepath.Join(tools, "claude")
+	if err := os.WriteFile(claude, []byte(fakeLeadClaude), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	host := findHost()
+	host.Home = t.TempDir()
+	r := &runner{claude: claude, model: "claude-opus-5-5", timeout: 3 * time.Minute, env: append(os.Environ(), "FAKE_CLAUDE_DIR="+tools), host: host}
+	row, err := r.runCell(context.Background(), cellPlan{n: 1, k: findCase("lead-s"), arm: arm, run: 1}, testFixture(t), t.TempDir(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !row.Pass || row.Steers != 0 {
+		t.Errorf("row %+v", row)
+	}
+	if cwd, _ := os.ReadFile(filepath.Join(tools, "cwd")); !strings.HasSuffix(strings.TrimSpace(string(cwd)), filepath.Join("worktrees", "shop", "shop-012")) {
+		t.Errorf("the lead ran in %s", cwd)
 	}
 }
 

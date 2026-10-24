@@ -25,8 +25,9 @@ const (
 	logFile    = "bmesh.log"  // the fake bmesh's log
 	blockedLog = "blocked.log"
 	cellFile   = "cell.json"
-	workTar    = "work.tar.gz" // the sandbox and what else the session left, once the cell is done
-	repoName   = "shop"        // the sandbox's registry row
+	workTar    = "work.tar.gz"         // the sandbox and what else the session left, once the cell is done
+	repoName   = "shop"                // the sandbox's registry row
+	leadRef    = "refs/skilltest/lead" // a lead's branch as the session left it, kept in origin.git for scoring
 )
 
 // blocked are the tools a cell shadows with a stub: each reaches the real
@@ -50,7 +51,8 @@ type Cell struct {
 	Model   string    `json:"model"`
 	Plugin  string    `json:"plugin"`
 	Host    string    `json:"host"`
-	Base    string    `json:"base"` // the sandbox's one commit, origin's main at the start
+	Base    string    `json:"base"`          // the sandbox's one commit, origin's main at the start
+	Cwd     string    `json:"cwd,omitempty"` // where the session runs, under the cell: the sandbox when empty
 	Turns   []Turn    `json:"turns"`
 	Steers  int       `json:"steers"`
 	Error   string    `json:"error,omitempty"`
@@ -86,6 +88,14 @@ type Env struct {
 }
 
 func (e Env) Ago(d time.Duration) string { return e.Now.Add(-d).UTC().Format(time.RFC3339) }
+
+// cwd is the directory the cell's session runs in.
+func (c *Cell) cwd(dir string) string {
+	if c.Cwd == "" {
+		return filepath.Join(dir, sandboxDir)
+	}
+	return filepath.Join(dir, c.Cwd)
+}
 
 func (c *Cell) lastSession() string {
 	for i := len(c.Turns) - 1; i >= 0; i-- {
@@ -134,29 +144,39 @@ const gitconfig = `[user]
 	detachedHead = false
 `
 
+// cellSetup is what setupCell made: the base commit, where the session
+// runs (relative to the cell; the sandbox when empty) and its turns' words.
+type cellSetup struct {
+	Base  string
+	Cwd   string
+	Words []string
+}
+
 // setupCell makes a cell in dir for case k on arm a: the fixture copied into
 // the sandbox with the case's edits, committed once and pushed to a bare
 // origin beside it as main, the fake bmesh and the stubs in bin/, and the
-// fake's files. It returns the base commit.
-func setupCell(dir string, k *Case, a Arm, fixture, host string, now time.Time) (string, error) {
+// fake's files. A lead's case gets its worktree of the sandbox on its own
+// branch, where the session runs, and its first words are the build brief.
+func setupCell(dir string, k *Case, a Arm, fixture, host string, now time.Time) (cellSetup, error) {
+	cs := cellSetup{Words: k.Turns}
 	for _, d := range []string{"bin", "canned", "state", "tmp", "turns", "bmesh-config"} {
 		if err := os.MkdirAll(filepath.Join(dir, d), 0o755); err != nil {
-			return "", err
+			return cs, err
 		}
 	}
 	sandbox := filepath.Join(dir, sandboxDir)
 	origin := filepath.Join(dir, originDir)
 	if err := copyTree(fixture, sandbox); err != nil {
-		return "", err
+		return cs, err
 	}
 	env := Env{Sandbox: sandbox, Host: host, Now: now}
 	if k.Setup != nil {
 		if err := k.Setup(env); err != nil {
-			return "", fmt.Errorf("case %s: setup: %w", k.Name, err)
+			return cs, fmt.Errorf("case %s: setup: %w", k.Name, err)
 		}
 	}
 	if err := writeFile(filepath.Join(dir, "gitconfig"), gitconfig); err != nil {
-		return "", err
+		return cs, err
 	}
 	genv := append(gitEnv(dir), "GIT_AUTHOR_DATE="+baseDate, "GIT_COMMITTER_DATE="+baseDate)
 	steps := [][]string{
@@ -167,21 +187,33 @@ func setupCell(dir string, k *Case, a Arm, fixture, host string, now time.Time) 
 		{"-C", sandbox, "remote", "add", "origin", origin},
 		{"-C", sandbox, "push", "-q", "-u", "origin", "main"},
 	}
+	if l := k.Lead; l != nil {
+		cs.Cwd = l.worktree()
+		steps = append(steps, []string{"-C", sandbox, "worktree", "add", "-q", "-b", l.branch(), filepath.Join(dir, cs.Cwd), "main"})
+	}
 	for _, s := range steps {
 		if _, err := git(dir, genv, s...); err != nil {
-			return "", err
+			return cs, err
 		}
 	}
 	base, err := git(sandbox, genv, "rev-parse", "HEAD")
 	if err != nil {
-		return "", err
+		return cs, err
 	}
-	if err := installFake(dir, a, sandbox, host); err != nil {
-		return "", err
+	cs.Base = base
+	if k.Lead != nil {
+		text, err := k.Lead.brief(sandbox, host, now)
+		if err != nil {
+			return cs, fmt.Errorf("case %s: the build brief: %w", k.Name, err)
+		}
+		cs.Words = []string{text}
+	}
+	if err := installFake(dir, a, sandbox, host, k.Lead); err != nil {
+		return cs, err
 	}
 	canned, err := defaultCanned(sandbox, host)
 	if err != nil {
-		return "", err
+		return cs, err
 	}
 	if k.Canned != nil {
 		for key, text := range k.Canned(env) {
@@ -190,16 +222,17 @@ func setupCell(dir string, k *Case, a Arm, fixture, host string, now time.Time) 
 	}
 	for key, text := range canned {
 		if err := writeFile(filepath.Join(dir, "canned", key), text); err != nil {
-			return "", err
+			return cs, err
 		}
 	}
-	return base, nil
+	return cs, nil
 }
 
 // installFake writes the fake bmesh, the stubs, the arm's commands and the
-// fake's env file, and an inert bmesh config: the real binary, called by its
-// path, finds no mesh to reach.
-func installFake(dir string, a Arm, sandbox, host string) error {
+// fake's env file (with a lead's node, worktree and spec in a lead's cell),
+// and an inert bmesh config: the real binary, called by its path, finds no
+// mesh to reach.
+func installFake(dir string, a Arm, sandbox, host string, l *Lead) error {
 	fake, err := fakeFS.ReadFile("fake/bmesh")
 	if err != nil {
 		return err
@@ -220,7 +253,15 @@ func installFake(dir string, a Arm, sandbox, host string) error {
 		return err
 	}
 	q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
-	if err := writeFile(filepath.Join(dir, "fake.env"), "repo="+q(repoName)+"\nrepo_path="+q(sandbox)+"\nhost="+q(host)+"\n"); err != nil {
+	fakeEnv := "repo=" + q(repoName) + "\nrepo_path=" + q(sandbox) + "\nhost=" + q(host) + "\n"
+	if l != nil {
+		stop := "0"
+		if l.StopFirst {
+			stop = "1"
+		}
+		fakeEnv += "node=" + q(l.Node) + "\nworktree=" + q(filepath.Join(dir, l.worktree())) + "\nlead_spec=" + q(l.Spec) + "\nstop_first=" + stop + "\n"
+	}
+	if err := writeFile(filepath.Join(dir, "fake.env"), fakeEnv); err != nil {
 		return err
 	}
 	inert := "# skilltest: an inert config. A real bmesh run by its path in this cell reads it\n" +
@@ -343,6 +384,18 @@ func leftovers(dir string) ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// keepLeadBranch keeps a lead's branch, as the worktree's HEAD stands, in
+// origin.git as leadRef: the worktree goes into the cell's archive, and
+// scoring reads only what the cell keeps. A cell that is no lead's keeps
+// nothing.
+func keepLeadBranch(dir string, c *Cell) error {
+	if c.Cwd == "" {
+		return nil
+	}
+	_, err := git(dir, gitEnv(dir), "-C", c.cwd(dir), "push", "-q", "--force", "origin", "HEAD:"+leadRef)
+	return err
 }
 
 // pruneWorktrees removes the worktrees of the sandbox that the session made

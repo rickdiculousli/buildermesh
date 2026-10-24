@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -375,12 +374,7 @@ func (a *app) buildOne(ctx context.Context, b *batch, s *spec.Spec, pathFlag str
 	if err != nil {
 		return buildStarted{}, err
 	}
-	values := brief.RowValues(row, repoPath)
-	for k, v := range map[string]string{"spec": strings.TrimRight(s.Text, "\n"), "spec_path": filepath.ToSlash(s.Path),
-		"spec_id": s.IDString(), "node": p, "date": time.Now().UTC().Format("2006-01-02")} {
-		values[k] = v
-	}
-	values["upgrading"] = ""
+	values := brief.BuildValues(row, repoPath, s.Text, s.Path, s.IDString(), p, time.Now().UTC().Format("2006-01-02"))
 	values["operator_words"] = brief.OperatorWords(b.words)
 	if ownModuleRepo(repoPath) {
 		values["upgrading"] = brief.UpgradingBullet

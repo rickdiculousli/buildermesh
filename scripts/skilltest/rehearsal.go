@@ -23,24 +23,26 @@ type Ref struct {
 // and bmesh calls a session might make, and its replies, each turn recorded
 // as a live one is. Its first error stops the play.
 type Rehearsal struct {
-	Dir  string
-	Case *Case
-	cell *Cell
-	err  error
+	Dir   string
+	Case  *Case
+	cell  *Cell
+	words []string
+	err   error
 }
 
 func newRehearsal(dir string, k *Case, fixture string) (*Rehearsal, error) {
 	arm := Arm{Name: "ref", Commands: []string{"help"}}
 	now := time.Now()
-	base, err := setupCell(dir, k, arm, fixture, thisBox(), now)
+	cs, err := setupCell(dir, k, arm, fixture, thisBox(), now)
 	if err != nil {
 		return nil, err
 	}
-	c := &Cell{Case: k.Name, Arm: "ref", Run: 1, Host: thisBox(), Base: base, Started: now}
-	return &Rehearsal{Dir: dir, Case: k, cell: c}, nil
+	c := &Cell{Case: k.Name, Arm: "ref", Run: 1, Host: thisBox(), Base: cs.Base, Cwd: cs.Cwd, Started: now}
+	return &Rehearsal{Dir: dir, Case: k, cell: c, words: cs.Words}, nil
 }
 
-func (r *Rehearsal) sandbox() string { return filepath.Join(r.Dir, sandboxDir) }
+// sandbox is where the session works: the sandbox, or a lead's worktree.
+func (r *Rehearsal) sandbox() string { return r.cell.cwd(r.Dir) }
 
 func (r *Rehearsal) fail(err error) {
 	if r.err == nil && err != nil {
@@ -48,7 +50,8 @@ func (r *Rehearsal) fail(err error) {
 	}
 }
 
-// Edit replaces every old in the sandbox's file with new; old must be there.
+// Edit replaces every old in a file where the session works with new; old
+// must be there.
 func (r *Rehearsal) Edit(rel, old, new string) {
 	if r.err != nil {
 		return
@@ -66,14 +69,14 @@ func (r *Rehearsal) Edit(rel, old, new string) {
 	r.fail(os.WriteFile(p, []byte(strings.ReplaceAll(string(b), old, new)), 0o644))
 }
 
-// Write writes a file in the sandbox.
+// Write writes a file where the session works.
 func (r *Rehearsal) Write(rel, text string) {
 	if r.err == nil {
 		r.fail(writeFile(filepath.Join(r.sandbox(), rel), text))
 	}
 }
 
-// Commit commits everything in the sandbox.
+// Commit commits everything where the session works.
 func (r *Rehearsal) Commit(msg string) {
 	for _, args := range [][]string{{"add", "-A"}, {"commit", "-q", "-m", msg}} {
 		if r.err != nil {
@@ -84,7 +87,7 @@ func (r *Rehearsal) Commit(msg string) {
 	}
 }
 
-// Push pushes the sandbox's HEAD to origin's main.
+// Push pushes HEAD to origin's main.
 func (r *Rehearsal) Push() {
 	if r.err == nil {
 		_, err := git(r.sandbox(), gitEnv(r.Dir), "push", "-q", "origin", "HEAD:main")
@@ -92,7 +95,7 @@ func (r *Rehearsal) Push() {
 	}
 }
 
-// Call logs a bmesh call from the sandbox, as the fake would.
+// Call logs a bmesh call from where the session works, as the fake would.
 func (r *Rehearsal) Call(args ...string) {
 	if r.err != nil {
 		return
@@ -116,8 +119,8 @@ func (r *Rehearsal) Reply(text string) {
 	c := r.cell
 	n := len(c.Turns)
 	t := Turn{File: fmt.Sprintf("turns/%02d.json", n+1), Session: "rehearsal"}
-	if n < len(r.Case.Turns) {
-		t.Words = r.Case.Turns[n]
+	if n < len(r.words) {
+		t.Words = r.words[n]
 	} else {
 		t.Words, t.Steer = r.Case.Steer, true
 		c.Steers++
@@ -139,6 +142,9 @@ func (r *Rehearsal) done() error {
 		return r.err
 	}
 	r.cell.Ended = time.Now()
+	if err := keepLeadBranch(r.Dir, r.cell); err != nil {
+		return err
+	}
 	return r.cell.save(r.Dir)
 }
 

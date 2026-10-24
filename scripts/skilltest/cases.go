@@ -6,8 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rickdiculousli/buildermesh/internal/brief"
+	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
 // Case is one scripted ask: the operator's words, turn by turn, what the
@@ -22,8 +27,43 @@ type Case struct {
 	Steer  string
 	Setup  func(e Env) error             // edits to the fixture before its commit
 	Canned func(e Env) map[string]string // the fake's outputs, by key (see fake/bmesh)
+	Lead   *Lead                         // a lead's case: its words are the build brief
 	Expect []Pred
 	Refs   []Ref
+}
+
+// Lead makes a case a lead's: the session is lead Node building spec Spec,
+// in a worktree of the sandbox on its own branch, and its one turn is the
+// build brief this tree's internal/brief writes. With StopFirst the fake's
+// first ready or land refuses because the spec doesn't read done.
+type Lead struct {
+	Node, Spec string
+	StopFirst  bool
+}
+
+// worktree is the lead's worktree, relative to the cell, and branch its
+// branch, as bmesh lead start names them.
+func (l *Lead) worktree() string { return filepath.Join("worktrees", repoName, l.Node) }
+func (l *Lead) branch() string   { return "bmesh/" + l.Node }
+
+// brief is the build brief for the lead's spec in the sandbox, as bmesh
+// build writes it for a repo with no setup command.
+func (l *Lead) brief(sandbox, host string, now time.Time) (string, error) {
+	specs, err := spec.Scan(sandbox, "docs/proposals/{id}-*.md")
+	if err != nil {
+		return "", err
+	}
+	id, _ := strconv.Atoi(l.Spec)
+	s, ok := spec.Find(specs, id)
+	if !ok {
+		return "", fmt.Errorf("no spec %s in the sandbox", l.Spec)
+	}
+	values := brief.BuildValues(row(sandbox, host), sandbox, s.Text, s.Path, s.IDString(), l.Node, now.UTC().Format("2006-01-02"))
+	text, err := brief.Render(sandbox, "build", values)
+	if err != nil {
+		return "", err
+	}
+	return brief.WithSetup(text, brief.SetupStep("", "")), nil
 }
 
 const (
@@ -32,7 +72,7 @@ const (
 )
 
 var cases = []*Case{bugCase(), tweakCase(), questionCase(), qaCase(), featureMCase(), featureLCase(),
-	inFlightCase(), ideasCase(), pickCase(), releaseCase()}
+	inFlightCase(), ideasCase(), pickCase(), releaseCase(), leadCase("lead-s", false), leadCase("lead-stop", true)}
 
 func findCase(name string) *Case {
 	for _, k := range cases {
@@ -638,4 +678,256 @@ func releaseCase() *Case {
 			{Name: "nothing", Fails: "released", Play: func(r *Rehearsal) { r.Reply("Shipped.") }},
 		},
 	}
+}
+
+// The lead cases' spec, 012 in their cells only: the receipt's typo, an S.
+const (
+	leadNode     = "shop-012"
+	leadSpecFile = "docs/proposals/012-the-receipt-says-total.md"
+	leadSpec     = `---
+id: 012
+title: The receipt says Total
+kind: refinement
+size: S
+judge: sonnet
+status: proposed
+lens: ux
+proposed_by: operator
+proposed_on: 2026-10-23
+---
+
+## Opportunity
+The receipt's last line reads ` + "`Totl`" + `: every customer reads a typo on every receipt.
+
+## Proposal
+The receipt's total line says ` + "`Total`" + `. In: ` + "`cart`" + `. Out: the receipt's layout.
+
+Judge: sonnet, because it is one word.
+
+## What you'll see
+` + "`shop checkout`" + ` ends its receipt with ` + "`Total`" + `.
+
+## Verification
+` + "`go test ./...`" + `, with a test that the receipt says ` + "`Total`" + `.
+
+## Risks and the alternative considered
+None: nothing reads the label. Considered: nothing else.
+
+## Needs from the operator
+`
+)
+
+// leadCalls are the session's calls of the commands a lead lands with, in
+// order: ready (not --cancel), land and done.
+func leadCalls(s *State) []string {
+	var out []string
+	for _, c := range s.AgentCalls() {
+		switch {
+		case c.Is("ready") && !c.Has("cancel"):
+			out = append(out, "ready")
+		case c.Is("land"), c.Is("done"):
+			cmd, _ := c.Cmd()
+			out = append(out, cmd)
+		}
+	}
+	return out
+}
+
+// landedByFake are the commits the fake's land pushed to origin's main.
+func landedByFake(s *State) []string {
+	b, _ := os.ReadFile(filepath.Join(s.Dir, "state", "landed"))
+	return strings.Fields(string(b))
+}
+
+func leadCase(name string, stopFirst bool) *Case {
+	onBranch := "the lead's branch"
+	change := Pred{"change_on_branch", func(s *State) (bool, string) {
+		return s.HiddenAt(leadRef, onBranch, "cart", "TestSkilltestHiddenReceiptSaysTotal")
+	}}
+	tests := Pred{"tests_pass_on_branch", func(s *State) (bool, string) { return s.TestsPassAt(leadRef, onBranch) }}
+	specDone := Pred{"spec_done_on_branch", func(s *State) (bool, string) {
+		m := statusRE.FindStringSubmatch(s.ShowAt(leadRef, leadSpecFile))
+		if m == nil {
+			return false, leadSpecFile + " has no status on the lead's branch"
+		}
+		return m[1] == "done", "012 reads " + m[1] + " on the lead's branch"
+	}}
+	startedFirst := Pred{"started_first", func(s *State) (bool, string) {
+		calls := s.AgentCalls()
+		if len(calls) == 0 {
+			return false, "no bmesh call"
+		}
+		return calls[0].Is("started"), "the first call is " + calls[0].String()
+	}}
+	inboxFirst := Pred{"inbox_before_landing", func(s *State) (bool, string) {
+		for _, c := range s.AgentCalls() {
+			switch {
+			case c.Is("inbox"):
+				return true, "inbox read before the first ready or land"
+			case c.Is("ready") && !c.Has("cancel"), c.Is("land"):
+				return false, c.String() + " before any inbox"
+			}
+		}
+		return false, "no inbox, no ready and no land"
+	}}
+	landsOnce := Pred{"lands_once", func(s *State) (bool, string) {
+		calls := leadCalls(s)
+		seen := strings.Join(calls, ", ")
+		if stopFirst {
+			if len(calls) == 0 || calls[0] == "done" {
+				return false, "no ready or land for the fake to refuse: " + seen
+			}
+			calls = calls[1:]
+		}
+		ok := slices.Equal(calls, []string{"ready"}) || slices.Equal(calls, []string{"land", "done"})
+		return ok, "ready, land and done in order: [" + seen + "]"
+	}}
+	noAsk := Pred{"no_ask_or_blocked", func(s *State) (bool, string) {
+		for _, c := range s.AgentCalls() {
+			if c.Is("ask") || c.Is("blocked") {
+				return false, "ran " + c.String()
+			}
+		}
+		return true, "no ask and no blocked"
+	}}
+	noPush := Pred{"no_push_by_hand", func(s *State) (bool, string) {
+		main, _ := s.git("rev-parse", "--verify", "-q", mainRef)
+		if main == s.Cell.Base {
+			return true, "origin's main as it was"
+		}
+		if slices.Contains(landedByFake(s), main) {
+			return true, "origin's main is the commit bmesh land pushed"
+		}
+		return false, "origin's main moved to " + clip(main, 8) + ", which no bmesh land pushed"
+	}}
+	fix := func(r *Rehearsal) {
+		r.Call("--node", leadNode, "started", "--text", "012: the receipt says Total")
+		fixTypo(r)
+	}
+	setDone := func(r *Rehearsal) {
+		r.Call("--node", leadNode, "spec", "set", "--id", "012", "--status", "done")
+		r.Edit(leadSpecFile, "status: proposed", "status: done")
+		r.Commit("012: done")
+	}
+	ready := func(r *Rehearsal) { r.Call("--node", leadNode, "ready", "--text", "012: the receipt says Total") }
+	k := &Case{
+		Name: name,
+		Lead: &Lead{Node: leadNode, Spec: "012", StopFirst: stopFirst},
+		Setup: func(e Env) error {
+			dir := filepath.Join(e.Sandbox, "docs", "proposals")
+			if err := os.Remove(filepath.Join(dir, "012-orders-numbered-under-a-lock.md")); err != nil {
+				return err
+			}
+			return writeFile(filepath.Join(e.Sandbox, leadSpecFile), leadSpec)
+		},
+		Expect: []Pred{change, tests, specDone, startedFirst, inboxFirst, landsOnce, noAsk, noPush},
+	}
+	if !stopFirst {
+		k.Refs = []Ref{
+			{Name: "readied", Play: func(r *Rehearsal) {
+				fix(r)
+				setDone(r)
+				r.Call("--node", leadNode, "routine", "run", "verify")
+				r.Call("--node", leadNode, "inbox")
+				ready(r)
+				r.Reply("Ready: the receipt says Total; the daemon lands it.")
+			}},
+			{Name: "landed in its own turn", Play: func(r *Rehearsal) {
+				fix(r)
+				setDone(r)
+				r.Call("--node", leadNode, "inbox")
+				r.Call("--node", leadNode, "land")
+				r.Call("--node", leadNode, "done", "--commit", "0123abcd", "--text", "012 landed")
+				r.Reply("Landed 0123abcd: the receipt says Total.")
+			}},
+			{Name: "never fixed", Fails: "change_on_branch", Play: func(r *Rehearsal) {
+				r.Call("--node", leadNode, "started", "--text", "012")
+				setDone(r)
+				r.Call("--node", leadNode, "inbox")
+				ready(r)
+				r.Reply("Ready.")
+			}},
+			{Name: "the spec left proposed", Fails: "spec_done_on_branch", Play: func(r *Rehearsal) {
+				fix(r)
+				r.Call("--node", leadNode, "inbox")
+				ready(r)
+				r.Reply("Ready.")
+			}},
+			{Name: "started late", Fails: "started_first", Play: func(r *Rehearsal) {
+				r.Call("--node", leadNode, "inbox")
+				fix(r)
+				setDone(r)
+				ready(r)
+				r.Reply("Ready.")
+			}},
+			{Name: "readied unread", Fails: "inbox_before_landing", Play: func(r *Rehearsal) {
+				fix(r)
+				setDone(r)
+				ready(r)
+				r.Reply("Ready.")
+			}},
+			{Name: "readied, then done", Fails: "lands_once", Play: func(r *Rehearsal) {
+				fix(r)
+				setDone(r)
+				r.Call("--node", leadNode, "inbox")
+				ready(r)
+				r.Call("--node", leadNode, "done", "--commit", "0123abcd")
+				r.Reply("Done.")
+			}},
+			{Name: "asked", Fails: "no_ask_or_blocked", Play: func(r *Rehearsal) {
+				fix(r)
+				setDone(r)
+				r.Call("--node", leadNode, "ask", "--text", "Total or TOTAL?")
+				r.Call("--node", leadNode, "inbox")
+				ready(r)
+				r.Reply("Ready; I asked about the case.")
+			}},
+			{Name: "pushed by hand", Fails: "no_push_by_hand", Play: func(r *Rehearsal) {
+				fix(r)
+				setDone(r)
+				r.Call("--node", leadNode, "inbox")
+				r.Push()
+				ready(r)
+				r.Reply("Pushed and ready.")
+			}},
+		}
+		return k
+	}
+	k.Refs = []Ref{
+		{Name: "took the stop's step", Play: func(r *Rehearsal) {
+			fix(r)
+			r.Call("--node", leadNode, "inbox")
+			ready(r)
+			setDone(r)
+			ready(r)
+			r.Reply("Ready, after setting 012 done as the stop said.")
+		}},
+		{Name: "landed after the stop", Play: func(r *Rehearsal) {
+			fix(r)
+			setDone(r)
+			r.Call("--node", leadNode, "inbox")
+			r.Call("--node", leadNode, "land")
+			r.Call("--node", leadNode, "spec", "set", "--id", "012", "--status", "done")
+			r.Call("--node", leadNode, "land")
+			r.Call("--node", leadNode, "done", "--commit", "0123abcd")
+			r.Reply("Landed 0123abcd.")
+		}},
+		{Name: "stopped at the stop", Fails: "lands_once", Play: func(r *Rehearsal) {
+			fix(r)
+			setDone(r)
+			r.Call("--node", leadNode, "inbox")
+			ready(r)
+			r.Reply("ready refused: the spec doesn't read done. It does on my branch; what should I do?")
+		}},
+		{Name: "asked about the stop", Fails: "no_ask_or_blocked", Play: func(r *Rehearsal) {
+			fix(r)
+			r.Call("--node", leadNode, "inbox")
+			ready(r)
+			r.Call("--node", leadNode, "ask", "--text", "ready says 012 doesn't read done; set it?")
+			setDone(r)
+			ready(r)
+			r.Reply("Ready.")
+		}},
+	}
+	return k
 }

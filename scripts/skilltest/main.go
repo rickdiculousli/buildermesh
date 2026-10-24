@@ -1,4 +1,4 @@
-// Command skilltest measures buildermesh's chat skills: it runs scripted
+// Command skilltest measures buildermesh's skills: it runs scripted
 // operator asks through headless Claude Code sessions, one arm per version
 // of the plugin, against a sandbox repo with a local origin and a fake
 // bmesh, and scores each cell on what it left. README.md beside this file
@@ -283,19 +283,19 @@ func (r *runner) runCell(ctx context.Context, p cellPlan, fixture, scratch, outD
 	dir := filepath.Join(scratch, fmt.Sprintf("%03d", p.n))
 	now := time.Now()
 	host := thisBox()
-	base, err := setupCell(dir, p.k, p.arm, fixture, host, now)
+	cs, err := setupCell(dir, p.k, p.arm, fixture, host, now)
 	if err != nil {
 		return Row{}, err
 	}
 	if err := makeHome(dir, r.host); err != nil {
 		return Row{}, err
 	}
-	c := &Cell{Case: p.k.Name, Arm: p.arm.Name, Run: p.run, Model: r.model, Plugin: p.arm.Dir, Host: host, Base: base, Started: now}
+	c := &Cell{Case: p.k.Name, Arm: p.arm.Name, Run: p.run, Model: r.model, Plugin: p.arm.Dir, Host: host, Base: cs.Base, Cwd: cs.Cwd, Started: now}
 	if err := c.save(dir); err != nil {
 		return Row{}, err
 	}
 	var turnErr error
-	for _, words := range p.k.Turns {
+	for _, words := range cs.Words {
 		if turnErr = r.turn(ctx, dir, c, words, false); turnErr != nil {
 			break
 		}
@@ -316,6 +316,9 @@ func (r *runner) runCell(ctx context.Context, p cellPlan, fixture, scratch, outD
 		c.Error = turnErr.Error()
 	}
 	c.Ended = time.Now()
+	if err := keepLeadBranch(dir, c); err != nil && turnErr == nil {
+		c.Error = "keeping the lead's branch: " + err.Error()
+	}
 	r.keepTranscripts(dir, c)
 	unlinkHome(dir)
 	c.Left = pruneWorktrees(dir)
@@ -339,6 +342,9 @@ func (r *runner) runCell(ctx context.Context, p cellPlan, fixture, scratch, outD
 // scoreNow scores the running cell: whether it passes, and its last reply.
 func scoreNow(dir string, c *Cell, k *Case) (bool, string, error) {
 	if err := c.save(dir); err != nil {
+		return false, "", err
+	}
+	if err := keepLeadBranch(dir, c); err != nil {
 		return false, "", err
 	}
 	s, err := loadState(dir)

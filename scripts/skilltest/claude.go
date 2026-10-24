@@ -200,7 +200,7 @@ func (r *runner) turn(ctx context.Context, dir string, c *Cell, words string, st
 		return err
 	}
 	cmd := exec.Command(r.claude, r.turnArgs(words, c.lastSession(), c.Plugin)...)
-	cmd.Dir = filepath.Join(dir, sandboxDir)
+	cmd.Dir = c.cwd(dir)
 	cmd.Env = sessionEnv(r.env, dir, r.host)
 	cmd.Stdin = nil
 	cmd.Stdout, cmd.Stderr = stdout, stderr // files, never pipes: a child holding a pipe open would outlive the timeout
@@ -426,12 +426,13 @@ func projectName(dir string) string {
 
 // keepTranscripts moves the transcripts of the cell's sessions from
 // claude's projects dir into the cell's claude-project/: the whole project
-// directory when it is the sandbox's alone, else each session's files.
+// directory when it is the session's cwd's alone, else each session's
+// files.
 func (r *runner) keepTranscripts(dir string, c *Cell) {
 	if r.projects == "" {
 		return
 	}
-	want := projectName(filepath.Join(dir, sandboxDir))
+	want := projectName(c.cwd(dir))
 	seen := map[string]bool{}
 	for _, t := range c.Turns {
 		if t.Session == "" || seen[t.Session] {

@@ -64,10 +64,8 @@ func TestUXBriefNamesSurfacesAndSkill(t *testing.T) {
 }
 
 func TestBuildBriefEmbedsSpecAndNode(t *testing.T) {
-	v := RowValues(pb, "/home/x/repos/pb")
-	v["date"], v["node"], v["spec_id"], v["spec_path"] = "2026-10-15", "pb-012", "012", "docs/proposals/012-a.md"
-	v["spec"] = "---\nid: 012\n---\n\n## Opportunity\nuses {{nope}} literally\n"
-	v["upgrading"], v["operator_words"] = "", ""
+	v := BuildValues(pb, "/home/x/repos/pb", "---\nid: 012\n---\n\n## Opportunity\nuses {{nope}} literally\n",
+		"docs/proposals/012-a.md", "012", "pb-012", "2026-10-15")
 	out, err := Render("", "build", v)
 	if err != nil {
 		t.Fatal(err)

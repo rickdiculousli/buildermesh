@@ -4,8 +4,9 @@
 # real. Each call appends one line to $SKILLTEST_LOG: the cwd, then each
 # argument, tab-separated, with \, a tab and a newline written \\, \t and \n.
 # It reads the cell's files under $SKILLTEST_CELL: fake.env (the row's name
-# and path, this box's name), commands.txt (the arm's commands), canned/ (the
-# case's outputs, by command) and state/ (counters).
+# and path, this box's name, and in a lead's cell its node, worktree and
+# spec), commands.txt (the arm's commands), canned/ (the case's outputs, by
+# command) and state/ (counters, and the commits its land pushed).
 
 cell=${SKILLTEST_CELL:?SKILLTEST_CELL is not set}
 log=${SKILLTEST_LOG:-$cell/bmesh.log}
@@ -14,6 +15,10 @@ state=$cell/state
 repo=
 repo_path=
 host=
+node=
+worktree=
+lead_spec=
+stop_first=0
 . "$cell/fake.env"
 
 esc() {
@@ -168,6 +173,10 @@ for a in "$@"; do
 	case $a in --json | -json) json=1 ;; esac
 done
 [ -n "$gnode" ] || gnode=$(opt node "$@")
+# Inside the lead's worktree, bmesh knows the node, as the real one does.
+if [ -z "$gnode" ] && [ -n "$node" ]; then
+	case $PWD/ in "$worktree"/*) gnode=$node ;; esac
+fi
 
 case $cmd in
 -h | -help | --help)
@@ -231,16 +240,25 @@ fake_spec() {
 	set)
 		ids=$(opt id "$@" | tr ',' ' ')
 		st=$(opt status "$@")
+		dir=$(repodir "$(opt repo "$@")")
 		for id in $ids; do
 			id=$(pad "$id")
-			if ! grep -q "^$id " "$canned/spec-list"; then
-				echo "bmesh: no spec $id in $(repodir "$(opt repo "$@")")" >&2
+			if has land "$@"; then
+				if ! grep -q "^$id " "$canned/spec-list"; then
+					echo "bmesh: no spec $id on main in $dir; bmesh spec list shows the ids" >&2
+					exit 1
+				fi
+			elif [ -z "$(specfile "$dir" "$id")" ]; then
+				echo "bmesh: no spec $id in $dir/docs/proposals; bmesh spec list shows the ids" >&2
 				exit 1
 			fi
 		done
 		landed=
 		for id in $ids; do
 			id=$(pad "$id")
+			# Without --land the checkout's files are edited, as the binary
+			# edits them; with it the edit is a ledger commit, faked.
+			has land "$@" || setstatus "$(specfile "$dir" "$id")" "$st"
 			row=$(grep "^$id " "$canned/spec-list")
 			printf '%s  %-9s  %s\n' "$id" "$st" "$(printf '%s' "$row" | cut -c17-)"
 			landed=${landed:+$landed, }$id
@@ -251,6 +269,155 @@ fake_spec() {
 			*) echo "landed $(fakesha | cut -c1-8) on main: Spec $landed: $st" ;;
 			esac
 		fi
+		;;
+	esac
+}
+
+# specfile DIR ID: the spec's file in the checkout at DIR, if it has one.
+specfile() { ls "$1"/docs/proposals/"$2"-*.md 2>/dev/null | sed -n 1p; }
+
+# setstatus FILE STATUS: the frontmatter's status line rewritten.
+setstatus() {
+	awk -v st="$2" '/^---$/ { n++ } n == 1 && /^status:/ { print "status: " st; next } { print }' "$1" >"$1.fake" && mv "$1.fake" "$1"
+}
+
+# specstatus FILE: the frontmatter's status.
+specstatus() { sed -n 's/^status: *//p' "$1" | sed -n 1p; }
+
+# leadcheck ready|land ARGS...: the checks the binary makes of a lead's
+# worktree before it lands: a clean tree, a branch and the spec reading
+# done. In a case that stops first, the first ready or land is refused for
+# the spec whatever the branch reads: the case stands for a lead whose done
+# didn't take, which a session can't be made to be.
+leadcheck() {
+	what=$1
+	shift
+	top=$(git rev-parse --show-toplevel 2>/dev/null) || {
+		echo "bmesh: refused: $PWD is not a worktree of a repo with a main checkout; run bmesh land in a lead's worktree" >&2
+		exit 3
+	}
+	if [ -n "$(git -C "$top" status --porcelain)" ]; then
+		if [ "$what" = ready ]; then
+			echo "bmesh: refused: the worktree has changes not committed; commit them, then run bmesh ready again" >&2
+		else
+			echo "bmesh: worktree is dirty; commit first" >&2
+		fi
+		exit 3
+	fi
+	b=$(git -C "$top" branch --show-current)
+	if [ -z "$b" ] || [ "$b" = main ]; then
+		echo "bmesh: refused: land runs on a lead's branch, not ${b:--}; run it in your worktree, on your own branch" >&2
+		exit 3
+	fi
+	id=$(opt spec "$@") && id=$(pad "$id") || id=$lead_spec
+	f=$(specfile "$top" "$id")
+	if [ -z "$f" ]; then
+		echo "bmesh: refused: no spec $id in $top; a spec lands with its code: commit it on this branch (or rebase onto origin/main, if it landed there after you branched), then run bmesh $what again" >&2
+		exit 3
+	fi
+	st=$(specstatus "$f")
+	if [ "$stop_first" = 1 ] && [ ! -f "$state/stopped" ]; then
+		: >"$state/stopped"
+		[ "$st" != done ] || st=proposed
+	fi
+	if [ "$st" != done ]; then
+		echo "bmesh: refused: spec $id reads $st on $b; a spec lands with its code reading done: run bmesh spec set --id $id --status done, commit it, then run bmesh $what again" >&2
+		exit 3
+	fi
+}
+
+# fake_land: land for a lead whose land succeeds: verify on HEAD, the last
+# commit reworded to carry the trailers, pushed to origin's main, the main
+# checkout fast-forwarded, and the commit kept in state/landed.
+fake_land() {
+	if [ -z "$gnode" ] && ! opt spec "$@" >/dev/null; then
+		echo "bmesh: land needs --spec NNN (no node spec resolves)" >&2
+		exit 2
+	fi
+	leadcheck land "$@"
+	tree=$(git -C "$top" rev-parse 'HEAD^{tree}' | cut -c1-8)
+	echo "required: verify (the repo's verify kind)"
+	if ! out=$(cd "$top" && go test ./... 2>&1); then
+		printf '%s\nverify fail t:%s (recorded)\n' "$out" "$tree"
+		echo "bmesh: verify failed at t:$tree; fix it, commit and run bmesh land again" >&2
+		exit 1
+	fi
+	base=$(sha8 origin/main "$top")
+	echo "verify ok t:$tree (recorded)"
+	echo "review: none (size S)"
+	echo "lease land.$repo"
+	echo "fetch origin/main $base"
+	echo "rebase: on $base already"
+	echo "verify ok t:$tree (ran before the lease)"
+	echo "verified: verify ok t:$tree"
+	git -C "$top" log -1 --format=%B | git -C "$top" interpret-trailers --no-divider --if-exists replace \
+		--trailer "Spec: $id" --trailer "Verified: verify ok t:$tree" | git -C "$top" commit -q --amend --no-verify --allow-empty -F -
+	sha=$(git -C "$top" rev-parse HEAD)
+	s8=$(echo "$sha" | cut -c1-8)
+	echo "trailers $s8: Spec $id, Verified"
+	if ! git -C "$top" push -q origin HEAD:refs/heads/main 2>/dev/null; then
+		echo "bmesh: push main: refused; nothing is pushed: run bmesh land again" >&2
+		exit 1
+	fi
+	echo "$sha" >>"$state/landed"
+	echo "push origin main $s8"
+	git -C "$repo_path" merge -q --ff-only "$sha" 2>/dev/null && echo "main $s8"
+	echo "released land.$repo"
+	echo "landed $s8"
+}
+
+fake_ready() {
+	[ -n "$gnode" ] || nonode
+	if has cancel "$@"; then
+		echo "cancelled: nothing is pushed; land in your own turn with bmesh land, or bmesh ready again"
+		return 0
+	fi
+	leadcheck ready "$@"
+	echo "ready: $host's daemon lands $(sha8 HEAD); it wakes you only if land needs you"
+}
+
+# fake_executor: an executor's worktree and branch under the lead's, made
+# and removed as the binary makes and removes them.
+fake_executor() {
+	sub=${1-}
+	[ $# -gt 0 ] && shift
+	parent=${gnode:-operator}
+	case $sub in
+	new)
+		name=$(opt name "$@")
+		p=$parent.$name
+		b=$(git branch --show-current 2>/dev/null)
+		b=${b:-bmesh/$parent}-$name
+		wt=$cell/worktrees/$repo/$p
+		if git rev-parse --verify -q "refs/heads/$b" >/dev/null; then
+			echo "bmesh: refused: branch $b already exists; remove it (git branch -d $b) or pick another name" >&2
+			exit 3
+		fi
+		git worktree add -q -b "$b" "$wt" HEAD 2>/dev/null || mkdir -p "$wt"
+		printf '{"path":"%s","branch":"%s","worktree":"%s"}\n' "$p" "$b" "$wt"
+		if [ $json = 0 ]; then
+			printf 'You are executor %s in buildermesh. Work only in %s on branch %s: every file path you touch is under it, and every shell command starts with `cd %s &&` (the working directory and environment do not persist between tool calls). Every bmesh command carries --node %s. Before anything else run `cd %s && bmesh --node %s started --text "<what you will do>"`. Report the finished piece with `bmesh --node %s done --commit <sha> --text "<one line>"` alone: the mesh puts it, with your branch, in your lead'"'"'s inbox. Read your brief below, then invoke the `buildermesh:executor` skill.\n' \
+				"$p" "$wt" "$b" "$wt" "$p" "$wt" "$p" "$p"
+		fi
+		;;
+	list)
+		printf 'PATH  STATE  BRANCH  HEAD  UNREAD\n%s  working  %s  %s  0\n' "$parent" "$(git branch --show-current 2>/dev/null)" "$(sha8 HEAD)"
+		;;
+	remove)
+		name=$(first "$@")
+		p=$parent.$name
+		wt=$cell/worktrees/$repo/$p
+		b=$(git -C "$wt" branch --show-current 2>/dev/null)
+		if [ -z "$b" ]; then
+			echo "bmesh: refused: no executor $p under $parent with a worktree; bmesh executor list shows yours" >&2
+			exit 3
+		fi
+		if ! has force "$@" && [ -z "$(git branch --list --merged HEAD "$b")" ]; then
+			echo "bmesh: refused: branch $b is not merged into $(git branch --show-current); merge it (git merge $b), then remove it again, or pass --force to discard it" >&2
+			exit 3
+		fi
+		git worktree remove --force "$wt" && git branch -q -D "$b"
+		echo "removed $p"
 		;;
 	esac
 }
@@ -372,15 +539,15 @@ lead)
 		printf '{"path":"%s","thread":"%s","branch":"bmesh/%s","worktree":"%s/worktrees/%s/%s"}\n' "$p" "$t" "$t" "$cell" "$repo" "$p"
 	fi
 	;;
-executor)
-	if [ "${1-}" = new ]; then
-		p=${gnode:-operator}.$(opt name "$@")
-		printf '{"path":"%s","branch":"bmesh/%s","worktree":"%s/worktrees/%s/%s"}\n' "$p" "$p" "$cell" "$repo" "$p"
-	fi
-	;;
+executor) fake_executor "$@" ;;
 choose-ideas) out choose-ideas || echo "landed $(fakesha | cut -c1-8) on main: Review: $(positionals "$@" | sed -n 2p)" ;;
-land) echo "landed $(sha8 HEAD)" ;;
-ready) echo "ready: $host's daemon lands $(sha8 HEAD)" ;;
+land) fake_land "$@" ;;
+ready) fake_ready "$@" ;;
+held)
+	[ -n "$gnode" ] || nonode
+	echo "bmesh: refused: $gnode is not held (released already?); run bmesh inbox and carry on" >&2
+	exit 3
+	;;
 done)
 	[ -n "$gnode" ] || nonode
 	echo "done $gnode $(opt commit "$@" | cut -c1-8)"
