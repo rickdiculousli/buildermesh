@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -32,9 +33,33 @@ const ideateUsage = "usage: bmesh ideate <repo> [--idea] [--model M] [--effort E
 // waiting for the operator to build or decline them.
 const proposedCap = 5
 
-// Children are a round's two threads: eng (the engineer) and ux (the UI/UX
-// engineer), each a node under the round.
+// Children are the threads a round may have: eng (the engineer) and ux
+// (the UI/UX engineer on another box), each a node under the round.
 var children = []string{"eng", "ux"}
+
+// A roundThread is one thread a round starts: its child name, the part of
+// the method it runs and the box it runs on.
+type roundThread struct {
+	child string
+	part  brief.RoundPart
+	host  string
+}
+
+// roundThreads are the threads a round on row starts from box me. A round
+// is one thread, eng on the row's host (me when it names none), running
+// every part of the method; when the row's ux_host names another box and
+// the row lists surfaces, ux runs the UI/UX part there and eng the rest.
+// An idea round is eng alone, on the operator's idea.
+func roundThreads(row config.Repo, me string, idea bool) []roundThread {
+	host := cmp.Or(row.Host, me)
+	switch {
+	case idea:
+		return []roundThread{{"eng", brief.RoundIdea, host}}
+	case row.UXHost != "" && row.UXHost != host && len(row.Surfaces) > 0:
+		return []roundThread{{"eng", brief.RoundEng, host}, {"ux", brief.RoundUX, row.UXHost}}
+	}
+	return []roundThread{{"eng", brief.RoundAll, host}}
+}
 
 var roundRE = regexp.MustCompile(`^(.*)-round-(\d+)$`)
 
@@ -54,11 +79,12 @@ type childStarted struct {
 // refuses five or more proposed specs no live lead is building and a round
 // of the repo's that is still open; it levels main, picks
 // the next round number from the nodes bucket, registers the round node
-// and starts the two children through the runner on the row's host and
-// ux_host (a remote host runs this command's child form over ssh). The
-// child form, --child eng|ux with --round, --next-id and --thread-id, makes
-// one child's worktree from main, renders its brief, starts it and
-// registers its node; the full form calls it for a child on another box.
+// and starts its threads (roundThreads) through the runner, on the row's
+// host and, for a ux thread, ux_host (a remote host runs this command's
+// child form over ssh). The child form, --child eng|ux with --round,
+// --next-id and --thread-id, makes one child's worktree from main, renders
+// its brief, starts it and registers its node; the full form calls it for
+// a child on another box.
 func (a *app) cmdIdeate(args []string) error {
 	fs := a.flags("ideate")
 	model := fs.String("model", "", "model the threads run on (default [models] proposer)")
@@ -123,7 +149,7 @@ func (a *app) cmdIdeate(args []string) error {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		started, err := a.startChild(ctx, row, repoPath, *round, *child, *nextID, *thread, *model, *effort, *focus, *idea)
+		started, err := a.startChild(ctx, row, repoPath, *round, childThread(row, a.cfg.HostName(), *child, *idea), *nextID, *thread, *model, *effort, *focus)
 		if err != nil {
 			return err
 		}
@@ -135,31 +161,35 @@ func (a *app) cmdIdeate(args []string) error {
 	return a.runRound(row, repoPath, *model, *effort, *focus, *force, *idea)
 }
 
+// childThread is the thread the child form starts: ux runs the UI/UX
+// part; eng runs what roundThreads gives it (on another box the row names
+// its host, so this box's name doesn't change the answer).
+func childThread(row config.Repo, me, child string, idea bool) roundThread {
+	if child == "ux" {
+		return roundThread{"ux", brief.RoundUX, me}
+	}
+	t := roundThreads(row, me, idea)[0]
+	t.host = me
+	return t
+}
+
 // runRound is the full form. An idea round starts only the engineer.
 func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string, force, idea bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	me := a.cfg.HostName()
-	hosts := map[string]string{"eng": row.Host, "ux": row.UXHost}
-	if hosts["eng"] == "" {
-		hosts["eng"] = me
-	}
-	if hosts["ux"] == "" {
-		hosts["ux"] = hosts["eng"]
-	}
-	kids := children
-	if idea {
-		kids = []string{"eng"}
-		delete(hosts, "ux")
-	}
-	for _, c := range kids {
-		if h := hosts[c]; h != me {
-			if err := reachable(ctx, h); err != nil {
-				return fail(exitRefused, "refused: host %s (the %s thread's) is unreachable from %s: %v", h, c, me, err)
-			}
+	threads := roundThreads(row, me, idea)
+	local := false
+	for _, t := range threads {
+		if t.host == me {
+			local = true
+			continue
+		}
+		if err := reachable(ctx, t.host); err != nil {
+			return fail(exitRefused, "refused: host %s (the %s thread's) is unreachable from %s: %v", t.host, t.child, me, err)
 		}
 	}
-	if hosts["eng"] == me || hosts["ux"] == me {
+	if local {
 		r, err := runner.New(a.cfg)
 		if err != nil {
 			return err
@@ -212,18 +242,21 @@ func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string, f
 	if _, err := mesh.ParsePath(roundPath); err != nil {
 		return fail(exitUsage, "round path: %v", err)
 	}
-	threads := map[string]string{}
+	uuids := map[string]string{}
 	ids := map[string]int{}
-	for _, c := range kids {
-		if threads[c], err = uuid4(); err != nil {
+	var kids, on []string
+	for _, t := range threads {
+		if uuids[t.child], err = uuid4(); err != nil {
 			return err
 		}
-		if ids[c], err = mesh.ClaimSpecIDs(ctx, a.client, row.Name, highest, idBlock(idea)); err != nil {
-			return fmt.Errorf("claim the %s thread's spec ids: %w", c, err)
+		if ids[t.child], err = mesh.ClaimSpecIDs(ctx, a.client, row.Name, highest, idBlock(t.part)); err != nil {
+			return fmt.Errorf("claim the %s thread's spec ids: %w", t.child, err)
 		}
+		kids = append(kids, t.child)
+		on = append(on, t.child+" on "+t.host)
 	}
 	round := mesh.Node{Path: roundPath, Role: "round", Repo: row.Name, RepoPath: repoPath, Host: me, Model: model, Effort: effort,
-		Idea: idea, StartedAt: time.Now().UTC().Format(time.RFC3339)}
+		Idea: idea, Children: kids, StartedAt: time.Now().UTC().Format(time.RFC3339)}
 	if err := mesh.PutNode(ctx, a.client, round); err != nil {
 		return err
 	}
@@ -231,9 +264,9 @@ func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string, f
 	if err := mesh.EnsureInbox(ctx, a.client, rp); err != nil {
 		return err
 	}
-	text := fmt.Sprintf("round %d on %s: eng on %s, ux on %s", n, row.Name, hosts["eng"], hosts["ux"])
+	text := fmt.Sprintf("round %d on %s: %s", n, row.Name, strings.Join(on, ", "))
 	if idea {
-		text = fmt.Sprintf("round %d on %s: one idea, eng on %s", n, row.Name, hosts["eng"])
+		text = fmt.Sprintf("round %d on %s: one idea, %s", n, row.Name, on[0])
 	}
 	if err := mesh.PublishEvent(ctx, a.client, mesh.Event{From: roundPath, Event: "started", Text: text}); err != nil {
 		return err
@@ -243,25 +276,25 @@ func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string, f
 	}
 	out := map[string]any{"path": roundPath, "round": n}
 	var failed []string
-	for _, c := range kids {
+	for _, t := range threads {
 		var started childStarted
-		if hosts[c] == me {
-			started, err = a.startChild(ctx, row, repoPath, n, c, ids[c], threads[c], model, effort, focus, idea)
+		if t.host == me {
+			started, err = a.startChild(ctx, row, repoPath, n, t, ids[t.child], uuids[t.child], model, effort, focus)
 		} else {
-			started, err = a.startRemoteChild(ctx, hosts[c], row.Name, n, c, ids[c], threads[c], model, effort, focus, idea)
+			started, err = a.startRemoteChild(ctx, t.host, row.Name, n, t.child, ids[t.child], uuids[t.child], model, effort, focus, idea)
 		}
 		if err != nil {
-			// The other child is still started: the one that did not is
+			// Another child is still started: the one that did not is
 			// blocked, so the round reads blocked naming it and the daemon
 			// resettles it with the other's pitch when that one finishes.
 			why := fmt.Sprintf("did not start: %v", err)
-			child := roundPath + "." + c
+			child := roundPath + "." + t.child
 			_, _ = mesh.WriteState(ctx, a.client, child, mesh.State{State: "working", By: "node"})
 			_, _ = mesh.WriteState(ctx, a.client, child, mesh.State{State: "blocked", Text: why, By: "node"})
-			failed = append(failed, fmt.Sprintf("the %s thread %s", c, why))
+			failed = append(failed, fmt.Sprintf("the %s thread %s", t.child, why))
 			continue
 		}
-		out[c] = started
+		out[t.child] = started
 	}
 	if len(failed) > 0 {
 		if states, err := mesh.ReadAllStates(ctx, a.client); err == nil {
@@ -276,11 +309,15 @@ func (a *app) runRound(row config.Repo, repoPath, model, effort, focus string, f
 	return a.printJSON(out)
 }
 
-// idBlock is how many spec ids a round claims for each child it starts:
-// five, the most a round's thread writes, or three for an idea thread.
-// A child that writes fewer leaves a gap.
-func idBlock(idea bool) int {
-	if idea {
+// idBlock is how many spec ids a round claims for a thread that runs
+// part: the most it writes, six for a round's one thread, five for each of
+// two, three for an idea thread. A thread that writes fewer leaves the
+// rest unused.
+func idBlock(part brief.RoundPart) int {
+	switch part {
+	case brief.RoundAll:
+		return 6
+	case brief.RoundIdea:
 		return 3
 	}
 	return 5
@@ -346,10 +383,11 @@ func openRound(ctx context.Context, c *mesh.Client, repo string) (string, error)
 	return open, nil
 }
 
-// startChild makes one child's bmesh worktree from main, renders its brief,
+// startChild makes thread t's bmesh worktree from main, renders its brief,
 // starts it through this box's runner and registers its node.
-func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, round int, child string, nextID int,
-	thread, model, effort, focus string, idea bool) (childStarted, error) {
+func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, round int, t roundThread, nextID int,
+	thread, model, effort, focus string) (childStarted, error) {
+	child, idea := t.child, t.part == brief.RoundIdea
 	if r, err := runner.New(a.cfg); err != nil {
 		return childStarted{}, err
 	} else if err := a.preflight(ctx, r); err != nil {
@@ -388,9 +426,9 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 	undo := func() {
 		_ = gitwork.RemoveWorktree(context.WithoutCancel(ctx), repoPath, wt, branch, false)
 	}
-	tmpl, title := "engineer", "engineer"
+	title := "engineer"
 	if child == "ux" {
-		tmpl, title = "ux-engineer", "UI/UX"
+		title = "UI/UX"
 	}
 	values := brief.RowValues(row, repoPath)
 	for k, v := range map[string]string{
@@ -400,8 +438,8 @@ func (a *app) startChild(ctx context.Context, row config.Repo, repoPath string, 
 	} {
 		values[k] = v
 	}
-	maps.Copy(values, brief.RoundValues(idea))
-	text, err := brief.Render(repoPath, tmpl, values)
+	maps.Copy(values, brief.RoundValues(t.part, row))
+	text, err := brief.Render(repoPath, "engineer", values)
 	if err != nil {
 		undo()
 		return childStarted{}, err

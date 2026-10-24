@@ -1,5 +1,5 @@
 // Package brief renders the briefs the mesh hands its threads: the engineer
-// and UI/UX engineer briefs of a proposal round, the build brief of a lead
+// brief of a proposal round's threads, the build brief of a lead
 // and the half-pager a spec is written as. The templates embed in the
 // binary; a repo overrides one with .bmesh/briefs/<name>.md. `{{name}}`
 // placeholders are filled from the registry row, the spec and the thread,
@@ -168,22 +168,53 @@ func OperatorIdea(text string) string {
 		"Propose nothing else. Your ranked list is those specs.\n\n" + strings.TrimSpace(text) + "\n\n"
 }
 
-// RoundValues are the engineer brief's lines that differ for an idea
-// round: what to bring back, who runs beside it and how the ids are
-// split.
-func RoundValues(idea bool) map[string]string {
-	if idea {
-		return map[string]string{
-			"round_ask":     "Write up the operator's one idea, in the section below, as the half-page spec (or two or three in build order) the operator can pick or decline in a sentence.",
-			"round_partner": "There is no UI/UX engineer on this round: it is the operator's one idea, and yours alone.",
-			"ux_ids":        "",
+// A RoundPart is the parts of the ideate method a round's thread runs:
+// the engineering part (read, measure) and the UI/UX part (run the app,
+// screenshot each surface).
+type RoundPart string
+
+const (
+	// RoundAll is a round's one thread: engineering, and UI/UX when the
+	// row lists surfaces, ranked in one list.
+	RoundAll RoundPart = "all"
+	// RoundEng is engineering only, while a UI/UX thread runs on ux_host.
+	RoundEng RoundPart = "eng"
+	// RoundUX is UI/UX only, on ux_host, beside a RoundEng thread.
+	RoundUX RoundPart = "ux"
+	// RoundIdea is the operator's one idea, written up by the engineer.
+	RoundIdea RoundPart = "idea"
+)
+
+// RoundValues are the engineer brief's lines that differ by the part a
+// thread runs: its title and role, what to bring back, who runs beside it,
+// how the ids are split and the surfaces it screenshots. A thread with no
+// UI/UX part is never told of one, and the brief of a row without
+// surfaces never mentions them.
+func RoundValues(part RoundPart, r config.Repo) map[string]string {
+	v := map[string]string{"title": "Engineer", "role": "engineer", "ux_ids": "", "surfaces_line": ""}
+	switch part {
+	case RoundIdea:
+		v["round_ask"] = "Write up the operator's one idea, in the section below, as the half-page spec (or two or three in build order) the operator can pick or decline in a sentence."
+		v["round_partner"] = "There is no UI/UX engineer on this round: it is the operator's one idea, and yours alone."
+	case RoundEng:
+		v["round_ask"] = "Find what would most improve this repo's code and bring back three to five ranked ideas, each a half-page spec or a pitch line (see What you pitch), that the operator can pick or decline in a sentence."
+		v["round_partner"] = "The UI/UX engineer runs beside you on `" + r.UXHost + "`, where the app's surfaces are, and lands on the same `main`: how the app looks and feels is its part, not yours."
+		v["ux_ids"] = " The UI/UX engineer has a block of its own, so a gap is expected."
+	case RoundUX:
+		v["title"], v["role"] = "UI/UX engineer", "UI/UX engineer"
+		v["round_ask"] = "You run only the UI/UX part of the method: look at the running app the way its users do and bring back three to five ranked ideas on how it looks and feels, each a half-page spec or a pitch line (see What you pitch), that the operator can pick or decline in a sentence."
+		v["round_partner"] = "The engineer runs beside you on another box and lands on the same `main`: the engineering part is its, not yours."
+		v["ux_ids"] = " The engineer has a block of its own, so a gap is expected."
+		v["surfaces_line"] = "\n- Surfaces to screenshot, each at its stated viewport: " + SurfacesText(r.Surfaces) + "."
+	default:
+		v["round_ask"] = "Find what would most improve this repo and bring back three to six ranked ideas in one list, each a half-page spec or a pitch line (see What you pitch), that the operator can pick or decline in a sentence."
+		v["round_partner"] = "You are this round's only thread: everything you find is ranked in your one list."
+		if len(r.Surfaces) > 0 {
+			v["round_ask"] = "Find what would most improve this repo, in its code and in how its app looks and feels, and bring back three to six ranked ideas in one list, each a half-page spec or a pitch line (see What you pitch), that the operator can pick or decline in a sentence."
+			v["surfaces_line"] = "\n- Surfaces to screenshot, each at its stated viewport: " + SurfacesText(r.Surfaces) + "."
 		}
 	}
-	return map[string]string{
-		"round_ask":     "Find what would most improve this repo and bring back three to five ranked ideas, each a half-page spec or a pitch line (see What you pitch), that the operator can pick or decline in a sentence.",
-		"round_partner": "The UI/UX engineer runs beside you on the same round and lands on the same `main`.",
-		"ux_ids":        " The UI/UX engineer has a block of its own, so a gap is expected.",
-	}
+	return v
 }
 
 // RowValues are the placeholders every brief gets from a registry row.

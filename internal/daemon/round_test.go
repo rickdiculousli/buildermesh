@@ -33,7 +33,7 @@ func TestSettleRound(t *testing.T) {
 // round registers a round with its two engineer children on the test host.
 func (f *fixture) round(t *testing.T, path string) {
 	t.Helper()
-	if err := mesh.PutNode(f.ctx, f.c, mesh.Node{Path: path, Role: "round", Repo: "demo", Host: testHost}); err != nil {
+	if err := mesh.PutNode(f.ctx, f.c, mesh.Node{Path: path, Role: "round", Repo: "demo", Host: testHost, Children: []string{"eng", "ux"}}); err != nil {
 		t.Fatal(err)
 	}
 	f.setState(t, path, "working")
@@ -81,6 +81,47 @@ func TestRoundsOnceSettlesWhenBothChildrenAreDone(t *testing.T) {
 	roundsOnce(f.ctx, f.d)
 	if hist, _ := mesh.History(f.ctx, f.c, "bm.demo-round-1.done", time.Time{}); len(hist) != 1 {
 		t.Fatalf("done events %d", len(hist))
+	}
+}
+
+func TestRoundsOnceSettlesAOneThreadRoundOnItsThread(t *testing.T) {
+	f := setup(t)
+	if err := mesh.PutNode(f.ctx, f.c, mesh.Node{Path: "demo-round-1", Role: "round", Repo: "demo", Host: testHost, Children: []string{"eng"}}); err != nil {
+		t.Fatal(err)
+	}
+	f.setState(t, "demo-round-1", "working")
+	f.setState(t, "demo-round-1.eng", "working")
+	roundsOnce(f.ctx, f.d)
+	if st, _, _ := mesh.ReadState(f.ctx, f.c, "demo-round-1"); st.State != "working" {
+		t.Fatalf("settled early: %+v", st)
+	}
+	pitch := "019 A (feature, M, opus): why\n- Tighter header (ux, S): the board's header wraps at 1280x720\n020 B (test-speed, M, opus): 40s of 52s is one file"
+	if _, err := mesh.WriteState(f.ctx, f.c, "demo-round-1.eng", mesh.State{State: "done", Text: pitch, By: "node"}); err != nil {
+		t.Fatal(err)
+	}
+	roundsOnce(f.ctx, f.d)
+	if st, _, _ := mesh.ReadState(f.ctx, f.c, "demo-round-1"); st.State != "done" || st.Text != pitch {
+		t.Fatalf("%+v", st)
+	}
+	if hist, _ := mesh.History(f.ctx, f.c, "bm.demo-round-1.done", time.Time{}); len(hist) != 1 {
+		t.Fatalf("done events %d", len(hist))
+	}
+}
+
+func TestRoundsOnceWaitsForUXOnARoundFromBeforeChildren(t *testing.T) {
+	f := setup(t)
+	// A round started before rounds recorded their children had two.
+	if err := mesh.PutNode(f.ctx, f.c, mesh.Node{Path: "demo-round-1", Role: "round", Repo: "demo", Host: testHost}); err != nil {
+		t.Fatal(err)
+	}
+	f.setState(t, "demo-round-1", "working")
+	f.setState(t, "demo-round-1.eng", "working")
+	if _, err := mesh.WriteState(f.ctx, f.c, "demo-round-1.eng", mesh.State{State: "done", Text: "013 A (feature, M, opus): why", By: "node"}); err != nil {
+		t.Fatal(err)
+	}
+	roundsOnce(f.ctx, f.d)
+	if st, _, _ := mesh.ReadState(f.ctx, f.c, "demo-round-1"); st.State != "working" {
+		t.Fatalf("settled without its ux thread: %+v", st)
 	}
 }
 
