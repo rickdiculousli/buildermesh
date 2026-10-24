@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -32,6 +33,7 @@ type Row struct {
 	PluginHook    bool         `json:"plugin_hook"`      // the plugin's session hook called the fake
 	Plugins       []string     `json:"plugins"`          // the plugins the session had, from its first turn's init event
 	MCPServers    []string     `json:"mcp_servers"`      // the MCP servers it had: none, when isolated
+	Reaching      []string     `json:"reaching_tools"`   // the tools it had that reach past the sandbox: none, when isolated
 	Available     []string     `json:"skills_available"` // the buildermesh skills it had
 	Skills        []string     `json:"skills"`           // the skills it invoked
 	InputTokens   int64        `json:"input_tokens"`
@@ -94,12 +96,17 @@ func score(s *State, k *Case) Row {
 	}
 	r.InputTokens, r.OutputTokens, r.CacheRead, r.CacheCreate, r.CostUSD = spent.Input, spent.Output, spent.CacheRead, spent.CacheCreate, spent.CostUSD
 	r.Tokens = spent.Tokens()
-	r.Plugins, r.MCPServers, r.Available = []string{}, []string{}, []string{}
+	r.Plugins, r.MCPServers, r.Available, r.Reaching = []string{}, []string{}, []string{}, []string{}
 	for _, in := range s.Inits {
 		if in == nil {
 			continue
 		}
 		r.Plugins, r.MCPServers = names(in.Plugins), names(in.MCPServers)
+		for _, tool := range names(in.Tools) {
+			if slices.Contains(deniedTools, tool) {
+				r.Reaching = append(r.Reaching, tool)
+			}
+		}
 		for _, sk := range names(in.Skills) {
 			if strings.HasPrefix(sk, "buildermesh:") {
 				r.Available = append(r.Available, sk)

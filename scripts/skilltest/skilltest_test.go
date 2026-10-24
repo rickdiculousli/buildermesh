@@ -480,7 +480,8 @@ if [ "$n" = 1 ]; then
 	bmesh hosts --here >/dev/null
 	bmesh repos show shop >/dev/null
 	gh pr list >/dev/null 2>&1
-	printf '{"type":"system","subtype":"init","session_id":"fake-session","plugins":[{"name":"buildermesh","path":"%s"}],"skills":["buildermesh:quickfix","buildermesh:build","simplify"],"mcp_servers":[]}\n' "$PWD"
+	printf '{"type":"system","subtype":"hook_started"}\n'
+	printf '{"type":"system","subtype":"init","session_id":"fake-session","plugins":[{"name":"buildermesh","path":"%s"}],"skills":["buildermesh:quickfix","buildermesh:build","simplify"],"tools":["Bash","Task","Monitor"],"mcp_servers":[]}\n' "$PWD"
 	printf '{"type":"result","subtype":"success","is_error":false,"result":"The total goes below zero in cart.Total. Want me to fix it?","session_id":"fake-session","num_turns":3,"duration_ms":1000,"total_cost_usd":0.01,"modelUsage":{"claude-opus-5-5":{"inputTokens":10,"outputTokens":5,"cacheReadInputTokens":100,"cacheCreationInputTokens":20,"costUSD":0.01}}}\n'
 	exit 0
 fi
@@ -525,8 +526,9 @@ func TestRun(t *testing.T) {
 	if row.Tokens != 135+20 || row.CostUSD < 0.0299 || row.CostUSD > 0.0301 || row.DurationMS != 3000 {
 		t.Errorf("usage %+v", row)
 	}
-	if !reflect.DeepEqual(row.Plugins, []string{"buildermesh"}) || len(row.MCPServers) != 0 || !reflect.DeepEqual(row.Available, []string{"buildermesh:quickfix", "buildermesh:build"}) {
-		t.Errorf("init: plugins %v, MCP servers %v, skills %v", row.Plugins, row.MCPServers, row.Available)
+	if !reflect.DeepEqual(row.Plugins, []string{"buildermesh"}) || len(row.MCPServers) != 0 || len(row.Reaching) != 0 ||
+		!reflect.DeepEqual(row.Available, []string{"buildermesh:quickfix", "buildermesh:build"}) {
+		t.Errorf("init: plugins %v, MCP servers %v, reaching tools %v, skills %v", row.Plugins, row.MCPServers, row.Reaching, row.Available)
 	}
 	if !reflect.DeepEqual(row.Commands, []string{"repos show shop", "routine run verify"}) || len(row.Blocked) != 1 || row.Blocked[0] != "gh pr list" {
 		t.Errorf("calls %v, blocked %v", row.Commands, row.Blocked)
@@ -534,7 +536,7 @@ func TestRun(t *testing.T) {
 	calls, _ := os.ReadFile(filepath.Join(tools, "calls"))
 	lines := strings.Split(strings.TrimSpace(string(calls)), "\n")
 	words := findCase("bug").Turns[0]
-	want := "-p " + words + " --model claude-opus-5-5 --output-format stream-json --verbose --permission-mode bypassPermissions --setting-sources project,local --strict-mcp-config --plugin-dir " + root
+	want := "-p " + words + " --model claude-opus-5-5 --output-format stream-json --verbose --permission-mode bypassPermissions --setting-sources project,local --strict-mcp-config --disallowedTools " + strings.Join(deniedTools, ",") + " --plugin-dir " + root
 	if len(lines) != 2 || lines[0] != want || lines[1] != strings.Replace(want, words, goAhead+" --resume fake-session", 1) {
 		t.Errorf("claude was run as:\n%s\nwant first:\n%s", calls, want)
 	}

@@ -36,20 +36,29 @@ type runner struct {
 	host     Host
 }
 
+// deniedTools are the CLI's own tools that reach past the sandbox: other
+// sessions (SendMessage, ListAgents), cloud sessions (RemoteTrigger,
+// Workflow), the operator's devices (PushNotification), jobs that outlive
+// the cell (CronCreate, CronDelete, CronList, ScheduleWakeup) and claude.ai
+// (DesignSync). No skill under test uses one.
+var deniedTools = []string{"SendMessage", "ListAgents", "RemoteTrigger", "Workflow", "PushNotification",
+	"CronCreate", "CronDelete", "CronList", "ScheduleWakeup", "DesignSync"}
+
 // turnArgs is the claude command line for one turn: the operator's words,
 // the session before (none on the first turn), and the isolation every
-// session runs under: no user settings, plugins or hooks, no MCP server, only
-// the arm's plugin. The output is the JSON stream, not one JSON object: only
-// a stream's results state their own usage on a resumed session (a json
-// result's cost and model usage run on from the session's saved totals), and
-// its init event names the plugins, skills and MCP servers the session has.
+// session runs under: no user settings, plugins or hooks, no MCP server, no
+// tool that reaches past the sandbox, only the arm's plugin. The output is
+// the JSON stream, not one JSON object: only a stream's results state their
+// own usage on a resumed session (a json result's cost and model usage run
+// on from the session's saved totals), and its init event names the
+// plugins, skills, tools and MCP servers the session has.
 func (r *runner) turnArgs(words, resume, plugin string) []string {
 	args := []string{"-p", words}
 	if resume != "" {
 		args = append(args, "--resume", resume)
 	}
 	return append(args, "--model", r.model, "--output-format", "stream-json", "--verbose", "--permission-mode", "bypassPermissions",
-		"--setting-sources", "project,local", "--strict-mcp-config", "--plugin-dir", plugin)
+		"--setting-sources", "project,local", "--strict-mcp-config", "--disallowedTools", strings.Join(deniedTools, ","), "--plugin-dir", plugin)
 }
 
 // keptEnv are the variables of the claude family a session keeps: where its
@@ -311,12 +320,13 @@ func turnSpend(r Result, prev *Result) Spend {
 	return t
 }
 
-// Init is the stream's first event: what the session has to work with.
+// Init is the stream's init event: what the session has to work with.
 type Init struct {
 	Type       string            `json:"type"`
 	Subtype    string            `json:"subtype"`
 	Plugins    []json.RawMessage `json:"plugins"`
 	Skills     []json.RawMessage `json:"skills"`
+	Tools      []json.RawMessage `json:"tools"`
 	MCPServers []json.RawMessage `json:"mcp_servers"`
 }
 
