@@ -3,7 +3,7 @@
 `scripts/skilltest` measures what buildermesh's skills make an agent do. It runs scripted operator asks ("the cart total shows -5.00 ...", "ship shop", a lead's build brief) through real headless Claude Code sessions, one **arm** per version of the plugin, and scores each **cell** (one case on one arm) on what it left: what landed on the sandbox origin's `main`, which `bmesh` commands it ran, what it replied, how often the scripted operator had to steer it, and its tokens, cost and time. A change to a skill's text is measured against the skills before it.
 
 ```
-go run ./scripts/skilltest --arm base=a51e2c6 --arm cand=. [--cases bug,pick] [--runs 3] [--model opus] [--jobs 2]
+TMPDIR=/var/tmp go run ./scripts/skilltest --arm base=a51e2c6 --arm cand=. [--cases bug,pick] [--runs 3] [--model opus] [--jobs 2]
 go run ./scripts/skilltest --rescore cache/skilltest/<stamp>
 TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test ./scripts/skilltest   # the scorers, offline
 ```
@@ -14,7 +14,7 @@ TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test ./scripts/skilltest   # the scorer
 
 ## A cell
 
-The cell runs under `$TMPDIR` (never `/tmp`, and never below a `CLAUDE.md` or `AGENTS.md`: a session loads those from every directory above its cwd, so inside this repo every arm would read buildermesh's), then moves into `<out>/cells/<case>__<arm>__<run>`.
+The cell runs under `$TMPDIR` (never `/tmp`, and never below a `CLAUDE.md` or `AGENTS.md`: a session loads those, and a `.claude/CLAUDE.md`, from every directory above its cwd, so inside this repo every arm would read buildermesh's, and under a home with a `~/.claude/CLAUDE.md` (the tests' `$HOME/.cache/bmesh-scratch/tmp` too) that file; it refuses such a `TMPDIR` before any session, so run it with `TMPDIR=/var/tmp`), then moves into `<out>/cells/<case>__<arm>__<run>`.
 
 - `shop/` is the sandbox: [`fixture/`](fixture/) copied, `git init`, one commit, pushed as `main` to a bare `origin.git` beside it. The fixture is its own Go module (outside this repo's `./...`), scaffolded as `bmesh scaffold` scaffolds a ship repo (a test checks it; `go test ./scripts/skilltest -run TestFixture -update` takes in a change to what scaffold writes), with three `proposed` specs (012 to 014) and planted problems: an empty cart with a discount code totals `-5.00`, the receipt says `Totl`, the store rewrites one JSON file, `report` has `--verbose`. The registry row the fake prints is `shop`, mode `ship`, verify `go test ./...`, host this box.
 - A lead's case (`lead-s`, `lead-stop`) also gets `worktrees/shop/shop-012/`, a worktree of the sandbox on branch `bmesh/shop-012` from `main`, as `bmesh lead start` makes one. Its session runs there, as lead `shop-012`, and its one turn is the build brief this tree's `internal/brief` writes for the case's spec 012 (every arm gets the same brief, so only the plugin differs). Its spec is an overlay of its own cells: `012-the-receipt-says-total.md`, sized S, in place of the fixture's 012, so the other cases' fixture and ledger stay as they are.
