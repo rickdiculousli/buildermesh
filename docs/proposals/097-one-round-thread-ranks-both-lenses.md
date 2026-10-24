@@ -4,7 +4,7 @@ title: A proposal round is one thread that ranks the engineering and UI/UX ideas
 kind: token-cost
 size: M
 judge: opus
-status: proposed
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-24
@@ -44,6 +44,7 @@ The repo's verify, with tests for: one child for a same-host row with and withou
 - **Alternative: keep two threads and merge their lists in the daemon by rank.** Still two orientations and two id blocks, and the daemon can't dedupe ideas it doesn't understand.
 
 ## Upgrading
-nothing
+A repo's own `.bmesh/briefs/ux-engineer.md` is no longer read: every thread of a round renders `engineer`, which takes `{{title}}`, `{{role}}` and `{{surfaces_line}}` beside `{{round_ask}}`, `{{round_partner}}` and `{{ux_ids}}`. Carry what a repo's own `ux-engineer.md` said into its `engineer.md`, or delete it. Rounds open when a box takes this release settle as they started. A round whose thread starts on another box over ssh gets that box's brief, so run this release on every box a registry row names as `host` or `ux_host` before starting rounds there.
 
 ## Needs from the operator
+- [k16] Once k16 runs this release, start a round on party-buzzer (`bmesh ideate party-buzzer`), which now runs as one thread with the UI/UX part, and read whether its UI/UX ideas held their place in the one ranked list (the risk this spec names).

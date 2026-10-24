@@ -3627,7 +3627,7 @@ glob = "docs/proposals/{id}-*.md"
 [models]
 lead = "claude-opus-5-5"                    # lead start's model when --model names none (build passes the spec's judge)
 lead_effort = "high"                        # low, medium, high, xhigh or max; "" = the runner's default
-proposer = "claude-opus-5-5"                # a proposal round's two threads
+proposer = "claude-opus-5-5"                # a proposal round's threads
 proposer_effort = "xhigh"
 [status]
 keep_done = "24h"                           # mesh-status hides nodes done longer than this; the daemon deletes stopped routine instances' nodes after it; "0" = never; days work: "30d"

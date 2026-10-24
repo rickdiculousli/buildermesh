@@ -93,7 +93,7 @@ func (a *app) cmdIdeate(args []string) error {
 	round := fs.Int("round", 0, "child form: the round number")
 	nextID := fs.Int("next-id", 0, "child form: the first spec id")
 	thread := fs.String("thread-id", "", "child form: the thread's UUID")
-	focus := fs.String("context", "", "the operator's words for both briefs (- reads stdin)")
+	focus := fs.String("context", "", "the operator's words for the round's briefs (- reads stdin)")
 	force := fs.Bool("force", false, "start a round while another of the repo's is still open, or five specs wait")
 	idea := fs.Bool("idea", false, "one idea, the operator's, in --context: start only the engineer, which writes that idea's spec")
 	pos, err := parse(fs, args)
