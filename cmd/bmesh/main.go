@@ -38,7 +38,7 @@ const (
 const usage = `usage: bmesh [--config FILE] [--node PATH] [--json] <command> [args]
 
 --config, --node and --json are accepted before or after the command.
-Every command but init, help, version, context, hosts --here and update --notice needs the box set up (the flag
+Every command but init, help, version, context, plugin, hosts --here and update --notice needs the box set up (the flag
 <config dir>/.setup-complete or a config.toml): a terminal run runs init first, a non-interactive one is
 refused (exit 3).
 
@@ -201,6 +201,12 @@ commands:
                                            the new binary; --before-swap: config check and asks only)
   update --notice                          print the daemon's behind-main notice (<state dir>/update.txt), and
                                            upgrade notes pending, if any
+  plugin                                   print the plugin dir (<state dir>/plugin), the bmesh that wrote it and
+                                           whether Claude Code reads it
+  plugin --install                         write the plugin this binary carries to its dir, then point Claude
+                                           Code at it: remove a buildermesh marketplace that reads another path,
+                                           add the dir as the buildermesh marketplace, install
+                                           buildermesh@buildermesh at user scope; print each change
   setup [--check] [--force]                run this worktree's [setup] (.bmesh/config.toml) when its installs aren't
                                            current, and mark them current; --check runs nothing and exits 1 when
                                            stale or missing; --force runs it anyway
@@ -353,7 +359,7 @@ func (a *app) dispatch(args []string) error {
 	// it crosses a nudge; context prints it itself, and the daemons and
 	// the session hook's commands run outside any turn.
 	a.measure = !here && !slices.Contains([]string{"context", "serve", "hub"}, cmd)
-	if cmd != "init" && cmd != "help" && cmd != "version" && cmd != "context" && !here {
+	if cmd != "init" && cmd != "help" && cmd != "version" && cmd != "context" && cmd != "plugin" && !here {
 		if err := a.ensureSetup(rest); err != nil {
 			return err
 		}
@@ -425,6 +431,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdVersion(rest)
 	case "update":
 		return a.cmdUpdate(rest)
+	case "plugin":
+		return a.cmdPlugin(rest)
 	case "config":
 		return a.cmdConfig(rest)
 	case "hosts":

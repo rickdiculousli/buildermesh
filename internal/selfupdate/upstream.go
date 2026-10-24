@@ -139,7 +139,7 @@ func Notice(dir, own, ref string, t Target, code []string) (string, error) {
 			ids = append(ids, l.ID)
 		}
 	}
-	tail := "; run bmesh update, then update the buildermesh plugin"
+	tail := "; run bmesh update"
 	if t.Tag != "" {
 		line := fmt.Sprintf("bmesh: %s is out (you run %s", t.Tag, Label(dir, own))
 		if len(ids) > 0 {

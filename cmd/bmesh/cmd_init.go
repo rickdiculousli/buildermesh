@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/plugin"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 	"github.com/rickdiculousli/buildermesh/internal/upgrade"
 )
@@ -193,6 +194,11 @@ func (a *app) cmdInit(args []string) error {
 	}
 	for _, w := range wrote {
 		fmt.Fprintf(a.stdout, "wrote %s\n", w)
+	}
+	// Sessions load the skills this binary carries; a box without Claude
+	// Code, or a failed install, is said and leaves the rest set up.
+	if err := a.installPlugin(plugin.Dir(config.StateDir())); err != nil {
+		fmt.Fprintf(a.stdout, "plugin not installed: %v\n", err)
 	}
 	printSettings(a.stdout, cfg, installedService())
 	fmt.Fprintf(a.stdout, "set up (%s). Next:\n", flag)

@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -30,7 +31,7 @@ type levelFixture struct {
 
 // levelSetup builds the fixture without starting the hosts loop; secure
 // makes the test host secure, with an approve key, and plug a plugin
-// marketplace.
+// marketplace Claude Code reads.
 func levelSetup(t *testing.T, secure bool) *levelFixture {
 	t.Helper()
 	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
@@ -79,6 +80,9 @@ func levelSetup(t *testing.T, secure bool) *levelFixture {
 	meshtest.Git(t, l.peer, "push", "-q", "origin", "HEAD:main")
 	meshtest.Git(t, root, "clone", "-q", l.origin, l.box)
 	f.d.Cfg.Repos = map[string]config.Repo{"plug": {Name: "plug", Path: l.box, Mode: "ship"}}
+	if secure {
+		t.Setenv("FAKE_CLAUDE_MARKETPLACES", fmt.Sprintf(`[{"name":"plug","source":"directory","path":%q}]`, l.box))
+	}
 	return l
 }
 

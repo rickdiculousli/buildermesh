@@ -112,7 +112,7 @@ func TestNoticeCountsAndNamesTheSpecs(t *testing.T) {
 		return line
 	}
 	// Code commits only: the ledger commits between them don't count.
-	want := "bmesh: 3 commits behind main (landed since: 030 A quieter map, 031 The notice, 099); run bmesh update, then update the buildermesh plugin"
+	want := "bmesh: 3 commits behind main (landed since: 030 A quieter map, 031 The notice, 099); run bmesh update"
 	if got := notice(at["base"], latest); got != want {
 		t.Fatalf("%q\nwant %q", got, want)
 	}
@@ -121,10 +121,10 @@ func TestNoticeCountsAndNamesTheSpecs(t *testing.T) {
 		t.Fatalf("12 hex: %q", got)
 	}
 	// A spec whose code the binary has is not named again.
-	if got := notice(at["c030"], latest); got != "bmesh: 2 commits behind main (landed since: 031 The notice, 099); run bmesh update, then update the buildermesh plugin" {
+	if got := notice(at["c030"], latest); got != "bmesh: 2 commits behind main (landed since: 031 The notice, 099); run bmesh update" {
 		t.Fatalf("from 030: %q", got)
 	}
-	if got := notice(at["fix"], latest); got != "bmesh: 1 commit behind main (landed since: 031 The notice, 099); run bmesh update, then update the buildermesh plugin" {
+	if got := notice(at["fix"], latest); got != "bmesh: 1 commit behind main (landed since: 031 The notice, 099); run bmesh update" {
 		t.Fatalf("one behind: %q", got)
 	}
 	// Current, ahead (a ledger commit past the code head), unknown, or off
@@ -142,10 +142,10 @@ func TestNoticeCountsAndNamesTheSpecs(t *testing.T) {
 	if err != nil || rel.Commit != at["c031"] || rel.Tag != "v0.2.0" || rel.NoTag {
 		t.Fatalf("release %+v %v", rel, err)
 	}
-	if got := notice(at["c030"], rel); got != "bmesh: v0.2.0 is out (you run v0.1.0: 031, 099); run bmesh update, then update the buildermesh plugin" {
+	if got := notice(at["c030"], rel); got != "bmesh: v0.2.0 is out (you run v0.1.0: 031, 099); run bmesh update" {
 		t.Fatalf("release: %q", got)
 	}
-	if got, want := notice(at["fix"], rel), "bmesh: v0.2.0 is out (you run v0.1.0+2 ("+at["fix"][:8]+"): 031, 099); run bmesh update, then update the buildermesh plugin"; got != want {
+	if got, want := notice(at["fix"], rel), "bmesh: v0.2.0 is out (you run v0.1.0+2 ("+at["fix"][:8]+"): 031, 099); run bmesh update"; got != want {
 		t.Fatalf("release past a tag: %q\nwant %q", got, want)
 	}
 	if got := notice(at["main"], rel); got != "" {
