@@ -37,8 +37,8 @@ MONO = 'ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",m
 # Panels: (key, x, w, title, command, active window in beats)
 P = [
     ("p", 12, 176, "Propose", "ideate app", (0.0, 2.6)),
-    ("c", 200, 168, "Choose", "choose-ideas", (2.6, 5.2)),
-    ("b", 380, 176, "Build", "build app 012", (5.2, 7.9)),
+    ("c", 200, 168, "Pick", "build app 012", (2.6, 5.2)),
+    ("b", 380, 176, "Build", "executor new", (5.2, 7.9)),
     ("v", 568, 208, "Verify", "routine", (7.9, 10.5)),
     ("l", 788, 160, "Land", "land", (10.5, 15.0)),
 ]
@@ -110,13 +110,13 @@ swap(1.9, slot(14, 212, 164, 26),
      '<text style="fill:var(--teal)" x="96" y="229.5" text-anchor="middle">app round 4 proposed</text>')
 A('</g></g>')
 
-# ---------------- Choose ----------------
+# ---------------- Pick ----------------
 panel_open(*P[1])
 A('<g transform="translate(8 0)">')
 BUBBLE = "M214 76H338A10 10 0 0 1 348 86V112A10 10 0 0 1 338 122H336L340 131L326 122H214A10 10 0 0 1 204 112V86A10 10 0 0 1 214 76Z"
-swap(3.1, '<path class="qs" d="%s"/><text class="tx gh" x="216" y="96">1 and 3 yes,</text><text class="tx gh" x="216" y="114">2 smaller, 4 no</text>' % BUBBLE,
-     '<path class="bb" d="%s"/><text class="tx" x="216" y="96">1 and 3 yes,</text><text class="tx" x="216" y="114">2 smaller, 4 no</text>' % BUBBLE)
-for i, (sid, word, col) in enumerate([("012", "accepted", "teal"), ("013", "adjusting", "amber"), ("014", "accepted", "teal"), ("017", "rejected", "red")]):
+swap(3.1, '<path class="qs" d="%s"/><text class="tx gh" x="216" y="96">1 yes, 2 no,</text><text class="tx gh" x="216" y="114">4 later</text>' % BUBBLE,
+     '<path class="bb" d="%s"/><text class="tx" x="216" y="96">1 yes, 2 no,</text><text class="tx" x="216" y="114">4 later</text>' % BUBBLE)
+for i, (sid, word, col) in enumerate([("012", "started", "blue"), ("013", "rejected", "red"), ("017", "later", "slate")]):
     y = 140 + i * 24
     A('<text class="mo mu" x="220" y="%g">%s</text>' % (y + 14.5, sid))
     swap(3.7 + i * 0.22, slot(252, y, 84), pill(252, y, 84, word, col))
@@ -229,8 +229,7 @@ X = 0.2  # beats a new status takes to fade in over the old one; the old one is 
 o = lambda v: "opacity:%d" % v
 CUT = 0.01
 A('<g class="an hid %s">%s</g>' % (kf([(0, o(1)), (3.8 + X, o(1)), (3.8 + X + CUT, o(0)), (SLIDE, o(0)), (SLIDE + CUT, o(1)), (L, o(1))]), cpill("proposed", "slate")))
-A('<g class="an hid %s">%s</g>' % (kf([(0, o(0)), (3.8, o(0)), (3.8 + X, o(1)), (5.8 + X, o(1)), (5.8 + X + CUT, o(0)), (L, o(0))]), cpill("accepted", "teal")))
-A('<g class="an hid %s">%s</g>' % (kf([(0, o(0)), (5.8, o(0)), (5.8 + X, o(1)), (12.38 + X, o(1)), (12.38 + X + CUT, o(0)), (L, o(0))]), cpill("building", "blue")))
+A('<g class="an hid %s">%s</g>' % (kf([(0, o(0)), (3.8, o(0)), (3.8 + X, o(1)), (12.38 + X, o(1)), (12.38 + X + CUT, o(0)), (L, o(0))]), cpill("building", "blue")))
 A('<g class="an %s">%s</g>' % (kf([(0, o(0)), (12.38, o(0)), (12.38 + X, o(1)), (SLIDE, o(1)), (SLIDE + CUT, o(0)), (L, o(0))]), cpill("done", "green")))
 A('</g></g>')
 
@@ -268,8 +267,8 @@ text{font-family:%s;font-size:13px;fill:var(--fg)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 """ % (SANS, MONO, DUR)
 
-svg = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 %d" width="960" height="%d" class="dark" role="img" aria-label="How a change goes from idea to main in buildermesh: propose, choose, build, verify, land, and back again">' % (H, H),
-       '<title>The buildermesh lifecycle: propose, choose, build, verify, land</title>',
+svg = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 %d" width="960" height="%d" class="dark" role="img" aria-label="How a change goes from idea to main in buildermesh: propose, pick, build, verify, land, and back again">' % (H, H),
+       '<title>The buildermesh lifecycle: propose, pick, build, verify, land</title>',
        '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--b1)"/><stop offset="1" style="stop-color:var(--b2)"/></linearGradient></defs>',
        '<style>' + style.strip() + "\n" + "\n".join(css_kf) + '</style>']
 svg += out

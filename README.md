@@ -138,7 +138,7 @@ Verified: review ok t:3f2a9c1e m:claude-opus-5-5 c:81d0b7a4; verify ok t:3f2a9c1
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/lifecycle-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/lifecycle-light.svg">
-    <img alt="One spec's way to main: propose, choose, build, verify, land" src="docs/assets/lifecycle-light.svg" width="100%">
+    <img alt="One spec's way to main: propose, pick, build, verify, land" src="docs/assets/lifecycle-light.svg" width="100%">
   </picture>
 </p>
 
