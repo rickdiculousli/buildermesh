@@ -383,7 +383,11 @@ func TestFakeLead(t *testing.T) {
 		}
 	}
 	expect("started shop-012", 0, "started", "--text", "012")
-	// The stop comes first, whatever the branch reads.
+	// The stop comes first: the operator wrote while the lead readied.
+	expect("bmesh: refused: 1 unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh ready again", 3, "ready", "--text", "x")
+	expect("operator: go ahead and land it as it is", 0, "inbox")
+	expect("inbox: empty", 0, "inbox")
+	// Then the branch is read as it is.
 	expect("bmesh: refused: spec 012 reads proposed on bmesh/shop-012; a spec lands with its code reading done: "+
 		"run bmesh spec set --id 012 --status done, commit it, then run bmesh ready again", 3, "ready", "--text", "x")
 	expect("012  done", 0, "spec", "set", "--id", "012", "--status", "done")

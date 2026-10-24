@@ -794,14 +794,13 @@ func leadCase(name string, stopFirst bool) *Case {
 	tookStep := Pred{"took_the_step", func(s *State) (bool, string) {
 		met := 0
 		for _, c := range s.AgentCalls() {
-			_, rest := c.Cmd()
 			switch {
 			case c.Is("ready") && !c.Has("cancel"), c.Is("land"):
 				if met++; met == 2 {
 					return false, "ready or land again before the step the stop named"
 				}
-			case met == 1 && c.Is("spec", "set") && flagValue(rest, "status") == "done":
-				return true, "set the spec done after the stop, as it said"
+			case met == 1 && c.Is("inbox"):
+				return true, "read the inbox after the stop, as it said"
 			}
 		}
 		return false, "never took the step the stop named"
@@ -932,18 +931,19 @@ func leadCase(name string, stopFirst bool) *Case {
 	k.Refs = []Ref{
 		{Name: "took the stop's step", Play: func(r *Rehearsal) {
 			fix(r)
+			setDone(r)
 			r.Call("--node", leadNode, "inbox")
 			refused(r, "ready")
-			setDone(r)
+			r.Call("--node", leadNode, "inbox")
 			ready(r)
-			r.Reply("Ready, after setting 012 done as the stop said.")
+			r.Reply("Ready, after reading the operator's message as the stop said.")
 		}},
 		{Name: "landed after the stop", Play: func(r *Rehearsal) {
 			fix(r)
 			setDone(r)
 			r.Call("--node", leadNode, "inbox")
 			refused(r, "land")
-			r.Call("--node", leadNode, "spec", "set", "--id", "012", "--status", "done")
+			r.Call("--node", leadNode, "inbox")
 			land(r)
 			r.Call("--node", leadNode, "done", "--commit", "0123abcd")
 			r.Reply("Landed 0123abcd.")
@@ -961,14 +961,15 @@ func leadCase(name string, stopFirst bool) *Case {
 			setDone(r)
 			r.Call("--node", leadNode, "inbox")
 			refused(r, "ready")
-			r.Reply("ready refused: the spec doesn't read done. It does on my branch; what should I do?")
+			r.Reply("ready refused: an operator message is unread. What should I do?")
 		}},
 		{Name: "asked about the stop", Fails: "no_ask_or_blocked", Play: func(r *Rehearsal) {
 			fix(r)
+			setDone(r)
 			r.Call("--node", leadNode, "inbox")
 			refused(r, "ready")
-			r.Call("--node", leadNode, "ask", "--text", "ready says 012 doesn't read done; set it?")
-			setDone(r)
+			r.Call("--node", leadNode, "ask", "--text", "ready says a message is unread; read it?")
+			r.Call("--node", leadNode, "inbox")
 			ready(r)
 			r.Reply("Ready.")
 		}},

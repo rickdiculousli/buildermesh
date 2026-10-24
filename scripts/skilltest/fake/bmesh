@@ -315,11 +315,15 @@ leadcheck() {
 		echo "bmesh: refused: no spec $id in $top; a spec lands with its code: commit it on this branch (or rebase onto origin/main, if it landed there after you branched), then run bmesh $what again" >&2
 		exit 3
 	fi
-	st=$(specstatus "$f")
+	# lead-stop: the operator writes while the lead readies, so its first
+	# ready or land meets the binary's stop for unread operator mail.
 	if [ "$stop_first" = 1 ] && [ ! -f "$state/stopped" ]; then
 		: >"$state/stopped"
-		[ "$st" != done ] || st=proposed
+		echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) operator: go ahead and land it as it is" >"$state/mail"
+		echo "bmesh: refused: 1 unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh $what again" >&2
+		exit 3
 	fi
+	st=$(specstatus "$f")
 	if [ "$st" != done ]; then
 		echo "bmesh: refused: spec $id reads $st on $b; a spec lands with its code reading done: run bmesh spec set --id $id --status done, commit it, then run bmesh $what again" >&2
 		exit 3
@@ -529,7 +533,14 @@ thread-status)
 	fi
 	;;
 watch) out watch ;;
-inbox) out inbox || { [ $json = 1 ] || echo "inbox: empty"; } ;;
+inbox)
+	if [ -f "$state/mail" ]; then
+		cat "$state/mail"
+		rm -f "$state/mail"
+	else
+		out inbox || { [ $json = 1 ] || echo "inbox: empty"; }
+	fi
+	;;
 spec) fake_spec "$@" ;;
 routine) fake_routine "$@" ;;
 ideate) fake_ideate "$@" ;;
