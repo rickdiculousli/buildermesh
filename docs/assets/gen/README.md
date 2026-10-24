@@ -94,4 +94,4 @@ Render frames with
 (writes `<outprefix>-<t>.png`; frames freeze CSS animations at t seconds) and
 look at the PNGs with the Read tool. Check: dark and light; mid-animation
 frames; the reduced-motion frame; nothing overlaps, clips or runs off a box.
-Write frames outside the repo, e.g. under `~/.cache/bmesh-scratch/`. `frames.mjs` needs Playwright's headless Chromium (`npx playwright install chromium-headless-shell`); its path is at the top of the script.
+Write frames outside the repo, e.g. under `~/.cache/bmesh-scratch/`. `frames.mjs` needs Playwright's headless Chromium (`npx playwright install chromium-headless-shell`); the script finds the newest one in Playwright's cache on macOS or Linux (or `PLAYWRIGHT_BROWSERS_PATH`).

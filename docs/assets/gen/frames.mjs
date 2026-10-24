@@ -2,11 +2,15 @@
 // Renders an SVG (as an <img>, as GitHub shows it) in headless Chromium at
 // each time t (seconds) into <outprefix>-<t>.png, freezing CSS animations.
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 const [svg, out, w, scheme, times, reduce] = process.argv.slice(2);
-const chrome = join(process.env.HOME, "Library/Caches/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-mac-arm64/chrome-headless-shell");
+// Playwright's newest headless shell, from its cache on macOS or Linux.
+const cache = process.env.PLAYWRIGHT_BROWSERS_PATH || join(process.env.HOME, process.platform === "darwin" ? "Library/Caches/ms-playwright" : ".cache/ms-playwright");
+const shells = existsSync(cache) ? readdirSync(cache).filter((d) => d.startsWith("chromium_headless_shell-")).sort((a, b) => Number(b.split("-")[1]) - Number(a.split("-")[1])) : [];
+const chrome = shells.flatMap((d) => ["mac-arm64", "mac-x64", "linux64", "linux-arm64"].map((p) => join(cache, d, `chrome-headless-shell-${p}`, "chrome-headless-shell"))).find(existsSync);
+if (!chrome) { console.error(`no headless Chromium under ${cache}: npx playwright install chromium-headless-shell`); process.exit(1); }
 const profile = mkdtempSync(join(process.env.HOME, ".cache/bmesh-scratch/tmp/fr-"));
 const proc = spawn(chrome, ["--headless", "--no-sandbox", "--hide-scrollbars", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore" });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
