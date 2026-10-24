@@ -261,6 +261,10 @@ func TestFake(t *testing.T) {
 	expect("013  proposed", 0, "spec", "list", "--status", "proposed")
 	expect("is not one of", 2, "spec", "list", "--status", "bogus")
 	expect("013  rejected   S   feature", 0, "spec", "set", "--id", "13", "--status", "rejected")
+	if out := expect("landed ", 0, "spec", "set", "--id", "13,14", "--status", "later", "--land"); !strings.Contains(out, "014  later") || !strings.HasSuffix(out, " on main: Specs 013, 014: later\n") {
+		t.Errorf("spec set --land:\n%s", out)
+	}
+	expect("no spec 099", 1, "spec", "set", "--id", "13,99", "--status", "later")
 	expect("PATH  ROLE  STATE  SINCE  RUNNER  UNREAD", 0, "mesh-status")
 	expect("[]", 0, "mesh-status", "--json")
 	expect("idle", 0, "thread-status", "shop-012")
@@ -286,7 +290,8 @@ func TestFake(t *testing.T) {
 	expect("--dry-run tags nothing", 0, "release", "shop", "--dry-run")
 	expect("sent ", 0, "--node", "operator", "send", "shop-012", "hi")
 	expect("stopped shop-012", 0, "--node", "operator", "node", "stop", "shop-012", "--text", "why")
-	expect("Review: 1 yes", 0, "choose-ideas", "shop", "1 yes")
+	// This tree's manual has no choose-ideas, so its arm's fake refuses it as the binary does.
+	expect("unknown command \"choose-ideas\" (run `bmesh help`)", 2, "choose-ideas", "shop", "1 yes")
 	expect("unknown command \"frobnicate\" (run `bmesh help`)", 2, "frobnicate")
 	expect("unknown command \"frobnicate\"", 2, "--node", "operator", "frobnicate")
 

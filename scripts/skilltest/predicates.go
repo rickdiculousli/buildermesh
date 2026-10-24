@@ -322,9 +322,11 @@ func (p pitchIDs) moves(s *State) (status map[string]string, built map[string]bo
 				status[id] = v
 			}
 		case c.Is("spec", "set"):
-			id, st := flagValue(rest, "id"), flagValue(rest, "status")
-			if numberRE.MatchString(id) && st != "" {
-				status[fmt.Sprintf("%03d", mustAtoi(id))] = st
+			st := flagValue(rest, "status")
+			for _, id := range strings.Split(flagValue(rest, "id"), ",") {
+				if numberRE.MatchString(id) && st != "" {
+					status[fmt.Sprintf("%03d", mustAtoi(id))] = st
+				}
 			}
 		case cmd == "build" && c.Has("accepted"):
 			for id, st := range status {

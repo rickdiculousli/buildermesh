@@ -581,6 +581,11 @@ func pickCase() *Case {
 				r.Call("spec", "set", "--id", "013", "--status", "rejected", "--field", "reason=it duplicates the --verbose flag")
 				r.Reply("Building 012 and 014; 013 is rejected: it duplicates --verbose.")
 			}},
+			{Name: "built by id, the decline landed by spec set", Play: func(r *Rehearsal) {
+				r.Call("build", "shop", "012", "014")
+				r.Call("spec", "set", "--repo", "shop", "--id", "013", "--status", "rejected", "--field", "reason=it duplicates the --verbose flag", "--land")
+				r.Reply("Building 012 and 014; 013 is declined on main: it duplicates --verbose.")
+			}},
 			{Name: "flags, one build each", Play: func(r *Rehearsal) {
 				r.Call("choose-ideas", "shop", "--accept", "012,014", "--reject", "013=it duplicates the --verbose flag")
 				r.Call("build", "shop", "012")

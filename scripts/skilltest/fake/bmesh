@@ -229,14 +229,28 @@ fake_spec() {
 		;;
 	template) out spec-template ;;
 	set)
-		id=$(pad "$(opt id "$@")")
+		ids=$(opt id "$@" | tr ',' ' ')
 		st=$(opt status "$@")
-		row=$(grep "^$id " "$canned/spec-list")
-		if [ -z "$row" ]; then
-			echo "bmesh: no spec $id in $(repodir "$(opt repo "$@")")" >&2
-			exit 1
+		for id in $ids; do
+			id=$(pad "$id")
+			if ! grep -q "^$id " "$canned/spec-list"; then
+				echo "bmesh: no spec $id in $(repodir "$(opt repo "$@")")" >&2
+				exit 1
+			fi
+		done
+		landed=
+		for id in $ids; do
+			id=$(pad "$id")
+			row=$(grep "^$id " "$canned/spec-list")
+			printf '%s  %-9s  %s\n' "$id" "$st" "$(printf '%s' "$row" | cut -c17-)"
+			landed=${landed:+$landed, }$id
+		done
+		if has land "$@"; then
+			case $landed in
+			*,*) echo "landed $(fakesha | cut -c1-8) on main: Specs $landed: $st" ;;
+			*) echo "landed $(fakesha | cut -c1-8) on main: Spec $landed: $st" ;;
+			esac
 		fi
-		printf '%s  %-9s  %s\n' "$id" "$st" "$(printf '%s' "$row" | cut -c17-)"
 		;;
 	esac
 }
