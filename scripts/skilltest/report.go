@@ -61,7 +61,7 @@ func scoreCell(dir string, k *Case) (Row, error) {
 func score(s *State, k *Case) Row {
 	c := s.Cell
 	r := Row{Case: c.Case, Arm: c.Arm, Run: c.Run, Steers: c.Steers, OperatorTurns: len(c.Turns), Error: c.Error,
-		Commits: len(s.NewCommits()), Commands: []string{}, Skills: s.Skills()}
+		Commits: len(s.NewCommits()), Commands: []string{}, Skills: append([]string{}, s.Skills()...)}
 	r.Pass = true
 	for _, p := range k.Expect {
 		ok, why := p.Check(s)
