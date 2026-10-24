@@ -55,7 +55,7 @@ func TestIdeateAndBuildTakeACapitalisedName(t *testing.T) {
 	if n, ok, _ := mesh.GetNode(ctx, c, lead.Path); !ok || n.Repo != name {
 		t.Fatalf("lead node %+v", n)
 	}
-	for _, p := range []string{round.Path, round.Eng.Path, round.UX.Path, lead.Path, lead.Family} {
+	for _, p := range []string{round.Path, round.Eng.Path, lead.Path, lead.Family} {
 		if _, err := mesh.ParsePath(p); err != nil {
 			t.Errorf("%s: %v", p, err)
 		}

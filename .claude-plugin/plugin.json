@@ -1,7 +1,7 @@
 {
   "name": "buildermesh",
   "version": "0.8.0",
-  "description": "The operator skills (work: one way in for whatever the operator brings about a repo, from a question or a fix made in the chat to a round, the picks it starts as leads, what's building and a release; scaffold; ponytail-review, ponytail's review of a change; sync and prune across boxes) and the lead, executor, fix, ideate-engineer and ideate-ux skills for nodes on a buildermesh mesh: delegation shape, checkpoints, branch hand-back, the verified line and the proposal round, over the bmesh CLI; and a session hook that says which box a session runs on (bmesh hosts --here) and when this box's bmesh is behind main (bmesh update --notice).",
+  "description": "The operator skills (work: one way in for whatever the operator brings about a repo, from a question or a fix made in the chat to a round, the picks it starts as leads, what's building and a release; scaffold; ponytail-review, ponytail's review of a change; sync and prune across boxes) and the lead, executor, fix and ideate-engineer skills for nodes on a buildermesh mesh: delegation shape, checkpoints, branch hand-back, the verified line and the proposal round, over the bmesh CLI; and a session hook that says which box a session runs on (bmesh hosts --here) and when this box's bmesh is behind main (bmesh update --notice).",
   "author": {
     "name": "Rick Li"
   },

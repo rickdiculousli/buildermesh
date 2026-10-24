@@ -14,18 +14,22 @@ var pb = config.Repo{Name: "pb", Path: "x/pb", Mode: "ship", Remote: "example/pb
 	Surfaces: []string{"phone / at 390x844"}}
 
 func proposalValues(nextID string) map[string]string {
-	v := RowValues(pb, "/home/x/repos/pb")
+	return partValues(nextID, RoundAll, pb)
+}
+
+func partValues(nextID string, part RoundPart, r config.Repo) map[string]string {
+	v := RowValues(r, "/home/x/repos/pb")
 	for k, s := range map[string]string{"date": "2026-10-15", "next_id": nextID, "thread_id": "5d0c7a1e-0000-4000-8000-000000000001",
 		"node": "pb-round-1.eng", "round": "pb-round-1", "round_n": "1", "worktree": "/home/x/.bmesh/worktrees/pb/pb-round-1-eng",
 		"branch": "pb-round-1-eng", "operator_context": ""} {
 		v[k] = s
 	}
-	maps.Copy(v, RoundValues(false))
+	maps.Copy(v, RoundValues(part, r))
 	return v
 }
 
 func TestNames(t *testing.T) {
-	if got := strings.Join(Names(), ","); got != "build,engineer,fix,half-pager,ux-engineer" {
+	if got := strings.Join(Names(), ","); got != "build,engineer,fix,half-pager" {
 		t.Fatal(got)
 	}
 }
@@ -47,19 +51,67 @@ func TestEngineerBriefCarriesTheRepoFacts(t *testing.T) {
 	}
 }
 
-func TestUXBriefNamesSurfacesAndSkill(t *testing.T) {
-	out, err := Render("", "ux-engineer", proposalValues("012"))
+// The round's one thread screenshots the row's surfaces and ranks both
+// lenses in one list; a row without surfaces gets a brief that never
+// mentions them.
+func TestRoundBriefWithAndWithoutSurfaces(t *testing.T) {
+	out, err := Render("", "engineer", proposalValues("012"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range []string{"phone / at 390x844", "`buildermesh:ideate-ux`", "number yours from 012", "`lens: ux`", "screenshot"} {
+	for _, s := range []string{"# Engineer: proposal round 1", "- Surfaces to screenshot, each at its stated viewport: phone / at 390x844.",
+		"in how its app looks and feels", "three to six ranked ideas in one list", "this round's only thread", "`buildermesh:ideate-engineer`"} {
 		if !strings.Contains(out, s) {
 			t.Errorf("missing %q", s)
+		}
+	}
+	bare := config.Repo{Name: "shop", Verify: []string{"go test ./..."}}
+	out, err = Render("", "engineer", partValues("012", RoundAll, bare))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "three to six ranked ideas in one list") {
+		t.Errorf("bare brief:\n%s", out)
+	}
+	for _, s := range []string{"urface", "creenshot", "UI/UX", "looks and feels", "a gap is expected", "{{"} {
+		if strings.Contains(out, s) {
+			t.Errorf("bare brief has %q", s)
 		}
 	}
 	none := RowValues(config.Repo{Name: "bare"}, "/r")
 	if !strings.Contains(none["surfaces"], "none are listed") || !strings.Contains(none["verify"], "none are listed") {
 		t.Fatal(none)
+	}
+}
+
+// A round split across two boxes: the engineer leaves the surfaces to the
+// UI/UX engineer on ux_host, which runs only the UI/UX part.
+func TestRoundBriefsOfASplitRound(t *testing.T) {
+	split := pb
+	split.UXHost = "mac"
+	eng, err := Render("", "engineer", partValues("012", RoundEng, split))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"# Engineer:", "improve this repo's code and bring back three to five", "The UI/UX engineer runs beside you on `mac`",
+		"The UI/UX engineer has a block of its own, so a gap is expected."} {
+		if !strings.Contains(eng, s) {
+			t.Errorf("eng brief lacks %q", s)
+		}
+	}
+	if strings.Contains(eng, "Surfaces to screenshot") {
+		t.Errorf("eng brief lists surfaces")
+	}
+	ux, err := Render("", "engineer", partValues("017", RoundUX, split))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"# UI/UX engineer: proposal round 1", "You are the UI/UX engineer on `pb`", "You run only the UI/UX part of the method",
+		"- Surfaces to screenshot, each at its stated viewport: phone / at 390x844.", "number yours from 017", "The engineer has a block of its own",
+		"`buildermesh:ideate-engineer`"} {
+		if !strings.Contains(ux, s) {
+			t.Errorf("ux brief lacks %q", s)
+		}
 	}
 }
 
@@ -112,8 +164,9 @@ func TestBriefsCarryTheOperatorsFocus(t *testing.T) {
 		t.Fatal(plain, err)
 	}
 	v["operator_context"] = OperatorContext("routines: reuse and retirement\nthe map's flow\n")
-	for _, name := range []string{"engineer", "ux-engineer"} {
-		out, err := Render("", name, v)
+	for _, name := range []RoundPart{RoundAll, RoundUX} {
+		maps.Copy(v, RoundValues(name, pb))
+		out, err := Render("", "engineer", v)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -127,8 +180,8 @@ func TestBriefsCarryTheOperatorsFocus(t *testing.T) {
 // A round pitches an XS or S idea as a line with no spec, and writes a
 // spec only for M or larger.
 func TestRoundBriefsPitchSmallIdeasAsLines(t *testing.T) {
-	for _, name := range []string{"engineer", "ux-engineer"} {
-		out, err := Render("", name, proposalValues("007"))
+	for _, name := range []RoundPart{RoundAll, RoundEng, RoundUX, RoundIdea} {
+		out, err := Render("", "engineer", partValues("007", name, pb))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -163,8 +216,9 @@ func TestRepoOverridesATemplate(t *testing.T) {
 	if err != nil || out != "mine for pb x\n" {
 		t.Fatal(out, err)
 	}
-	if other, err := Render(repo, "ux-engineer", v); err != nil || !strings.HasPrefix(other, "# UI/UX engineer") {
-		t.Fatal(err)
+	if other, err := Render(repo, "build", BuildValues(pb, repo, "spec", "docs/proposals/001-a.md", "001", "pb-001", "2026-10-24")); err != nil ||
+		!strings.HasPrefix(other, "# Build") {
+		t.Fatal(other, err)
 	}
 }
 

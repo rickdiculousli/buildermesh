@@ -4,22 +4,26 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
 
-// A round is a node <repo>-round-<N> with two children, eng and ux, each
-// an engineer thread. It settles when both are done (done, with the merged
-// pitch) or one is blocked (blocked); the daemon writes the round's state
-// and publishes the matching event, which the push loop delivers.
+// A round is a node <repo>-round-<N> with one child, eng, an engineer
+// thread, or two, eng and a ux thread on another box (the node's
+// Children). It settles when its children are done (done, with the pitch)
+// or one is blocked (blocked); the daemon writes the round's state and
+// publishes the matching event, which the push loop delivers.
 
 // SettleRound is the round state machine: the state and text a round
 // takes from its children's states, or ok false while it is still open.
-// Done needs both children done; its text is the merged ranked pitch, the
+// Done needs both children done; its text is the ranked pitch, the
 // engineer's list first, then the UI/UX engineer's. One child blocked
 // blocks the round, naming it; the other's pitch follows when it is done.
+// A round of one child is weighed with ux read as done with no pitch
+// (RoundStates), so its pitch is the engineer's list as reported.
 func SettleRound(eng, ux mesh.State) (state, text string, ok bool) {
 	for _, c := range []struct {
 		name string
@@ -47,18 +51,31 @@ func SettleRound(eng, ux mesh.State) (state, text string, ok bool) {
 }
 
 // RoundStates are the children's states SettleRound weighs for round n. A
-// child the round never started (an idea round has only eng) reads as done
-// with nothing to pitch.
+// child the round never started (a round of one thread has only eng) reads
+// as done with nothing to pitch.
 func RoundStates(n mesh.Node, states map[string]mesh.State) (eng, ux mesh.State) {
 	eng, ux = states[n.Path+".eng"], states[n.Path+".ux"]
-	if n.Idea {
+	if !slices.Contains(RoundChildren(n), "ux") {
 		ux = mesh.State{State: "done"}
 	}
 	return eng, ux
 }
 
-// Pitch merges the two children's ranked lists: the engineer's lines, then
-// the UI/UX engineer's, each as reported.
+// RoundChildren are the threads round n started: its Children, or, on a
+// round from before they were recorded, eng alone for an idea round and
+// eng and ux for any other.
+func RoundChildren(n mesh.Node) []string {
+	switch {
+	case len(n.Children) > 0:
+		return n.Children
+	case n.Idea:
+		return []string{"eng"}
+	}
+	return []string{"eng", "ux"}
+}
+
+// Pitch joins the children's ranked lists: the engineer's lines, then the
+// UI/UX engineer's, each as reported.
 func Pitch(eng, ux string) string {
 	var parts []string
 	for _, s := range []string{eng, ux} {
