@@ -183,16 +183,22 @@ follow() {
 # onmain MSG CMD [ARGS...]: a landing the fake makes for a ledger write or
 # for another node, as the binary or that node makes it: CMD run in a fresh
 # clone of origin's main, committed as MSG and pushed there, the main
-# checkout following. It prints the commit's sha8 and keeps the commit in
-# state/pushed, which scoring leaves out of the session's work.
+# checkout following, @TREE@ in MSG the commit's tree8. It prints the
+# commit's sha8 and keeps the commit in
+# state/pushed, which scoring leaves out of the session's work; an edit
+# that changes nothing lands nothing and prints nothing, so a second run
+# is safe.
 onmain() {
 	msg=$1
 	shift
 	clone=$state/clone
 	rm -rf "$clone"
 	ok=1
-	if git clone -q "$cell/origin.git" "$clone" 2>/dev/null && (cd "$clone" && "$@") && git -C "$clone" add -A &&
-		git -C "$clone" commit -qm "$msg" && git -C "$clone" push -q origin HEAD:main 2>/dev/null; then
+	if ! git clone -q "$cell/origin.git" "$clone" 2>/dev/null || ! (cd "$clone" && "$@") || ! git -C "$clone" add -A; then
+		:
+	elif git -C "$clone" diff --cached --quiet; then
+		ok=0
+	elif git -C "$clone" commit -qm "$(printf '%s' "$msg" | sed "s/@TREE@/$(git -C "$clone" write-tree | cut -c1-8)/g")" && git -C "$clone" push -q origin HEAD:main 2>/dev/null; then
 		git -C "$clone" rev-parse HEAD >>"$state/pushed"
 		sha8 HEAD "$clone"
 		follow
@@ -258,6 +264,16 @@ if ! grep -qxF -- "$cmd" "$cell/commands.txt"; then
 	echo "bmesh: unknown command \"$cmd\" (run \`bmesh help\`)" >&2
 	exit 2
 fi
+# -h or --help after a command is the binary's usage error: it runs nothing.
+for a in "$@"; do
+	case $a in
+	--) break ;;
+	-h | -help | --help)
+		echo "bmesh: usage: bmesh $cmd (see \`bmesh help\`)" >&2
+		exit 2
+		;;
+	esac
+done
 
 fake_repos() {
 	case ${1-} in
@@ -351,7 +367,7 @@ fake_spec() {
 				echo "bmesh: refused: push main: origin's main moved; run bmesh spec set --land again" >&2
 				exit 3
 			fi
-			echo "landed $s on main: $msg"
+			if [ -n "$s" ]; then echo "landed $s on main: $msg"; else echo "nothing to land"; fi
 		fi
 		;;
 	esac
@@ -779,25 +795,39 @@ fake_feedback_drain() {
 # fake_watch: the case's canned watch. When the case cans watch-land (spec
 # ids), what it watches lands first, once: each id with a spec on origin's
 # main is a lead's, landed as its land does, a commit setting the spec done
+# with its trailers
 # whose sha8 stands in for @LANDED@ on that id's done line; the ids with
 # none are a round's, its pitch lines landed as proposed specs in one
-# commit, as the round's thread lands them.
+# commit, as the round's thread lands them. Each landed id is kept in
+# state/watch-landed with its commit, so a watch after one that failed
+# lands only what is left.
 fake_watch() {
-	if [ ! -f "$state/watch-landed" ] && [ -f "$canned/watch-land" ]; then
-		: >"$state/watch-landed"
+	if [ ! -f "$state/watch-done" ] && [ -f "$canned/watch-land" ]; then
 		new=
+		all=1
 		for id in $(cat "$canned/watch-land"); do
 			id=$(pad "$id")
+			grep -q "^$id " "$state/watch-landed" 2>/dev/null && continue
 			f=$(git --git-dir "$cell/origin.git" ls-tree --name-only main -- docs/proposals/ | grep "/$id-[^/]*\.md$" | sed -n 1p)
-			if [ -n "$f" ]; then
-				s=$(onmain "$(spectitle "$id")
-
-Spec: $id" setfield "$f" status done) && echo "$id $s" >>"$state/watch-landed"
-			else
+			if [ -z "$f" ]; then
 				new=${new:+$new, }$id
+			elif s=$(onmain "$(spectitle "$id")
+
+Spec: $id
+Verified: verify ok t:@TREE@" setfield "$f" status done) && [ -n "$s" ]; then
+				echo "$id $s" >>"$state/watch-landed"
+			else
+				all=0
 			fi
 		done
-		[ -z "$new" ] || onmain "Proposals $new: proposed" proposespecs >/dev/null
+		if [ -z "$new" ]; then
+			:
+		elif s=$(onmain "Proposals $new: proposed" proposespecs) && [ -n "$s" ]; then
+			for id in $(echo "$new" | tr ',' ' '); do echo "$id $s" >>"$state/watch-landed"; done
+		else
+			all=0
+		fi
+		[ "$all" = 0 ] || : >"$state/watch-done"
 	fi
 	# An arm whose manual has no next: on watch-done gets the bare line.
 	if saysnext watch; then out watch; else out watch | sed 's/^watch-done; next: .*/watch-done/'; fi | {
@@ -842,7 +872,12 @@ fake_choose_ideas() {
 		echo "bmesh: refused: push main: origin's main moved; run bmesh choose-ideas again" >&2
 		exit 3
 	fi
-	printf '%s\n' "$text" | sed "s/^landed [0-9a-f]* on main: /landed $s on main: /"
+	if [ -n "$s" ]; then
+		printf '%s\n' "$text" | sed "s/^landed [0-9a-f]* on main: /landed $s on main: /"
+	else
+		printf '%s\n' "$text" | sed '/^landed [0-9a-f]* on main: /d'
+		echo "nothing to land"
+	fi
 }
 
 # choose: choose-ideas' edit, in a clone of origin's main.

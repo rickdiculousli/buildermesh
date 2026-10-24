@@ -380,6 +380,12 @@ func TestFakeLandsWhatItSays(t *testing.T) {
 		if f := fields(t, dir, "main", f013); f["status"] != "rejected" || f["reason"] != "it duplicates the --verbose flag" || f["kind"] != "feature" {
 			t.Errorf("013 on origin's main: %v", f)
 		}
+		// A second run changes nothing, so it lands nothing, as the binary.
+		head := origin(t, dir, "rev-parse", "main")
+		if code, out, errs := fake(t, dir, sandbox, "spec", "set", "--repo", "shop", "--id", "13", "--status", "rejected", "--land"); code != 0 ||
+			!strings.HasSuffix(out, "\nnothing to land\n") || origin(t, dir, "rev-parse", "main") != head {
+			t.Errorf("spec set --land again: exit %d, %q%q, want nothing to land and origin's main where it was", code, out, errs)
+		}
 	})
 
 	t.Run("choose-ideas", func(t *testing.T) {
@@ -396,6 +402,11 @@ func TestFakeLandsWhatItSays(t *testing.T) {
 	})
 
 	t.Run("watch of leads", func(t *testing.T) {
+		// --help runs nothing, as the binary's usage error: no landing.
+		if code, _, errs := fake(t, dir, sandbox, "watch", "--help"); code != 2 || errs != "bmesh: usage: bmesh watch (see `bmesh help`)\n" ||
+			origin(t, dir, "log", "-1", "--format=%s", "main") != "Review: 012 accepted, 013 rejected, 014 accepted" {
+			t.Errorf("watch --help: exit %d, %q, or it landed", code, errs)
+		}
 		_, out, _ := fake(t, dir, sandbox, "watch", "--nodes", "shop-012,shop-014", "--timeout", "30m")
 		done := regexp.MustCompile(`(?m) shop-(\d{3}) done (\d{3}) landed at ([0-9a-f]{8})$`).FindAllStringSubmatch(out, -1)
 		if len(done) != 2 || done[0][3] == done[1][3] {
@@ -405,6 +416,10 @@ func TestFakeLandsWhatItSays(t *testing.T) {
 			f := map[string]string{"012": f012, "014": f014}[d[2]]
 			if got := fields(t, dir, d[3], f)["status"]; got != "done" {
 				t.Errorf("%s reads %s at %s, the commit its done line names", f, got, d[3])
+			}
+			tree := origin(t, dir, "rev-parse", d[3]+"^{tree}")
+			if body := origin(t, dir, "log", "-1", "--format=%b", d[3]); body != "Spec: "+d[2]+"\nVerified: verify ok t:"+tree[:8] {
+				t.Errorf("%s's message ends %q, want a lead's trailers", d[3], body)
 			}
 			if _, err := git(dir, gitEnv(dir), "--git-dir", filepath.Join(dir, originDir), "merge-base", "--is-ancestor", d[3], "main"); err != nil {
 				t.Errorf("%s, %s's done commit, is not on origin's main", d[3], d[2])

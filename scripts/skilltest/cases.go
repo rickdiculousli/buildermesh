@@ -861,6 +861,12 @@ func pickCase() *Case {
 				r.Call("build", "--accepted", "shop")
 				r.Reply("Building all three.")
 			}},
+			{Name: "accepted all, the fake's decline on main", Fails: "declined_013", Play: func(r *Rehearsal) {
+				r.Call("choose-ideas", "shop", "all yes")
+				chose(r)
+				r.Call("build", "shop", "012", "014")
+				r.Reply("Starting leads for 012 and 014.")
+			}},
 			{Name: "a ledger commit", Fails: "no_other_commit", Play: func(r *Rehearsal) {
 				r.Edit("docs/proposals/012-orders-numbered-under-a-lock.md", "status: proposed", "status: accepted")
 				r.Commit("Accept 012")

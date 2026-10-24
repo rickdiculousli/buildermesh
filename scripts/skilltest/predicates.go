@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -466,14 +467,19 @@ func notBuilt(p pitchIDs, id string) Pred {
 var statusRE = regexp.MustCompile(`(?m)^status:\s*(\S+)`)
 
 // declined is the spec rejected: by a choose-ideas reply or a spec set, or
-// in its file on origin's main.
+// in its file on origin's main by a commit of the session's (the fake's
+// choose-ideas lands its canned moves whatever the call said).
 func declined(p pitchIDs, id string) Pred {
 	return Pred{"declined_" + id, func(s *State) (bool, string) {
 		st, _ := p.moves(s)
 		if st[id] == "rejected" {
 			return true, id + " rejected by the session's bmesh calls"
 		}
+		changed := s.Changed()
 		for _, f := range s.files("docs/proposals/" + id + "-") {
+			if !slices.Contains(changed, f) {
+				continue
+			}
 			if m := statusRE.FindStringSubmatch(s.Show(f)); m != nil && m[1] == "rejected" {
 				return true, f + " reads rejected on origin's main"
 			}
