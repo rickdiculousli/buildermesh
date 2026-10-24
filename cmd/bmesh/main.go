@@ -38,7 +38,7 @@ const (
 const usage = `usage: bmesh [--config FILE] [--node PATH] [--json] <command> [args]
 
 --config, --node and --json are accepted before or after the command.
-Every command but init, help, version, hosts --here and update --notice needs the box set up (the flag
+Every command but init, help, version, context, hosts --here and update --notice needs the box set up (the flag
 <config dir>/.setup-complete or a config.toml): a terminal run runs init first, a non-interactive one is
 refused (exit 3).
 
@@ -92,6 +92,9 @@ commands:
                                            with the reason), then every other box that accepts prune; a dry run
                                            unless --apply
   whoami                                   print this node's path
+  context [--json]                         this session's context and what to do about it: context 312k (claude
+                                           session ec03a02c): <advice>; every other command ends with one stderr
+                                           line when the context crosses a [context] nudge it hasn't heard
   started|progress|blocked|ask [--text T]  report an event; print <event> <path>
   done --commit SHA [--text T]             report done (a lead's commit must be its landing on main, its trailers
                                            matched by results); print
@@ -273,6 +276,7 @@ type app struct {
 	client         *mesh.Client
 	hint           string // the revision hint, printed once after the command's output
 	pending        bool   // a command run at a terminal names upgrade notes still to walk, last
+	measure        bool   // the command ends with this session's context line when it is owed one (094)
 }
 
 func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
@@ -291,6 +295,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if a.pending && interactive(stdin) {
 		if line := upgrade.Pending(config.StateDir(), buildVersion().Release); line != "" {
 			fmt.Fprintln(stderr, "bmesh: "+line)
+		}
+	}
+	if a.measure {
+		if line := a.contextLine(); line != "" {
+			fmt.Fprintln(stderr, line)
 		}
 	}
 	return code
@@ -338,7 +347,11 @@ func (a *app) dispatch(args []string) error {
 	// up opens as quietly as one with [hosts] off.
 	// So does update --notice, beside it in the same hook.
 	here := cmd == "hosts" && slices.Contains(rest, "--here") || cmd == "update" && slices.Contains(rest, "--notice")
-	if cmd != "init" && cmd != "help" && cmd != "version" && !here {
+	// Every other command tells a session it can measure its context once
+	// it crosses a nudge; context prints it itself, and the daemons and
+	// the session hook's commands run outside any turn.
+	a.measure = !here && !slices.Contains([]string{"context", "serve", "hub"}, cmd)
+	if cmd != "init" && cmd != "help" && cmd != "version" && cmd != "context" && !here {
 		if err := a.ensureSetup(rest); err != nil {
 			return err
 		}
@@ -350,6 +363,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdRepos(rest)
 	case "whoami":
 		return a.cmdWhoami(rest)
+	case "context":
+		return a.cmdContext(rest)
 	case "started", "progress", "blocked", "ask", "done":
 		return a.cmdEvent(cmd, rest)
 	case "send":

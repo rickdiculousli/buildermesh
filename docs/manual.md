@@ -7,7 +7,7 @@ Every `bmesh` command with its flags, output and refusals, then the model behind
 - [Synopsis](#synopsis)
 - [Setup and updates](#setup-and-updates): [`bmesh init`](#bmesh-init) · [`bmesh serve`](#bmesh-serve) · [`bmesh hub`](#bmesh-hub) · [`bmesh config check`](#bmesh-config-check) · [`bmesh t3 login`](#bmesh-t3-login) · [`bmesh version`](#bmesh-version) · [`bmesh update`](#bmesh-update)
 - [Proposals and builds](#proposals-and-builds): [`bmesh ideate`](#bmesh-ideate) · [`bmesh spec`](#bmesh-spec) · [`bmesh build`](#bmesh-build) · [`bmesh lead start`](#bmesh-lead-start) · [`bmesh hold`, `unhold`, `held`](#bmesh-hold-unhold-held) · [`bmesh feedback`](#bmesh-feedback) · [`bmesh fix`](#bmesh-fix) · [`bmesh release`](#bmesh-release) · [`bmesh scaffold`](#bmesh-scaffold)
-- [Nodes](#nodes): [`bmesh whoami`](#bmesh-whoami) · [`bmesh started`, `progress`, `blocked`, `ask`, `done`](#bmesh-started-progress-blocked-ask-done) · [`bmesh send`](#bmesh-send) · [`bmesh inbox`](#bmesh-inbox) · [`bmesh thread-status`](#bmesh-thread-status) · [`bmesh mesh-status`](#bmesh-mesh-status) · [`bmesh watch`](#bmesh-watch) · [`bmesh executor`](#bmesh-executor) · [`bmesh node`](#bmesh-node)
+- [Nodes](#nodes): [`bmesh whoami`](#bmesh-whoami) · [`bmesh context`](#bmesh-context) · [`bmesh started`, `progress`, `blocked`, `ask`, `done`](#bmesh-started-progress-blocked-ask-done) · [`bmesh send`](#bmesh-send) · [`bmesh inbox`](#bmesh-inbox) · [`bmesh thread-status`](#bmesh-thread-status) · [`bmesh mesh-status`](#bmesh-mesh-status) · [`bmesh watch`](#bmesh-watch) · [`bmesh executor`](#bmesh-executor) · [`bmesh node`](#bmesh-node)
 - [Checks and landing](#checks-and-landing): [`bmesh routine`](#bmesh-routine) · [`bmesh result`](#bmesh-result) · [`bmesh lock-lease`](#bmesh-lock-lease) · [`bmesh setup`](#bmesh-setup) · [`bmesh land`](#bmesh-land) · [`bmesh ready`](#bmesh-ready)
 - [Boxes](#boxes): [`bmesh hosts`](#bmesh-hosts) · [`bmesh sync`](#bmesh-sync) · [`bmesh prune`](#bmesh-prune) · [`bmesh repos`](#bmesh-repos)
 - [Concepts](#concepts): [Several boxes](#several-boxes) · [Updates](#updates) · [Upgrading](#upgrading) · [Runners](#runners) · [Build families](#build-families) · [Holds](#holds) · [Briefs](#briefs) · [The fixer](#the-fixer) · [The ledger](#the-ledger) · [Routines](#routines) ([Setup](#setup)) · [Hosts](#hosts) · [The plugin](#the-plugin) · [Names](#names)
@@ -39,7 +39,9 @@ The three global flags are accepted before or after the command.
 
 A path that does not parse exits 2 with `node "<path>": <why>`. When nothing resolves, the command exits 2 with `no node for this directory; pass --node or set BMESH_NODE`. A command a person may run outside any node (`hold`, `unhold`, `node stop`, `result`, `lock-lease`) acts as this host's name instead.
 
-**The setup flag.** `<config dir>/.setup-complete` is the file [`bmesh init`](#bmesh-init) writes last. Any other command but `help`, `version`, `hosts --here` and `update --notice` checks for it, or for a `config.toml`, first. When it finds neither:
+**The context line.** Run inside an agent session whose context bmesh can measure, any command but `context`, `serve`, `hub`, `hosts --here` and `update --notice` ends with at most one more line on stderr, after its own output and its exit message, when the session's context has crossed a nudge it hasn't heard: `bmesh: this session's context is 312k. <advice>` (see [`bmesh context`](#bmesh-context)). It is never on stdout, so `--json` output stays whole.
+
+**The setup flag.** `<config dir>/.setup-complete` is the file [`bmesh init`](#bmesh-init) writes last. Any other command but `help`, `version`, `context`, `hosts --here` and `update --notice` checks for it, or for a `config.toml`, first. When it finds neither:
 
 - At a terminal, it prints one line (`bmesh: not set up yet (no <path>); running bmesh init first`) and runs `init` first.
 - Outside a terminal, it is refused (exit 3, `` not set up (no <path>): run `bmesh init` ``).
@@ -1204,6 +1206,48 @@ Every node command (`started`, `send`, `inbox`, `executor new`, ...) resolves it
 | An argument is given | 2 | `whoami takes no arguments` |
 | No node resolves | 2 | `no node for this directory; pass --node or set BMESH_NODE` |
 | The `--node` path is not a valid path (see [Names](#names)) | 2 | `node "<path>": <why>` |
+
+### `bmesh context`
+
+```
+bmesh context [--json]
+```
+
+Prints the context of the agent session it runs in, with what to do about it. A session runs it at a milestone and right before it executes a finished design. It needs no daemon, no hub and no setup.
+
+**Measuring.** One reader per harness, each reading only the tail of what the harness records:
+
+- **Claude Code** names the session it runs a command for in `CLAUDE_CODE_SESSION_ID`. Its transcript is `<CLAUDE_CONFIG_DIR, else ~/.claude>/projects/*/<id>.jsonl` (the newest when two match). The context is the newest assistant message on the session's own thread (not a subagent's sidechain, and not one Claude Code makes up, whose usage is all zeros): its `usage`'s `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`. A compaction newer than any such message measures nothing until the next message.
+- **Any other harness** measures nothing: Codex gives a command no session id.
+
+A subagent's commands carry its parent's `CLAUDE_CODE_SESSION_ID`, so they read the parent's context. A transcript that has changed shape measures nothing rather than a wrong number; `bmesh context` saying there is no session is how that shows.
+
+**The nudges** come from `[context]` (see [config.toml](#configtoml)). The levels are `nudge_from`, every `nudge_every` past it, `compact_from` and `compact_soon`; the advice at a level is:
+
+| Level | Advice |
+|---|---|
+| from `nudge_from` (250k) | `You'll hear again every 50k.` |
+| from `compact_from` (300k) | `Compact at your next milestone, after updating your state file; never while exploring or investigating.` |
+| from `compact_soon` (400k) | `Compact at the next safe point, after updating your state file.` |
+
+With `nudge_every = 0` the first advice reads `You'll hear again at <the next level>.` The defaults suit a 1M-token window; `nudge_from = 0` turns the nudges off.
+
+**The line** (see [Synopsis](#synopsis)): a command ends with `bmesh: this session's context is <N>k. <advice>` when the session's level is above the last one it heard. Each level is said once per session; a jump past several says the highest once. A drop below the last level heard (what a compaction looks like) is recorded silently, so the levels are said again as the context grows back. The level last heard is `<state dir>/context/<session id>`; a session's file unchanged for 7 days is pruned. A level bmesh can't record is not said, so a failing disk never repeats it. `bmesh context` records the level it reports as heard.
+
+**Output.**
+
+- `context 312k (claude session ec03a02c): <advice>`: the session's first eight characters. Below `nudge_from` the advice is `Nothing to do before 250k.`; with the nudges off there is none, and the line ends at the `)`.
+- With no session it can measure: `context: no session bmesh can measure (Claude Code names its session in CLAUDE_CODE_SESSION_ID)`, exit 0.
+- `--json`: `{"measured":true,"harness":"claude","session":"<id>","tokens":312456,"advice":"..."}`, or `{"measured":false}`.
+
+**Refusals.**
+
+| When | Exit | Message |
+|---|---|---|
+| A positional argument | 2 | `usage: bmesh context [--json]` |
+| The config doesn't load | 1 | the load error |
+
+Internals: [internals](internals.md#session-context)
 
 ### `bmesh started`, `progress`, `blocked`, `ask`, `done`
 
@@ -3536,11 +3580,18 @@ enable = []                                 # the add-ons serve runs here: t3-do
 ntfy = ""                                   # the ntfy URL with its topic it posts to ("http://k16:2586/t3"); required when enabled; never [notify]'s
 every = "5s"                                # how often it looks at T3's database
 min_busy = "5m"                             # a done posts only when the thread was busy at least this long; "0s" = every done
+[context]                                   # what a session hears of its own context (see bmesh context), in tokens; the defaults suit a 1M window
+nudge_from = 250000                         # the first nudge; 0 = no nudges
+nudge_every = 50000                         # a nudge every this many past it; 0 = none between
+compact_from = 300000                       # from here the advice is to compact at the next milestone; 0 = never
+compact_soon = 400000                       # from here, at the next safe point; 0 = never
 ```
+
+A negative `[context]` value is a config error: `[context] <key>: want 0 or more tokens`.
 
 #### State dir
 
-What the daemon keeps across restarts (the T3 sign-in's push record, `roster.json`, the salt records, holds in `held/`, per-repo locks in `locks/`, the rescaffolds in `scaffolded.json`) lives in the state dir:
+What the daemon keeps across restarts (the T3 sign-in's push record, `roster.json`, the salt records, holds in `held/`, per-repo locks in `locks/`, the rescaffolds in `scaffolded.json`), and the context nudge each session last heard in `context/` (see [`bmesh context`](#bmesh-context)), lives in the state dir:
 
 | Where | State dir |
 |---|---|
@@ -3772,7 +3823,7 @@ For a spec that calls for repeated runs on a Mac (`go test -count=10`), use the 
 
 ### Testing
 
-Runner tests drive shell fakes instead of tmux and claude, and a fake T3. No test reaches the network, the box's cache, the real Keychain dialog, or the box's own `claude` and `codex` (the test-only variables and fixtures are in the internals; leave them unset outside tests). Check the real Keychain dialog by hand on a Mac.
+Runner tests drive shell fakes instead of tmux and claude, and a fake T3. The `cmd/bmesh` tests clear `CLAUDE_CODE_SESSION_ID`, so a test run inside a Claude Code session prints no context line. No test reaches the network, the box's cache, the real Keychain dialog, or the box's own `claude` and `codex` (the test-only variables and fixtures are in the internals; leave them unset outside tests). Check the real Keychain dialog by hand on a Mac.
 
 **`scripts/seed.sh [seeder args]`** starts a throwaway `bmesh serve` in the background (embedded NATS and HTTP on free loopback ports; routines and ntfy off) over a seeded mesh that holds everything the map draws: every node state, a done lead on the shelf, a round with its engineers, routines with done instances, a queued job, leases, a digest, quota lines and a landed spec with operator steps open (a band row). It prints the map's URL, its check command and a CLI config for poking the mesh, then returns; serve keeps running.
 

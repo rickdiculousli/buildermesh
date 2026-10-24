@@ -20,7 +20,8 @@ import (
 // codex whenever it is on PATH: both are the plugin fakes, which list no
 // plugins. The state dir is a temp one, and the module's main is read from
 // a path that does not exist, so no test reads or removes the box's notice
-// or reaches the network. A test that sets its own fake overrides these.
+// or reaches the network. No test runs in a Claude Code session. A test
+// that sets its own fake overrides these.
 func TestMain(m *testing.M) {
 	if os.Getenv("BMESH_TEST_AS_BMESH") == "1" {
 		os.Exit(asBmesh())
@@ -37,6 +38,9 @@ func TestMain(m *testing.M) {
 			return 1
 		}
 		defer os.RemoveAll(dir)
+		// A test run inside a Claude Code session would read its context
+		// and end commands with the session's context line (094).
+		os.Unsetenv("CLAUDE_CODE_SESSION_ID")
 		for k, v := range map[string]string{
 			"BMESH_KEY_STORE":        "file",
 			"BMESH_CACHE_DIR":        filepath.Join(dir, "cache"),

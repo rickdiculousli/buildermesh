@@ -417,3 +417,22 @@ func TestAddons(t *testing.T) {
 		}
 	}
 }
+
+func TestContext(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	c, err := Load(p)
+	if err != nil || c.Context != (ContextConfig{NudgeFrom: 250000, NudgeEvery: 50000, CompactFrom: 300000, CompactSoon: 400000}) {
+		t.Fatalf("defaults: %v %+v", err, c.Context)
+	}
+	os.WriteFile(p, []byte("[context]\nnudge_from = 0\ncompact_soon = 600000\n"), 0o644)
+	if c, err = Load(p); err != nil || c.Context != (ContextConfig{NudgeEvery: 50000, CompactFrom: 300000, CompactSoon: 600000}) {
+		t.Fatalf("set: %v %+v", err, c.Context)
+	}
+	if !Known("context", "nudge_every") {
+		t.Fatal("[context] nudge_every is not a known key")
+	}
+	os.WriteFile(p, []byte("[context]\nnudge_every = -1\n"), 0o644)
+	if _, err := Load(p); err == nil || err.Error() != "config "+p+": [context] nudge_every: want 0 or more tokens" {
+		t.Fatalf("negative: %v", err)
+	}
+}
