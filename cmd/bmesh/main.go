@@ -93,8 +93,9 @@ commands:
                                            unless --apply
   whoami                                   print this node's path
   context [--json]                         this session's context and what to do about it: context 312k (claude
-                                           session ec03a02c): <advice>; every other command ends with one stderr
-                                           line when the context crosses a [context] nudge it hasn't heard
+                                           session ec03a02c): <advice>; every other command on a session's main
+                                           thread ends with one stderr line when its context crosses a [context]
+                                           nudge it hasn't heard, or drops (a compaction)
   started|progress|blocked|ask [--text T]  report an event; print <event> <path>
   done --commit SHA [--text T]             report done (a lead's commit must be its landing on main, its trailers
                                            matched by results); print
@@ -277,6 +278,7 @@ type app struct {
 	hint           string // the revision hint, printed once after the command's output
 	pending        bool   // a command run at a terminal names upgrade notes still to walk, last
 	measure        bool   // the command ends with this session's context line when it is owed one (094)
+	self           string // the node identity resolved from this checkout, "" before or without one
 }
 
 func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
@@ -595,6 +597,7 @@ func (a *app) identity(ctx context.Context, cmd string) (mesh.Path, error) {
 	if !ok {
 		return nil, errNoNode
 	}
+	a.self = n.Path
 	return mesh.ParsePath(n.Path)
 }
 
