@@ -4,7 +4,7 @@ title: When every lead of a family is finished, the daemon settles their T3 thre
 kind: maintenance
 size: M
 judge: opus
-status: proposed
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-24

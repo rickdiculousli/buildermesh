@@ -57,6 +57,13 @@ type Runner interface {
 	Interrupt(ctx context.Context, thread string) error
 }
 
+// Settler is a runner that can settle a thread, dropping it from its
+// active list (T3); the thread wakes on a new message. Settling a settled
+// thread changes nothing.
+type Settler interface {
+	Settle(ctx context.Context, thread string) error
+}
+
 // Preflighter is a runner that can tell, before a start is recorded
 // anywhere, that the start would be refused.
 type Preflighter interface {

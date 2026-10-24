@@ -120,8 +120,9 @@ func readyLine(r mesh.Ready, st mesh.State, now time.Time) string {
 
 // cmdMeshStatus prints the registered nodes with their state, runner and
 // unread count: every one with --all or --json, else all but those done for
-// longer than [status] keep_done, which a closing line counts; then a line
-// per hold, with its age, a line per ready request, with its age, the
+// longer than [status] keep_done, which a closing line counts; then a
+// settled line per family whose T3 threads the daemon settled
+// (settledLines), a line per hold, with its age, a line per ready request, with its age, the
 // feedback not yet drained (feedbackLines),
 // and last a line per landed spec with steps for the operator still open.
 func (a *app) cmdMeshStatus(args []string) error {
@@ -216,6 +217,9 @@ func (a *app) cmdMeshStatus(args []string) error {
 		}
 		fmt.Fprintf(a.stdout, "… %d finished %s older than %s (--all shows them)\n", n, noun, config.FormatDuration(keep))
 	}
+	for _, l := range settledLines(rows, hide) {
+		fmt.Fprintln(a.stdout, l)
+	}
 	now := time.Now()
 	for _, h := range holds {
 		fmt.Fprintf(a.stdout, "%s %s\n", h.Path, h.Line(now))
@@ -251,6 +255,36 @@ func (a *app) cmdMeshStatus(args []string) error {
 		fmt.Fprintln(a.stdout, o.Line())
 	}
 	return nil
+}
+
+// settledLines are `settled <unit>: <n> threads`, one per unit
+// (daemon.SettleUnit) the daemon settled threads of that has a node shown.
+func settledLines(rows []statusRow, hide map[string]bool) []string {
+	var units []string
+	n := map[string]int{}
+	shown := map[string]bool{}
+	for _, r := range rows {
+		u := daemon.SettleUnit(r.Node)
+		if u == "" {
+			continue
+		}
+		if r.Node.Settled != "" {
+			if n[u] == 0 {
+				units = append(units, u)
+			}
+			n[u]++
+		}
+		if !hide[r.Node.Path] {
+			shown[u] = true
+		}
+	}
+	var out []string
+	for _, u := range units {
+		if shown[u] {
+			out = append(out, "settled "+daemon.SettledText(u, n[u]))
+		}
+	}
+	return out
 }
 
 // boxHoldLines are the holds every box's presence carries (093), one line
@@ -510,7 +544,9 @@ func (a *app) cmdWatch(args []string) error {
 	}
 }
 
-// printEvent prints a stream message in a watched tree as "<at> <path> <event> <text>".
+// printEvent prints a stream message in a watched tree as "<at> <path> <event> <text>";
+// a daemon event adds its to before the text, except settled, whose text
+// names the family.
 func (a *app) printEvent(m mesh.Stored, leads map[string]bool) {
 	path, event, ok := splitSubject(m.Subject)
 	if !ok {
@@ -527,7 +563,7 @@ func (a *app) printEvent(m mesh.Stored, leads map[string]bool) {
 		return
 	}
 	line := fmt.Sprintf("%s %s %s", stamp(ev.At, m.At), path, event)
-	if ev.To != "" {
+	if ev.To != "" && event != "settled" { // a settled line names its family in its text
 		line += " " + ev.To
 	}
 	if ev.Text != "" {
