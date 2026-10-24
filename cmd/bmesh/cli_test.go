@@ -150,7 +150,7 @@ func TestDoneRefusesUnlandedSpec(t *testing.T) {
 		t.Fatal(code, errs)
 	}
 	_, errs, code := runCLI(t, as("app-012"), "done", "--commit", "abc123")
-	if code != 3 || errs != "bmesh: not done: status is building\n" {
+	if code != 3 || errs != "bmesh: not done: abc123 is not on origin/main\n" {
 		t.Fatalf("code %d err %q", code, errs)
 	}
 	if hist, _ := mesh.History(ctx, c, "bm.app-012.done", time.Time{}); len(hist) != 0 {

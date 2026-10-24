@@ -47,7 +47,7 @@ func buildSetup(t *testing.T) (*mesh.Client, string, *t3fake.Server) {
 	return c, repo, fake
 }
 
-func TestBuildRecordsBuildingThenStartsTheLead(t *testing.T) {
+func TestBuildStartsTheLeadRecordingNothingOnMain(t *testing.T) {
 	c, repo, fake := buildSetup(t)
 	ctx := t.Context()
 	before := gitOut(t, "-C", repo, "rev-parse", "HEAD")
@@ -63,31 +63,21 @@ func TestBuildRecordsBuildingThenStartsTheLead(t *testing.T) {
 	// the brief was started with.
 	n, ok, err := mesh.GetNode(ctx, c, "demo-002")
 	if err != nil || !ok || n.Role != "lead" || n.Spec != "002" || n.Runner.Thread != got.Thread || !uuidRE.MatchString(n.Runner.Ref) ||
-		n.Model != "claude-opus-5-5" || n.Effort != "high" {
+		n.Model != "claude-opus-5-5" || n.Effort != "high" || n.Branch != got.Branch || n.Family != got.Family {
 		t.Fatalf("node %+v %v %v", n, ok, err)
 	}
 	thread := n.Runner.Ref
 	if got.Path != "demo-002" || !strings.HasPrefix(got.Thread, "mcp:") || got.Branch != "bmesh/"+thread || got.Model != "claude-opus-5-5" ||
-		got.Spec != "002" || len(got.Building) != 40 {
+		got.Spec != "002" || strings.Contains(out, `"building"`) {
 		t.Fatalf("%+v", got)
 	}
-	// Two commits on main: building (thread, host) before the start, the
-	// branch after it (the t3 runner names its own); both pushed.
-	hist := gitOut(t, "-C", repo, "log", "--format=%s", before+"..main")
-	if hist != "Dispatch 002: branch bmesh/"+thread+"\nDispatch 002: building on "+testHost {
-		t.Fatalf("history:\n%s", hist)
+	// Nothing is recorded on main: no commit, the spec still accepted.
+	if gitOut(t, "-C", repo, "rev-parse", "main") != before || gitOut(t, "-C", repo, "rev-parse", "origin/main") != before {
+		t.Fatal("build recorded on main")
 	}
-	if gitOut(t, "-C", repo, "rev-parse", "main") != got.Building || gitOut(t, "-C", repo, "rev-parse", "origin/main") != got.Building {
-		t.Fatal("building is not main's head, pushed")
-	}
-	text := gitOut(t, "-C", repo, "show", "main:docs/proposals/002-second.md")
-	for _, want := range []string{"status: building\n", "built_by: " + thread + "\n", "host: " + testHost + "\n", "branch: bmesh/" + thread + "\n"} {
-		if !strings.Contains(text, want) {
-			t.Errorf("spec lacks %q:\n%s", want, text)
-		}
-	}
-	if strings.Count(text, "status:") != 1 {
-		t.Fatal(text)
+	if text := gitOut(t, "-C", repo, "show", "main:docs/proposals/002-second.md"); !strings.Contains(text, "status: accepted\n") ||
+		strings.Contains(text, "built_by") || strings.Contains(text, "branch:") {
+		t.Fatalf("spec on main:\n%s", text)
 	}
 	// The brief came from the binary, with the spec, the node and the row's facts.
 	b, err := os.ReadFile(filepath.Join(os.Getenv("BMESH_CACHE_DIR"), "bmesh", "briefs", "demo-002.md"))
@@ -95,8 +85,8 @@ func TestBuildRecordsBuildingThenStartsTheLead(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"# Build docs/proposals/002-second.md in demo", "title: Spec 002", "The second, after 001.", "--node demo-002 started",
-		"`npm test`", "`buildermesh:lead`", "pushed to `example/demo`", "`bmesh --node demo-002 land`", "sets spec 002 `done` with `merged`",
-		"--- end spec -----", "second pass only after a rebase"} {
+		"`npm test`", "`buildermesh:lead`", "pushed to `example/demo`", "`bmesh --node demo-002 land`", "`bmesh spec set --id 002 --status done`",
+		"`Spec: 002`", "--- end spec -----", "second pass only after a rebase"} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("brief lacks %q", want)
 		}
@@ -119,27 +109,25 @@ func TestBuildRecordsBuildingThenStartsTheLead(t *testing.T) {
 	if br := gitOut(t, "-C", repo, "branch", "--list", "demo-build-*"); br != "" {
 		t.Fatalf("branches left: %s", br)
 	}
-	// Built, the spec is no longer accepted; a second build is refused, and
-	// so is the taken path with the -2 rule once it is accepted again.
-	if _, errs, code := runCLI(t, nil, "build", "demo", "002"); code != 3 || !strings.Contains(errs, "spec 002 is building, not accepted") {
-		t.Fatalf("again: %d %q", code, errs)
-	}
-	runCLI(t, nil, "spec", "set", "--repo", repo, "--id", "002", "--status", "accepted")
-	meshtest.Git(t, repo, "commit", "-qam", "reset")
-	meshtest.Git(t, repo, "push", "-q", "origin", "main")
+	// Its lead live, a second build is refused, whatever the path; blocked,
+	// it is started again.
 	if _, err := mesh.WriteState(ctx, c, "demo-002", mesh.State{State: "working", By: "node"}); err != nil {
 		t.Fatal(err)
 	}
-	head := gitOut(t, "-C", repo, "rev-parse", "main")
-	if _, errs, code := runCLI(t, nil, "build", "demo", "002", "--family", got.Family); code != 3 || !strings.Contains(errs, "path demo-002 is taken (state working); use --path demo-002-2") {
-		t.Fatalf("taken: %d %q", code, errs)
+	for _, args := range [][]string{{"build", "demo", "002"}, {"build", "demo", "002", "--path", "demo-002-2"}} {
+		if _, errs, code := runCLI(t, nil, append(args, "--family", got.Family)...); code != 3 || errs != "bmesh: refused: spec 002 is building: demo-002 (working)\n" {
+			t.Fatalf("%v: %d %q", args, code, errs)
+		}
 	}
-	if gitOut(t, "-C", repo, "rev-parse", "main") != head {
-		t.Fatal("a refused build recorded on main")
+	if _, err := mesh.WriteState(ctx, c, "demo-002", mesh.State{State: "blocked", Text: "stuck", By: "node"}); err != nil {
+		t.Fatal(err)
 	}
 	out, errs, code = runCLI(t, nil, "build", "demo", "002", "--path", "demo-002-2", "--model", "claude-sonnet-5-5", "--effort", "medium", "--family", got.Family)
 	if code != 0 || !strings.Contains(out, `"path":"demo-002-2"`) || !strings.Contains(out, `"model":"claude-sonnet-5-5"`) {
 		t.Fatalf("--path: %d %q %q", code, out, errs)
+	}
+	if gitOut(t, "-C", repo, "rev-parse", "main") != before {
+		t.Fatal("build recorded on main")
 	}
 	if n, _, _ := mesh.GetNode(ctx, c, "demo-002-2"); n.Effort != "medium" {
 		t.Fatalf("node %+v", n)
@@ -182,23 +170,21 @@ func TestBuildRefusals(t *testing.T) {
 	}
 }
 
-func TestBuildAFailedStartMovesTheSpecBack(t *testing.T) {
+func TestBuildAFailedStartRecordsNothing(t *testing.T) {
 	c, repo, fake := buildSetup(t)
 	// With the repo not a T3 project, an auto sign-in can't start a thread.
 	var projects []t3fake.Project
 	fake.Do(func(s *t3fake.Server) { projects, s.Projects = s.Projects, nil })
 	before := gitOut(t, "-C", repo, "rev-parse", "HEAD")
-	_, errs, code := runCLI(t, nil, "build", "demo", "002")
-	if code != 1 || !strings.Contains(errs, "runner start") || !strings.Contains(errs, "the spec reads accepted again") {
+	_, errs, code := runCLI(t, nil, "build", "demo", "002", "--hold", "land")
+	if code != 1 || !strings.Contains(errs, "runner start") {
 		t.Fatalf("code %d err %q", code, errs)
 	}
-	hist := gitOut(t, "-C", repo, "log", "--format=%s", before+"..main")
-	if hist != "Dispatch 002: did not start\nDispatch 002: building on "+testHost {
-		t.Fatalf("history:\n%s", hist)
+	if gitOut(t, "-C", repo, "rev-parse", "main") != before {
+		t.Fatal("a failed start recorded on main")
 	}
-	text := gitOut(t, "-C", repo, "show", "main:docs/proposals/002-second.md")
-	if !strings.Contains(text, "status: accepted\n") {
-		t.Fatal(text)
+	if _, held, _ := mesh.GetLeadHold(t.Context(), c, "demo-002"); held {
+		t.Fatal("the hold outlived the failed start")
 	}
 	if _, ok, _ := mesh.GetNode(t.Context(), c, "demo-002"); ok {
 		t.Fatal("a node was registered")
@@ -253,7 +239,7 @@ func TestBuildAcceptedOrdersAndCapsLeads(t *testing.T) {
 	for _, p := range []string{"demo-002", "demo-021", "demo-020"} {
 		meshtest.ForceState(t, c, p, mesh.State{State: "done", By: "node"})
 	}
-	runCLI(t, nil, "spec", "set", "--repo", repo, "--id", "002", "--status", "done", "--field", "merged=abc")
+	runCLI(t, nil, "spec", "set", "--repo", repo, "--id", "002", "--status", "done")
 	meshtest.Git(t, repo, "commit", "-qam", "002 done")
 	meshtest.Git(t, repo, "push", "-q", "origin", "main")
 	out, errs, code = runCLI(t, map[string]string{}, "--json", "build", "--accepted", "demo", "--family", "demo-build-1")
@@ -270,11 +256,27 @@ func TestBuildAcceptedOrdersAndCapsLeads(t *testing.T) {
 		got[3].ID != "009" || got[3].State != "started" || got[3].Path != "demo-009" {
 		t.Fatalf("%+v", got)
 	}
-	// Nothing accepted is left but 005, which waits for a slot before its
-	// judge is looked at.
+	// The started specs still read accepted, and are skipped while their
+	// leads are live, or blocked; with two leads working, 005 is refused for
+	// its judge.
+	if _, err := mesh.WriteState(ctx, c, "demo-004", mesh.State{State: "working", By: "node"}); err != nil {
+		t.Fatal(err)
+	}
+	meshtest.ForceState(t, c, "demo-009", mesh.State{State: "blocked", Text: "the API is gone", By: "node"})
+	before := gitOut(t, "-C", repo, "rev-parse", "main")
 	out, _, _ = runCLI(t, nil, "build", "--accepted", "demo", "--family", "demo-build-1")
-	if out != "verify: demo defines none\nwaits 005 Spec 005: 3 leads working on demo\n" {
+	if out != "verify: demo defines none\nbuilding 003 Spec 003: demo-003 (idle)\nbuilding 004 Spec 004: demo-004 (working)\n"+
+		"not started 005 Spec 005: refused: spec 005 names no judge (one of fable, opus, sonnet); pass --model, or `005 on <judge>` to bmesh choose-ideas\n"+
+		"blocked 009 Spec 009: demo-009: the API is gone\n" {
 		t.Fatalf("%q", out)
+	}
+	out, _, _ = runCLI(t, map[string]string{}, "--json", "build", "--accepted", "demo", "--family", "demo-build-1")
+	if err := json.Unmarshal([]byte(out), &got); err != nil || len(got) != 4 || got[0].State != "building" || got[0].Reason != "demo-003 (idle)" ||
+		got[2].State != "not started" || got[3].State != "blocked" || got[3].Reason != "demo-009: the API is gone" {
+		t.Fatalf("json %q: %+v %v", out, got, err)
+	}
+	if gitOut(t, "-C", repo, "rev-parse", "main") != before {
+		t.Fatal("build recorded on main")
 	}
 	if _, _, code := runCLI(t, nil, "build", "--accepted", "demo", "002"); code != 2 {
 		t.Fatal("--accepted with an id")
@@ -311,11 +313,6 @@ func TestBuildFamilies(t *testing.T) {
 			t.Errorf("node %s family %q, want %q", p, n.Family, want)
 		}
 	}
-	for f, want := range map[string]string{"002-second": "demo-build-1", "004-fourth": "demo-build-2", "009-ninth": "demo-build-1"} {
-		if text := gitOut(t, "-C", repo, "show", "main:docs/proposals/"+f+".md"); !strings.Contains(text, "family: "+want+"\n") {
-			t.Errorf("%s lacks family %s:\n%s", f, want, text)
-		}
-	}
 	if _, errs, code := runCLI(t, nil, "build", "demo", "003", "--family", "a.b"); code != 2 || !strings.Contains(errs, "--family") {
 		t.Fatalf("bad family: %d %q", code, errs)
 	}
@@ -326,7 +323,7 @@ func TestBuildFamilies(t *testing.T) {
 	for _, p := range []string{"demo-002", "demo-004", "demo-009"} {
 		meshtest.ForceState(t, c, p, mesh.State{State: "done", By: "node"})
 	}
-	runCLI(t, nil, "spec", "set", "--repo", repo, "--id", "002", "--status", "done", "--field", "merged=abc")
+	runCLI(t, nil, "spec", "set", "--repo", repo, "--id", "002", "--status", "done")
 	meshtest.Git(t, repo, "commit", "-qam", "002 done")
 	meshtest.Git(t, repo, "push", "-q", "origin", "main")
 	out, errs, code := runCLI(t, nil, "build", "--accepted", "demo", "--force")
@@ -486,7 +483,7 @@ func TestBuildVerifiesMainsCodeHead(t *testing.T) {
 	meshtest.ForceState(t, c, "demo-009", mesh.State{State: "done", By: "node"})
 	out, errs, code = runCLI(t, nil, "build", "--accepted", "demo", "--family", got.Family)
 	if code != 0 || strings.Count(out, "verify main ") != 2 || !strings.HasPrefix(out, "verify main "+fixed[:8]+": running at t:"+fixedTree[:8]+"\n"+
-		"verify main "+fixed[:8]+": ok t:"+fixedTree[:8]+" (recorded)\nwaits 003") || runs() != 3 {
+		"verify main "+fixed[:8]+": ok t:"+fixedTree[:8]+" (recorded)\nbuilding 002 Spec 002: demo-002 (idle)\nwaits 003") || runs() != 3 {
 		t.Fatalf("--accepted: %d %q %q runs %d", code, out, errs, runs())
 	}
 }

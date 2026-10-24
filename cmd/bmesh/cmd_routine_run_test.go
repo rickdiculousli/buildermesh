@@ -581,8 +581,8 @@ func TestRunVerifyCarriesFromMainOnADocsBranch(t *testing.T) {
 		t.Fatalf("runs %d %q", runs(), out)
 	}
 	// spec verified composes the carried record as any other.
-	out, errs, code := runCLI(t, nil, "spec", "verified", "--write", "--spec", "012")
-	if code != 0 || !strings.HasPrefix(out, "verified: verify ok t:"+tree[:8]+"\nwrote ") {
+	out, errs, code := runCLI(t, nil, "spec", "verified")
+	if code != 0 || out != "verified: verify ok t:"+tree[:8]+"\n" {
 		t.Fatalf("spec verified: %d %q %q", code, out, errs)
 	}
 }

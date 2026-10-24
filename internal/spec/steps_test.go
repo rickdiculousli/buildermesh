@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
@@ -60,57 +61,41 @@ func TestParseSteps(t *testing.T) {
 	}
 }
 
-func TestStepsRoundTrip(t *testing.T) {
-	text := "---\nid: 7\nstatus: building\n---\n\n## Proposal\nx\n\n## Needs from the operator\n- [k16] a <b> & c check: `test -f x`\n- two\n"
-	s, err := Parse(text, "docs/proposals/007-x.md")
-	if err != nil {
-		t.Fatal(err)
+func TestOperatorSteps(t *testing.T) {
+	needs := "\n## Proposal\nx\n\n## Needs from the operator\n- [k16] a <b> & c check: `test -f x`\n- [optional] two\n"
+	parse := func(front string) *Spec {
+		t.Helper()
+		s, err := Parse("---\nid: 7\n"+front+"---\n"+needs, "docs/proposals/007-x.md")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
 	}
-	steps := s.NeedsSteps()
-	if len(steps) != 2 || steps[0].Check != "test -f x" {
-		t.Fatalf("%+v", steps)
-	}
-	v, err := EncodeSteps(steps)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := `[{"n":1,"box":"k16","text":"a <b> & c","check":"test -f x","done":""},{"n":2,"box":"","text":"two","done":""}]`
-	if v != want {
-		t.Fatalf("encoded %s", v)
-	}
-	out, err := Update(s, Field{StepsKey, v})
-	if err != nil {
-		t.Fatal(err)
-	}
-	n, err := Parse(out, s.Path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := n.Steps()
-	if err != nil || !reflect.DeepEqual(got, steps) {
+	isBox := func(b string) bool { return b == "k16" }
+	// Landed with trailers: the Needs section, boxes as the roster names them.
+	got, err := parse("status: done\n").OperatorSteps(isBox)
+	want := []Step{{N: 1, Box: "k16", Text: "a <b> & c", Check: "test -f x"}, {N: 2, Text: "[optional] two"}}
+	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("%+v %v", got, err)
 	}
-	if fm, err := Frontmatter(out); err != nil || fm[StepsKey] != v {
-		t.Fatalf("frontmatter %q %v", fm[StepsKey], err)
+	// Not landed: none.
+	if got, _ := parse("status: accepted\n").OperatorSteps(isBox); got != nil {
+		t.Fatalf("accepted: %+v", got)
 	}
-	if Open(got) != 2 {
-		t.Fatal(Open(got))
+	// Landed before trailers: operator_steps as recorded, ticks included,
+	// and none without the field.
+	old := parse(`status: done` + "\nmerged: abc\n" + `operator_steps: [{"n":1,"box":"","text":"one","done":"2026-10-17T10:00:00Z k16"}]` + "\n")
+	if got, err := old.OperatorSteps(isBox); err != nil || len(got) != 1 || got[0].Done == "" || Open(got) != 0 {
+		t.Fatalf("legacy: %+v %v", got, err)
 	}
-	got[1].Done, got[1].Note = "2026-10-17T10:00:00Z k16", "by hand"
-	if Open(got) != 1 || got[1].String() != "2. two -- done 2026-10-17T10:00:00Z k16: by hand" ||
-		got[0].String() != "1. [k16] a <b> & c (check: test -f x)" {
-		t.Fatalf("%d %q %q", Open(got), got[0], got[1])
+	if got, _ := parse("status: done\nmerged: abc\n").OperatorSteps(isBox); got != nil {
+		t.Fatalf("legacy with none: %+v", got)
 	}
-	again := CarryTicks(got, ParseSteps("- two\n- three\n- two"))
-	if again[0].Done == "" || again[1].Done != "" || again[2].Done != "" { // one tick carries once
-		t.Fatalf("carried %+v", again)
-	}
-	kept := KeepBoxes(ParseSteps("- [k16] a\n- [optional] b\n- c"), func(b string) bool { return b == "k16" })
-	if kept[0].Box != "k16" || kept[1].Box != "" || kept[1].Text != "[optional] b" || kept[2].Text != "c" {
-		t.Fatalf("kept %+v", kept)
-	}
-	if v, err := EncodeSteps(nil); err != nil || v != "[]" {
-		t.Fatalf("no steps: %q %v", v, err)
+	// The hub's ticks lay on by number; a tick the file has stays.
+	ticked := Ticked(want, []mesh.StepTick{{N: 2, Done: "2026-10-17T10:00:00Z k16", Note: "by hand"}, {N: 9, Done: "x"}})
+	if Open(ticked) != 1 || ticked[1].String() != "2. [optional] two -- done 2026-10-17T10:00:00Z k16: by hand" ||
+		ticked[0].String() != "1. [k16] a <b> & c (check: test -f x)" {
+		t.Fatalf("%d %q %q", Open(ticked), ticked[0], ticked[1])
 	}
 	if _, err := DecodeSteps("[{"); err == nil {
 		t.Fatal("bad json read")

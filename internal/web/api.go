@@ -207,16 +207,23 @@ func (s *server) tree(w http.ResponseWriter, r *http.Request) {
 }
 
 // operator is every configured repo's landed specs with open steps, read
-// from the ledgers as ledger reads them (cached, fetched in the background),
-// by repo and id.
+// from the ledgers as ledger reads them (cached, fetched in the background)
+// with the ticks on the hub, by repo and id.
 func (s *server) operator(ctx context.Context) []OperatorSpec {
 	repos := s.cfg.RepoNames()
 	sort.Strings(repos)
 	var out []OperatorSpec
 	for _, repo := range repos {
 		for _, sp := range s.ledger(ctx, repo) {
-			steps, err := sp.Steps()
+			steps, err := sp.OperatorSteps(nil)
 			if err != nil || spec.Open(steps) == 0 {
+				continue
+			}
+			ticks, err := mesh.StepTicks(ctx, s.c, repo, sp.IDString())
+			if err != nil {
+				s.log.Warn("operator steps: ticks", "repo", repo, "spec", sp.IDString(), "err", err)
+			}
+			if steps = spec.Ticked(steps, ticks); spec.Open(steps) == 0 {
 				continue
 			}
 			out = append(out, OperatorSpec{Repo: repo, ID: sp.IDString(), Title: sp.Title(), Open: spec.Open(steps), Total: len(steps)})
@@ -456,6 +463,12 @@ func (s *server) readSpec(ctx context.Context, n mesh.Node) (sp *Spec, ok bool) 
 	sp = &Spec{ID: n.Spec, Text: text}
 	if fm, err := spec.Frontmatter(text); err == nil {
 		sp.Title, sp.Status, sp.Merged, sp.Verified = fm["title"], fm["status"], fm["merged"], fm["verified"]
+	}
+	if sp.Merged == "" && sp.Verified == "" {
+		// A spec landed with trailers: its commit on main says both.
+		if l, ok, err := spec.LandingOf(ctx, repoPath, n.Spec); err == nil && ok {
+			sp.Merged, sp.Verified = l.Commit, l.Verified
+		}
 	}
 	if sp.Title == "" {
 		for _, line := range strings.Split(text, "\n") {

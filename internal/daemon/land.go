@@ -242,7 +242,7 @@ func (l *landers) step(ctx context.Context, n mesh.Node) (again bool) {
 		return false
 	}
 	if landed, err := l.landedOnMain(ctx, n, r); err != nil {
-		d.Log.Warn("land: read the spec on main", "path", n.Path, "err", err)
+		d.Log.Warn("land: read the landing on main", "path", n.Path, "err", err)
 		return false
 	} else if landed {
 		return l.doneStep(ctx, n, r, rev)
@@ -341,18 +341,34 @@ func (l *landers) wakeForMail(ctx context.Context, n mesh.Node) {
 	wake(ctx, l.d, l.act, n, unread, "")
 }
 
-// landedOnMain reports a request whose change is on main: the spec on
-// origin/main reads done with a merged commit that is an ancestor of the
-// worktree's HEAD (a daemon that died after the push finds it here).
+// landedOnMain reports a request whose change is on main (a daemon that
+// died after the push finds it here): the worktree's HEAD carries a Spec
+// trailer naming the request's spec and is on origin/main. A HEAD that is
+// the old `NNN: done at` record commit is read as before: the spec on
+// origin/main reads done with a merged commit that is an ancestor of HEAD.
 func (l *landers) landedOnMain(ctx context.Context, n mesh.Node, r mesh.Ready) (bool, error) {
 	if n.RepoPath == "" || !dirExists(n.Worktree) {
 		return false, nil
 	}
-	done, err := spec.CheckDone(n.RepoPath, l.d.Cfg.Spec.Glob, r.Spec)
-	if err != nil || !done.OK {
+	head, err := spec.ReadLanded(ctx, n.Worktree, "HEAD")
+	if err != nil {
 		return false, err
 	}
-	return gitOK(ctx, n.Worktree, "merge-base", "--is-ancestor", done.Merged, "HEAD"), nil
+	switch {
+	case head.Spec != "":
+		if head.Spec != spec.NormID(r.Spec) {
+			return false, nil
+		}
+		on, _, err := spec.OnMain(ctx, n.RepoPath, head.Commit, true)
+		return on, err
+	case head.Legacy != "":
+		done, err := spec.CheckDone(n.RepoPath, l.d.Cfg.Spec.Glob, r.Spec)
+		if err != nil || !done.OK {
+			return false, err
+		}
+		return gitOK(ctx, n.Worktree, "merge-base", "--is-ancestor", done.Merged, "HEAD"), nil
+	}
+	return false, nil
 }
 
 // doneStep records the landed change with bmesh done, its text the lead's

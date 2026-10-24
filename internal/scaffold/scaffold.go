@@ -52,7 +52,7 @@ func Done(r config.Repo) string {
 	return "## Definition of done\n" + brief.DoneRule(r) +
 		" If the rebase conflicts, resolve it: read your spec and the specs that landed since you branched, make every intent hold, " +
 		"widen your spec if a landed one changes what yours must look like, re-validate, then merge. " +
-		"Stop only when the widened scope can't be met from the specs alone; then mark your spec `blocked` with the reason, push, and report. " +
+		"Stop only when the widened scope can't be met from the specs alone; then report the block with `bmesh blocked` and the reason. " +
 		"End with one line: what's done (the commit on `main`), " + pushState(r) + ", and what, if anything, waits on the operator. " + brief.PlainWords
 }
 
@@ -69,7 +69,7 @@ func pushState(r config.Repo) string {
 func Proposals() string {
 	return "## Proposals\n" +
 		"Half-page specs live in `docs/proposals/NNN-slug.md` (the template is `bmesh spec template`; the lifecycle is in `docs/proposals/README.md`). " +
-		"The build thread owns its spec's status: `building` when dispatched, `done` with the merge SHA when merged, `blocked` with a reason if it can't finish. " +
+		"The build thread owns its spec's status: it sets `done` on its own branch, so the spec lands with its code; a build in flight, or blocked, is its lead's node on the mesh, never a status in git. " +
 		"Rejected specs stay so they aren't re-proposed. Accepted specs are built by buildermesh leads (see Buildermesh below)."
 }
 

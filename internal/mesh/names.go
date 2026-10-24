@@ -19,6 +19,7 @@ const (
 	BucketHolds   = "bm-holds"
 	BucketReady   = "bm-ready"
 	BucketSpecIDs = "bm-specids"
+	BucketSteps   = "bm-steps"
 )
 
 var pathRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*$`)

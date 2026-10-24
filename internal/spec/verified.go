@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"regexp"
 	"slices"
 	"sort"
@@ -42,7 +41,7 @@ func (e Entry) String() string {
 	return s
 }
 
-// ErrNoResults is WriteVerified's refusal of an empty entry list.
+// ErrNoResults is the refusal of an empty entry list.
 var ErrNoResults = errors.New("no results for HEAD's tree; run the routines first")
 
 var tree8RE = regexp.MustCompile(`^[0-9a-f]{8}$`)
@@ -199,55 +198,18 @@ func Newer(a, b string) bool {
 	return ta.After(tb)
 }
 
-// WriteVerified sets the spec's verified key to entries the way
-// tools/proposals.py's update sets a key: the first `verified:` line is
-// rewritten in place, else one is added before the closing fence. Every
-// other byte is kept.
-func WriteVerified(specPath string, entries []Entry) error {
+// VerifiedLine is FormatVerified(entries), refused unless it reads back
+// as the same entries (a model with a ";" or a space would not), so the
+// trailer land writes is one done can check.
+func VerifiedLine(entries []Entry) (string, error) {
 	if len(entries) == 0 {
-		return ErrNoResults
-	}
-	b, err := os.ReadFile(specPath)
-	if err != nil {
-		return err
-	}
-	text := string(b)
-	if _, err := Frontmatter(text); err != nil {
-		return fmt.Errorf("%s: %w", specPath, err)
+		return "", ErrNoResults
 	}
 	value := FormatVerified(entries)
 	if back, err := ParseVerified(value); err != nil {
-		return fmt.Errorf("%s: %w; left unchanged", specPath, err)
+		return "", fmt.Errorf("verified %q: %w", value, err)
 	} else if !slices.Equal(back, entries) {
-		return fmt.Errorf("%s: verified %q would read back as other entries; left unchanged", specPath, value)
+		return "", fmt.Errorf("verified %q would read back as other entries", value)
 	}
-	lines := strings.SplitAfter(text, "\n")
-	closing := -1
-	set := false
-	for i := 1; i < len(lines); i++ {
-		body := strings.TrimRight(lines[i], "\r\n")
-		if strings.TrimSpace(body) == "---" {
-			closing = i
-			break
-		}
-		if set || strings.HasPrefix(strings.TrimLeft(body, " \t"), "#") {
-			continue
-		}
-		if k, _, ok := strings.Cut(body, ":"); ok && strings.TrimSpace(k) == "verified" {
-			lines[i] = "verified: " + value + lines[i][len(body):]
-			set = true
-		}
-	}
-	if !set {
-		lines = append(lines[:closing], append([]string{"verified: " + value + "\n"}, lines[closing:]...)...)
-	}
-	out := strings.Join(lines, "")
-	fm, err := Frontmatter(out)
-	if err != nil {
-		return fmt.Errorf("%s: %w", specPath, err)
-	}
-	if fm["verified"] != value {
-		return fmt.Errorf("%s: writing verified would read back as %q; left unchanged", specPath, fm["verified"])
-	}
-	return os.WriteFile(specPath, []byte(out), 0o644)
+	return value, nil
 }

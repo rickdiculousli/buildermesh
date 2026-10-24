@@ -21,9 +21,10 @@ type landRepo struct {
 	root, origin, repo, wt string
 }
 
-// newLandRepo makes the repo with spec 012 building, an inline verify kind
-// running $HOOK (a script outside the repo, which a test may fill), node
-// app-012 for the worktree, and the lead's commit (b.txt).
+// newLandRepo makes the repo with spec 012 accepted on main, an inline
+// verify kind running $HOOK (a script outside the repo, which a test may
+// fill), node app-012 for the worktree, and the lead's commit (b.txt, and
+// the spec set done).
 func newLandRepo(t *testing.T) landRepo {
 	t.Helper()
 	for k, v := range map[string]string{
@@ -46,12 +47,13 @@ func newLandRepo(t *testing.T) landRepo {
 	writeFile(t, filepath.Join(r.repo, "a.txt"), "one\ntwo\nthree\n")
 	writeFile(t, filepath.Join(r.repo, ".bmesh", "routines", "verify.toml"),
 		"mode = \"inline\"\ndeterministic = true\ncommand = \"sh \\\"$HOOK\\\"\"\n")
-	writeFile(t, filepath.Join(r.repo, "docs", "proposals", "012-thing.md"), "---\nid: 12\nstatus: building\nbranch: lead\n---\nbody\n")
+	writeFile(t, filepath.Join(r.repo, "docs", "proposals", "012-thing.md"), "---\nid: 12\nstatus: accepted\n---\nbody\n")
 	meshtest.Git(t, r.repo, "add", "-A")
 	meshtest.Git(t, r.repo, "commit", "-m", "base")
 	meshtest.Git(t, r.repo, "push", "origin", "main")
 	meshtest.Git(t, r.repo, "worktree", "add", "-b", "lead", r.wt, "main")
 	writeFile(t, filepath.Join(r.wt, "b.txt"), "b\n")
+	writeFile(t, filepath.Join(r.wt, "docs", "proposals", "012-thing.md"), "---\nid: 12\nstatus: done\n---\nbody\n")
 	meshtest.Git(t, r.wt, "add", "-A")
 	meshtest.Git(t, r.wt, "commit", "-m", "the work")
 	t.Chdir(r.wt)
@@ -89,6 +91,12 @@ func (r landRepo) originMain(t *testing.T) string {
 	return gitOut(t, "-C", r.origin, "rev-parse", "main")
 }
 
+// trailersOnOrigin is the trailers of origin main's head, one per line.
+func (r landRepo) trailersOnOrigin(t *testing.T) string {
+	t.Helper()
+	return gitOut(t, "-C", r.origin, "log", "-1", "--format=%(trailers)", "main")
+}
+
 // specOnOrigin is spec 012's frontmatter on origin's main.
 func (r landRepo) specOnOrigin(t *testing.T) string {
 	t.Helper()
@@ -115,8 +123,7 @@ func TestLandCleanThenDone(t *testing.T) {
 		"rebase: on " + base[:8] + " already\n" +
 		"verify ok t:" + tree[:8] + " (ran before the lease)\n" +
 		"verified: verify ok t:" + tree[:8] + "\n" +
-		"spec 012 done: merged " + work[:8] + ", branch lead\n" +
-		"commit " + rec[:8] + " 012: done at " + work[:8] + "\n" +
+		"trailers " + rec[:8] + ": Spec 012, Verified\n" +
 		"push origin main " + rec[:8] + "\n" +
 		"main " + rec[:8] + "\n" +
 		"released land.repo\n" +
@@ -124,36 +131,69 @@ func TestLandCleanThenDone(t *testing.T) {
 	if code != 0 || out != want || errs != "" {
 		t.Fatalf("land: %d\n%s\nwant\n%s\nerr %q", code, out, want, errs)
 	}
-	if got := gitOut(t, "rev-parse", "HEAD~1"); got != work {
-		t.Fatalf("record commit's parent %s, want %s", got, work)
+	// The lead's commit, reworded: no commit of its own, the same tree.
+	if rec == work || gitOut(t, "rev-parse", "HEAD~1") != base || gitOut(t, "rev-parse", "HEAD^{tree}") != tree {
+		t.Fatalf("landed %s: parent %s, tree %s; want parent %s, tree %s", rec, gitOut(t, "rev-parse", "HEAD~1"), gitOut(t, "rev-parse", "HEAD^{tree}"), base, tree)
+	}
+	if msg := gitOut(t, "log", "-1", "--format=%B"); msg != "the work\n\nSpec: 012\nVerified: verify ok t:"+tree[:8] {
+		t.Fatalf("message %q", msg)
 	}
 	if r.originMain(t) != rec || gitOut(t, "-C", r.repo, "rev-parse", "main") != rec {
 		t.Fatalf("main not at %s", rec)
 	}
-	front := r.specOnOrigin(t)
-	for _, w := range []string{"status: done\n", "branch: lead\n", "merged: " + work + "\n", "verified: verify ok t:" + tree[:8] + "\n"} {
-		if !strings.Contains(front, w) {
-			t.Fatalf("spec on origin lacks %q:\n%s", w, front)
-		}
-	}
-	if strings.Contains(front, "operator_steps") { // no Needs section, no steps
-		t.Fatalf("spec on origin has steps:\n%s", front)
+	if front := r.specOnOrigin(t); front != "---\nid: 12\nstatus: done\n---\nbody" {
+		t.Fatalf("spec on origin:\n%s", front)
 	}
 	assertNoLeases(t, c, ctx)
-	// The landed spec satisfies done.
+	// The landed commit satisfies done.
 	if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", rec); code != 0 || out != "done app-012 "+rec[:8]+"\n" {
 		t.Fatalf("done: %d %q %q", code, out, errs)
 	}
-	// Landed, it refuses a second land: the spec no longer reads building.
+	// Landed, it refuses a second land.
 	if _, errs, code := runCLI(t, as("app-012"), "land"); code != 3 || !strings.Contains(errs, "refused: nothing to land") {
 		t.Fatalf("second land: %d %q", code, errs)
 	}
 }
 
+// A spec that doesn't read done in the worktree is refused before the
+// lease, with the step that fixes it: nothing queued, nothing pushed.
+func TestLandRefusesASpecNotReadingDone(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	writeFile(t, filepath.Join(r.wt, "docs", "proposals", "012-thing.md"), "---\nid: 12\nstatus: accepted\n---\nbody\n")
+	meshtest.Git(t, r.wt, "commit", "-qam", "not done")
+	runs := countRuns(t, r, "true")
+	base := r.originMain(t)
+	out, errs, code := runCLI(t, as("app-012"), "land")
+	if code != 3 || out != "" || errs != "bmesh: refused: spec 012 reads accepted on lead; a spec lands with its code reading done: "+
+		"run bmesh spec set --id 012 --status done, commit it, and land again\n" {
+		t.Fatalf("land: %d %q %q", code, out, errs)
+	}
+	if runs() != 0 || r.originMain(t) != base {
+		t.Fatal("land ran verify or pushed")
+	}
+	if jobs := unanswered(t, c, ctx); len(jobs) != 0 {
+		t.Fatalf("queued %+v", jobs)
+	}
+	assertNoLeases(t, c, ctx)
+	// The step it names lands it.
+	if _, errs, code := runCLI(t, nil, "spec", "set", "--id", "012", "--status", "done"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	meshtest.Git(t, r.wt, "commit", "-qam", "done")
+	if out, errs, code := runCLI(t, as("app-012"), "land"); code != 0 {
+		t.Fatalf("land again: %d %q %q", code, out, errs)
+	}
+	if strings.Contains(r.specOnOrigin(t), "merged") {
+		t.Fatal("land wrote the spec")
+	}
+}
+
 // Main moves each time verify runs, three times (the first run being
 // verify before the lease, which the rebase under it takes in): each push
-// under the lease is refused, the record commit taken back and land starts
-// again from the fetch, and lands on the third try.
+// under the lease is refused, the reword taken back and land starts again
+// from the fetch, and lands on the third try, the trailers written once.
 func TestLandStartsAgainWhileMainMoves(t *testing.T) {
 	c, ctx := setup(t)
 	r := newLandRepo(t)
@@ -166,25 +206,58 @@ func TestLandStartsAgainWhileMainMoves(t *testing.T) {
 	work := gitOut(t, "rev-parse", "HEAD")
 
 	out, errs, code := runCLI(t, as("app-012"), "land")
-	if code != 0 || strings.Count(out, "main moved; again from the fetch\n") != 2 || !strings.HasSuffix(out, "landed "+gitOut(t, "rev-parse", "HEAD")[:8]+"\n") {
+	rec := gitOut(t, "rev-parse", "HEAD")
+	if code != 0 || strings.Count(out, "main moved; again from the fetch\n") != 2 || strings.Count(out, "trailers ") != 3 ||
+		!strings.HasSuffix(out, "landed "+rec[:8]+"\n") {
 		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
 	}
 	moved := gitOut(t, "-C", other, "rev-parse", "HEAD")
-	merged := gitOut(t, "rev-parse", "HEAD~1")
-	if gitOut(t, "rev-parse", "HEAD~2") != moved || merged == work {
-		t.Fatalf("not rebased onto the moved main: HEAD~2 %s, moved %s", gitOut(t, "rev-parse", "HEAD~2"), moved)
+	if gitOut(t, "rev-parse", "HEAD~1") != moved || rec == work {
+		t.Fatalf("not rebased onto the moved main: HEAD~1 %s, moved %s", gitOut(t, "rev-parse", "HEAD~1"), moved)
 	}
-	if r.originMain(t) != gitOut(t, "rev-parse", "HEAD") {
-		t.Fatal("origin main is not the record commit")
+	if r.originMain(t) != rec {
+		t.Fatal("origin main is not the landed commit")
 	}
-	if front := r.specOnOrigin(t); !strings.Contains(front, "merged: "+merged+"\n") ||
-		!strings.Contains(front, "verified: verify ok t:"+gitOut(t, "rev-parse", "HEAD~1^{tree}")[:8]+"\n") {
-		t.Fatalf("spec on origin:\n%s", front)
-	}
-	if n := gitOut(t, "rev-list", "--count", "--grep", "012: done", "HEAD"); n != "1" {
-		t.Fatalf("%s record commits", n)
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
+	if msg := gitOut(t, "log", "-1", "--format=%B"); msg != "the work\n\nSpec: 012\nVerified: verify ok t:"+tree[:8] {
+		t.Fatalf("message %q", msg)
 	}
 	assertNoLeases(t, c, ctx)
+}
+
+// A spec with steps for the operator lands as written: land counts them
+// and copies nothing into the spec.
+func TestLandSaysTheOperatorSteps(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	text := "---\nid: 12\nstatus: done\n---\n\n## Proposal\nx\n\n## Needs from the operator\nOn the Mac:\n" +
+		"- [ricks-macbook] run `bmesh update` check: `bmesh version`\n- answer the list\n"
+	writeFile(t, filepath.Join(r.wt, "docs", "proposals", "012-thing.md"), text)
+	meshtest.Git(t, r.wt, "commit", "-qam", "needs")
+	out, errs, code := runCLI(t, as("app-012"), "land")
+	if code != 0 || !strings.Contains(out, "operator steps: 2 (bmesh spec steps 012)\n") {
+		t.Fatalf("land: %d %q %q", code, out, errs)
+	}
+	if got := r.specOnOrigin(t); got+"\n" != text {
+		t.Fatalf("spec on origin:\n%s", got)
+	}
+}
+
+// Trailers a pass before wrote (a land stopped after its reword) are
+// replaced, never doubled.
+func TestLandReplacesTrailersAPassWrote(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", RepoPath: r.repo, Spec: "012"})
+	meshtest.Git(t, r.wt, "commit", "--amend", "-qm", "the work\n\nCo-Authored-By: x <x@x>\nSpec: 012\nVerified: verify ok t:00000000")
+	if out, errs, code := runCLI(t, as("app-012"), "land"); code != 0 {
+		t.Fatalf("land: %d %q %q", code, out, errs)
+	}
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
+	if msg := gitOut(t, "log", "-1", "--format=%B"); msg != "the work\n\nCo-Authored-By: x <x@x>\nSpec: 012\nVerified: verify ok t:"+tree[:8] {
+		t.Fatalf("message %q", msg)
+	}
 }
 
 // Main moving on every try is given up on at --wait (exit 5), with nothing
@@ -204,11 +277,8 @@ func TestLandTimesOutWhenMainKeepsMoving(t *testing.T) {
 	if r.originMain(t) != gitOut(t, "-C", other, "rev-parse", "HEAD") {
 		t.Fatal("land pushed")
 	}
-	if strings.Contains(gitOut(t, "log", "--format=%s", "-1"), "done") || gitOut(t, "status", "--porcelain") != "" {
-		t.Fatal("record commit or changes left on the branch")
-	}
-	if b, _ := os.ReadFile(filepath.Join(r.wt, "docs", "proposals", "012-thing.md")); !strings.Contains(string(b), "status: building") {
-		t.Fatalf("spec in the worktree:\n%s", b)
+	if strings.Contains(gitOut(t, "log", "--format=%B", "-1"), "Spec:") || gitOut(t, "status", "--porcelain") != "" {
+		t.Fatal("trailers or changes left on the branch")
 	}
 	assertNoLeases(t, c, ctx)
 }
@@ -251,7 +321,7 @@ func TestLandWaitsForHeldLease(t *testing.T) {
 	}
 	select {
 	case code := <-res:
-		if code != 0 || !strings.HasPrefix(out.String(), "required: verify (the repo's verify kind)\nverify ok t:"+gitOut(t, "rev-parse", "HEAD~1^{tree}")[:8]+" (recorded)\n"+
+		if code != 0 || !strings.HasPrefix(out.String(), "required: verify (the repo's verify kind)\nverify ok t:"+gitOut(t, "rev-parse", "HEAD^{tree}")[:8]+" (recorded)\n"+
 			"waiting for land.repo (held by app-011)\nlease land.repo\n") ||
 			!strings.Contains(out.String(), "landed ") {
 			t.Fatalf("land: %d\n%s\nerr %q", code, out.String(), errb.String())
@@ -341,7 +411,7 @@ func TestLandWaitsForMainAheadOfOrigin(t *testing.T) {
 	}
 	meshtest.Git(t, r.repo, "push", "-q", "origin", "main")
 	landEnds(t, res, 0, out, errb)
-	if gitOut(t, "rev-parse", "HEAD~2") != theirs || r.originMain(t) != gitOut(t, "rev-parse", "HEAD") {
+	if gitOut(t, "rev-parse", "HEAD~1") != theirs || r.originMain(t) != gitOut(t, "rev-parse", "HEAD") {
 		t.Fatalf("not landed on the pushed main:\n%s", out.String())
 	}
 	if strings.Count(out.String(), "waiting for main in") != 1 {
@@ -417,12 +487,12 @@ func TestLandCarriesReviewOnlyForAnUnchangedDiff(t *testing.T) {
 	// Main changes another file: the diff is the same and the review carries.
 	r.pushOther(t, "c.txt", "c\n")
 	out, errs, code := runCLI(t, as("app-012"), "land")
-	tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 	entry := "review ok t:" + tree[:8] + " m:claude-opus-5-5 c:" + reviewed[:8]
 	if code != 0 || !strings.Contains(out, entry+" (carried from t:"+reviewed[:8]+": the rebase left the diff unchanged)\n") {
 		t.Fatalf("same diff: %d\n%s\nerr %q", code, out, errs)
 	}
-	if front := r.specOnOrigin(t); !strings.Contains(front, "verified: "+entry+"; verify ok t:"+tree[:8]+"\n") {
+	if front := r.trailersOnOrigin(t); !strings.Contains(front, "Verified: "+entry+"; verify ok t:"+tree[:8]+"") {
 		t.Fatalf("spec on origin:\n%s", front)
 	}
 	rec := gitOut(t, "rev-parse", "HEAD")
@@ -461,16 +531,15 @@ func TestLandPutsACarriedReviewOnTheLine(t *testing.T) {
 	// Main moves in another file: a new tree, the same diff.
 	r.pushOther(t, "c.txt", "c\n")
 	out, errs, code := runCLI(t, as("app-012"), "land")
-	merged := gitOut(t, "rev-parse", "HEAD~1")
-	tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+	merged := gitOut(t, "rev-parse", "HEAD")
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 	entry := "review ok t:" + tree[:8] + " m:claude-opus-5-5 c:" + reviewed[:8]
 	if code != 0 || !strings.HasPrefix(out, "required: verify (the repo's verify kind), review (t:"+reviewed[:8]+" at HEAD)\n") ||
 		!strings.Contains(out, entry+" (carried from t:"+reviewed[:8]+": the diff is unchanged)\n") ||
 		!strings.Contains(out, "verified: "+entry+"; verify ok t:"+tree[:8]+"\n") {
 		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
 	}
-	if front := r.specOnOrigin(t); !strings.Contains(front, "verified: "+entry+"; verify ok t:"+tree[:8]+"\n") ||
-		!strings.Contains(front, "merged: "+merged+"\n") {
+	if front := r.trailersOnOrigin(t); !strings.Contains(front, "Verified: "+entry+"; verify ok t:"+tree[:8]) || r.originMain(t) != merged {
 		t.Fatalf("spec on origin:\n%s", front)
 	}
 	rec := gitOut(t, "rev-parse", "HEAD")
@@ -507,15 +576,12 @@ func TestDoneMatchesCarriedEntryAtItsTree(t *testing.T) {
 	meshtest.Git(t, r.repo, "add", "-A")
 	meshtest.Git(t, r.repo, "commit", "-qm", "other")
 	meshtest.Git(t, r.repo, "cherry-pick", lead)
-	merged := gitOut(t, "-C", r.repo, "rev-parse", "main")
 	tree := gitOut(t, "-C", r.repo, "rev-parse", "main^{tree}")
 	if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "verify", Tree: tree, OK: true, By: "h"}); err != nil {
 		t.Fatal(err)
 	}
 	line := "review ok t:" + tree[:8] + " m:claude-opus-5-5 c:" + reviewed[:8] + "; verify ok t:" + tree[:8]
-	writeFile(t, filepath.Join(r.repo, "docs", "proposals", "012-thing.md"),
-		"---\nid: 12\nstatus: done\nbranch: lead\nmerged: "+merged+"\nverified: "+line+"\n---\nbody\n")
-	meshtest.Git(t, r.repo, "commit", "-qam", "012 done")
+	meshtest.Git(t, r.repo, "commit", "--amend", "-qm", "the work\n\nSpec: 012\nVerified: "+line)
 	meshtest.Git(t, r.repo, "push", "-q", "origin", "main")
 	rec := gitOut(t, "-C", r.repo, "rev-parse", "main")
 	refused := func(what string) {
@@ -619,7 +685,7 @@ func TestLandNamesOtherUnreadMail(t *testing.T) {
 	out, errs, code := runCLI(t, as("app-012"), "land")
 	want := "unread: done from app-012.alpha (branch lead-alpha at 1a2b3c4d); reply to job j1 (review ok); message from app-012.beta\n" +
 		"required: verify (the repo's verify kind)\n" +
-		"verify ok t:" + gitOut(t, "rev-parse", "HEAD~1^{tree}")[:8] + " (recorded)\n" +
+		"verify ok t:" + gitOut(t, "rev-parse", "HEAD^{tree}")[:8] + " (recorded)\n" +
 		"lease land.repo\n" + "fetch origin/main " + base[:8] + "\n"
 	if code != 0 || !strings.HasPrefix(out, want) || !strings.Contains(out, "landed ") {
 		t.Fatalf("land: %d\n%s\nwant prefix\n%s\nerr %q", code, out, want, errs)
@@ -746,13 +812,13 @@ func TestLandCarriesTheReviewAcrossAHandRebase(t *testing.T) {
 	rebased := gitOut(t, "rev-parse", "HEAD")
 
 	out, errs, code := runCLI(t, as("app-012"), "land")
-	tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 	entry := "review ok t:" + tree[:8] + " m:claude-opus-5-5 c:" + reviewed[:8]
 	if code != 0 || !strings.HasPrefix(out, "required: verify (the repo's verify kind), review (t:"+reviewed[:8]+" before the rebase at "+rebased[:8]+")\n") ||
 		!strings.Contains(out, entry+" (carried from t:"+reviewed[:8]+": the rebase left the diff unchanged)\n") {
 		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
 	}
-	if front := r.specOnOrigin(t); !strings.Contains(front, "verified: "+entry+"; verify ok t:"+tree[:8]+"\n") {
+	if front := r.trailersOnOrigin(t); !strings.Contains(front, "Verified: "+entry+"; verify ok t:"+tree[:8]+"") {
 		t.Fatalf("spec on origin:\n%s", front)
 	}
 	rec := gitOut(t, "rev-parse", "HEAD")
@@ -781,7 +847,7 @@ func TestLandAFixedReviewOnVerifyAlone(t *testing.T) {
 				meshtest.Git(t, r.wt, "rebase", "-q", "origin/main")
 			}
 			out, errs, code := runCLI(t, as("app-012"), "land")
-			tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+			tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 			if code != 0 || !strings.HasPrefix(out, "required: verify (the repo's verify kind); left behind by later commits: review ok t:"+
 				reviewed[:8]+" at "+at[:8]+" (not on the verified line)\n") ||
 				!strings.Contains(out, "verified: verify ok t:"+tree[:8]+"\n") {
@@ -806,18 +872,18 @@ func TestLandNamesAReviewLeftBehind(t *testing.T) {
 				OK: ok, Model: "claude-opus-5-5", By: "routine.review.x"}); err != nil {
 				t.Fatal(err)
 			}
-			writeFile(t, filepath.Join(r.wt, "docs", "proposals", "012-thing.md"), "---\nid: 12\nstatus: building\nbranch: lead\n---\nbody, as built\n")
+			writeFile(t, filepath.Join(r.wt, "docs", "proposals", "012-thing.md"), "---\nid: 12\nstatus: done\n---\nbody, as built\n")
 			meshtest.Git(t, r.wt, "commit", "-qam", "012: as built")
 
 			out, errs, code := runCLI(t, as("app-012"), "land")
-			tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+			tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 			verdict := map[bool]string{true: "ok", false: "fail"}[ok]
 			want := "required: verify (the repo's verify kind); left behind by later commits: review " + verdict +
 				" t:" + reviewed[:8] + " at " + at[:8] + " (not on the verified line)\n"
 			if code != 0 || !strings.HasPrefix(out, want) {
 				t.Fatalf("land: %d\n%s\nwant prefix\n%s\nerr %q", code, out, want, errs)
 			}
-			if front := r.specOnOrigin(t); !strings.Contains(front, "verified: verify ok t:"+tree[:8]+"\n") {
+			if front := r.trailersOnOrigin(t); !strings.Contains(front, "Verified: verify ok t:"+tree[:8]+"") {
 				t.Fatalf("spec on origin:\n%s", front)
 			}
 		})
@@ -1049,7 +1115,7 @@ func TestLandCarriesVerifyOverACommitOutsideTheCode(t *testing.T) {
 
 	out, errs, code := runCLI(t, as("app-012"), "land")
 	rec := gitOut(t, "rev-parse", "HEAD")
-	tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 	if code != 0 || runs() != 1 ||
 		!strings.Contains(out, "verify ok t:"+first[:8]+" (recorded)\n") ||
 		!strings.Contains(out, "verify ok t:"+tree[:8]+" (carried from t:"+first[:8]+": nothing under code changed)\n") ||
@@ -1060,11 +1126,12 @@ func TestLandCarriesVerifyOverACommitOutsideTheCode(t *testing.T) {
 		t.Fatal("not landed over the moved main")
 	}
 	got, ok, err := mesh.GetResult(ctx, c, mesh.ResultKey("verify", tree, nil, ""))
-	if err != nil || !ok || !got.OK || got.Commit != gitOut(t, "rev-parse", "HEAD~1") ||
+	// Recorded for the rebased commit, before land reworded it: its tree.
+	if err != nil || !ok || !got.OK || gitOut(t, "rev-parse", got.Commit+"^{tree}") != tree ||
 		!strings.HasPrefix(got.Output, "carried from t:"+first[:8]+": nothing under code changed\n") {
 		t.Fatalf("stored %+v %v %v", got, ok, err)
 	}
-	if front := r.specOnOrigin(t); !strings.Contains(front, "verified: verify ok t:"+tree[:8]+"\n") {
+	if front := r.trailersOnOrigin(t); !strings.Contains(front, "Verified: verify ok t:"+tree[:8]+"") {
 		t.Fatalf("spec on origin:\n%s", front)
 	}
 	if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", rec); code != 0 || out != "done app-012 "+rec[:8]+"\n" {
@@ -1108,7 +1175,7 @@ func TestLandCarriesVerifyOnlyOutsideTheCode(t *testing.T) {
 			r.pushOther(t, tc.file, tc.body)
 
 			out, errs, code := runCLI(t, as("app-012"), "land")
-			tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+			tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 			if code != 0 {
 				t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
 			}
@@ -1117,7 +1184,7 @@ func TestLandCarriesVerifyOnlyOutsideTheCode(t *testing.T) {
 			if tc.carried && (runs() != 0 || !strings.Contains(out, carried)) || !tc.carried && (runs() != 1 || !strings.Contains(out, ran)) {
 				t.Fatalf("carried %v: runs %d\n%s", tc.carried, runs(), out)
 			}
-			if front := r.specOnOrigin(t); !strings.Contains(front, "verified: verify ok t:"+tree[:8]+"\n") {
+			if front := r.trailersOnOrigin(t); !strings.Contains(front, "Verified: verify ok t:"+tree[:8]+"") {
 				t.Fatalf("spec on origin:\n%s", front)
 			}
 		})
@@ -1147,6 +1214,8 @@ func TestLandCarriesVerifyFromTheBranchRun(t *testing.T) {
 			runs := countRuns(t, r, "true")
 			if tc.docsOnly {
 				meshtest.Git(t, r.wt, "reset", "-q", "--hard", "main")
+				writeFile(t, filepath.Join(r.wt, "docs", "proposals", "012-thing.md"), "---\nid: 12\nstatus: done\n---\nbody\n")
+				meshtest.Git(t, r.wt, "commit", "-qam", "012 done")
 			}
 			verified := gitOut(t, "rev-parse", "HEAD^{tree}")
 			if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "verify", Tree: verified, Commit: gitOut(t, "rev-parse", "HEAD"),
@@ -1159,13 +1228,13 @@ func TestLandCarriesVerifyFromTheBranchRun(t *testing.T) {
 
 			out, errs, code := runCLI(t, as("app-012"), "land")
 			rec := gitOut(t, "rev-parse", "HEAD")
-			tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+			tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 			if code != 0 || runs() != 0 ||
 				!strings.Contains(out, "verify ok t:"+head[:8]+" (carried from t:"+verified[:8]+": nothing under code changed)\n") ||
 				!strings.Contains(out, "verify ok t:"+tree[:8]+" (carried from t:"+head[:8]+": nothing under code changed)\n") {
 				t.Fatalf("land: %d runs %d\n%s\nerr %q", code, runs(), out, errs)
 			}
-			if front := r.specOnOrigin(t); !strings.Contains(front, "verified: verify ok t:"+tree[:8]+"\n") {
+			if front := r.trailersOnOrigin(t); !strings.Contains(front, "Verified: verify ok t:"+tree[:8]+"") {
 				t.Fatalf("spec on origin:\n%s", front)
 			}
 			if out, errs, code := runCLI(t, as("app-012"), "done", "--commit", rec); code != 0 || out != "done app-012 "+rec[:8]+"\n" {
@@ -1326,7 +1395,7 @@ func reviewLandRepo(t *testing.T, c *mesh.Client, ctx context.Context, size stri
 	t.Helper()
 	r := newLandRepo(t)
 	writeFile(t, filepath.Join(r.wt, ".bmesh", "routines", "review.toml"), "mode = \"pooled\"\nmodels = [\"m1\"]\nprompt = \"check\"\n")
-	front := "---\nid: 12\nstatus: building\nbranch: lead\n"
+	front := "---\nid: 12\nstatus: done\n"
 	if size != "" {
 		front += "size: " + size + "\n"
 	}
@@ -1422,7 +1491,7 @@ func TestLandQueuesTheSizedReview(t *testing.T) {
 	})
 	answer(t, c, ctx, j, true, true, "fine\nVERDICT: ok")
 	landEnds(t, res, 0, out, errb)
-	tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 	for _, w := range []string{"review: queued " + j.ID + " (medium, size M)\n", "waiting for job " + j.ID + " (review, waiting)\n",
 		"job " + j.ID + " (review): ok t:" + tree[:8] + "\n", "review: on the branch already (ok at t:" + tree[:8] + ")\n",
 		"verified: review ok t:" + tree[:8] + " m:m1; verify ok t:" + tree[:8] + "\n"} {
@@ -1450,7 +1519,7 @@ func TestLandSizesTheReview(t *testing.T) {
 		c, ctx := setup(t)
 		reviewLandRepo(t, c, ctx, "S")
 		out, errs, code := runCLI(t, as("app-012"), "land")
-		tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+		tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 		if code != 0 || !strings.Contains(out, "review: none (size S)\n") || !strings.Contains(out, "verified: verify ok t:"+tree[:8]+"\n") {
 			t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
 		}
@@ -1537,7 +1606,7 @@ func TestLandQueuesNoSecondReview(t *testing.T) {
 		reviewLandRepo(t, c, ctx, "M")
 		reviewed := putReview(t, c, ctx)
 		out, errs, code := runCLI(t, as("app-012"), "land")
-		tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+		tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 		if code != 0 || !strings.Contains(out, "review: on the branch already (ok at t:"+reviewed[:8]+")\n") ||
 			!strings.Contains(out, "verified: review ok t:"+tree[:8]+" m:claude-opus-5-5") {
 			t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
@@ -1557,7 +1626,7 @@ func TestLandQueuesNoSecondReview(t *testing.T) {
 		writeFile(t, filepath.Join(rp.wt, "b.txt"), "b fixed\n")
 		meshtest.Git(t, rp.wt, "commit", "-qam", "the review's findings")
 		out, errs, code := runCLI(t, as("app-012"), "land")
-		landedTree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+		landedTree := gitOut(t, "rev-parse", "HEAD^{tree}")
 		if code != 0 || !strings.Contains(out, "review: on the branch already (fail at t:"+tree[:8]+")\n") ||
 			!strings.Contains(out, "verified: verify ok t:"+landedTree[:8]+"\n") {
 			t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
@@ -1574,7 +1643,7 @@ func TestLandQueuesNoSecondReview(t *testing.T) {
 		meshtest.Git(t, rp.wt, "fetch", "-q", "origin")
 		meshtest.Git(t, rp.wt, "rebase", "-q", "origin/main")
 		out, errs, code := runCLI(t, as("app-012"), "land")
-		tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+		tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 		if code != 0 || !strings.Contains(out, "review: on the branch already (ok at t:"+reviewed[:8]+")\n") ||
 			!strings.Contains(out, "review ok t:"+tree[:8]+" m:claude-opus-5-5 c:"+reviewed[:8]) {
 			t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
@@ -1673,7 +1742,7 @@ func TestLandQueuesTheReviewAgainAfterItsRebase(t *testing.T) {
 	assertNoLeases(t, c, ctx)
 	answer(t, c, ctx, j, true, true, "VERDICT: ok")
 	landEnds(t, res, 0, out, errb)
-	tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 	if tree != j.Tree || !strings.Contains(out.String(), "verified: review ok t:"+tree[:8]+" m:m1; verify ok t:"+tree[:8]+"\n") {
 		t.Fatalf("land:\n%s", out.String())
 	}
@@ -1753,7 +1822,7 @@ func TestLandOutsideANodeQueuesNoReview(t *testing.T) {
 		t.Fatal(code, errs)
 	}
 	out, errs, code := runCLI(t, nil, "land", "--spec", "012")
-	tree := gitOut(t, "rev-parse", "HEAD~1^{tree}")
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
 	if code != 0 || strings.Contains(out, "review:") || strings.Contains(out, "waiting for job") ||
 		!strings.Contains(out, "verified: verify ok t:"+tree[:8]+"\n") {
 		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)

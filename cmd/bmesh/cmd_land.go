@@ -102,11 +102,12 @@ func (s *source) String() string {
 }
 
 // cmdLand lands the worktree's branch on main under the lease land.<repo>.
-// Before the lease: the inline kinds on HEAD, the review the spec's size
-// calls for, the node's jobs on HEAD and a main checkout with nothing
-// unpushed. Under it: fetch, rebase onto main, results for the rebased
-// tree, the spec's verified line, done with merged and branch, a commit, a
-// fast-forward push. A push main refuses (it moved) starts again from the
+// Before the lease: the spec reading done in the worktree, the inline kinds
+// on HEAD, the review the spec's size calls for, the node's jobs on HEAD
+// and a main checkout with nothing unpushed. Under it: fetch, rebase onto
+// main, results for the rebased tree, the verified line, HEAD reworded to
+// carry the Spec and Verified trailers, a fast-forward push. A push main
+// refuses (it moved) takes the reword back and starts again from the
 // fetch, and a rebase that changed the diff a review read queues the review
 // again and starts again from the top, while --wait lasts.
 func (a *app) cmdLand(args []string) (err error) {
@@ -394,6 +395,9 @@ func (l *lander) prepare(ctx context.Context) error {
 		return fail(exitRefused, "refused: land runs on a lead's branch, not %s", dash(b))
 	}
 	l.branch = b
+	if _, err := landsDone(l.top, l.a.cfg.Spec.Glob, l.id, b); err != nil {
+		return err
+	}
 	if err := l.mail(ctx, l.waited == ""); err != nil {
 		return err
 	}
@@ -988,7 +992,7 @@ func (l *lander) land(ctx context.Context) error {
 }
 
 // once is one pass from fetch to push; moved reports a push main refused
-// because it moved, with the record commit taken back off the branch.
+// because it moved, with HEAD reset to the commit before its reword.
 func (l *lander) once(ctx context.Context) (moved bool, err error) {
 	out := l.a.stdout
 	git := func(args ...string) (string, error) { return gitIn(ctx, l.top, args...) }
@@ -1050,16 +1054,9 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 		return false, err
 	}
 
-	specs, err := spec.Scan(l.top, l.a.cfg.Spec.Glob)
+	s, err := landsDone(l.top, l.a.cfg.Spec.Glob, l.id, l.branch)
 	if err != nil {
-		return false, landFail(err)
-	}
-	s, ok := spec.Find(specs, l.id)
-	if !ok {
-		return false, fail(exitRefused, "refused: no spec %03d in %s", l.id, l.top)
-	}
-	if s.Status() != "building" {
-		return false, fail(exitRefused, "refused: spec %03d reads %s, not building", l.id, s.Status())
+		return false, err
 	}
 
 	if err := l.scaffolded(ctx, baseSHA); err != nil {
@@ -1071,50 +1068,20 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 		return false, err
 	}
 
-	rel, err := filepath.Rel(l.top, s.Path)
+	verified, err := spec.VerifiedLine(entries)
 	if err != nil {
 		return false, err
 	}
-	restore := func() { _, _ = cleanup("checkout", "HEAD", "--", rel) }
-	done := []spec.Field{{Key: "merged", Value: merged}, {Key: "branch", Value: l.branch}}
-	steps := spec.KeepBoxes(s.NeedsSteps(), l.a.rosterBoxes())
-	old, _ := s.Steps()
-	if len(steps) > 0 || len(old) > 0 { // a spec landed again keeps its ticks, or drops its steps
-		v, err := spec.EncodeSteps(spec.CarryTicks(old, steps))
-		if err != nil {
-			return false, err
-		}
-		done = append(done, spec.Field{Key: spec.StepsKey, Value: v})
-	}
-	if _, err := spec.SetStatus(s, "done", []string{"building"}, done...); err != nil {
-		restore()
-		return false, ledgerFail(err)
-	}
-	if err := spec.WriteVerified(s.Path, entries); err != nil {
-		restore()
-		return false, err
-	}
-	fmt.Fprintf(out, "verified: %s\n", spec.FormatVerified(entries))
-	fmt.Fprintf(out, "spec %03d done: merged %s, branch %s\n", l.id, merged[:8], l.branch)
-	if len(steps) > 0 {
+	fmt.Fprintf(out, "verified: %s\n", verified)
+	if steps := s.NeedsSteps(); len(steps) > 0 {
 		fmt.Fprintf(out, "operator steps: %d (bmesh spec steps %03d)\n", len(steps), l.id)
 	}
-	msg := fmt.Sprintf("%03d: done at %s", l.id, merged[:8])
-	if _, err := git("add", "--", rel); err != nil {
-		restore()
-		return false, err
-	}
-	if _, err := git("commit", "--quiet", "-m", msg); err != nil {
-		_, _ = cleanup("reset", "--quiet", "--", rel)
-		restore()
-		return false, err
-	}
-	rec, err := git("rev-parse", "HEAD")
+	rec, err := l.reword(ctx, merged, tree, verified)
 	if err != nil {
 		return false, err
 	}
-	fmt.Fprintf(out, "commit %s %s\n", rec[:8], msg)
-	undo := func() { _, _ = cleanup("reset", "--quiet", "--keep", "HEAD~1") }
+	fmt.Fprintf(out, "trailers %s: %s %03d, %s\n", rec[:8], spec.SpecTrailer, l.id, spec.VerifiedTrailer)
+	undo := func() { _, _ = cleanup("reset", "--quiet", "--keep", merged) }
 
 	// The push is past the point of no return: an interrupt during it
 	// lets it finish, and land reports what happened, since a push killed
@@ -1148,6 +1115,69 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 	}
 	l.landed = rec
 	return false, nil
+}
+
+// landsDone reads spec id in the worktree at top and refuses it unless it
+// reads done: a spec lands with its code, set done on the lead's branch.
+func landsDone(top, glob string, id int, branch string) (*spec.Spec, error) {
+	specs, err := spec.Scan(top, glob)
+	if err != nil {
+		return nil, landFail(err)
+	}
+	s, ok := spec.Find(specs, id)
+	if !ok {
+		return nil, fail(exitRefused, "refused: no spec %03d in %s", id, top)
+	}
+	if s.Status() != "done" {
+		return nil, fail(exitRefused, "refused: spec %03d reads %s on %s; a spec lands with its code reading done: "+
+			"run bmesh spec set --id %03d --status done, commit it, and land again", id, s.Status(), branch, id)
+	}
+	return s, nil
+}
+
+// reword amends HEAD (head, at tree) so its message ends with the Spec
+// and Verified trailers, replacing any a pass before wrote, and returns
+// the new HEAD. The message is all that changes: a tree that moved anyway
+// is put back (exit 1).
+func (l *lander) reword(ctx context.Context, head, tree, verified string) (string, error) {
+	msg, err := gitIn(ctx, l.top, "log", "-1", "--format=%B", head)
+	if err != nil {
+		return "", err
+	}
+	trailed, err := gitStdin(ctx, l.top, msg+"\n", "interpret-trailers", "--if-exists", "replace",
+		"--trailer", fmt.Sprintf("%s: %03d", spec.SpecTrailer, l.id), "--trailer", spec.VerifiedTrailer+": "+verified)
+	if err != nil {
+		return "", err
+	}
+	if _, err := gitStdin(ctx, l.top, trailed, "commit", "--amend", "--quiet", "--no-verify", "--allow-empty", "-F", "-"); err != nil {
+		return "", err
+	}
+	rec, err := gitIn(ctx, l.top, "rev-parse", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	if now, err := gitIn(ctx, l.top, "rev-parse", "HEAD^{tree}"); err != nil || now != tree {
+		c, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		_, _ = gitIn(c, l.top, "reset", "--quiet", "--keep", head)
+		return "", fail(exitError, "rewording %s changed its tree (t:%.8s, was t:%s); it is put back and nothing is pushed", head[:8], now, tree[:8])
+	}
+	return rec, nil
+}
+
+// gitStdin is gitIn with stdin fed from in, its output kept whole.
+func gitStdin(ctx context.Context, dir, in string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	cmd.Stdin = strings.NewReader(in)
+	out, err := cmd.Output()
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			return "", fmt.Errorf("git %s: %s", args[0], strings.TrimSpace(string(ee.Stderr)))
+		}
+		return "", fmt.Errorf("git %s: %w", args[0], err)
+	}
+	return string(out), nil
 }
 
 // landDriftLines is how much of the scaffold drift a refusal prints.

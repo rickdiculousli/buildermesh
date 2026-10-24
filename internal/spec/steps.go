@@ -1,17 +1,19 @@
 package spec
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
 
 // NeedsSection is the heading a spec's steps for the operator live under.
 const NeedsSection = "Needs from the operator"
 
-// StepsKey is the frontmatter key bmesh land copies the steps into.
+// StepsKey is the frontmatter key bmesh land copied the steps into, before
+// a landing carried trailers; an old spec still reads it.
 const StepsKey = "operator_steps"
 
 // Step is one step for the operator: its number in the list, the box it
@@ -133,15 +135,38 @@ func parseStep(text, lead string) Step {
 	return s
 }
 
-// Steps is the spec's operator_steps as recorded; nil when it has none.
-func (s *Spec) Steps() ([]Step, error) {
-	return DecodeSteps(s.Fields[StepsKey])
+// OperatorSteps is the steps a landed spec has for the operator, with the
+// ticks its file records. A spec landed before trailers has its
+// operator_steps, ticks included, or none when it has no such field (it
+// carries merged); another that reads done has its Needs section, a
+// bracketed word kept as a box only when isBox says it is one
+// (KeepBoxes); any other spec has none.
+func (s *Spec) OperatorSteps(isBox func(string) bool) ([]Step, error) {
+	_, recorded := s.Fields[StepsKey]
+	switch {
+	case recorded || s.Fields["merged"] != "":
+		return DecodeSteps(s.Fields[StepsKey])
+	case s.Status() == "done":
+		return KeepBoxes(s.NeedsSteps(), isBox), nil
+	}
+	return nil, nil
 }
 
 // NeedsSteps is the spec's Needs section read as steps, never ticked.
 func (s *Spec) NeedsSteps() []Step {
 	body, _ := Section(s.Body, NeedsSection)
 	return ParseSteps(body)
+}
+
+// Ticked is steps with the hub's ticks laid on: a step its file has not
+// ticked takes the tick of its number.
+func Ticked(steps []Step, ticks []mesh.StepTick) []Step {
+	for _, t := range ticks {
+		if i := t.N - 1; i >= 0 && i < len(steps) && steps[i].Done == "" {
+			steps[i].Done, steps[i].Note = t.Done, t.Note
+		}
+	}
+	return steps
 }
 
 // DecodeSteps reads an operator_steps value: a JSON list on one line.
@@ -154,21 +179,6 @@ func DecodeSteps(v string) ([]Step, error) {
 		return nil, ledgerErr("%s: %v", StepsKey, err)
 	}
 	return steps, nil
-}
-
-// EncodeSteps is steps as an operator_steps value: JSON on one line, with
-// `<`, `>` and `&` kept as written; no steps is `[]`.
-func EncodeSteps(steps []Step) (string, error) {
-	if steps == nil {
-		steps = []Step{}
-	}
-	var b bytes.Buffer
-	enc := json.NewEncoder(&b)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(steps); err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(b.String()), nil
 }
 
 // Open counts the steps not yet ticked.
@@ -200,23 +210,6 @@ func (s Step) String() string {
 		}
 	}
 	return line
-}
-
-// CarryTicks is steps with the ticks of the same steps (same box and
-// words) in old kept, each old step's tick at most once, so a spec landed
-// again keeps what was done.
-func CarryTicks(old, steps []Step) []Step {
-	used := make([]bool, len(old))
-	for i := range steps {
-		for k, o := range old {
-			if !used[k] && o.Done != "" && o.Box == steps[i].Box && o.Text == steps[i].Text {
-				steps[i].Done, steps[i].Note = o.Done, o.Note
-				used[k] = true
-				break
-			}
-		}
-	}
-	return steps
 }
 
 // KeepBoxes puts a bracketed word that names no box (isBox says) back in

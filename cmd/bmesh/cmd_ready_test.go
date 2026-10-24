@@ -12,6 +12,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/daemon"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 	"github.com/rickdiculousli/buildermesh/internal/runner"
 )
 
@@ -96,7 +97,7 @@ func TestReadyThenTheDaemonLands(t *testing.T) {
 	rn := &sendRunner{}
 	daemon.LandPass(ctx, cliDaemon(t, c, rn), daemon.NewActivity())
 	rec := gitOut(t, "rev-parse", "HEAD")
-	if r.originMain(t) != rec || !strings.Contains(r.specOnOrigin(t), "status: done\n") {
+	if r.originMain(t) != rec || !strings.Contains(r.specOnOrigin(t), "status: done\n") || !strings.Contains(r.trailersOnOrigin(t), "Spec: 012\n") {
 		t.Fatalf("not landed: origin %s, HEAD %s\n%s", r.originMain(t), rec, r.specOnOrigin(t))
 	}
 	if s := stateOf(t, c, ctx, "app-012"); s != "done" {
@@ -119,8 +120,8 @@ func TestReadyThenTheDaemonLands(t *testing.T) {
 	assertNoLeases(t, c, ctx)
 }
 
-// A land the daemon's step refuses (the spec doesn't read building) wakes
-// the lead with the refusal and leaves it working.
+// A land the daemon's step refuses (verify fails) wakes the lead with the
+// refusal and leaves it working.
 func TestReadyRefusedLandWakesTheLead(t *testing.T) {
 	c, ctx := setup(t)
 	r := newLandRepo(t)
@@ -182,6 +183,13 @@ func TestReadyRefusals(t *testing.T) {
 	if err := os.Remove(r.wt + "/dirty.txt"); err != nil {
 		t.Fatal(err)
 	}
+	// A spec not reading done on the branch: ready names the step, as land does.
+	spec := r.wt + "/docs/proposals/012-thing.md"
+	writeFile(t, spec, "---\nid: 12\nstatus: accepted\n---\nbody\n")
+	meshtest.Git(t, r.wt, "commit", "-qam", "not done")
+	refused("app-012", "refused: spec 012 reads accepted on lead; a spec lands with its code reading done: run bmesh spec set --id 012 --status done")
+	meshtest.Git(t, r.wt, "reset", "-q", "--hard", "HEAD~1")
+
 	sendTo(t, c, ctx, "app-012", mesh.Message{From: "operator", Kind: "message", Text: "wait"})
 	refused("app-012", "1 unread message(s) from the operator")
 	if _, _, code := runCLI(t, as("app-012"), "inbox"); code != 0 {

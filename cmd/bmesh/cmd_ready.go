@@ -11,7 +11,6 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/daemon"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
-	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
 const readyUsage = `usage: bmesh ready --text "<done line>" [--size XS|S|M|L] | bmesh ready --cancel`
@@ -90,14 +89,12 @@ func (a *app) cmdReady(args []string) error {
 	if err != nil {
 		return fail(exitRefused, "refused: %s names no spec (%q)", path, n.Spec)
 	}
-	specs, err := spec.Scan(top, a.cfg.Spec.Glob)
+	branch, err := gitIn(ctx, top, "branch", "--show-current")
 	if err != nil {
 		return err
 	}
-	if s, ok := spec.Find(specs, id); !ok {
-		return fail(exitRefused, "refused: no spec %03d in %s", id, top)
-	} else if s.Status() != "building" {
-		return fail(exitRefused, "refused: spec %03d reads %s, not building", id, s.Status())
+	if _, err := landsDone(top, a.cfg.Spec.Glob, id, dash(branch)); err != nil {
+		return err
 	}
 	pending, err := mesh.Pending(ctx, a.client, p)
 	if err != nil {

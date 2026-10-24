@@ -316,7 +316,16 @@ func TestTreeEndpoint(t *testing.T) {
 			`[{"n":1,"box":"","text":"a","done":"2026-10-17T10:00:00Z k"},{"n":2,"box":"","text":"b","done":""}]` + "\n---\nbody\n",
 		"docs/proposals/008-ticked.md": "---\nid: 8\ntitle: Ticked\nstatus: done\noperator_steps: " +
 			`[{"n":1,"box":"","text":"a","done":"2026-10-17T10:00:00Z k"}]` + "\n---\nbody\n",
+		// Landed with trailers: the steps are its Needs section, the ticks on the hub.
+		"docs/proposals/009-needs.md":   "---\nid: 9\ntitle: Needs\nstatus: done\n---\n\n## Needs from the operator\n- one\n- two\n- three\n",
+		"docs/proposals/010-all.md":     "---\nid: 10\ntitle: All ticked\nstatus: done\n---\n\n## Needs from the operator\n- one\n",
+		"docs/proposals/011-unbuilt.md": "---\nid: 11\ntitle: Not landed\nstatus: accepted\n---\n\n## Needs from the operator\n- one\n",
 	})
+	for id, n := range map[string]int{"009": 2, "010": 1} {
+		if _, err := mesh.TickSteps(ctx, c, "app", id, []mesh.StepTick{{N: n, Done: "2026-10-24T10:00:00Z k"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	cfg := &config.Config{Repos: map[string]config.Repo{"app": {Path: repo}}, Spec: config.SpecConfig{Glob: "docs/proposals/{id}-*.md"}}
 	for _, n := range []mesh.Node{
 		{Path: "a", Role: "lead"},
@@ -355,7 +364,7 @@ func TestTreeEndpoint(t *testing.T) {
 		t.Fatalf("orphans %+v", v.Orphans)
 	}
 	// The needs-you band's specs: open steps only.
-	if !strings.Contains(body, `"operator":[{"repo":"app","id":"007","title":"Open steps","open":1,"total":2}]`) {
+	if !strings.Contains(body, `"operator":[{"repo":"app","id":"007","title":"Open steps","open":1,"total":2},{"repo":"app","id":"009","title":"Needs","open":2,"total":3}]`) {
 		t.Fatalf("operator: %s", body)
 	}
 	// One group per defined kind, each with its depth once and its
@@ -388,6 +397,31 @@ func TestTreeEndpoint(t *testing.T) {
 	}
 	if page := getJSON(t, srv, "/", 200, nil); !strings.Contains(page, "<title>bmesh</title>") {
 		t.Fatalf("page %q", page)
+	}
+}
+
+// A spec landed with trailers has no merged or verified of its own: the
+// panel takes both from the commit on main whose Spec trailer names it.
+func TestLeadPageReadsALandingsTrailers(t *testing.T) {
+	ctx, c := connect(t)
+	repo := filepath.Join(t.TempDir(), "app")
+	meshtest.Git(t, filepath.Dir(repo), "init", "-q", "-b", "main", "app")
+	meshtest.CommitFiles(t, repo, map[string]string{"docs/proposals/012-thing.md": "---\nid: 12\ntitle: Thing\nstatus: done\n---\nbody\n"})
+	meshtest.Git(t, repo, "commit", "-q", "--allow-empty", "-m", "the work\n\nSpec: 012\nVerified: verify ok t:3f2a9c1e")
+	landed := meshtest.Git(t, repo, "rev-parse", "HEAD")
+	meshtest.Git(t, repo, "commit", "-q", "--allow-empty", "-m", "later")
+	cfg := &config.Config{Repos: map[string]config.Repo{"app": {Path: repo}}, Spec: config.SpecConfig{Glob: "docs/proposals/{id}-*.md"}}
+	if err := mesh.PutNode(ctx, c, mesh.Node{Path: "a", Role: "lead", Repo: "app", Spec: "012", Host: "box"}); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(Handler(c, time.Hour, Options{Cfg: cfg, Host: "box"}))
+	defer srv.Close()
+	var p struct {
+		Spec *Spec `json:"spec"`
+	}
+	getJSON(t, srv, "/api/lead/a", 200, &p)
+	if p.Spec == nil || p.Spec.Status != "done" || p.Spec.Merged != landed || p.Spec.Verified != "verify ok t:3f2a9c1e" {
+		t.Fatalf("spec %+v, want merged %s", p.Spec, landed)
 	}
 }
 

@@ -56,7 +56,7 @@ func CheckStep(ctx context.Context, repoPath, glob, host, id string, n int) (boo
 	if err != nil {
 		return false, "refused: " + err.Error()
 	}
-	steps, err := s.Steps()
+	steps, err := s.OperatorSteps(nil)
 	if err != nil {
 		return false, "refused: " + err.Error()
 	}

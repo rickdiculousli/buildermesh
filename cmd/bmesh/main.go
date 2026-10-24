@@ -93,7 +93,8 @@ commands:
                                            unless --apply
   whoami                                   print this node's path
   started|progress|blocked|ask [--text T]  report an event; print <event> <path>
-  done --commit SHA [--text T]             report done (a lead's spec must have landed, verified by results); print
+  done --commit SHA [--text T]             report done (a lead's commit must be its landing on main, its trailers
+                                           matched by results); print
                                            done <path> <sha8>, or already done at <sha8> for a repeat
   send <path> <text|->                     message a node (- reads stdin)
   inbox [--peek] [--json]                  read (and ack) this node's messages; inbox: empty when none
@@ -121,13 +122,14 @@ commands:
                                            engineer, to write the one idea --context gives as its spec
   choose-ideas <repo> "<reply>"            apply the operator's review to the proposed specs and land it on main
   build <repo> <NNN> [--model M] [--effort E] [--path P] [--family F] [--hold land|now] [--force]
-                                           dispatch an accepted spec: record building on main, render the build
-                                           brief and start the lead (as lead start); the lead joins build family
+                                           dispatch an accepted spec: render the build brief and start the lead
+                                           (as lead start), recording nothing on main; the lead joins build family
                                            F, else a fresh <repo>-build-<N>; --hold writes the lead's hold before
                                            it starts
   build --accepted <repo> [--model M] [--effort E] [--family F] [--hold land|now] [--force]
                                            dispatch every accepted spec, lowest id first, a spec naming a lower id
-                                           after that one is done, three leads at a time; print what waits
+                                           after that one is done, three leads at a time; print what waits and
+                                           what a live or blocked lead holds
   release <repo> [--minor|--patch] [--dry-run]
                                            tag main's code head as the next vX.Y.Z (v0.1.0 first; minor up when a
                                            feature landed since, else patch) and push the tag; refused while a lead
@@ -204,9 +206,9 @@ commands:
   land [--spec NNN] [--ttl D] [--wait D]   land this worktree's branch on main under the lease land.<repo> (waits
                                            while another lead holds it): print the kinds it requires (a branch
                                            rebased by hand requires what the head before the rebase had), fetch,
-                                           rebase, run or require the results, write verified, set done with merged
-                                           and branch, commit, push; a push main refuses starts again from the fetch
-                                           once; prints landed <sha8>
+                                           rebase, run or require the results, reword HEAD with the Spec and
+                                           Verified trailers, push; the spec must read done; a push main refuses
+                                           starts again from the fetch; prints landed <sha8>
   ready --text "<done line>" [--size S]     a lead hands its landing to its box's daemon: state landing, bm-ready
                                            <path>; the daemon runs land and done and wakes the lead only when land
                                            refuses, and once at the end; refused off this box, without a thread,
@@ -244,10 +246,9 @@ commands:
   spec template [--repo R]                 print the half-pager (the repo's .bmesh/briefs/half-pager.md, else embedded)
   spec steps [<NNN>] [--repo R] [--tick N,N [--note W] | --check [--wait D]]
                                            a landed spec's steps for the operator, or with no id every open one;
-                                           --tick records steps done on main, --check runs their checks
-  spec verified [--spec NNN] [--commit C] [--write]
-                                           print the verified line from the results for HEAD's tree, or C's (exit 3
-                                           when none); --write sets it in the spec's file in this worktree
+                                           --tick records steps done on the hub, --check runs their checks
+  spec verified [--commit C]              print the verified line from the results for HEAD's tree, or C's (exit 3
+                                           when none); land puts it on the landed commit
 `
 
 // exitErr carries an exit code and the message printed as "bmesh: <msg>".

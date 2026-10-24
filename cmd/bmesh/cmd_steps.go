@@ -10,6 +10,7 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/hosts"
+	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
@@ -36,40 +37,45 @@ func (o openSpec) Line() string {
 
 // openSteps is every spec with open steps in repos (registry names; those
 // with no checkout here are passed over), read from each repo's local
-// origin/main (main without an origin). A repo that has any is fetched and
-// read again, so a step ticked from another box drops out here; a repo
+// origin/main (main without an origin), with the ticks on the hub. A repo
 // whose ledger can't be read is passed over.
 func (a *app) openSteps(ctx context.Context, repos []string) []openSpec {
 	var out []openSpec
+	isBox := a.rosterBoxes()
 	for _, name := range repos {
 		path, ok := a.checkoutHere(name)
 		if !ok {
 			continue
 		}
-		read := func() []openSpec {
-			specs, err := spec.ScanMainLocal(ctx, path, a.cfg.Spec.Glob)
-			if err != nil {
-				return nil
-			}
-			var open []openSpec
-			for _, s := range specs {
-				if steps, err := s.Steps(); err == nil && spec.Open(steps) > 0 {
-					open = append(open, openSpec{Repo: name, Spec: s, Steps: steps})
-				}
-			}
-			return open
+		specs, err := spec.ScanMainLocal(ctx, path, a.cfg.Spec.Glob)
+		if err != nil {
+			continue
 		}
-		open := read()
-		if len(open) > 0 {
-			fctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			if spec.FetchMain(fctx, path) == nil {
-				open = read()
+		for _, s := range specs {
+			steps, err := a.specSteps(ctx, name, s, isBox)
+			if err == nil && spec.Open(steps) > 0 {
+				out = append(out, openSpec{Repo: name, Spec: s, Steps: steps})
 			}
-			cancel()
 		}
-		out = append(out, open...)
 	}
 	return out
+}
+
+// specSteps is spec s's steps for the operator (spec.OperatorSteps) with
+// the ticks on the hub laid on.
+func (a *app) specSteps(ctx context.Context, repo string, s *spec.Spec, isBox func(string) bool) ([]spec.Step, error) {
+	steps, err := s.OperatorSteps(isBox)
+	if err != nil || len(steps) == 0 {
+		return steps, err
+	}
+	if err := a.connect(ctx, "spec steps"); err != nil {
+		return nil, err
+	}
+	ticks, err := mesh.StepTicks(ctx, a.client, repo, s.IDString())
+	if err != nil {
+		return nil, err
+	}
+	return spec.Ticked(steps, ticks), nil
 }
 
 // cmdSpecSteps lists, ticks and checks a landed spec's steps for the
@@ -107,6 +113,10 @@ func (a *app) cmdSpecSteps(args []string) error {
 			repos = []string{name}
 		}
 		sort.Strings(repos)
+		// The ticks are on the hub: without it no line could say what is open.
+		if err := a.connect(ctx, "spec steps"); err != nil {
+			return err
+		}
 		for _, o := range a.openSteps(ctx, repos) {
 			fmt.Fprintln(a.stdout, o.Line())
 		}
@@ -142,7 +152,7 @@ func (a *app) cmdSpecSteps(args []string) error {
 	if err != nil {
 		return err
 	}
-	steps, err := s.Steps()
+	steps, err := a.specSteps(ctx, name, s, a.rosterBoxes())
 	if err != nil {
 		return ledgerFail(err)
 	}
@@ -192,72 +202,56 @@ func mainSpec(repoPath, glob, id string) (*spec.Spec, error) {
 }
 
 // tickSteps records steps ns of spec id done, `<now> <box>` with note, on
-// main as `Steps: NNN 2, 3 done`. A step already done is named and left as
-// it is; when every one named is, nothing lands.
+// the hub (bm-steps). A step already done is named and left as it is.
 func (a *app) tickSteps(ctx context.Context, name, repoPath string, id int, ns []int, box, note string) error {
-	var msg, left string
-	sha, err := a.editOnMain(ctx, name, repoPath, "steps", func(wt string) (string, error) {
-		specs, err := spec.Scan(wt, a.cfg.Spec.Glob)
-		if err != nil {
-			return "", ledgerFail(err)
-		}
-		s, ok := spec.Find(specs, id)
-		if !ok {
-			return "", fail(exitError, "no spec %03d on main", id)
-		}
-		steps, err := s.Steps()
-		if err != nil {
-			return "", ledgerFail(err)
-		}
-		if len(steps) == 0 {
-			return "", fail(exitRefused, "refused: spec %03d has no operator steps", id)
-		}
-		when := time.Now().UTC().Format(time.RFC3339) + " " + box
-		var ticked []string
-		for _, k := range ns {
-			if k > len(steps) {
-				return "", fail(exitUsage, "spec %03d has no step %d (it has %d)", id, k, len(steps))
-			}
-			st := &steps[k-1]
-			if st.Done != "" {
-				fmt.Fprintf(a.stdout, "step %d already done %s\n", k, st.Done)
-				continue
-			}
-			st.Done, st.Note = when, note
-			ticked = append(ticked, strconv.Itoa(k))
-		}
-		if len(ticked) == 0 {
-			return "", nil
-		}
-		v, err := spec.EncodeSteps(steps)
-		if err != nil {
-			return "", err
-		}
-		if _, err := spec.SetStatus(s, s.Status(), nil, spec.Field{Key: spec.StepsKey, Value: v}); err != nil {
-			return "", ledgerFail(err)
-		}
-		msg = fmt.Sprintf("Steps: %03d %s done", id, strings.Join(ticked, ", "))
-		left = fmt.Sprintf("%d of %d open", spec.Open(steps), len(steps))
-		return msg, nil
-	})
-	if err != nil || sha == "" {
+	s, err := mainSpec(repoPath, a.cfg.Spec.Glob, fmt.Sprintf("%03d", id))
+	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.stdout, "landed %s on main: %s; %s\n", sha[:8], msg, left)
+	steps, err := a.specSteps(ctx, name, s, a.rosterBoxes())
+	if err != nil {
+		return ledgerFail(err)
+	}
+	if len(steps) == 0 {
+		return fail(exitRefused, "refused: spec %03d has no operator steps", id)
+	}
+	when := time.Now().UTC().Format(time.RFC3339) + " " + box
+	var ticks []mesh.StepTick
+	var ticked []string
+	for _, k := range ns {
+		if k > len(steps) {
+			return fail(exitUsage, "spec %03d has no step %d (it has %d)", id, k, len(steps))
+		}
+		if st := steps[k-1]; st.Done != "" {
+			fmt.Fprintf(a.stdout, "step %d already done %s\n", k, st.Done)
+			continue
+		}
+		ticks = append(ticks, mesh.StepTick{N: k, Done: when, Note: note})
+		ticked = append(ticked, strconv.Itoa(k))
+	}
+	if len(ticks) == 0 {
+		return nil
+	}
+	all, err := mesh.TickSteps(ctx, a.client, name, s.IDString(), ticks)
+	if err != nil {
+		return err
+	}
+	steps = spec.Ticked(steps, all)
+	fmt.Fprintf(a.stdout, "ticked %03d %s; %d of %d open\n", id, strings.Join(ticked, ", "), spec.Open(steps), len(steps))
 	return nil
 }
 
 // checkSteps runs the check of each open step of spec id that has one: on
 // this box when the step names no box or this one, else as a check-step
 // job to its box, waiting up to wait. Each step whose check exits 0 is
-// ticked, `<time> <the box that ran it>`, one landing per box; a failure
-// to ask the other boxes is returned after this box's passes land.
+// ticked, `<time> <the box that ran it>`, on the hub; a failure to ask the
+// other boxes is returned after this box's passes are ticked.
 func (a *app) checkSteps(ctx context.Context, name, repoPath, id string, wait time.Duration) error {
 	s, err := mainSpec(repoPath, a.cfg.Spec.Glob, id)
 	if err != nil {
 		return err
 	}
-	steps, err := s.Steps()
+	steps, err := a.specSteps(ctx, name, s, a.rosterBoxes())
 	if err != nil {
 		return ledgerFail(err)
 	}
@@ -284,7 +278,7 @@ func (a *app) checkSteps(ctx context.Context, name, repoPath, id string, wait ti
 		fmt.Fprintf(a.stdout, "%s %s: no open step has a check\n", id, s.Title())
 		return nil
 	}
-	var remoteErr error // the passes here land all the same
+	var remoteErr error // the passes here are ticked all the same
 	if len(remote) > 0 {
 		remoteErr = a.checkRemote(ctx, name, id, remote, wait, passed)
 	}

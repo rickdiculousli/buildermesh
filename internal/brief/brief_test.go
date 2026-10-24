@@ -74,7 +74,7 @@ func TestBuildBriefEmbedsSpecAndNode(t *testing.T) {
 	}
 	for _, s := range []string{"## Opportunity", "docs/proposals/012-a.md", "Your node is `pb-012`.", "{{nope}}",
 		"`bmesh --node pb-012 routine run verify`", "`bmesh --node pb-012 result record review --ok|--fail --model <m>`",
-		"`bmesh --node pb-012 land`", "sets spec 012 `done` with `merged` and the branch your worktree is on",
+		"`bmesh --node pb-012 land`", "`bmesh spec set --id 012 --status done`", "the trailers `Spec: 012` and `Verified: <entries>`",
 		"follow the `buildermesh:lead` skill", "## Landing it", "landing the branch your worktree is on (`git branch --show-current`), never the name in your brief",
 		"`git push origin HEAD`", "pushed to `example/pb`",
 		"`npm test`"} {
@@ -87,7 +87,7 @@ func TestBuildBriefEmbedsSpecAndNode(t *testing.T) {
 			t.Errorf("missing event %s", ev)
 		}
 	}
-	for _, bad := range []string{"proposals.py", "k16", "Rick", "{{spec"} {
+	for _, bad := range []string{"proposals.py", "k16", "Rick", "{{spec", "--status blocked", "recorded the spec `building`"} {
 		if strings.Contains(out, bad) {
 			t.Errorf("has %q", bad)
 		}

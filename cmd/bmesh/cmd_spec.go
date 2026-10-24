@@ -20,7 +20,7 @@ import (
 
 const specUsage = "usage: bmesh spec list [--repo R] [--status S] [--json] | next-id [--repo R] [--count N] [--peek] | " +
 	"set --id NNN --status S [--repo R] [--from A,B] [--field K=V]... | template [--repo R] | " +
-	"verified [--spec NNN] [--commit C] [--write] | steps [<NNN>] [--repo R] [--tick N,N [--note W] | --check [--wait D]]"
+	"verified [--commit C] | steps [<NNN>] [--repo R] [--tick N,N [--note W] | --check [--wait D]]"
 
 func (a *app) cmdSpec(args []string) error {
 	if len(args) > 0 {
@@ -538,13 +538,11 @@ func (a *app) latestRanks(ctx context.Context, repo string, specs []*spec.Spec) 
 }
 
 // cmdSpecVerified prints the verified line composed from the results for
-// the cwd repo's HEAD tree, or --commit's; --write sets it in the spec's
-// file in this worktree. The spec defaults to this node's.
+// the cwd repo's HEAD tree, or --commit's. It writes nothing: land puts the
+// line on the commit it lands, as its Verified trailer.
 func (a *app) cmdSpecVerified(args []string) error {
 	fs := a.flags("spec verified")
-	id := fs.String("spec", "", "spec id (default this node's spec)")
 	commit := fs.String("commit", "HEAD", "compose from the results for this commit's tree")
-	write := fs.Bool("write", false, "write the line into the spec's frontmatter")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -554,11 +552,7 @@ func (a *app) cmdSpecVerified(args []string) error {
 	}
 	ctx, cancel := cmdCtx()
 	defer cancel()
-	p, err := a.identity(ctx, "spec")
-	switch {
-	case errors.Is(err, errNoNode):
-		p = nil
-	case err != nil:
+	if err := a.connect(ctx, "spec"); err != nil {
 		return err
 	}
 	top, err := gitRev("--show-toplevel")
@@ -580,32 +574,5 @@ func (a *app) cmdSpecVerified(args []string) error {
 		return fail(exitRefused, "no results for %s's tree t:%s", *commit, tree[:8])
 	}
 	fmt.Fprintf(a.stdout, "verified: %s\n", spec.FormatVerified(entries))
-	if !*write {
-		return nil
-	}
-	if *id == "" && p != nil {
-		n, ok, err := mesh.GetNode(ctx, a.client, p.String())
-		if err != nil {
-			return err
-		}
-		if ok {
-			*id = n.Spec
-		}
-	}
-	if *id == "" {
-		return fail(exitUsage, "spec verified --write needs --spec NNN (no node spec resolves)")
-	}
-	pattern := filepath.Join(top, filepath.FromSlash(strings.ReplaceAll(a.cfg.Spec.Glob, "{id}", *id)))
-	hits, err := filepath.Glob(pattern)
-	if err != nil {
-		return fmt.Errorf("bad spec glob %q: %w", a.cfg.Spec.Glob, err)
-	}
-	if len(hits) != 1 {
-		return fail(exitRefused, "spec %s matches %d files in %s", *id, len(hits), top)
-	}
-	if err := spec.WriteVerified(hits[0], entries); err != nil {
-		return err
-	}
-	fmt.Fprintf(a.stdout, "wrote %s\n", hits[0])
 	return nil
 }

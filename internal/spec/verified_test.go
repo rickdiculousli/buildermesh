@@ -206,46 +206,13 @@ func TestComposeCarriesAReviewOfTheSameDiff(t *testing.T) {
 	}
 }
 
-func TestWriteVerifiedInPlaceAndAppended(t *testing.T) {
-	dir := t.TempDir()
-	p := filepath.Join(dir, "012-thing.md")
-	entries := []Entry{{Kind: "verify", OK: true, Tree8: "3f2a9c1e"}}
-
-	in := "---\nid: 12\n# verified: not this one\nverified: old\nstatus: done\n---\nbody\nverified: body line\n"
-	if err := os.WriteFile(p, []byte(in), 0o644); err != nil {
-		t.Fatal(err)
+func TestVerifiedLine(t *testing.T) {
+	entries := []Entry{{Kind: "verify", OK: true, Tree8: "3f2a9c1e"}, {Kind: "review", Tree8: "3f2a9c1e", Model: "m"}}
+	if got, err := VerifiedLine(entries); err != nil || got != "verify ok t:3f2a9c1e; review fail t:3f2a9c1e m:m" {
+		t.Fatalf("%q %v", got, err)
 	}
-	if err := WriteVerified(p, entries); err != nil {
-		t.Fatal(err)
-	}
-	b, _ := os.ReadFile(p)
-	if want := strings.Replace(in, "verified: old\n", "verified: verify ok t:3f2a9c1e\n", 1); string(b) != want {
-		t.Fatalf("in place:\n%s", b)
-	}
-
-	in = "---\nid: 12\nstatus: done\n\n---\n\nbody\n"
-	if err := os.WriteFile(p, []byte(in), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := WriteVerified(p, append(entries, Entry{Kind: "review", Tree8: "3f2a9c1e", Model: "m"})); err != nil {
-		t.Fatal(err)
-	}
-	b, _ = os.ReadFile(p)
-	if want := "---\nid: 12\nstatus: done\n\nverified: verify ok t:3f2a9c1e; review fail t:3f2a9c1e m:m\n---\n\nbody\n"; string(b) != want {
-		t.Fatalf("appended:\n%s", b)
-	}
-
-	if err := WriteVerified(p, nil); !errors.Is(err, ErrNoResults) {
+	if _, err := VerifiedLine(nil); !errors.Is(err, ErrNoResults) {
 		t.Fatalf("empty: %v", err)
-	}
-	if err := os.WriteFile(p, []byte("---\nid: 12\nbare\n---\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := WriteVerified(p, entries); err == nil || !strings.Contains(err.Error(), "malformed") {
-		t.Fatalf("malformed: %v", err)
-	}
-	if b, _ := os.ReadFile(p); string(b) != "---\nid: 12\nbare\n---\n" {
-		t.Fatalf("malformed file changed: %q", b)
 	}
 }
 
@@ -278,20 +245,11 @@ func TestCheckDoneParsesVerified(t *testing.T) {
 }
 
 // An entry that would not read back as itself (a model with ";" or a
-// space) is refused unwritten.
-func TestWriteVerifiedRefusesUnparsableLine(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "012-thing.md")
-	in := "---\nid: 12\n---\n"
-	if err := os.WriteFile(p, []byte(in), 0o644); err != nil {
-		t.Fatal(err)
-	}
+// space) is refused.
+func TestVerifiedLineRefusesUnparsableLine(t *testing.T) {
 	for _, model := range []string{"m; verify ok t:3f2a9c1e", "m x"} {
-		err := WriteVerified(p, []Entry{{Kind: "review", OK: true, Tree8: "3f2a9c1e", Model: model}})
-		if err == nil || !strings.Contains(err.Error(), "left unchanged") {
-			t.Fatalf("%q: err %v", model, err)
-		}
-		if b, _ := os.ReadFile(p); string(b) != in {
-			t.Fatalf("%q: file changed: %q", model, b)
+		if _, err := VerifiedLine([]Entry{{Kind: "review", OK: true, Tree8: "3f2a9c1e", Model: model}}); err == nil {
+			t.Fatalf("%q: no error", model)
 		}
 	}
 }

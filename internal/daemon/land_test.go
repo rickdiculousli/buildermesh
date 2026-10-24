@@ -17,7 +17,8 @@ import (
 
 // landFix is a lead app-080 on the test host, landing: a bare origin, the
 // main checkout and the lead's worktree with one commit of its own, spec
-// 080 building, the request in bm-ready, and the steps through RunStep.
+// 080 accepted on main and done on the lead's branch, the request in
+// bm-ready, and the steps through RunStep.
 type landFix struct {
 	*fixture
 	origin, repo, wt, head string
@@ -47,12 +48,13 @@ func newLandFix(t *testing.T) *landFix {
 	meshtest.Git(t, root, "init", "--bare", f.origin)
 	meshtest.Git(t, root, "init", "-b", "main", f.repo)
 	meshtest.Git(t, f.repo, "remote", "add", "origin", f.origin)
-	f.write(t, filepath.Join(f.repo, "docs", "proposals", "080-thing.md"), "---\nid: 80\nstatus: building\n---\nbody\n")
+	f.write(t, filepath.Join(f.repo, "docs", "proposals", "080-thing.md"), "---\nid: 80\nstatus: accepted\n---\nbody\n")
 	meshtest.Git(t, f.repo, "add", "-A")
 	meshtest.Git(t, f.repo, "commit", "-m", "base")
 	meshtest.Git(t, f.repo, "push", "-q", "origin", "main")
 	meshtest.Git(t, f.repo, "worktree", "add", "-q", "-b", "lead", f.wt, "main")
 	f.write(t, filepath.Join(f.wt, "b.txt"), "b\n")
+	f.write(t, filepath.Join(f.wt, "docs", "proposals", "080-thing.md"), "---\nid: 80\nstatus: done\n---\nbody\n")
 	meshtest.Git(t, f.wt, "add", "-A")
 	meshtest.Git(t, f.wt, "commit", "-m", "the work")
 	f.head = f.git(t, "rev-parse", "HEAD")
@@ -129,14 +131,13 @@ func (f *landFix) step(ctx context.Context, dir string, args ...string) (string,
 	return "unknown step", 2, nil
 }
 
-// landed does what land does on success: the spec done with merged, a
-// record commit, pushed to origin's main.
+// landed does what land does on success: HEAD reworded to carry the Spec
+// and Verified trailers, pushed to origin's main.
 func (f *landFix) landed() string {
 	ctx := context.Background()
-	merged, _ := gitOut(ctx, f.wt, "rev-parse", "HEAD")
-	_ = os.WriteFile(filepath.Join(f.wt, "docs", "proposals", "080-thing.md"),
-		[]byte("---\nid: 80\nstatus: done\nmerged: "+merged+"\n---\nbody\n"), 0o644)
-	for _, args := range [][]string{{"add", "-A"}, {"commit", "-q", "-m", "080: done"}, {"push", "-q", "origin", "HEAD:main"}} {
+	tree, _ := gitOut(ctx, f.wt, "rev-parse", "HEAD^{tree}")
+	msg := "the work\n\nSpec: 080\nVerified: verify ok t:" + short8(tree)
+	for _, args := range [][]string{{"commit", "--amend", "-q", "-m", msg}, {"push", "-q", "origin", "HEAD:main"}} {
 		if out, err := gitOut(ctx, f.wt, args...); err != nil {
 			return "git " + strings.Join(args, " ") + ": " + out
 		}
@@ -219,6 +220,25 @@ func TestLandAfterThePushRunsDoneOnce(t *testing.T) {
 	}
 	if sends := f.sends(t); len(sends) != 1 || !strings.Contains(sends[0], "landed "+rec[:8]) {
 		t.Fatalf("sends %q", sends)
+	}
+}
+
+// A land of the release before left its `NNN: done at` record commit
+// pushed: it is found on main all the same, from the spec on origin/main.
+func TestLandAfterAnOldPushRunsDoneOnce(t *testing.T) {
+	f := newLandFix(t)
+	ctx := context.Background()
+	merged := f.git(t, "rev-parse", "HEAD")
+	f.write(t, filepath.Join(f.wt, "docs", "proposals", "080-thing.md"), "---\nid: 80\nstatus: done\nmerged: "+merged+"\n---\nbody\n")
+	for _, args := range [][]string{{"commit", "-qam", "080: done at " + short8(merged)}, {"push", "-q", "origin", "HEAD:main"}} {
+		if out, err := gitOut(ctx, f.wt, args...); err != nil {
+			t.Fatalf("git %v: %s", args, out)
+		}
+	}
+	f.pass()
+	rec := f.git(t, "rev-parse", "HEAD")
+	if got := f.steps(); len(got) != 1 || !strings.HasPrefix(got[0], "done built it; landed "+rec[:8]) {
+		t.Fatalf("steps %q", got)
 	}
 }
 

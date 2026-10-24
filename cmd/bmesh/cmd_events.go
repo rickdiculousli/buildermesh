@@ -72,7 +72,7 @@ func (a *app) cmdEvent(name string, args []string) error {
 			return fail(exitError, "node %s is not registered", path)
 		}
 		if name == "done" && (n.Role == "lead" || n.Role == "") {
-			if err := a.checkSpecDone(ctx, n); err != nil {
+			if err := a.checkSpecDone(ctx, n, *commit); err != nil {
 				return err
 			}
 		}
@@ -188,12 +188,50 @@ func short8(sha string) string {
 	return sha
 }
 
-// checkSpecDone refuses done unless the node's spec has landed as done with
-// merged on main; a lead's spec must also carry a verified line with no
-// failing entry, every entry matched by a recorded result for the merged
+// checkSpecDone refuses a lead's done unless commit is its landing: on
+// main (origin/main when the repo has an origin), with a Verified trailer
+// of no failing entry, every entry matched by a recorded result for the
 // commit's tree (any args), or a carried entry by a model result at the
-// tree it names whose patch-id is merged's diff from an ancestor on main.
-func (a *app) checkSpecDone(ctx context.Context, n mesh.Node) error {
+// tree it names whose patch-id is the commit's diff from an ancestor on
+// main, and a Spec trailer naming the node's spec. A commit whose subject
+// is the old `NNN: done at <sha8>` record is checked as it was: against
+// the spec on main (checkLegacyDone).
+func (a *app) checkSpecDone(ctx context.Context, n mesh.Node, commit string) error {
+	l, lerr := spec.ReadLanded(ctx, n.RepoPath, commit)
+	if lerr == nil && l.Spec == "" && l.Legacy != "" {
+		return a.checkLegacyDone(ctx, n)
+	}
+	on, ref, err := spec.OnMain(ctx, n.RepoPath, commit, true)
+	if err != nil {
+		return err
+	}
+	if lerr != nil || !on {
+		return fail(exitRefused, "not done: %s is not on %s", short8(commit), ref)
+	}
+	if l.Verified == "" {
+		return fail(exitRefused, "not done: %s has no Verified trailer", short8(l.Commit))
+	}
+	entries, err := spec.ParseVerified(l.Verified)
+	if err != nil {
+		return fail(exitRefused, "not done: %s's Verified trailer: %v", short8(l.Commit), err)
+	}
+	if err := a.checkEntries(ctx, n.RepoPath, l.Commit, entries); err != nil {
+		return err
+	}
+	if want := spec.NormID(n.Spec); l.Spec != want {
+		if l.Spec == "" {
+			return fail(exitRefused, "not done: %s has no Spec trailer", short8(l.Commit))
+		}
+		return fail(exitRefused, "not done: %s landed spec %s, not %s", short8(l.Commit), l.Spec, want)
+	}
+	return nil
+}
+
+// checkLegacyDone is done's check of a lead that landed with the release
+// before, whose land wrote a `NNN: done at` record commit: the node's
+// spec on main reads done with merged, and its verified line passes
+// checkEntries for merged.
+func (a *app) checkLegacyDone(ctx context.Context, n mesh.Node) error {
 	d, err := spec.CheckDone(n.RepoPath, a.cfg.Spec.Glob, n.Spec)
 	if err != nil {
 		return err
@@ -201,22 +239,25 @@ func (a *app) checkSpecDone(ctx context.Context, n mesh.Node) error {
 	if !d.OK {
 		return fail(exitRefused, "not done: %s", d.Why)
 	}
-	if n.Role != "lead" && n.Role != "" {
-		return nil
-	}
-	if len(d.Verified) == 0 {
+	return a.checkEntries(ctx, n.RepoPath, d.Merged, d.Verified)
+}
+
+// checkEntries refuses a verified line that is empty, has a failing entry,
+// or names an entry no recorded result matches for merged's tree.
+func (a *app) checkEntries(ctx context.Context, repoPath, merged string, entries []spec.Entry) error {
+	if len(entries) == 0 {
 		return fail(exitRefused, "not done: verified is empty")
 	}
-	for _, e := range d.Verified {
+	for _, e := range entries {
 		if !e.OK {
 			return fail(exitRefused, "not done: verified has a failing entry %s", e.Kind)
 		}
 	}
-	tree, err := spec.Tree(n.RepoPath, d.Merged+"^{commit}")
+	tree, err := spec.Tree(repoPath, merged+"^{commit}")
 	if err != nil {
-		return fail(exitRefused, "not done: merged %s is not a commit", d.Merged)
+		return fail(exitRefused, "not done: merged %s is not a commit", merged)
 	}
-	for _, e := range d.Verified {
+	for _, e := range entries {
 		if e.Tree8 != tree[:8] {
 			return fail(exitRefused, "not done: verified entry %s is for tree %s, merged tree is %s", e.Kind, e.Tree8, tree[:8])
 		}
@@ -244,7 +285,7 @@ func (a *app) checkSpecDone(ctx context.Context, n mesh.Node) error {
 			if r.Model == "" || r.PatchID == "" {
 				continue
 			}
-			if matched, err = checkout.LandedFrom(ctx, n.RepoPath, d.Merged, r.PatchID); err != nil {
+			if matched, err = checkout.LandedFrom(ctx, repoPath, merged, r.PatchID); err != nil {
 				return err
 			} else if matched {
 				break

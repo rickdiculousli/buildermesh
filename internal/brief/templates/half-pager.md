@@ -13,17 +13,11 @@ proposed_on: {{date}}
 # kind: feature | refinement | ux | test-speed | token-cost | time-cost | maintenance
 # size: XS (one file) | S (one module) | M (crosses modules) | L (changes an interface others depend on). Never hours.
 # judge: who should build it. opus: the default, for anything with real judgment or complexity. fable: only exceptional taste or nuance that opus would visibly miss, never because the work is hard. sonnet: trivial, a careful junior could do it from the spec.
-# status: proposed | accepted | adjusting | later | rejected | building | blocked | done
+# status: proposed | accepted | adjusting | later | rejected | done. It reads done in the tree that lands, set by the lead on its branch.
 # lens: eng | ux
 # Set later, never by the proposer:
-# built_by: <thread id>       set by dispatch
-# branch: <branch>            set by dispatch, corrected by the build thread if the runner renamed it
-# host: <box>                 set by dispatch
-# merged: <sha>               set by the build thread (bmesh land)
-# verified: <entries>         set by the build thread (bmesh land)
-# reason: <one line>          rejected or blocked only
+# reason: <one line>          rejected only
 # scope_grew: [<ids>]         set by the build thread when landed specs widened it
-# operator_steps: [<steps>]   set by bmesh land from "Needs from the operator"; ticked with bmesh spec steps
 ---
 
 ## Opportunity
