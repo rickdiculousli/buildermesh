@@ -281,6 +281,8 @@ A job is an inbox message (`kind: "job"`) to `routine.<kind>` with the job id as
 
 **A go** is one message, which one box fetches. Every box holding jobs of the kind looks in the stream for a go past its oldest held job (and the last go it acted on) after each empty fetch and, while its capacity is full, every second, so a go any box fetched starts every box's held batch.
 
+**Inline with no hub.** The CLI's `connect` returns a `*noHubError`, holding the hub's address, when its dial finds no server: nats.go's `ErrNoServers`, which a refused connection gives (a timeout or a failed lookup comes back as itself). It reports as before, `no hub at <addr>: is bmesh serve running?` for the embedded hub and `can't reach NATS at <url>: ...` for `[mesh] nats`, and only `routine run` goes on past it: it skips `carryVerify`, the record lookup and `PutResult`, and runs the kind through `runKind` with no slots, so `withLeases` takes no lease and only handles the interrupt.
+
 #### Replies
 
 [Manual: Jobs](manual.md#jobs)

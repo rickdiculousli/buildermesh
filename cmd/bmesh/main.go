@@ -4,6 +4,7 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -230,9 +231,10 @@ commands:
   routine go <kind>                        tell the kind's instances to start on waiting jobs
   routine wait <job id> [--timeout D]      wait for a job's reply; print its output, exit 0 ok / 1 fail / 5 timeout
   routine run <kind> [--commit HEAD] [--model M] [--effort E] [--here] [--rerun] [--text T] [-- args...]
-                                           run a kind in this worktree and record its result; a deterministic
-                                           kind needs a clean tree and answers from a recorded result; ends with
-                                           <kind> ok|fail t:<tree8>; exit 0 ok / 1 fail
+                                           run a kind on this worktree's HEAD (its tree clean) and record its
+                                           result, a deterministic kind answering from a recorded one; with no
+                                           hub it runs and records nothing; ends with <kind> ok|fail t:<tree8>;
+                                           exit 0 ok / 1 fail
   spec list [--repo R] [--status S] [--json]
                                            the repo's specs, one row each (id, status, size, kind, lens, title)
   spec next-id [--repo R] [--count N] [--peek]
@@ -499,10 +501,23 @@ func (a *app) loadConfig() error {
 	return nil
 }
 
+// noHubError is connect's error when no server answers at the hub's
+// address (nats.ErrNoServers): bmesh serve isn't running the embedded hub,
+// or nothing serves [mesh] nats. It reports as err; routine run runs on
+// without a hub.
+type noHubError struct {
+	addr string // the hub's address, without nats://
+	err  error
+}
+
+func (e *noHubError) Error() string { return e.err.Error() }
+func (e *noHubError) Unwrap() error { return e.err }
+
 // connect loads the config and dials the hub ([mesh] nats, else the hub
 // bmesh serve embeds on [mesh] listen); name labels the connection. Once
 // connected it reads the revision hint, which run prints after the
-// command's output, when the daemon runs another build.
+// command's output, when the daemon runs another build. A hub no server
+// answers for is a *noHubError.
 func (a *app) connect(ctx context.Context, name string) error {
 	if a.client != nil {
 		return nil
@@ -523,8 +538,12 @@ func (a *app) connect(ctx context.Context, name string) error {
 		}
 	}
 	c, err := mesh.Connect(ctx, url, token, domain, "bmesh/"+name, false)
-	if embedded && errors.Is(err, nats.ErrNoServers) {
-		return fail(exitError, "no hub at %s: is bmesh serve running?", strings.TrimPrefix(url, "nats://"))
+	if errors.Is(err, nats.ErrNoServers) {
+		addr := strings.TrimPrefix(url, "nats://")
+		if embedded {
+			err = fail(exitError, "no hub at %s: is bmesh serve running?", addr)
+		}
+		return &noHubError{addr: addr, err: err}
 	}
 	if err != nil {
 		return err
@@ -537,14 +556,13 @@ func (a *app) connect(ctx context.Context, name string) error {
 // errNoNode is identity's error when nothing names this node.
 var errNoNode = fail(exitUsage, "no node for this directory; pass --node or set BMESH_NODE")
 
+// givenNode is the node path --node, else BMESH_NODE, names; "" for none.
+func (a *app) givenNode() string { return cmp.Or(a.node, os.Getenv("BMESH_NODE")) }
+
 // identity resolves this node's path: --node, else BMESH_NODE, else the
 // registered node whose worktree is this checkout on this host. It connects.
 func (a *app) identity(ctx context.Context, cmd string) (mesh.Path, error) {
-	given := a.node
-	if given == "" {
-		given = os.Getenv("BMESH_NODE")
-	}
-	if given != "" {
+	if given := a.givenNode(); given != "" {
 		p, err := mesh.ParsePath(given)
 		if err != nil {
 			return nil, fail(exitUsage, "node %q: %v", given, err)

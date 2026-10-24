@@ -25,6 +25,18 @@ func singleBox(t *testing.T, listen string) {
 	t.Setenv("BMESH_CONFIG", cfg)
 }
 
+// closedAddr is a 127.0.0.1 address nothing listens on.
+func closedAddr(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close() // nothing listens there now
+	return addr
+}
+
 func TestCLIDialsTheEmbeddedHubOnListen(t *testing.T) {
 	url := meshtest.Start(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -45,12 +57,7 @@ func TestCLIDialsTheEmbeddedHubOnListen(t *testing.T) {
 }
 
 func TestCLISaysNoHubWhenServeIsNotRunning(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := ln.Addr().String()
-	ln.Close() // nothing listens there now
+	addr := closedAddr(t)
 	singleBox(t, addr)
 	_, errOut, code := runCLI(t, nil, "mesh-status")
 	want := "no hub at " + addr + ": is bmesh serve running?"

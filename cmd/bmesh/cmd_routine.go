@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -606,7 +607,8 @@ func waitTimeout(ctx context.Context, c *mesh.Client, id string) time.Duration {
 // HEAD, holding the kind's slots, and records its result (with the model for
 // a model kind). It needs a clean tree; a deterministic kind answers from a
 // recorded result, and verify from one carried from HEAD's code run
-// (carryVerify), unless --rerun.
+// (carryVerify), unless --rerun. With no hub (a *noHubError) it still runs
+// the kind on HEAD, with no record, carry or lease, and records nothing.
 func (a *app) cmdRoutineRun(args []string) error {
 	fs := a.flags("routine run")
 	commit := fs.String("commit", "HEAD", "commit to run (must be HEAD)")
@@ -651,8 +653,8 @@ func (a *app) cmdRoutineRun(args []string) error {
 	if *model == "" && k.IsModel() {
 		*model = k.ModelsList()[0]
 	}
-	// Every inline run records against HEAD's tree, so none may run on
-	// uncommitted changes.
+	// Every inline run judges HEAD's tree, and records against it, so none
+	// may run on uncommitted changes.
 	if err := refuseDirty(); err != nil {
 		return err
 	}
@@ -674,6 +676,17 @@ func (a *app) cmdRoutineRun(args []string) error {
 	ctx, cancel := cmdCtx()
 	defer cancel()
 	self, err := a.identityOrHost(ctx, "routine")
+	var noHub *noHubError
+	if errors.As(err, &noHub) {
+		// No record to answer from or keep, and no other box to share a
+		// slot with: the run alone says whether HEAD is ok.
+		self = cmp.Or(a.givenNode(), a.cfg.HostName())
+		reply, err := a.runKind(ctx, k, top, head, tree, self, *model, *effort, *text, jobArgs, nil)
+		if err != nil {
+			return err
+		}
+		return a.printRunVerdict(name, tree, *model, reply.OK, reply.Output, "not recorded: no hub at "+noHub.addr)
+	}
 	if err != nil {
 		return err
 	}
@@ -711,41 +724,9 @@ func (a *app) runInline(ctx context.Context, k kind.Kind, top, head, tree, self,
 			return r.OK, r.Output, "answered from the record", nil
 		}
 	}
-
-	rc, err := kind.LoadRepoConfig(top)
+	reply, err := a.runKind(ctx, k, top, head, tree, self, model, effort, text, jobArgs, k.Slots)
 	if err != nil {
 		return false, "", "", err
-	}
-	// A command kind runs against the repo's installs; a model kind reads
-	// diffs and needs none.
-	if !k.IsModel() {
-		if err := a.runSetup(ctx, top, rc.Setup); err != nil {
-			return false, "", "", err
-		}
-	}
-	var inst instance.Instance = instance.NewCommand(k)
-	if k.IsModel() {
-		claude := os.Getenv("BMESH_CLAUDE_COMMAND")
-		if strings.TrimSpace(claude) == "" {
-			claude = a.cfg.Runner.Claude
-		}
-		inst = instance.NewModel(k, model, claude)
-	}
-	capacity := func(slot string) (int, error) { return max(rc.Slots[slot], 1), nil }
-	j := instance.Job{ID: newID(), Kind: name, Commit: head, Tree: tree, From: self, Reply: self,
-		Args: jobArgs, Text: text, Dir: top, Effort: effort}
-	var reply instance.Reply
-	err = a.withLeases(k.Slots, self, k.Timeout+time.Minute, capacity, func(ctx context.Context) error {
-		reply = inst.Run(ctx, j)
-		return nil
-	})
-	if err != nil {
-		return false, "", "", err
-	}
-	// A model run whose claude never answered is an infrastructure error,
-	// like a failed setup: refused, never a recorded result.
-	if !reply.Judged {
-		return false, "", "", fail(exitRefused, "%s", reply.Unjudged())
 	}
 	// Every inline run that judged ran HEAD, so every one records (R12); only a
 	// deterministic kind is answered from its record.
@@ -765,8 +746,52 @@ func (a *app) runInline(ctx context.Context, k kind.Kind, top, head, tree, self,
 	return reply.OK, reply.Output, "recorded", nil
 }
 
+// runKind runs kind k once on HEAD (head, tree) of the worktree top for
+// self, holding slots (none takes no lease, and needs no hub); a command
+// kind runs the worktree's setup first. A model run whose claude never
+// answered is refused, as a failed setup is: it judged nothing.
+func (a *app) runKind(ctx context.Context, k kind.Kind, top, head, tree, self, model, effort, text string, jobArgs []string,
+	slots []string) (instance.Reply, error) {
+	rc, err := kind.LoadRepoConfig(top)
+	if err != nil {
+		return instance.Reply{}, err
+	}
+	// A command kind runs against the repo's installs; a model kind reads
+	// diffs and needs none.
+	if !k.IsModel() {
+		if err := a.runSetup(ctx, top, rc.Setup); err != nil {
+			return instance.Reply{}, err
+		}
+	}
+	var inst instance.Instance = instance.NewCommand(k)
+	if k.IsModel() {
+		claude := os.Getenv("BMESH_CLAUDE_COMMAND")
+		if strings.TrimSpace(claude) == "" {
+			claude = a.cfg.Runner.Claude
+		}
+		inst = instance.NewModel(k, model, claude)
+	}
+	capacity := func(slot string) (int, error) { return max(rc.Slots[slot], 1), nil }
+	j := instance.Job{ID: newID(), Kind: k.Name, Commit: head, Tree: tree, From: self, Reply: self,
+		Args: jobArgs, Text: text, Dir: top, Effort: effort}
+	var reply instance.Reply
+	err = a.withLeases(slots, self, k.Timeout+time.Minute, capacity, func(ctx context.Context) error {
+		reply = inst.Run(ctx, j)
+		return nil
+	})
+	if err != nil {
+		return instance.Reply{}, err
+	}
+	// A model run whose claude never answered is an infrastructure error,
+	// like a failed setup: refused, never a recorded result.
+	if !reply.Judged {
+		return instance.Reply{}, fail(exitRefused, "%s", reply.Unjudged())
+	}
+	return reply, nil
+}
+
 // runSetup brings the worktree top's installs current (setup.Ensure, the
-// tree required clean after) before a command kind runs there and records.
+// tree required clean after) before a command kind runs there.
 // A failed setup is refused (exit 3) with the tail of its output: an
 // infrastructure error, never a recorded result.
 func (a *app) runSetup(ctx context.Context, top string, s kind.Setup) error {
@@ -804,7 +829,8 @@ func checkJobEffort(k kind.Kind, effort string) error {
 
 // printRunVerdict prints a run's output and then its verdict line,
 // `<kind> ok|fail t:<tree8>[ m:<model>] (<how>)`, a verified entry and how
-// the result came to be: recorded, or answered from the record.
+// the result came to be: recorded, answered from the record, carried, or not
+// recorded for want of a hub.
 func (a *app) printRunVerdict(name, tree, model string, ok bool, out, how string) error {
 	line := fmt.Sprintf("%s %s t:%s", name, okWord(ok), tree[:8])
 	if model != "" {
@@ -821,8 +847,8 @@ func (a *app) printRunVerdict(name, tree, model string, ok bool, out, how string
 }
 
 // refuseDirty refuses (exit 3) when the cwd's worktree has uncommitted
-// changes or untracked files: a result recorded for HEAD's tree must be of
-// HEAD's tree.
+// changes or untracked files: a verdict for HEAD's tree, and a result
+// recorded for it, must be of HEAD's tree.
 func refuseDirty() error {
 	st, err := exec.Command("git", "status", "--porcelain").Output()
 	if err != nil {

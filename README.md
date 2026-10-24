@@ -51,7 +51,7 @@ Agents write half-page specs; you accept or reject them in plain words. A *lead*
   </picture>
 </p>
 
-- **One hub.** `bmesh hub` runs NATS, a message server, inside the binary on an always-on box, over a tailnet such as Tailscale. Boxes share one token; nothing else is installed. A single box needs no hub: `bmesh serve` embeds one.
+- **One hub.** `bmesh hub` runs NATS, a message server, inside the binary on an always-on box, over a tailnet such as Tailscale. Boxes share one token; nothing else is installed. A single box runs no `bmesh hub`: its `bmesh serve` embeds the hub.
 - **bmesh on every box.** Only `bmesh` talks to the hub: `bmesh serve`, the daemon, always on, which wakes quiet leads, lands what its leads finished, runs routines, sends phone notifications and draws the map; and the `bmesh` commands sessions run. A box set to update itself installs each bmesh release; on others, each session opens with a line to run `bmesh update`.
 - **Signed jobs.** Boxes joined with `bmesh init --hosts` share a signed roster, and every job between them is signed and checked. The signing and approval keys sit where no agent can read them (on macOS, behind the Keychain password dialog). A secure box holds an update of its plugins, or of the repo bmesh updates itself from, until you approve it there.
 
@@ -161,7 +161,6 @@ claude plugin marketplace add rickdiculousli/buildermesh
 claude plugin install buildermesh@buildermesh
 cd ~/repos/your-repo
 bmesh init      # press Enter at every prompt
-bmesh serve     # keep it running
 ```
 
 Add the repo's verify commands to the row `bmesh init` wrote in `repos.toml` (it prints the path):
@@ -174,10 +173,26 @@ verify = ["go vet ./...", "go test ./..."]
 
 ```sh
 bmesh scaffold your-repo    # commit and push what it writes
+```
+
+`scaffold` writes AGENTS.md's shared sections, the `core` engineering rules and `.bmesh/routines/verify.toml`, the routine that runs those commands; in a chat, "scaffold your-repo" asks which [rule sets](docs/manual.md#rule-sets) the repo gets first.
+
+**That is enough for a quick fix, with no `bmesh serve` running.** In a chat in the repo, say what to change ("fix the typo in the footer"): the `quickfix` skill makes the change in a worktree of its own, commits it, runs `bmesh routine run verify`, reviews the diff and pushes it to `main`. With no `bmesh serve` there is no hub to keep the result in, so `routine run` runs the checks, records nothing and says so:
+
+```
+verify ok t:3f2a9c1e (not recorded: no hub at 127.0.0.1:4222)
+```
+
+`scaffold`, `repos` (and `repos show`), `spec` (all but `spec verified`; `spec next-id` then claims nothing), `setup`, `config check`, `update` and `version` need no `bmesh serve` either.
+
+**What needs `bmesh serve`.** On a single box it runs the hub as well as the daemon. Leads (`build`), proposal rounds (`ideate`), holds, recorded results (`routine run`'s record, `routine queue`, `result`, `spec verified`), `land`, `release`, `mesh-status` and the map all need it. Start it when you want them:
+
+```sh
+bmesh serve                 # keep it running
 bmesh ideate your-repo      # your first proposal round
 ```
 
-`scaffold` writes AGENTS.md's shared sections and the `core` engineering rules; in a chat, "scaffold your-repo" asks which [rule sets](docs/manual.md#rule-sets) the repo gets first.
+Several boxes are the step after: [Quickstart (mesh)](#quickstart-mesh).
 
 ## Quickstart (mesh)
 

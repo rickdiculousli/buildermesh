@@ -395,6 +395,107 @@ func TestInlineRunsSetupWhenStale(t *testing.T) {
 	}
 }
 
+// noHub points BMESH_CONFIG at a single box whose hub address nothing
+// listens on, as when bmesh serve isn't running, and returns the address.
+func noHub(t *testing.T) string {
+	t.Helper()
+	addr := closedAddr(t)
+	singleBox(t, addr)
+	return addr
+}
+
+// With no hub, routine run still runs the kind on HEAD: a command kind
+// after the worktree's setup, a model kind through claude, with no slot
+// leased and nothing answered from a record or recorded, as its verdict
+// line says. It exits as the run did, and runs as the node given, if any.
+func TestInlineRunsWithNoHub(t *testing.T) {
+	addr := noHub(t)
+	setups := setupLog(t)
+	fake, err := filepath.Abs("../../testdata/fake-claude.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BMESH_CLAUDE_COMMAND", "sh "+fake)
+	t.Setenv("FAKE_RESULT", "looks fine\nVERDICT: ok")
+	repo := kindRepo(t, map[string]string{
+		"verify": "mode = \"inline\"\ndeterministic = true\nslots = [\"game\"]\n" +
+			"command = \"test -f node_modules/dep && echo ran $BMESH_TREE $BMESH_FROM\"\n",
+		"broken": "mode = \"inline\"\ndeterministic = true\ncommand = \"echo nope; exit 3\"\n",
+		"review": "mode = \"inline\"\ndeterministic = true\nmodels = [\"m1\"]\nprompt = \"check\"\n",
+	})
+	commitAll(t, repo, map[string]string{".gitignore": "node_modules/\n",
+		".bmesh/config.toml": "[slots]\ngame = 1\n[setup]\ncommand = \"" + installSetup + "\"\n"})
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")
+	notRecorded := " (not recorded: no hub at " + addr + ")\n"
+
+	ran := "ran " + tree + " " + testHost + "\n"
+	out, errs, code := runCLI(t, nil, "routine", "run", "verify")
+	if code != 0 || out != ran+"verify ok t:"+tree[:8]+notRecorded || setups() != 1 ||
+		!strings.HasPrefix(errs, "bmesh: setup ran (") {
+		t.Fatalf("verify: %d %q %q setups %d", code, out, errs, setups())
+	}
+	// No record answers a second run: it runs again, here as the node given.
+	out, errs, code = runCLI(t, as("app-001"), "routine", "run", "verify")
+	if code != 0 || out != "ran "+tree+" app-001\nverify ok t:"+tree[:8]+notRecorded || errs != "" || setups() != 1 {
+		t.Fatalf("again: %d %q %q setups %d", code, out, errs, setups())
+	}
+	out, errs, code = runCLI(t, nil, "routine", "run", "broken")
+	if code != 1 || out != "nope\nbroken fail t:"+tree[:8]+notRecorded || errs != "" {
+		t.Fatalf("broken: %d %q %q", code, out, errs)
+	}
+	out, errs, code = runCLI(t, nil, "routine", "run", "review")
+	if code != 0 || out != "looks fine\nVERDICT: ok\nreview ok t:"+tree[:8]+" m:m1"+notRecorded || errs != "" {
+		t.Fatalf("review: %d %q %q", code, out, errs)
+	}
+
+	// Nothing serving [mesh] nats is no hub too.
+	writeFile(t, os.Getenv("BMESH_CONFIG"), "[mesh]\nnats = \"nats://"+addr+"\"\n[host]\nname = \""+testHost+"\"\n")
+	out, errs, code = runCLI(t, nil, "routine", "run", "verify")
+	if code != 0 || out != ran+"verify ok t:"+tree[:8]+notRecorded || errs != "" {
+		t.Fatalf("[mesh] nats: %d %q %q", code, out, errs)
+	}
+}
+
+// With no hub, a dirty tree is still refused and routine queue still needs
+// the hub; a failure to connect that isn't for want of a hub (a token file
+// it can't read, a token the hub refuses, a listen port of 0) fails as it
+// did. None of them runs the kind.
+func TestInlineNoHubRefusals(t *testing.T) {
+	addr := noHub(t)
+	repo := kindRepo(t, map[string]string{
+		"verify": "mode = \"inline\"\ncommand = \"touch \\\"$MARK\\\"\"\n",
+		"lint":   "command = \"touch \\\"$MARK\\\"\"\n",
+	})
+	mark := marker(t)
+	writeFile(t, filepath.Join(repo, "a.txt"), "changed\n")
+	if _, errs, code := runCLI(t, nil, "routine", "run", "verify"); code != 3 || errs != "bmesh: worktree is dirty; commit first\n" || exists(mark) {
+		t.Fatalf("dirty: %d %q ran=%v", code, errs, exists(mark))
+	}
+	meshtest.Git(t, repo, "checkout", "a.txt")
+	if _, errs, code := runCLI(t, nil, "routine", "queue", "lint"); code != 1 || errs != "bmesh: no hub at "+addr+": is bmesh serve running?\n" {
+		t.Fatalf("queue: %d %q", code, errs)
+	}
+
+	hub, err := mesh.StartHub(mesh.HubOptions{Name: "hubbox", Token: "right", Listen: "127.0.0.1:0", Domain: "hub", Store: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(hub.Shutdown)
+	wrong := filepath.Join(t.TempDir(), "token")
+	writeFile(t, wrong, "wrong\n")
+	for _, c := range []struct{ mesh, want string }{
+		{fmt.Sprintf("nats = \"\"\nlisten = %q\ntoken_file = %q", addr, filepath.Join(t.TempDir(), "missing")), "bmesh: token: "},
+		{fmt.Sprintf("nats = %q\ntoken_file = %q", hub.ClientURL(), wrong), "bmesh: can't reach NATS at " + hub.ClientURL() + ": nats: Authorization Violation"},
+		{"nats = \"\"\nlisten = \"127.0.0.1:0\"", "bmesh: [mesh] listen 127.0.0.1:0 lets bmesh serve pick a port"},
+	} {
+		writeFile(t, os.Getenv("BMESH_CONFIG"), "[mesh]\n"+c.mesh+"\n[host]\nname = \""+testHost+"\"\n")
+		out, errs, code := runCLI(t, nil, "routine", "run", "verify")
+		if code != 1 || out != "" || !strings.HasPrefix(errs, c.want) || exists(mark) {
+			t.Fatalf("%s: %d %q %q ran=%v", c.mesh, code, out, errs, exists(mark))
+		}
+	}
+}
+
 // commitDoc commits file with body in the cwd's worktree and returns the
 // new tree.
 func commitDoc(t *testing.T, file, body string) string {
