@@ -1,6 +1,6 @@
 # Proposals
 
-Half-page specs for this repo, one per file: `NNN-slug.md`, `NNN` a three-digit ID numbered in order. Screenshots and mocks they reference live in `assets/` as `NNN-<surface>.png`. Engineer and UI/UX engineer threads write them in proposal rounds (`bmesh ideate <repo>`), a spec for each idea sized M or larger; the operator picks the ones to build (`bmesh build <repo> <NNN>...`), each built by a dispatched lead, and declines or shelves the rest (`bmesh spec set --id <NNN> --status rejected|later --land`).
+Half-page specs for this repo, one per file: `NNN-slug.md`, `NNN` a three-digit ID numbered in order. Screenshots and mocks they reference live in `assets/` as `NNN-<surface>.png`. Proposal rounds write them (`bmesh ideate <repo>`: one thread, or two when the app runs on another box), a spec for each idea sized M or larger; the operator picks the ones to build (`bmesh build <repo> <NNN>...`), each built by a dispatched lead, and declines or shelves the rest (`bmesh spec set --id <NNN> --status rejected|later --land`).
 
 Each spec's frontmatter is its content's record: its status, who proposed it and what was decided. What is in flight lives on the mesh, not in git: a lead building a spec is its node (`bmesh mesh-status`), and a landing's proof is on the commit that landed, as its `Spec: NNN` and `Verified: <entries>` trailers. Specs landed before carry the fields their landing wrote (`built_by`, `branch`, `host`, `merged`, `verified`, `operator_steps`), and still read as they did.
 

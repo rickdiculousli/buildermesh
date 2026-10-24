@@ -26,10 +26,11 @@ type Arm struct {
 
 var armNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
-// pluginPaths are what an arm from a ref takes from the tree: the plugin
-// and the manual its command set is read from. The first two and the manual
-// are required.
-var pluginPaths = []string{".claude-plugin", "skills", "docs/manual.md", "hooks", "third_party"}
+// pluginPaths are what an arm from a ref takes from the tree: the plugin,
+// the manual its command set is read from and the brief templates a
+// round's case renders its brief from. The first two and the manual are
+// required.
+var pluginPaths = []string{".claude-plugin", "skills", "docs/manual.md", "hooks", "third_party", "internal/brief/templates"}
 
 func parseArm(v string) (name, source string, err error) {
 	name, source, ok := strings.Cut(v, "=")

@@ -65,6 +65,16 @@ func Render(repoPath, name string, values map[string]string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	out, err := Fill(text, values)
+	if err != nil {
+		return "", fmt.Errorf("template %s (%s) %w", name, source, err)
+	}
+	return out, nil
+}
+
+// Fill fills a template's text from values in one pass. A placeholder
+// without a value is an error naming it.
+func Fill(text string, values map[string]string) (string, error) {
 	var missing []string
 	out := placeholder.ReplaceAllStringFunc(text, func(m string) string {
 		key := m[2 : len(m)-2]
@@ -77,7 +87,7 @@ func Render(repoPath, name string, values map[string]string) (string, error) {
 	})
 	if len(missing) > 0 {
 		sort.Strings(missing)
-		return "", fmt.Errorf("template %s (%s) uses {{%s}}, which has no value here", name, source, strings.Join(missing, "}}, {{"))
+		return "", fmt.Errorf("uses {{%s}}, which has no value here", strings.Join(missing, "}}, {{"))
 	}
 	return out, nil
 }

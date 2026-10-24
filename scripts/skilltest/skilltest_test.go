@@ -441,6 +441,76 @@ func TestFake(t *testing.T) {
 	}
 }
 
+// A round's cell: the session runs in the round's eng worktree, its one
+// turn is the round brief from the arm's own engineer template (an arm
+// from before 097 gets the values its template was written for), the
+// mesh's counter holds the round's claims, and the fake lists the specs
+// the thread writes from its checkout.
+func TestFakeRound(t *testing.T) {
+	need(t, "git", "go", "sh")
+	root := repoRoot(t)
+	manual, err := os.ReadFile(filepath.Join(root, "docs", "manual.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := t.TempDir()
+	oldTmpl := "# Engineer: proposal round {{round_n}} for {{repo}}\n\n{{round_ask}} `{{node}}` from {{next_id}}.{{ux_ids}}\n- {{round_partner}}\n"
+	if err := writeFile(filepath.Join(old, "internal", "brief", "templates", "engineer.md"), oldTmpl); err != nil {
+		t.Fatal(err)
+	}
+	k := findCase("round")
+	for _, tc := range []struct {
+		dir, next  string
+		want, lack []string
+	}{
+		{root, "20", []string{"# Engineer: proposal round 1 for shop", "--node shop-round-1.eng", "number yours from 015", "three to six ranked ideas in one list",
+			"this round's only thread", "`buildermesh:ideate-engineer`"}, []string{"urface", "UI/UX", "creenshot", "{{"}},
+		{old, "24", []string{"three to five ranked ideas", "`shop-round-1.eng` from 015. The UI/UX engineer has a block of its own",
+			"The UI/UX engineer runs beside you"}, []string{"{{"}},
+	} {
+		dir := t.TempDir()
+		arm := Arm{Name: "test", Dir: tc.dir, Commands: commandsFromManual(string(manual))}
+		cs, err := setupCell(dir, k, arm, testFixture(t), thisBox(), time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		wt := filepath.Join(dir, cs.Cwd)
+		if b, _ := git(wt, gitEnv(dir), "branch", "--show-current"); cs.Cwd != filepath.Join("worktrees", "shop", "shop-round-1-eng") || b != "shop-round-1-eng" {
+			t.Fatalf("the round's worktree %s is on %q", cs.Cwd, b)
+		}
+		for _, w := range tc.want {
+			if len(cs.Words) != 1 || !strings.Contains(cs.Words[0], w) {
+				t.Errorf("%s: the round brief lacks %q:\n%s", tc.dir, w, cs.Words)
+			}
+		}
+		for _, w := range tc.lack {
+			if strings.Contains(strings.ReplaceAll(cs.Words[0], dir, ""), w) {
+				t.Errorf("%s: the round brief has %q", tc.dir, w)
+			}
+		}
+		if b, _ := os.ReadFile(filepath.Join(dir, "state", "next-id")); strings.TrimSpace(string(b)) != tc.next {
+			t.Errorf("%s: state/next-id %q, want %s", tc.dir, b, tc.next)
+		}
+		if tc.dir != root {
+			continue
+		}
+		spec := "---\nid: 015\ntitle: The store appends\nkind: time-cost\nsize: M\njudge: opus\nstatus: proposed\nlens: eng\n---\n"
+		if err := writeFile(filepath.Join(wt, "docs", "proposals", "015-the-store-appends.md"), spec); err != nil {
+			t.Fatal(err)
+		}
+		code, out, errs := fake(t, dir, wt, "--node", roundNode, "spec", "list", "--repo", ".")
+		if code != 0 || !strings.Contains(out, "015  proposed   M   time-cost    eng  The store appends\n") || !strings.Contains(out, "014  proposed   M   feature") {
+			t.Errorf("spec list: %d %q %q", code, out, errs)
+		}
+		if code, out, _ := fake(t, dir, wt, "--node", roundNode, "spec", "next-id", "--repo", "."); code != 0 || out != "021\n" {
+			t.Errorf("spec next-id: %d %q", code, out)
+		}
+		if code, out, _ := fake(t, dir, wt, "--node", roundNode, "done", "--commit", "0123abcd", "--text", "x"); code != 0 || out != "done shop-round-1.eng 0123abcd\n" {
+			t.Errorf("done: %d %q", code, out)
+		}
+	}
+}
+
 // A lead's cell: the session runs in the lead's worktree on its own
 // branch, its one turn is the build brief, and the fake answers a lead's
 // commands as the binary does for a lead whose land succeeds; in lead-stop

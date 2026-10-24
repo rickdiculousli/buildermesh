@@ -120,10 +120,11 @@ commands:
   lead start --repo R --spec NNN --brief FILE [--model M] [--effort E] [--title T] [--path P]
                                            start a lead through the runner and register it
   ideate <repo> [--idea] [--model M] [--effort E] [--context <text|->] [--force]
-                                           run a proposal round: an engineer and a UI/UX engineer thread, each in a
-                                           bmesh worktree from main, as nodes <repo>-round-<N>.eng|ux; --context
-                                           puts the operator's words in both briefs; --idea starts only the
-                                           engineer, to write the one idea --context gives as its spec
+                                           run a proposal round: one thread ranking engineering and UI/UX ideas in
+                                           one list, in a bmesh worktree from main, as node <repo>-round-<N>.eng (and
+                                           .ux, the UI/UX part, when ux_host is another box); --context puts the
+                                           operator's words in the briefs; --idea starts only the engineer, to
+                                           write the one idea --context gives as its spec
   build <repo> <NNN> [<NNN>...] [--model M] [--effort E] [--path P] [--family F] [--hold land|now] [--context <text|->] [--force]
                                            build the specs the operator picked (any not done or rejected): render
                                            each build brief and start its lead (as lead start), recording nothing

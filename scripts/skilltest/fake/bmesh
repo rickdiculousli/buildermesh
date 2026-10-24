@@ -5,8 +5,8 @@
 # status, the cwd, then each argument, tab-separated, with \, a tab and a
 # newline written \\, \t and \n.
 # It reads the cell's files under $SKILLTEST_CELL: fake.env (the row's name
-# and path, this box's name, and in a lead's cell its node, worktree and
-# spec), commands.txt (the arm's commands), canned/ (the case's outputs, by
+# and path, this box's name, and in a lead's or a round's cell its node,
+# worktree and a lead's spec), commands.txt (the arm's commands), canned/ (the case's outputs, by
 # command) and state/ (counters, and the commits its land pushed).
 
 cell=${SKILLTEST_CELL:?SKILLTEST_CELL is not set}
@@ -20,6 +20,7 @@ node=
 worktree=
 lead_spec=
 stop_first=0
+round=0
 . "$cell/fake.env"
 
 esc() {
@@ -217,6 +218,14 @@ fake_spec() {
 	case $sub in
 	list)
 		st=$(opt status "$@")
+		# A round's thread checks the specs it wrote: in its cell a plain
+		# list reads the checkout it names, as the binary does.
+		if [ "$round" = 1 ] && [ -z "$st" ] && [ $json = 0 ]; then
+			for f in "$(repodir "$(opt repo "$@")")"/docs/proposals/[0-9]*.md; do
+				[ -f "$f" ] && specrow "$f"
+			done
+			exit 0
+		fi
 		key=spec-list${st:+.$st}
 		[ $json = 1 ] && key=$key.json
 		if [ ! -f "$canned/$key" ]; then
@@ -277,6 +286,13 @@ fake_spec() {
 		fi
 		;;
 	esac
+}
+
+# specrow FILE: the spec's line in spec list: id, status, size, kind, lens
+# and title, as the binary prints it.
+specrow() {
+	awk '/^---$/ { n++; next } n == 1 { k = $1; sub(/:$/, "", k); v = $0; sub(/^[^:]*:[ \t]*/, "", v); f[k] = v }
+		END { printf "%03d  %-9s  %-2s  %-11s  %-3s  %s\n", f["id"], f["status"], f["size"] ? f["size"] : "?", f["kind"] ? f["kind"] : "?", f["lens"] ? f["lens"] : "?", f["title"] }' "$1"
 }
 
 # specfile DIR ID: the spec's file in the checkout at DIR, if it has one.
