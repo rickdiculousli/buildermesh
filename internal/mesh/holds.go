@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -59,6 +60,7 @@ func ListHolds(ctx context.Context, c *Client, kindName string) ([]Holds, error)
 	if err != nil {
 		return nil, err
 	}
+	sort.Strings(keys) // listKeys has no order; KindJobs breaks a tie by read order
 	var out []Holds
 	for _, key := range keys {
 		e, err := kv.Get(ctx, key)
