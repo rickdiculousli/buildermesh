@@ -867,7 +867,7 @@ fi
 git worktree add -q "$FAKE_CLAUDE_DIR/wt" -b scratch HEAD
 sed 's/return c.Subtotal() - c.Discount()/return max(0, c.Subtotal()-c.Discount())/' cart/cart.go >cart/cart.go.new && mv cart/cart.go.new cart/cart.go
 git commit -qam "An empty cart with a code totals 0.00" && bmesh routine run verify >/dev/null && git push -q origin HEAD:main
-printf '{"type":"result","subtype":"success","is_error":false,"result":"Fixed and pushed.","session_id":"fake-session","num_turns":7,"duration_ms":2000,"total_cost_usd":0.03,"modelUsage":{"claude-opus-5-5":{"inputTokens":11,"outputTokens":7,"cacheReadInputTokens":103,"cacheCreationInputTokens":24,"costUSD":0.025},"claude-haiku-4-5":{"inputTokens":10,"costUSD":0.005}},"model_usage_since_last_result":{"claude-opus-5-5":{"inputTokens":1,"outputTokens":2,"cacheReadInputTokens":3,"cacheCreationInputTokens":4,"costUSD":0.015},"claude-haiku-4-5":{"inputTokens":10,"costUSD":0.005}}}\n'
+printf '{"type":"result","subtype":"success","is_error":false,"result":"Making it here, XS: one line in cart.Total. Fixed and pushed.","session_id":"fake-session","num_turns":7,"duration_ms":2000,"total_cost_usd":0.03,"modelUsage":{"claude-opus-5-5":{"inputTokens":11,"outputTokens":7,"cacheReadInputTokens":103,"cacheCreationInputTokens":24,"costUSD":0.025},"claude-haiku-4-5":{"inputTokens":10,"costUSD":0.005}},"model_usage_since_last_result":{"claude-opus-5-5":{"inputTokens":1,"outputTokens":2,"cacheReadInputTokens":3,"cacheCreationInputTokens":4,"costUSD":0.015},"claude-haiku-4-5":{"inputTokens":10,"costUSD":0.005}}}\n'
 `
 
 // A cell runs end to end against a fake claude: each turn's command line
