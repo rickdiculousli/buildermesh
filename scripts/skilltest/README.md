@@ -26,7 +26,7 @@ The cell runs under `$TMPDIR` (never `/tmp`, and never below a `CLAUDE.md` or `A
 
 ## Steering
 
-When a case's scripted turns are done, its expectations don't hold yet and the last reply asks the operator something (its last paragraph has a `?`, or asks for a go-ahead or a choice), the harness sends the case's steer (`yes, go ahead`), counts it, and scores again; at most two steers. Cases whose question is expected (feature-l's plan) or that no go-ahead could mend (question, in-flight, and the lead cases, where any question is a miss) have no steer.
+When a case's scripted turns are done, its expectations don't hold yet and the last reply asks the operator something (its last paragraph has a `?`, or asks for a go-ahead or a choice; the closing line's `Waiting on you:`, which only says what waits on the operator, is not an ask), the harness sends the case's steer (`yes, go ahead`), counts it, and scores again; at most two steers. Cases whose question is expected (feature-l's plan) or that no go-ahead could mend (question, in-flight, and the lead cases, where any question is a miss) have no steer.
 
 ## Cases and how each is scored
 

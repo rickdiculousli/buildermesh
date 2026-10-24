@@ -731,9 +731,12 @@ func TestAsksOperator(t *testing.T) {
 		"Plan above. Say go and I'll start it.":                            true,
 		"Two ways: a spec, or here with a high-effort review; your call.":  true,
 		"Fixed and pushed; origin/main contains it. Nothing waits on you.": false,
-		"Is it negative? Yes.\n\nFixed and pushed.":                        false,
-		"Done: 1a2b3c4d on main.":                                          false,
-		"":                                                                 false,
+		// The work skill's closing line names what waits on the operator.
+		"The fix is on main and pushed. Waiting on you: item 1 is still open, so say \"fix 1\" when you want it.": false,
+		"Waiting on you: your go to start the build.":                                                             true,
+		"Is it negative? Yes.\n\nFixed and pushed.":                                                               false,
+		"Done: 1a2b3c4d on main.":                                                                                 false,
+		"":                                                                                                        false,
 	} {
 		if got := asksOperator(reply); got != want {
 			t.Errorf("asksOperator(%q) = %v, want %v", reply, got, want)

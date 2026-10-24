@@ -180,7 +180,7 @@ func lastParagraph(reply string) string {
 	return strings.TrimSpace(blocks[len(blocks)-1])
 }
 
-var goAheadRE = regexp.MustCompile(`(?i)\b(want me to|shall i|should i|do you want|would you like|let me know|say (go|yes|the word|which)|your (go|go-ahead|ok|okay|call|pick|choice)\b|on your (ok|okay|go|word)|(ok|okay) to (proceed|go ahead|start|build|ship|release|land|push)|confirm|waiting (on|for) (you|your)|which (way|one|do you)|pick (one|a|which)|if you('d| would) like)`)
+var goAheadRE = regexp.MustCompile(`(?i)\b(want me to|shall i|should i|do you want|would you like|let me know|say (go|yes|the word|which)|your (go|go-ahead|ok|okay|call|pick|choice)\b|on your (ok|okay|go|word)|(ok|okay) to (proceed|go ahead|start|build|ship|release|land|push)|confirm|which (way|one|do you)|pick (one|a|which)|if you('d| would) like)`)
 
 // asksOperator reports whether a reply ends by asking the operator
 // something: its last paragraph has a question, or asks for a go-ahead or a
