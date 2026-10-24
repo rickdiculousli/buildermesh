@@ -4,7 +4,7 @@ title: bmesh build hands the session the rung line its report opens with
 kind: refinement
 size: M
 judge: opus
-status: accepted
+status: done
 lens: eng
 proposed_by: buildermesh-fix-8
 proposed_on: 2026-10-24
