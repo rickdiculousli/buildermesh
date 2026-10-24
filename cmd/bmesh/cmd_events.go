@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/rickdiculousli/buildermesh/internal/checkout"
@@ -213,7 +214,8 @@ const passLanded = "pass bmesh done --commit the commit bmesh land printed as la
 // of no failing entry, every entry matched by a recorded result for the
 // commit's tree (any args), or a carried entry by a model result at the
 // tree it names whose patch-id is the commit's diff from an ancestor on
-// main, and a Spec trailer naming the node's spec. A commit whose subject
+// main, or an entry left behind by later commits (at:) by a result at its
+// own tree, and a Spec trailer naming the node's spec. A commit whose subject
 // is the old `NNN: done at <sha8>` record is checked as it was: against
 // the spec on main (checkLegacyDone).
 func (a *app) checkSpecDone(ctx context.Context, n mesh.Node, commit string) error {
@@ -263,13 +265,15 @@ func (a *app) checkLegacyDone(ctx context.Context, n mesh.Node) error {
 }
 
 // checkEntries refuses a verified line that is empty, has a failing entry,
-// or names an entry no recorded result matches for merged's tree.
+// or names an entry no recorded result matches for merged's tree. An entry
+// left behind by later commits (at:) records what ran at its own tree: it
+// is matched there, verdict and all, and neither passes nor fails merged.
 func (a *app) checkEntries(ctx context.Context, repoPath, merged string, entries []spec.Entry) error {
-	if len(entries) == 0 {
+	if !slices.ContainsFunc(entries, func(e spec.Entry) bool { return !e.Behind() }) {
 		return fail(exitRefused, "not done: verified is empty")
 	}
 	for _, e := range entries {
-		if !e.OK {
+		if !e.OK && !e.Behind() {
 			return fail(exitRefused, "not done: verified has a failing entry %s; %s, whose entries all pass", e.Kind, passLanded)
 		}
 	}
@@ -278,7 +282,7 @@ func (a *app) checkEntries(ctx context.Context, repoPath, merged string, entries
 		return fail(exitRefused, "not done: merged %s is not a commit", merged)
 	}
 	for _, e := range entries {
-		if e.Tree8 != tree[:8] {
+		if e.Tree8 != tree[:8] && !e.Behind() {
 			return fail(exitRefused, "not done: verified entry %s is for tree %s, merged tree is %s; %s", e.Kind, e.Tree8, tree[:8], passLanded)
 		}
 		rs, err := mesh.ListResults(ctx, a.client, e.Kind)
@@ -288,13 +292,20 @@ func (a *app) checkEntries(ctx context.Context, repoPath, merged string, entries
 		// A carried entry is matched at the tree its result was recorded
 		// at, by a model result whose recorded diff is the one merged landed.
 		at := tree[:8]
-		if e.Carried != "" {
+		switch {
+		case e.Carried != "":
 			at = e.Carried
+		case e.Behind():
+			at = e.Tree8
 		}
 		matched := false
 		for _, r := range rs {
 			if !strings.HasPrefix(r.Tree, at) || r.OK != e.OK || e.Model != "" && r.Model != e.Model {
 				continue
+			}
+			if e.Behind() {
+				matched = true
+				break
 			}
 			if e.Carried == "" {
 				if matched = r.Tree == tree; matched {
@@ -315,6 +326,9 @@ func (a *app) checkEntries(ctx context.Context, repoPath, merged string, entries
 			missing := fmt.Sprintf("not done: verified names %s but no result for tree %s", e.Kind, at)
 			queue := fmt.Sprintf("bmesh routine queue %s --commit %s --go", e.Kind, short8(merged))
 			switch {
+			case e.Behind():
+				// Its result was recorded before the commits that followed it.
+				return fail(exitRefused, "%s; it was recorded at %s, before later commits, so no run can record it again: report it with bmesh blocked --text \"<this line>\"", missing, e.At)
 			case e.Carried != "":
 				// Its result was recorded for an older tree; no run now records it there.
 				return fail(exitRefused, "%s; it was carried, so no run can record it again: report it with bmesh blocked --text \"<this line>\"", missing)

@@ -91,7 +91,7 @@ func history(t *testing.T) (string, map[string]string) {
 	commit("c030", "A quieter map", map[string]string{"q": "q"})
 	commit("", "030: done at "+at["c030"][:8], map[string]string{"docs/proposals/030-quiet.md": "---\nid: 030\ntitle: A quieter map\nstatus: done\n---\n"})
 	commit("fix", "A fix", map[string]string{"f": "fix"})
-	commit("c031", "The notice\n\nSpec: 031\nVerified: verify ok t:00000000", map[string]string{"n": "n",
+	commit("c031", "The notice\n\nSpec: 031\nVerified: review fail t:0011aabb m:claude-opus-5-5 at:882e6c94; verify ok t:00000000", map[string]string{"n": "n",
 		"docs/proposals/031-notice.md": "---\nid: 031\ntitle: The notice\nstatus: done\n---\n"})
 	commit("main", "099: done at 00000000", nil) // a commit this repo doesn't know
 	return dir, at

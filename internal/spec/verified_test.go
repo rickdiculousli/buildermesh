@@ -42,6 +42,16 @@ func TestParseFormatVerifiedRoundTrip(t *testing.T) {
 	} else if s := FormatVerified(got); s != carried {
 		t.Fatalf("format carried: %q", s)
 	}
+	behind := "review fail t:0011aabb m:claude-opus-5-5 at:882e6c94; verify ok t:3f2a9c1e"
+	if got, err := ParseVerified(behind); err != nil || len(got) != 2 ||
+		got[0] != (Entry{Kind: "review", Tree8: "0011aabb", Model: "claude-opus-5-5", At: "882e6c94"}) || !got[0].Behind() || got[1].Behind() {
+		t.Fatalf("behind: %+v %v", got, err)
+	} else if s := FormatVerified(got); s != behind {
+		t.Fatalf("format behind: %q", s)
+	}
+	if got, err := ParseVerified("review ok t:0011aabb at:882e6c94"); err != nil || got[0] != (Entry{Kind: "review", OK: true, Tree8: "0011aabb", At: "882e6c94"}) {
+		t.Fatalf("behind, no model: %+v %v", got, err)
+	}
 	if got, err := ParseVerified("   "); got != nil || err != nil {
 		t.Fatalf("empty: %+v %v", got, err)
 	}
@@ -61,6 +71,12 @@ func TestParseFormatVerifiedRoundTrip(t *testing.T) {
 		"review ok t:3f2a9c1e m:claude-opus-5-5 c:0011AABB",
 		"review ok t:3f2a9c1e m:claude-opus-5-5 c:0011aabb c:0011aabb",
 		"review ok t:3f2a9c1e m:a m:b",
+		"review ok t:3f2a9c1e at:882e6c94 m:claude-opus-5-5",
+		"review ok t:3f2a9c1e m:claude-opus-5-5 at:",
+		"review ok t:3f2a9c1e m:claude-opus-5-5 at:882E6C94",
+		"review ok t:3f2a9c1e m:claude-opus-5-5 at:882e6c9",
+		"review ok t:3f2a9c1e m:claude-opus-5-5 c:0011aabb at:882e6c94",
+		"review ok t:3f2a9c1e m:claude-opus-5-5 at:882e6c94 c:0011aabb",
 	} {
 		if _, err := ParseVerified(bad); err == nil {
 			t.Fatalf("%q: no error", bad)

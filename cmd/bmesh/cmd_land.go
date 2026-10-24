@@ -77,6 +77,7 @@ type lander struct {
 	heads    []string           // the branch's heads before land touched it: HEAD and the heads a rebase by hand rewrote
 	before   map[string]*source // per kind with a result before land touched the branch: where it is
 	required []string           // the kinds the landed tree must carry
+	behind   []spec.Entry       // the review left behind by later commits, as at:<sha8> entries for the verified line
 	ran      map[string]string  // per inline kind, the last tree it was ok at in this run
 	resolved []string           // the files a rebase in this run resolved by rule
 
@@ -464,7 +465,7 @@ func (l *lander) prepare(ctx context.Context) error {
 	}
 	line := strings.Join(said, ", ")
 	if len(behind) > 0 {
-		line += "; left behind by later commits: " + strings.Join(behind, ", ") + " (not on the verified line)"
+		line += "; left behind by later commits: " + strings.Join(behind, ", ")
 	}
 	fmt.Fprintf(l.a.stdout, "required: %s\n", line)
 	return nil
@@ -504,8 +505,12 @@ func kindsAt(all []mesh.Result, tree string) map[string]*source {
 // head's own first-parent commits back to its fork point from base, nearest
 // first, skipping the heads themselves, which prepare has read; a kind takes
 // the nearest commit with a result for it. Each reads
-// "<kind> ok|fail t:<tree8> at <sha8>", sorted by kind.
+// "<kind> ok|fail t:<tree8> at <sha8> (...)", sorted by kind. The review's
+// newest result per model there goes on the verified line as a record of
+// the review that ran (l.behind, `review ok|fail t:<tree8> m:<model>
+// at:<sha8>`); another kind stays off it.
 func (l *lander) leftBehind(ctx context.Context, heads []source, all []mesh.Result) ([]string, error) {
+	l.behind = nil
 	seen := map[string]bool{}
 	for _, h := range heads {
 		seen[h.head] = true
@@ -534,7 +539,14 @@ func (l *lander) leftBehind(ctx context.Context, heads []source, all []mesh.Resu
 				if src.result.OK {
 					verdict = "ok"
 				}
-				found[k] = fmt.Sprintf("%s %s t:%s at %s", k, verdict, tree[:8], sha[:8])
+				where := "not on the verified line"
+				if k == reviewKind {
+					where = "on the verified line as at:" + sha[:8]
+					for _, r := range src.newest {
+						l.behind = append(l.behind, spec.Entry{Kind: k, OK: r.OK, Tree8: tree[:8], Model: r.Model, At: sha[:8]})
+					}
+				}
+				found[k] = fmt.Sprintf("%s %s t:%s at %s (%s)", k, verdict, tree[:8], sha[:8], where)
 			}
 		}
 	}
@@ -1377,6 +1389,15 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA, preTree str
 			return nil, fail(exitRefused, "refused: %s fails at t:%s; fix it, commit and run bmesh land again", e.Kind, at)
 		}
 	}
+	// The review left behind is a record of what ran, failing or not; the
+	// landed tree's verdicts are the entries above.
+	for _, e := range l.behind {
+		fmt.Fprintf(out, "%s (left behind by later commits: a record, not the landed tree's)\n", e)
+	}
+	entries = append(entries, l.behind...)
+	slices.SortFunc(entries, func(a, b spec.Entry) int {
+		return cmp.Or(strings.Compare(a.Kind, b.Kind), strings.Compare(a.Model, b.Model))
+	})
 	return entries, nil
 }
 

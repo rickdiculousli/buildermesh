@@ -4,7 +4,7 @@ title: A landed commit's Verified trailer names the review that ran, even when l
 kind: refinement
 size: M
 judge: opus
-status: proposed
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-24
@@ -35,6 +35,6 @@ Failing first, on `cmd/bmesh`'s bare-origin land fixture: a branch with a review
 - **Alternative: say it only in the lead's final message.** That is today, and it doesn't last.
 
 ## Upgrading
-nothing, unless an older `bmesh done` refuses the new entry: then the release's notes say to update every box before landing with it.
+Update `bmesh` on every box (`bmesh update`, or the daemon's own update) before a lead lands with this release: an older `bmesh done` reads a `Verified:` trailer's `at:` entry as malformed (`verified entry ... is not ...`) and refuses the landed commit that carries one. Nothing else reads the entry: `release`, `spec steps` and the daemon never read the `Verified:` trailer, and an older map shows it as text.
 
 ## Needs from the operator
