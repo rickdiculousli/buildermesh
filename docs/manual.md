@@ -1145,7 +1145,7 @@ An existing kind is never touched, except the verify kind's `command` when the r
 | A routine with no example | 1 | `no example for kind <k>; write .bmesh/routines/<k>.toml yourself` |
 | A verify kind whose command spans lines | 1 | `<file>: its command is not on one line scaffold can rewrite; set it to the row's verify (<cmd>) by hand` |
 | A `[setup]` written as other than one table (dotted keys, say) | 1 | `.bmesh/config.toml: its [setup] is not a table scaffold can rewrite; set it to the row's setup by hand` |
-| The rules marker names a set bmesh doesn't ship | 1 | `AGENTS.md: unknown rule set <name>; bmesh has core, design, tests, tdd, prose` |
+| The rules marker names a set bmesh doesn't ship | 1 | `AGENTS.md: unknown rule set <name>; bmesh has core, design, tests, tdd, prose, ponytail` |
 
 **Details.** A second run changes nothing. Run it again after the snippet changes (a new bmesh), and commit what it wrote. After a published change to the row's `verify` or `setup` there is no hand step: the row's host box commits the verify kind and `[setup]` on `main` (see [The registry](#the-registry)). Run it by hand only for what that commit leaves: `AGENTS.md`'s done block, which its push names when a `verify` change left it stale, a host box with no checkout or an older bmesh, or a rescaffold whose push says it failed.
 

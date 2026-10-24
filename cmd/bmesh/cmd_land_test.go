@@ -975,7 +975,7 @@ func TestScaffoldRefusesAnUnknownRuleSet(t *testing.T) {
 	writeLandRow(t, r, `"true"`)
 	writeFile(t, filepath.Join(r.repo, "AGENTS.md"), "# A\n\n<!-- bmesh:rules core style -->\n<!-- /bmesh:rules -->\n")
 	_, errs, code := runCLI(t, nil, "scaffold", "repo")
-	if code != 1 || errs != "bmesh: AGENTS.md: unknown rule set style; bmesh has core, design, tests, tdd, prose\n" {
+	if code != 1 || errs != "bmesh: AGENTS.md: unknown rule set style; bmesh has core, design, tests, tdd, prose, ponytail\n" {
 		t.Fatalf("scaffold: %d %q", code, errs)
 	}
 }
