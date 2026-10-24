@@ -1703,7 +1703,8 @@ func TestLandWaitsForAReviewAlreadyQueued(t *testing.T) {
 }
 
 // A branch reviewed ok queues none and lands with it; one reviewed fail
-// and then fixed queues none and lands on verify alone; one reviewed and
+// and then fixed queues none and lands on verify alone, the failing review
+// on the line as the record of what ran; one reviewed and
 // rebased by hand queues none, and the review carries.
 func TestLandQueuesNoSecondReview(t *testing.T) {
 	t.Run("ok", func(t *testing.T) {
@@ -1724,7 +1725,8 @@ func TestLandQueuesNoSecondReview(t *testing.T) {
 		c, ctx := setup(t)
 		rp := reviewLandRepo(t, c, ctx, "M")
 		tree := gitOut(t, "rev-parse", "HEAD^{tree}")
-		if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "review", Tree: tree, Commit: gitOut(t, "rev-parse", "HEAD"),
+		at := gitOut(t, "rev-parse", "HEAD")
+		if err := mesh.PutResult(ctx, c, mesh.Result{Kind: "review", Tree: tree, Commit: at,
 			OK: false, Model: "m1", By: "routine.review.m1-1"}); err != nil {
 			t.Fatal(err)
 		}
@@ -1733,7 +1735,7 @@ func TestLandQueuesNoSecondReview(t *testing.T) {
 		out, errs, code := runCLI(t, as("app-012"), "land")
 		landedTree := gitOut(t, "rev-parse", "HEAD^{tree}")
 		if code != 0 || !strings.Contains(out, "review: on the branch already (fail at t:"+tree[:8]+")\n") ||
-			!strings.Contains(out, "verified: verify ok t:"+landedTree[:8]+"\n") {
+			!strings.Contains(out, "verified: review fail t:"+tree[:8]+" m:m1 at:"+at[:8]+"; verify ok t:"+landedTree[:8]+"\n") {
 			t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
 		}
 		if jobs := unanswered(t, c, ctx); len(jobs) != 0 {
