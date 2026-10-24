@@ -565,8 +565,8 @@ func TestFakeLead(t *testing.T) {
 	if b, _ := git(wt, gitEnv(dir), "branch", "--show-current"); cs.Cwd != filepath.Join("worktrees", "shop", "shop-012") || b != "bmesh/shop-012" {
 		t.Fatalf("the lead's worktree %s is on %q", cs.Cwd, b)
 	}
-	if len(cs.Words) != 1 || !strings.Contains(cs.Words[0], "Your node is `shop-012`.") || !strings.Contains(cs.Words[0], "title: The receipt says Total") ||
-		!strings.Contains(cs.Words[0], "`bmesh spec set --id 012 --status done`") || !strings.Contains(cs.Words[0], "(`"+sandbox+"`)") {
+	if len(cs.Words) != 1 || !strings.Contains(cs.Words[0], "Your node is `shop-012`:") || !strings.Contains(cs.Words[0], "title: The receipt says Total") ||
+		!strings.Contains(cs.Words[0], "`buildermesh:lead`") || !strings.Contains(cs.Words[0], "(`"+sandbox+"`)") {
 		t.Errorf("the lead's words aren't the build brief:\n%.600s", cs.Words)
 	}
 	expect := func(want string, code int, args ...string) string {
@@ -601,7 +601,9 @@ func TestFakeLead(t *testing.T) {
 	expect("ready: "+thisBox()+"'s daemon lands "+head[:8]+"; it wakes you only if land needs you", 0, "ready", "--text", "x")
 	expect("is not held (released already?); run bmesh inbox and carry on", 3, "held")
 
-	if out := expect(`"branch":"bmesh/shop-012-a"`, 0, "executor", "new", "--name", "a"); !strings.Contains(out, "You are executor shop-012.a in buildermesh.") {
+	exWT := filepath.Join(dir, "worktrees", "shop", "shop-012.a")
+	if out := expect(`"branch":"bmesh/shop-012-a"`, 0, "executor", "new", "--name", "a", "--model", "sonnet"); !strings.Contains(out, "You are executor shop-012.a in buildermesh. Work only in "+exWT+" on branch bmesh/shop-012-a:") ||
+		!strings.Contains(out, "`bmesh --node shop-012.a progress --text") || !strings.Contains(out, "in the background, on `sonnet`, at medium effort") || strings.Contains(out, "@") {
 		t.Errorf("executor new:\n%s", out)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "worktrees", "shop", "shop-012.a")); err != nil {
@@ -632,6 +634,32 @@ func TestFakeLead(t *testing.T) {
 	got, _, errs = fake(t, dir, sandbox, "land", "--spec", "012")
 	if got != 3 || !strings.Contains(errs, "refused: land runs on a lead's branch, not main") {
 		t.Errorf("land on main: %d %q", got, errs)
+	}
+}
+
+// A lead's brief and its executors' come from the arm's own templates, so
+// they are measured as the skills are: an arm whose build template is its
+// own renders it, with the case's operator words, and an arm from before
+// the executor template gets the header alone from executor new.
+func TestFakeLeadArmBriefs(t *testing.T) {
+	need(t, "git", "go", "sh")
+	old := t.TempDir()
+	tmpl := "# Old build {{spec_id}} as {{node}}\n\n{{operator_words}}{{standard_closing}}\n"
+	if err := writeFile(filepath.Join(old, "internal", "brief", "templates", "build.md"), tmpl); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	cs, err := setupCell(dir, findCase("lead-exec"), Arm{Name: "base", Dir: old, Commands: []string{"executor"}}, testFixture(t), thisBox(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cs.Words) != 1 || !strings.HasPrefix(cs.Words[0], "# Old build 012 as shop-012\n\n## The operator's words\n") ||
+		!strings.Contains(cs.Words[0], execWords) || !strings.Contains(cs.Words[0], "> When it works, finish it") {
+		t.Errorf("the old arm's brief:\n%s", cs.Words)
+	}
+	_, out, errs := fake(t, dir, filepath.Join(dir, cs.Cwd), "executor", "new", "--name", "receipt")
+	if !strings.Contains(out, "You are executor "+execNode+" in buildermesh.") || strings.Contains(out, "## Your piece") {
+		t.Errorf("the old arm's executor new: %q %q", out, errs)
 	}
 }
 

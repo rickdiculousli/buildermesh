@@ -221,6 +221,8 @@ The daemon decides on every feedback message and on each minute's pass, from the
 
 [Manual: `bmesh executor`](manual.md#bmesh-executor)
 
+**The brief.** `executor new` renders the embedded `executor` template (`brief.Render` with no repo, so no `.bmesh/briefs/` override applies) after the node is registered, its `model` the `--model` in backticks or "the model the piece calls for"; `--json` prints none.
+
 **The node record.** `executor new` registers `<parent path>.<name>` with `role: executor`, `parent`, branch, worktree, repo, host and model. `executor remove` leaves the node and its branch name in `bm-nodes` until `node forget`.
 
 **Report messages.** The ids are `ask-<path>-<hash of path and text>`, `blocked-<path>-<hash of path and text>` and `done-<path>-<sha>`: the event's own id, so a retry within the stream's two-minute duplicate window is one message. The message is sent after the move is checked against the node's state and before the event is published, so a refused event sends nothing.

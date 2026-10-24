@@ -39,13 +39,15 @@ type Case struct {
 }
 
 // Lead makes a case a lead's: the session is lead Node building spec Spec,
-// in a worktree of the sandbox on its own branch, and its one turn is the
-// brief this tree's internal/brief writes: the build brief, or with Brief
-// "fix" the fix lead's (Spec empty). With StopFirst the fake's first ready
-// or land refuses because the spec doesn't read done.
+// in a worktree of the sandbox on its own branch, and its one turn is its
+// brief: the build brief from the arm's own template, with Words as the
+// operator's words, or with Brief "fix" the fix lead's from this tree's
+// internal/brief (Spec empty). With StopFirst the fake's first ready or
+// land refuses because the spec doesn't read done.
 type Lead struct {
 	Node, Spec string
 	Brief      string // "" is the build brief; "fix" the fix lead's
+	Words      string
 	StopFirst  bool
 }
 
@@ -56,7 +58,7 @@ func (l *Lead) branch() string   { return "bmesh/" + l.Node }
 
 // brief is the lead's brief in the sandbox, as bmesh build (or bmesh fix)
 // writes it for a repo with no setup command.
-func (l *Lead) brief(sandbox, host string, now time.Time) (string, error) {
+func (l *Lead) brief(a Arm, sandbox, host string, now time.Time) (string, error) {
 	if l.Brief == "fix" {
 		values := brief.RowValues(row(sandbox, host), sandbox)
 		values["node"], values["date"], values["plain_words"] = l.Node, now.UTC().Format("2006-01-02"), brief.PlainWords
@@ -76,9 +78,14 @@ func (l *Lead) brief(sandbox, host string, now time.Time) (string, error) {
 		return "", fmt.Errorf("no spec %s in the sandbox", l.Spec)
 	}
 	values := brief.BuildValues(row(sandbox, host), sandbox, s.Text, s.Path, s.IDString(), l.Node, now.UTC().Format("2006-01-02"))
-	text, err := brief.Render(sandbox, "build", values)
+	values["operator_words"] = brief.OperatorWords(l.Words)
+	tmpl, _, err := armTemplate(a, "build")
 	if err != nil {
 		return "", err
+	}
+	text, err := brief.Fill(tmpl, values)
+	if err != nil {
+		return "", fmt.Errorf("the arm's build template %w", err)
 	}
 	return brief.WithSetup(text, brief.SetupStep("", "")), nil
 }
@@ -113,20 +120,27 @@ var legacyRound = map[string]string{
 // when every round had a UI/UX thread beside the engineer.
 func legacy(text string) bool { return !strings.Contains(text, "{{title}}") }
 
-// template is the arm's engineer template: its own file, or this tree's for
-// an arm with none (a rehearsal's).
+// template is the arm's engineer template.
 func (rd *Round) template(a Arm) (string, error) {
+	text, _, err := armTemplate(a, "engineer")
+	return text, err
+}
+
+// armTemplate is the arm's own brief template name, so a brief change is
+// measured as a skill change is: its file, or this tree's for an arm with
+// no directory (a rehearsal's) or none of that name (own is false then).
+func armTemplate(a Arm, name string) (text string, own bool, err error) {
 	if a.Dir != "" {
-		b, err := os.ReadFile(filepath.Join(a.Dir, "internal", "brief", "templates", "engineer.md"))
+		b, err := os.ReadFile(filepath.Join(a.Dir, "internal", "brief", "templates", name+".md"))
 		if err == nil {
-			return string(b), nil
+			return string(b), true, nil
 		}
 		if !os.IsNotExist(err) {
-			return "", err
+			return "", false, err
 		}
 	}
-	text, _, err := brief.Template("", "engineer")
-	return text, err
+	text, _, err = brief.Template("", name)
+	return text, a.Dir == "", err
 }
 
 // claimed is the highest id the round's claims hold: its one thread's six,
@@ -171,6 +185,7 @@ const (
 
 var cases = []*Case{bugCase(), tweakCase(), questionCase(), qaCase(), featureMCase(), featureLCase(),
 	inFlightCase(), waitingCase(), ideasCase(), pickCase(), releaseCase(), leadCase("lead-s", false), leadCase("lead-stop", true),
+	leadExecCase(),
 	roundCase(), reviewCase(), fixCase(), drainCase()}
 
 func findCase(name string) *Case {
@@ -864,11 +879,13 @@ None: nothing reads the label. Considered: nothing else.
 )
 
 // leadCalls are the session's calls of the commands a lead lands with, in
-// order: ready (not --cancel), land and done.
+// order: ready (not --cancel), land and done; an executor's done, under
+// the lead's node, isn't one.
 func leadCalls(s *State) []string {
 	var out []string
 	for _, c := range s.AgentCalls() {
 		switch {
+		case strings.HasPrefix(flagValue(c.Args, "node"), leadNode+"."):
 		case c.Is("ready") && !c.Has("cancel"):
 			out = append(out, "ready")
 		case c.Is("land"), c.Is("done"):
@@ -890,6 +907,23 @@ func acceptedByFake(s *State) []string {
 func landedByFake(s *State) []string {
 	b, _ := os.ReadFile(filepath.Join(s.Dir, "state", "landed"))
 	return strings.Fields(string(b))
+}
+
+// The lead cases' rehearsal steps: started, 012 set done and committed, and
+// a ready the fake let through.
+func leadStarted(r *Rehearsal) {
+	r.Call("--node", leadNode, "started", "--text", "012: the receipt says Total")
+}
+
+func leadSetDone(r *Rehearsal) {
+	r.Call("--node", leadNode, "spec", "set", "--id", "012", "--status", "done")
+	r.Edit(leadSpecFile, "status: proposed", "status: done")
+	r.Commit("012: done")
+}
+
+func leadReady(r *Rehearsal) {
+	r.Call("--node", leadNode, "ready", "--text", "012: the receipt says Total")
+	r.Let("ready")
 }
 
 func leadCase(name string, stopFirst bool) *Case {
@@ -970,19 +1004,10 @@ func leadCase(name string, stopFirst bool) *Case {
 		return false, "origin's main moved to " + clip(main, 8) + ", which no bmesh land pushed"
 	}}
 	fix := func(r *Rehearsal) {
-		r.Call("--node", leadNode, "started", "--text", "012: the receipt says Total")
+		leadStarted(r)
 		fixTypo(r)
 	}
-	setDone := func(r *Rehearsal) {
-		r.Call("--node", leadNode, "spec", "set", "--id", "012", "--status", "done")
-		r.Edit(leadSpecFile, "status: proposed", "status: done")
-		r.Commit("012: done")
-	}
-	// ready and land are calls the fake let through; refused is one it refused.
-	ready := func(r *Rehearsal) {
-		r.Call("--node", leadNode, "ready", "--text", "012: the receipt says Total")
-		r.Let("ready")
-	}
+	setDone, ready := leadSetDone, leadReady
 	land := func(r *Rehearsal) {
 		r.Call("--node", leadNode, "land")
 		r.Let("land")
@@ -1362,4 +1387,111 @@ func roundCase() *Case {
 			}},
 		},
 	}
+}
+
+// The lead-exec case's operator words and its executor's path.
+const (
+	execWords = "Hand the change (the receipt's label and a test that it says `Total`) to one executor named `receipt`, then merge what it hands back, verify and land it."
+	execNode  = leadNode + ".receipt"
+)
+
+// leadExecCase is lead-s with the operator asking for the piece to go to
+// an executor: scored on the executor's whole chain (executor new, its
+// done, its branch merged, executor remove, then one ready or land) as
+// well as on what lead-s scores.
+func leadExecCase() *Case {
+	k := leadCase("lead-exec", false)
+	k.Lead.Words = execWords
+	chain := Pred{"executor_chain", func(s *State) (bool, string) {
+		steps := []string{"executor new", "the executor's done", "executor remove", "ready or land"}
+		name, step := "", 0
+		for _, c := range s.AgentCalls() {
+			if !c.OK() {
+				continue
+			}
+			switch {
+			case step == 0 && c.Is("executor", "new"):
+				_, rest := c.Cmd()
+				name, step = flagValue(rest, "name"), 1
+			case step == 1 && c.Is("done") && flagValue(c.Args, "node") == leadNode+"."+name:
+				step = 2
+			case step == 2 && c.Is("executor", "remove", name):
+				step = 3
+			case c.Is("ready") && !c.Has("cancel"), c.Is("land"):
+				if step == 3 {
+					return true, "executor " + name + ": made, done, removed, then " + c.String()
+				}
+				return false, c.String() + " before " + steps[step]
+			}
+		}
+		return false, "never reached " + steps[step]
+	}}
+	merged := Pred{"executor_merged", func(s *State) (bool, string) {
+		for _, c := range s.AgentCalls() {
+			if !c.OK() || !c.Is("done") || !strings.HasPrefix(flagValue(c.Args, "node"), leadNode+".") {
+				continue
+			}
+			_, rest := c.Cmd()
+			sha := flagValue(rest, "commit")
+			if _, err := s.git("merge-base", "--is-ancestor", sha, leadRef); err != nil {
+				return false, "the executor's commit " + clip(sha, 8) + " is not on the lead's branch"
+			}
+			return true, "the executor's commit " + clip(sha, 8) + " is on the lead's branch"
+		}
+		return false, "no executor reported done"
+	}}
+	k.Expect = append(k.Expect, chain, merged)
+	// handOff plays the executor's piece: made, its fix committed (the lead's
+	// worktree stands for its branch merged), done at that commit.
+	handOff := func(r *Rehearsal, commit string) {
+		r.Call("--node", leadNode, "executor", "new", "--name", "receipt", "--model", "sonnet")
+		r.Call("--node", execNode, "started", "--text", "the receipt says Total")
+		fixTypo(r)
+		if commit == "" {
+			commit = r.Head()
+		}
+		r.Call("--node", execNode, "done", "--commit", commit, "--text", "the receipt says Total, with its test")
+	}
+	remove := func(r *Rehearsal) { r.Call("--node", leadNode, "executor", "remove", "receipt") }
+	finish := func(r *Rehearsal) {
+		leadSetDone(r)
+		r.Call("--node", leadNode, "routine", "run", "verify")
+		r.Call("--node", leadNode, "inbox")
+		leadReady(r)
+		r.Reply("Ready: the executor's fix is merged; the daemon lands it.")
+	}
+	k.Refs = []Ref{
+		{Name: "handed off, merged and readied", Play: func(r *Rehearsal) {
+			leadStarted(r)
+			handOff(r, "")
+			remove(r)
+			finish(r)
+		}},
+		{Name: "built it itself", Fails: "executor_chain", Play: func(r *Rehearsal) {
+			leadStarted(r)
+			fixTypo(r)
+			finish(r)
+		}},
+		{Name: "the executor left behind", Fails: "executor_chain", Play: func(r *Rehearsal) {
+			leadStarted(r)
+			handOff(r, "")
+			finish(r)
+		}},
+		{Name: "readied before removing it", Fails: "executor_chain", Play: func(r *Rehearsal) {
+			leadStarted(r)
+			handOff(r, "")
+			leadSetDone(r)
+			r.Call("--node", leadNode, "inbox")
+			leadReady(r)
+			remove(r)
+			r.Reply("Ready.")
+		}},
+		{Name: "its branch never merged", Fails: "executor_merged", Play: func(r *Rehearsal) {
+			leadStarted(r)
+			handOff(r, "0123abcd0123abcd0123abcd0123abcd0123abcd")
+			remove(r)
+			finish(r)
+		}},
+	}
+	return k
 }

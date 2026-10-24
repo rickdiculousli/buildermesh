@@ -29,7 +29,7 @@ func partValues(nextID string, part RoundPart, r config.Repo) map[string]string 
 }
 
 func TestNames(t *testing.T) {
-	if got := strings.Join(Names(), ","); got != "build,engineer,fix,half-pager" {
+	if got := strings.Join(Names(), ","); got != "build,engineer,executor,fix,half-pager" {
 		t.Fatal(got)
 	}
 }
@@ -122,22 +122,17 @@ func TestBuildBriefEmbedsSpecAndNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range []string{"## Opportunity", "docs/proposals/012-a.md", "Your node is `pb-012`.", "{{nope}}",
-		"`bmesh --node pb-012 routine run verify`", "`bmesh --node pb-012 result record review --ok|--fail --model <m>`",
-		"`bmesh --node pb-012 land`", "`bmesh spec set --id 012 --status done`", "the trailers `Spec: 012` and `Verified: <entries>`",
-		"follow the `buildermesh:lead` skill", "## Landing it", "landing the branch your worktree is on (`git branch --show-current`), never the name in your brief",
-		"`git push origin HEAD`", "pushed to `example/pb`",
+	for _, s := range []string{"## Opportunity", "docs/proposals/012-a.md", "Your node is `pb-012`: every `bmesh` command you run carries `--node pb-012`", "{{nope}}",
+		"You are the lead of spec 012", "`bmesh --node pb-012 started --text", "Follow the `buildermesh:lead` skill", "pushed to `example/pb`",
 		"`npm test`"} {
 		if !strings.Contains(out, s) {
 			t.Errorf("missing %q", s)
 		}
 	}
-	for _, ev := range []string{"started", "progress", "ask", "blocked", "done", "inbox"} {
-		if !strings.Contains(out, "`bmesh --node pb-012 "+ev) {
-			t.Errorf("missing event %s", ev)
-		}
-	}
-	for _, bad := range []string{"proposals.py", "k16", "Rick", "{{spec", "--status blocked", "recorded the spec `building`", "accepted", "operator's words"} {
+	// What the lead skill or a command's output says, the brief doesn't
+	// say again: verify, review, landing, done, the inbox, the closing.
+	for _, bad := range []string{"proposals.py", "k16", "Rick", "{{spec", "--status blocked", "recorded the spec `building`", "accepted", "operator's words",
+		"routine run verify", "routine queue review", "bmesh --node pb-012 land", "--node pb-012 done", "--node pb-012 inbox", "## Landing it", "> When it works"} {
 		if strings.Contains(out, bad) {
 			t.Errorf("has %q", bad)
 		}

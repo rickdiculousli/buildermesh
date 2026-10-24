@@ -220,7 +220,7 @@ func setupCell(dir string, k *Case, a Arm, fixture, host string, now time.Time) 
 		cs.Routine, cs.Words = rt, []string{words}
 	}
 	if k.Lead != nil {
-		text, err := k.Lead.brief(sandbox, host, now)
+		text, err := k.Lead.brief(a, sandbox, host, now)
 		if err != nil {
 			return cs, fmt.Errorf("case %s: the build brief: %w", k.Name, err)
 		}
@@ -298,6 +298,21 @@ func installFake(dir string, a Arm, sandbox, host string, n fakeNode) error {
 	}
 	if err := writeFile(filepath.Join(dir, "commands.txt"), strings.Join(a.Commands, "\n")+"\n"); err != nil {
 		return err
+	}
+	// The arm's executor brief, for its fake executor new to fill in; an
+	// arm from before it has none, and the fake prints the header alone.
+	text, own, err := armTemplate(a, "executor")
+	if err != nil {
+		return err
+	}
+	if own {
+		text, err = brief.Fill(text, map[string]string{"path": "@PATH@", "worktree": "@WORKTREE@", "branch": "@BRANCH@", "model": "@MODEL@", "setup_step": ""})
+		if err != nil {
+			return fmt.Errorf("the arm's executor template %w", err)
+		}
+		if err := writeFile(filepath.Join(dir, "executor.md"), text); err != nil {
+			return err
+		}
 	}
 	q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 	fakeEnv := "repo=" + q(repoName) + "\nrepo_path=" + q(sandbox) + "\nhost=" + q(host) + "\n"
