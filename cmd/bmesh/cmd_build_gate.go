@@ -42,8 +42,9 @@ func (h buildHold) line() string { return fmt.Sprintf("held: %s %s %s", h.who, h
 // <repo>-build-<N> or <repo>-fix-<N>) in that pipeline with feedback
 // pending. The two pipelines are bmesh's fix families (<repo>-fix-<N>, the
 // fixer's) and every other family, and neither holds the other's builds.
-// Feedback naming bmesh's own repo (ownRepo) never holds: the fixer owns
-// it. Nil when nothing does. A release passes no family: every family of
+// Feedback naming bmesh itself (bmeshIssue) never holds: the fixer owns
+// it, or with no row of its repo here the operator files it. Nil when
+// nothing does. A release passes no family: every family of
 // either pipeline is another.
 func (a *app) heldBy(ctx context.Context, repo, family string) (*buildHold, error) {
 	nodes, err := mesh.ListNodes(ctx, a.client)
@@ -87,10 +88,10 @@ func (a *app) heldBy(ctx context.Context, repo, family string) (*buildHold, erro
 		return &buildHold{who: who, verb: "is", why: fmt.Sprintf("still running (%s); watch it with bmesh watch --nodes %s",
 			strings.Join(what, ", "), strings.Join(paths, ","))}, nil
 	}
-	base, own := mesh.RepoToken(repo), a.ownRepo()
+	base, own, mod := mesh.RepoToken(repo), a.ownRepo(), a.module()
 	held := map[string]int{}
 	for _, p := range pending {
-		if (family != "" && p.Family == family) || apart(p.Family) || (own != "" && p.Repo == own) {
+		if (family != "" && p.Family == family) || apart(p.Family) || bmeshIssue(p, own, mod) {
 			continue
 		}
 		if !repoFamilies[p.Family] && familyBase(p.Family) != base {

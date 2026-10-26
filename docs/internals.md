@@ -215,7 +215,7 @@ The runner reads its token through one credential interface, so a self-renewing 
 
 [Manual: `bmesh feedback`](manual.md#bmesh-feedback)
 
-`feedback` publishes `{"from","family","repo","spec","commit","where","fixed","text","at"}` on `bm.feedback.<family>` in `bm-mesh`, `commit` the node's worktree HEAD when it is on this box. There is no consumer: a message is pending exactly as long as it is in the stream, until drained or the stream's 30 days pass.
+`feedback` publishes `{"from","family","repo","spec","commit","where","fixed","text","at"}` on `bm.feedback.<family>` in `bm-mesh`, `commit` the node's worktree HEAD when it is on this box. `repo` is a registry row's name, or bmesh's module path when the box has no row declaring it. There is no consumer: a message is pending exactly as long as it is in the stream, until drained or the stream's 30 days pass.
 
 `drain <family>` deletes the family's messages from `bm-mesh` with a subject-filtered purge up to and including `--through`; only that family's subject is touched, and nothing about the messages is kept on the mesh. `drain --seq` reads each sequence from the stream first and refuses the whole call when one's subject is not under `bm.feedback.`, so nothing is deleted.
 

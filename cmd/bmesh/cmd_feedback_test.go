@@ -72,7 +72,7 @@ func TestFeedbackPublishesWithTheNodesFamily(t *testing.T) {
 		lines[1] != itoa(h[1].Seq)+" demo-004 (buildermesh 004): the skill says X twice" {
 		t.Fatalf("%d %q", code, out)
 	}
-	for _, want := range []string{"is its fixer's: leave it pending", "titled Quick fix from demo-build-2 #<seq>: <what it changes>",
+	for _, want := range []string{"next: merge duplicates and drop what main already covers", "titled Quick fix from demo-build-2 #<seq>: <what it changes>",
 		"from_feedback: demo-build-2 (<its leads>) #<seq>", "landed as Feedback NNN: proposed from demo-build-2",
 		"next: then bmesh feedback drain --seq <the sequences you ruled on>"} {
 		if !strings.Contains(errs, want) {
@@ -118,6 +118,61 @@ func TestFeedbackPublishesWithTheNodesFamily(t *testing.T) {
 	}
 	if _, _, code := runCLI(t, nil, "feedback", "list", "a.b"); code != 2 {
 		t.Fatalf("bad family: %d", code)
+	}
+}
+
+// Feedback naming bmesh's own repo is its fixer's: the coordinator's list
+// and watch-done leave it out, and it holds no build.
+func TestFeedbackNamingOwnRepoSkipsTheCoordinator(t *testing.T) {
+	c, _ := ownSetup(t)
+	ctx := t.Context()
+	putNode(t, c, ctx, mesh.Node{Path: "demo-006", Role: "lead", Repo: "demo", Spec: "006", Family: "demo-build-5"})
+	meshtest.ForceState(t, c, "demo-006", mesh.State{State: "done", By: "node"})
+	if _, errs, code := runCLI(t, as("demo-006"), "feedback", "the skill says X twice", "--repo", "bmesh"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	if h := stored(t, c, "bm.feedback.demo-build-5"); len(h) != 1 || !strings.Contains(string(h[0].Data), `"repo":"demo"`) {
+		t.Fatalf("%+v", h)
+	}
+	if out, errs, code := runCLI(t, nil, "feedback", "list", "demo-build-5"); code != 0 || out != "" || errs != "" {
+		t.Fatalf("list: %d %q %q", code, out, errs)
+	}
+	if out, _, _ := runCLI(t, nil, "watch", "--nodes", "demo-006", "--timeout", "10s"); out != "watch-done\n" {
+		t.Fatalf("watch: %q", out)
+	}
+	if out, errs, code := runCLI(t, nil, "build", "demo", "002"); code != 0 {
+		t.Fatalf("held: %d %q %q", code, out, errs)
+	}
+}
+
+// On a box whose registry lacks bmesh's repo, a lead names bmesh by its
+// module; the coordinator is told to offer it to the operator as a GitHub
+// issue and drain it, and it holds no build meanwhile.
+func TestFeedbackNamingBmeshWithNoRowGoesToGitHub(t *testing.T) {
+	c, _, _ := buildSetup(t)
+	ctx := t.Context()
+	withRevision(t, "") // the binary's module is example.com/bm; no row declares it
+	putNode(t, c, ctx, mesh.Node{Path: "demo-006", Role: "lead", Repo: "demo", Spec: "006", Family: "demo-build-5"})
+	meshtest.ForceState(t, c, "demo-006", mesh.State{State: "done", By: "node"})
+	for _, name := range []string{"bmesh", "bm", "example.com/bm"} {
+		if _, errs, code := runCLI(t, as("demo-006"), "feedback", "via "+name, "--repo", name); code != 0 {
+			t.Fatal(name, code, errs)
+		}
+	}
+	if _, errs, code := runCLI(t, as("demo-006"), "feedback", "x", "--repo", "nope"); code != 2 {
+		t.Fatalf("bad repo: %d %q", code, errs)
+	}
+	out, errs, code := runCLI(t, nil, "feedback", "list", "demo-build-5")
+	if code != 0 || strings.Count(out, "(example.com/bm 006)") != 3 ||
+		!strings.Contains(errs, "ask the operator once, listing them, which to file as GitHub issues (gh issue create --repo example.com/bm") ||
+		!strings.Contains(errs, "next: of the rest, merge duplicates") {
+		t.Fatalf("list: %d %q %q", code, out, errs)
+	}
+	if out, _, _ := runCLI(t, nil, "watch", "--nodes", "demo-006", "--timeout", "10s"); out != "watch-done; next: bmesh feedback list demo-build-5\n" {
+		t.Fatalf("watch: %q", out)
+	}
+	if out, errs, code := runCLI(t, nil, "build", "demo", "002"); code != 0 {
+		t.Fatalf("held: %d %q %q", code, out, errs)
 	}
 }
 

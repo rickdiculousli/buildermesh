@@ -256,12 +256,14 @@ func clearNotice() error { return selfupdate.WriteNotice(config.StateDir(), "") 
 
 // ownRepo is the registry row whose go.mod declares the module this binary
 // was built from, or "" when none does (or the binary does not say).
-func (a *app) ownRepo() string {
-	bi, ok := readBuildInfo()
-	if !ok || bi == nil {
-		return ""
+func (a *app) ownRepo() string { return a.cfg.ModuleRepo(a.module()) }
+
+// module is the module this binary was built from, "" when unknown.
+func (a *app) module() string {
+	if bi, ok := readBuildInfo(); ok && bi != nil {
+		return bi.Main.Path
 	}
-	return a.cfg.ModuleRepo(bi.Main.Path)
+	return ""
 }
 
 // childWalk runs bin's own walk of r (the new binary's: the one being

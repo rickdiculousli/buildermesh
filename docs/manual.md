@@ -998,7 +998,7 @@ A lead runs `feedback` to leave one line per issue of friction outside its spec 
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--repo R` | the node's repo | `feedback`: where the friction is, a registry name or path; `buildermesh` for the mesh itself (bmesh, a skill, a brief). `list`: every family's feedback naming `R`. |
+| `--repo R` | the node's repo | `feedback`: where the friction is, a registry name or path; `buildermesh` for the mesh itself (bmesh, a skill, a brief). On a box whose registry has no row declaring the module bmesh was built from, `bmesh`, the module's last element or the module path names bmesh itself and is recorded as the module path (`github.com/<owner>/buildermesh`). `list`: every family's feedback naming `R`. |
 | `--where <file\|command>` | | The file or command the friction was met in. |
 | `--fixed SHA` | | A fix the lead already landed, leaving the general case. |
 | `--through SEQ` | the last one there when it starts | `drain`: the last sequence to delete. |
@@ -1007,11 +1007,12 @@ A lead runs `feedback` to leave one line per issue of friction outside its spec 
 
 **`feedback "<text>"`** reads the family, repo and spec from the node. It publishes the issue to the family's feedback queue, with the node's worktree commit when the worktree is on this box, and prints `feedback <seq> in <family>` (`--json`: the record with `seq`). An issue is pending until it is drained or 30 days pass.
 
-**`list <family>`** prints the family's pending feedback, oldest first: `<seq> <from> (<repo> <spec>[, where W][, fixed F]): <text>` (`--json`: an array of the records, each with `seq`). With nothing pending it prints nothing. Without `--json`, a list with anything in it, of a family that is not a fixer's (whose issues about other repos wait for the operator; see [The fixer](#the-fixer)), ends with three lines on stderr, the steps of **Draining a family** (below), `<own>` the registry row holding bmesh's module (`bmesh's own repo` when none does):
+**`list <family>`** prints the family's pending feedback, oldest first, less what names bmesh's own repo on this box (the fixer's; see [The fixer](#the-fixer)): `<seq> <from> (<repo> <spec>[, where W][, fixed F]): <text>` (`--json`: an array of the records, each with `seq`). With nothing pending it prints nothing. Without `--json`, a list with anything in it, of a family that is not a fixer's (whose issues about other repos wait for the operator; see [The fixer](#the-fixer)), ends with these lines on stderr, the steps of **Draining a family** (below), `<module>` the module bmesh was built from:
 
-- `next: an issue naming <own> is its fixer's: leave it pending. Of the rest, merge duplicates and drop what main already covers (a spec, or a commit naming its #<seq>)`;
+- when an issue names `<module>` (bmesh, with no row of its repo here): `next: an issue naming <module> is bmesh's own, whose repo isn't on this box: ask the operator once, listing them, which to file as GitHub issues (gh issue create --repo <module> --title <title> --body <the issue>), file those and drain them all with the rest`;
+- `next: merge duplicates and drop what main already covers (a spec, or a commit naming its #<seq>)`, beginning `next: of the rest, merge duplicates` after the line above;
 - `next: make each one-cause XS or S issue as the work skill's rung 3 makes a change, titled Quick fix from <family> #<seq>: <what it changes>; write each other one as a proposed spec with from_feedback: <family> (<its leads>) #<seq>, landed as Feedback NNN: proposed from <family>, for the operator to pick`;
-- `next: then bmesh feedback drain --seq <the sequences you ruled on>, and report one line per issue: fixed by <sha8>, proposed NNN, already NNN, dropped: <why> or to the fixer`.
+- `next: then bmesh feedback drain --seq <the sequences you ruled on>, and report one line per issue: fixed by <sha8>, proposed NNN, already NNN, filed as <issue url>, not filed, or dropped: <why>`.
 
 **`list --repo R`** prints every family's pending feedback naming `R`, in stream order, each line naming its family: `<seq> <from> (<repo> <spec>, family <F>[, where W][, fixed F]): <text>`. It leaves out an issue whose sequence a spec on `R`'s `main` names in `from_feedback` (`#<seq>`), whatever the spec's status, or a fix commit on that `main` names in its subject: `Fix #<seq>: ...` (the fixer's) or `Quick fix from <family> #<seq>: ...` (a coordinator's), several issues as `#<seq>, #<seq>`.
 
@@ -1029,12 +1030,12 @@ A lead runs `feedback` to leave one line per issue of friction outside its spec 
 
 **Draining a family.** The coordinator (the `work` skill) reads the queue once `watch` prints `watch-done` naming the family (see [`bmesh watch`](#bmesh-watch)), and `list <family>` ends with these steps:
 
-1. Issues naming bmesh's own repo are the fixer's (see [The fixer](#the-fixer)): it reports the fixer `mesh-status` names on its `fixes:` line and leaves them pending.
+1. Issues naming bmesh's own repo are the fixer's (see [The fixer](#the-fixer)): `list <family>` and `watch-done` leave them out, so the coordinator never sees them. Issues naming bmesh's module, on a box with no row of its repo, it lists to the operator in one ask, files the ones they pick as issues on the module's GitHub repo, and drains them all.
 2. The rest it lists, merges duplicates, drops what a spec on `main` already covers (any status), a `--fixed` commit settled or a quick fix on `main` names (a `Quick fix from <family> #<seq>` commit whose drain never ran), and sorts:
    - A quick fix (one cause, one obvious change, XS or S) it makes itself, as the `work` skill's rung 3 makes a change, with no spec, no lead and no operator review: one commit on `main` titled `Quick fix from <family> #<seq>: <what it changes>`.
    - Anything that needs thought becomes a `proposed` spec (`Feedback NNN: proposed from <family>`, `proposed_by` its thread, `from_feedback` the family and leads) for the operator's review, never a round.
-3. It drains the issues it ruled on with `drain --seq` and leaves the fixer's, so the quick fixes' titles and the specs' `from_feedback` (`<family> (<leads>) #<seq>`) are the only record left.
-4. It reports one line per issue: `fixed by <sha8>`, `proposed NNN`, `already NNN`, `dropped: <why>` or `to the fixer`.
+3. It drains the issues it ruled on with `drain --seq`, so the quick fixes' titles and the specs' `from_feedback` (`<family> (<leads>) #<seq>`) are the only record left.
+4. It reports one line per issue: `fixed by <sha8>`, `proposed NNN`, `already NNN`, `filed as <issue url>`, `not filed` or `dropped: <why>`.
 
 A coordinator that dies between list and drain leaves the family pending, and `mesh-status` shows it. `mesh-status` shows pending feedback as `feedback: N pending in <family>` per family, and issues naming bmesh's own repo instead as `fixes: N pending for <repo> (...)` (see [The fixer](#the-fixer) and [`bmesh mesh-status`](#bmesh-mesh-status)).
 
@@ -1114,7 +1115,7 @@ Tags the repo's code head (see [Updates](#updates)) with an annotated `vX.Y.Z` t
 **Refusals** (exit 3, tagging nothing):
 
 - `nothing to release since vX.Y.Z: nothing under code changed`: no commit since the last tag changes the repo's code (its row's `code`).
-- `held: <family> is still running (...)` or `held: <family> has N feedback pending; ...`: the hold `build` reads (see [`bmesh build`](#bmesh-build)), a live lead (neither `done` nor `blocked`) or pending feedback of the repo's. `release` has no family of its own, so the coordinator's own family and both pipelines hold it. Feedback naming bmesh's own repo holds neither command.
+- `held: <family> is still running (...)` or `held: <family> has N feedback pending; ...`: the hold `build` reads (see [`bmesh build`](#bmesh-build)), a live lead (neither `done` nor `blocked`) or pending feedback of the repo's. `release` has no family of its own, so the coordinator's own family and both pipelines hold it. Feedback naming bmesh itself (its own repo, or its module with no such row) holds neither command.
 - `main is red at <sha8> <subject>: verify fail t:<tree8> (...); release once main is green`, then the tail of the output: `verify` at the code head is not ok. The result is answered from the record, carried, or run and recorded as `build` does. A repo with no `verify` kind says so and goes on.
 - In bmesh's own repo only (see [The fixer](#the-fixer); `land`'s scaffold check makes the same test; no key turns this on elsewhere):
   - `refused: 055, 057 have Upgrading steps and docs/upgrading/vX.Y.Z.toml is missing: distil their ## Upgrading sections into the fewest true steps there (the manual's Upgrade notes), commit it to main as Upgrade notes vX.Y.Z, push, and release again`: a spec landed since the last tag has `## Upgrading` steps (any text, unless the section is empty or its first word is `nothing`, in any case), and the ref read has no notes for the new tag;
@@ -1625,7 +1626,7 @@ Follows the named nodes until every one is `done`, `blocked` or `silent`. A coor
 2. Else it prints the events since `--since` in the trees of the named nodes' leads, then follows new ones live, and prints each named node's runner change.
 3. It reads the states again on every event and every 5 seconds (the daemon marks silence without an event), and stops with `watch-done` once every named node is `done`, `blocked` or `silent`.
 
-**Output.** One line per event, `<at> <path> <event> <text>` (with the event's `to` path before the text when it has one); the daemon's events addressed into a watched tree print too. A runner change prints `<at> <path> runner running|idle`. A held lead shows as the `held` event, `<at> <path> held <text>`, and the watch goes on (see [Holds](#holds)). A family whose T3 threads the daemon settled shows as `<at> daemon.<host> settled <family>: <n> threads`, with no `to` (see [Runners: `t3`](#runners)). Host jobs and replies never show. The last line is `watch-done`, which names the next step when a named node is a lead of a build family, not a fixer's, with feedback pending: `watch-done; next: bmesh feedback list <family>` (several: `, then bmesh feedback list <family>`), in the order the nodes were named (see [`bmesh feedback`](#bmesh-feedback)). A node or a queue it can't read adds nothing.
+**Output.** One line per event, `<at> <path> <event> <text>` (with the event's `to` path before the text when it has one); the daemon's events addressed into a watched tree print too. A runner change prints `<at> <path> runner running|idle`. A held lead shows as the `held` event, `<at> <path> held <text>`, and the watch goes on (see [Holds](#holds)). A family whose T3 threads the daemon settled shows as `<at> daemon.<host> settled <family>: <n> threads`, with no `to` (see [Runners: `t3`](#runners)). Host jobs and replies never show. The last line is `watch-done`, which names the next step when a named node is a lead of a build family, not a fixer's, with feedback pending other than what names bmesh's own repo (the fixer's): `watch-done; next: bmesh feedback list <family>` (several: `, then bmesh feedback list <family>`), in the order the nodes were named (see [`bmesh feedback`](#bmesh-feedback)). A node or a queue it can't read adds nothing.
 
 **Refusals.**
 
@@ -2995,7 +2996,7 @@ A family holds a new build of the repo while the repo's last build run is still 
 - a live lead outside the build's family is running (a lead with no family is a family of its own);
 - a family of the repo (a lead of the repo is in it, or it is named `<repo>-build-<N>` or `<repo>-fix-<N>`) has feedback pending.
 
-The build's own family never holds it. The families form two pipelines that don't hold each other: the fixer's families (`<repo>-fix-<N>`, see [The fixer](#the-fixer)), and all others. Feedback naming bmesh's own repo holds no build (with no such row, every feedback holds). `[runner] max_leads` still caps the box across both pipelines, and the `land.<repo>` lease still serializes landing.
+The build's own family never holds it. The families form two pipelines that don't hold each other: the fixer's families (`<repo>-fix-<N>`, see [The fixer](#the-fixer)), and all others. Feedback naming bmesh's own repo holds no build, nor, with no such row, feedback naming bmesh's module (see [`bmesh feedback`](#bmesh-feedback)). `[runner] max_leads` still caps the box across both pipelines, and the `land.<repo>` lease still serializes landing.
 
 See also: [`bmesh build`](#bmesh-build), [`bmesh release`](#bmesh-release), [Holds](#holds).
 

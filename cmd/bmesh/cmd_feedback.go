@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -61,6 +63,10 @@ func (a *app) cmdFeedback(args []string) error {
 		Text: strings.TrimSpace(pos[0])}
 	if *repo != "" {
 		name, _, err := a.cfg.RepoPath(*repo)
+		if mod := a.module(); err != nil && mod != "" && (*repo == "bmesh" || *repo == path.Base(mod) || *repo == mod) {
+			// bmesh itself, on a box whose registry lacks its repo: the operator files it upstream.
+			name, err = cmp.Or(a.ownRepo(), mod), nil
+		}
 		if err != nil {
 			return fail(exitUsage, "--repo: %v", err)
 		}
@@ -115,7 +121,7 @@ func (a *app) cmdFeedbackList(args []string) error {
 	}
 	var list []mesh.Feedback
 	if *repo == "" {
-		if list, err = mesh.ListFeedback(ctx, a.client, pos[0]); err != nil {
+		if list, err = a.familyFeedback(ctx, pos[0]); err != nil {
 			return err
 		}
 	} else if list, err = a.repoFeedback(ctx, name, repoPath); err != nil {
@@ -131,7 +137,7 @@ func (a *app) cmdFeedbackList(args []string) error {
 		fmt.Fprintln(a.stdout, feedbackLine(f, *repo != ""))
 	}
 	if *repo == "" && len(list) > 0 && !a.fixerFamily(ctx, pos[0]) {
-		a.drainSteps(pos[0])
+		a.drainSteps(pos[0], list)
 	}
 	return nil
 }
@@ -144,14 +150,36 @@ func (a *app) fixerFamily(ctx context.Context, family string) bool {
 	return err == nil && ok && n.Role == "fixer"
 }
 
+// familyFeedback is the family's pending feedback for its coordinator:
+// what names bmesh's own repo on this box is its fixer's, never the
+// coordinator's, so it is left out.
+func (a *app) familyFeedback(ctx context.Context, family string) ([]mesh.Feedback, error) {
+	list, err := mesh.ListFeedback(ctx, a.client, family)
+	if own := a.ownRepo(); own != "" && err == nil {
+		list = slices.DeleteFunc(list, func(f mesh.Feedback) bool { return f.Repo == own })
+	}
+	return list, err
+}
+
+// bmeshIssue reports feedback naming bmesh itself: its own repo's row,
+// own (the fixer's), or its module mod, which a lead names on a box without one.
+func bmeshIssue(f mesh.Feedback, own, mod string) bool {
+	return f.Repo != "" && (f.Repo == own || f.Repo == mod)
+}
+
 // drainSteps is how the coordinator rules on a family's feedback and
-// drains it (100), to stderr after the list: the fixer's issues stay, the
-// rest are fixed, specced or dropped, then drained by sequence.
-func (a *app) drainSteps(family string) {
-	own := cmp.Or(a.ownRepo(), "bmesh's own repo")
-	fmt.Fprintf(a.stderr, "next: an issue naming %s is its fixer's: leave it pending. Of the rest, merge duplicates and drop what main already covers (a spec, or a commit naming its #<seq>)\n", own)
+// drains it (100), to stderr after the list: an issue naming bmesh with no
+// row of its repo here is offered to the operator as a GitHub issue, the
+// rest are fixed, specced or dropped, then all drained by sequence.
+func (a *app) drainSteps(family string, list []mesh.Feedback) {
+	rest := "next: merge duplicates"
+	if mod := a.module(); mod != "" && slices.ContainsFunc(list, func(f mesh.Feedback) bool { return f.Repo == mod }) {
+		fmt.Fprintf(a.stderr, "next: an issue naming %s is bmesh's own, whose repo isn't on this box: ask the operator once, listing them, which to file as GitHub issues (gh issue create --repo %s --title <title> --body <the issue>), file those and drain them all with the rest\n", mod, mod)
+		rest = "next: of the rest, merge duplicates"
+	}
+	fmt.Fprintln(a.stderr, rest+" and drop what main already covers (a spec, or a commit naming its #<seq>)")
 	fmt.Fprintf(a.stderr, "next: make each one-cause XS or S issue as the work skill's rung 3 makes a change, titled Quick fix from %s #<seq>: <what it changes>; write each other one as a proposed spec with from_feedback: %s (<its leads>) #<seq>, landed as Feedback NNN: proposed from %s, for the operator to pick\n", family, family, family)
-	fmt.Fprintln(a.stderr, "next: then bmesh feedback drain --seq <the sequences you ruled on>, and report one line per issue: fixed by <sha8>, proposed NNN, already NNN, dropped: <why> or to the fixer")
+	fmt.Fprintln(a.stderr, "next: then bmesh feedback drain --seq <the sequences you ruled on>, and report one line per issue: fixed by <sha8>, proposed NNN, already NNN, filed as <issue url>, not filed, or dropped: <why>")
 }
 
 // repoFeedback is every family's pending feedback naming repo, less what a

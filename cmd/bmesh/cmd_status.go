@@ -397,7 +397,7 @@ func (a *app) drainNext(ctx context.Context, paths []string) string {
 		if slices.Contains(next, cmd) {
 			continue
 		}
-		if fb, err := mesh.ListFeedback(ctx, a.client, n.Family); err == nil && len(fb) > 0 {
+		if fb, err := a.familyFeedback(ctx, n.Family); err == nil && len(fb) > 0 {
 			next = append(next, cmd)
 		}
 	}
