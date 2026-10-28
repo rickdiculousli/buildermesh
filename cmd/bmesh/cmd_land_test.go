@@ -296,7 +296,9 @@ func TestLandTrailersFollowADashLine(t *testing.T) {
 }
 
 // Main moving on every try is given up on at --wait (exit 5), with nothing
-// pushed and the branch as the rebase left it.
+// pushed and the branch as the rebase left it: after the first pass or a
+// later one, as fast as the box runs a pass (the start again itself is
+// TestLandStartsAgainWhileMainMoves's).
 func TestLandTimesOutWhenMainKeepsMoving(t *testing.T) {
 	c, ctx := setup(t)
 	r := newLandRepo(t)
@@ -306,7 +308,7 @@ func TestLandTimesOutWhenMainKeepsMoving(t *testing.T) {
 	writeFile(t, os.Getenv("HOOK"), "cd '"+other+"' && date +%s%N >> c.txt && git add c.txt && git commit -qm 'other c' && git push -q origin HEAD:main\n")
 
 	out, errs, code := runCLI(t, as("app-012"), "land", "--wait", "1s")
-	if code != exitTimeout || errs != "bmesh: timed out waiting for main to stop moving; nothing is pushed: run bmesh land again\n" || !strings.Contains(out, "main moved; again") {
+	if code != exitTimeout || errs != "bmesh: timed out waiting for main to stop moving; nothing is pushed: run bmesh land again\n" {
 		t.Fatalf("land: %d\n%s\nerr %q", code, out, errs)
 	}
 	if r.originMain(t) != gitOut(t, "-C", other, "rev-parse", "HEAD") {
