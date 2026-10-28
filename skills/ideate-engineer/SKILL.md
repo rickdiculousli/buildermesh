@@ -12,7 +12,7 @@ The engineering part is yours unless your brief gives you only the UI/UX part. T
 
 ## Start
 
-`bmesh started --text "<one line>"`, then read, in order: `AGENTS.md` (how the repo works and how to run it); the product doc (`PRODUCT.md`, else the README or `docs/`: what it's for, who uses it, where, its principles); `ideas.md`, if any; every file in `docs/proposals/`, its `assets/` included. Never re-propose a `rejected` spec (its `reason` says why); build on a `later` one only with a reason it's worth doing now; never duplicate one that's live or `done`.
+`bmesh started --text "<one line>"`, then read, in order: `AGENTS.md` (how the repo works and how to run it); the product doc (`PRODUCT.md`, else the README or `docs/`: what it's for, who uses it, where, its principles); `ideas.md`, if any; every file in `docs/proposals/`, its `assets/` included. Never re-propose a `rejected` spec (its `reason` says why); build on a `later` one only with a reason it's worth doing now; never duplicate one that's `proposed`, `accepted`, `adjusting`, `building` or `done`.
 
 ## No measurement, no claim
 
@@ -41,7 +41,7 @@ Rank as many as your brief asks, best first, in one list across both parts: what
 
 Change nothing outside `docs/proposals/`. Commit on your branch, then:
 
-1. Where the repo has a remote, bring local `main` level with origin without touching the repo's checkout: `git -C <repo path> pull --ff-only origin main` when that checkout is on `main`, else `git -C <repo path> fetch origin main:main`. If local `main` has commits origin doesn't, stop and report it; never push or reset them.
+1. Where the repo has a remote, bring local `main` level with origin: `git -C <repo path> pull --ff-only origin main` when that checkout is on `main`, else `git -C <repo path> fetch origin main:main`. If local `main` has commits origin doesn't, stop and report it; never push or reset them.
 2. `git rebase main`. If `main` gained specs with your numbers, claim new ones (`bmesh spec next-id --repo . --count N`), renumber the files, assets and ids, and list again.
 3. Fast-forward `main` to your branch: `git -C <repo path> merge --ff-only <branch>` when that checkout is on `main`, else `git -C <repo path> fetch . <branch>:main`. Refused because `main` moved: rebase and try once more; refused otherwise, stop and `bmesh ask`. Then `git -C <repo path> push origin main` where there's a remote.
 

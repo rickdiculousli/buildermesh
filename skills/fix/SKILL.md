@@ -24,7 +24,7 @@ Read before each ruling, and answer: what did the reporter hit, and where (`wher
 
 Land each fix or spec on `main` as soon as it's made (a spec's commit is `Fix NNN: accepted from <family> #<seq>`, or `proposed`):
 
-1. Bring local `main` level with origin without touching the repo's checkout: `git -C <repo path> pull --ff-only origin main` when that checkout is on `main`, else `git -C <repo path> fetch origin main:main`. Local `main` ahead of origin: `ask`, never push or reset it.
+1. Bring local `main` level with origin: `git -C <repo path> pull --ff-only origin main` when that checkout is on `main`, else `git -C <repo path> fetch origin main:main`. Local `main` ahead of origin: `ask`, never push or reset it.
 2. `git rebase main`. If `main` gained your spec id from a writer who didn't claim it, claim another (`bmesh spec next-id --repo .`) and renumber; if a fix's rebase brought in commits, verify again.
 3. Fast-forward `main` to your branch the same way (`git -C <repo path> merge --ff-only <branch>` when it's on `main`, else `git -C <repo path> fetch . <branch>:main`) and `git -C <repo path> push origin main`.
 
