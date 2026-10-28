@@ -904,37 +904,45 @@ func TestFakeLeadArmBriefs(t *testing.T) {
 }
 
 // The shell a session runs its commands in finds the fake bmesh and the
-// stubs first, whatever this box's shell profile puts on PATH: the cell's
-// home has no profile, and its PATH nothing of this box's home but Go.
+// stubs first, whatever this box's shell profile or its system's login
+// profile (macOS's path_helper) puts on PATH: the cell's home has only the
+// cell's profile, which puts the session's PATH back, and its PATH nothing
+// of this box's home but Go. Bash, and zsh where the box has it.
 func TestSessionShell(t *testing.T) {
 	need(t, "bash")
 	dir, _ := fakeCell(t)
-	if err := os.MkdirAll(filepath.Join(dir, "home"), 0o755); err != nil {
+	if err := makeHome(dir, Host{}); err != nil {
 		t.Fatal(err)
 	}
 	h := findHost()
 	env := sessionEnv(os.Environ(), dir, h)
 	bin := filepath.Join(dir, "bin")
-	for _, mode := range [][]string{{"-l", "-c"}, {"-i", "-c"}, {"-c"}} {
-		code, out, errs := run(dir, time.Minute, env, "bash", append(mode, `command -v bmesh claude ssh tmux go git; echo "$HOME"; echo "$PATH"`)...)
-		got := strings.Fields(out)
-		if code != 0 || len(got) != 8 {
-			t.Fatalf("bash %v: exit %d: %s%s", mode, code, out, errs)
-		}
-		for i, tool := range []string{"bmesh", "claude", "ssh", "tmux"} {
-			if got[i] != filepath.Join(bin, tool) {
-				t.Errorf("bash %v finds %s at %s", mode, tool, got[i])
+	shells := []string{"bash"}
+	if _, err := exec.LookPath("zsh"); err == nil {
+		shells = append(shells, "zsh")
+	}
+	for _, sh := range shells {
+		for _, mode := range [][]string{{"-l", "-c"}, {"-i", "-c"}, {"-c"}} {
+			code, out, errs := run(dir, time.Minute, env, sh, append(mode, `command -v bmesh claude ssh tmux go git; echo "$HOME"; echo "$PATH"`)...)
+			got := strings.Fields(out)
+			if code != 0 || len(got) != 8 {
+				t.Fatalf("%s %v: exit %d: %s%s", sh, mode, code, out, errs)
 			}
-		}
-		if under(got[4], dir) || under(got[5], dir) {
-			t.Errorf("bash %v finds go at %s and git at %s", mode, got[4], got[5])
-		}
-		if got[6] != filepath.Join(dir, "home") {
-			t.Errorf("bash %v has HOME %s", mode, got[6])
-		}
-		for _, p := range filepath.SplitList(got[7]) {
-			if under(p, h.Home) && !under(p, dir) && !slices.Contains(h.Tools, p) {
-				t.Errorf("bash %v has %s of this box's home on PATH", mode, p)
+			for i, tool := range []string{"bmesh", "claude", "ssh", "tmux"} {
+				if got[i] != filepath.Join(bin, tool) {
+					t.Errorf("%s %v finds %s at %s", sh, mode, tool, got[i])
+				}
+			}
+			if under(got[4], dir) || under(got[5], dir) {
+				t.Errorf("%s %v finds go at %s and git at %s", sh, mode, got[4], got[5])
+			}
+			if got[6] != filepath.Join(dir, "home") {
+				t.Errorf("%s %v has HOME %s", sh, mode, got[6])
+			}
+			for _, p := range filepath.SplitList(got[7]) {
+				if under(p, h.Home) && !under(p, dir) && !slices.Contains(h.Tools, p) {
+					t.Errorf("%s %v has %s of this box's home on PATH", sh, mode, p)
+				}
 			}
 		}
 	}

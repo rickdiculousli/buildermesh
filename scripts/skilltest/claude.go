@@ -102,12 +102,13 @@ func under(p, dir string) bool {
 // sessionEnv is the environment a cell's session runs in: base (this
 // process's) less what would tie it to this session, a T3 thread, a mesh,
 // another box or this box's git config. HOME is the cell's own, which has
-// claude's config and no shell profile: the shell claude runs commands in
-// sources the profile, and this box's puts ~/.local/bin, the real bmesh's
-// home, first on PATH. So PATH is the cell's bin (the fake and the stubs),
-// the toolchain, and base's directories outside this box's home; with the
-// cell's TMPDIR, git config and inert bmesh config, no auto-memory and no
-// module downloads.
+// claude's config and only the cell's profile: the shell claude runs
+// commands in sources the profile, and this box's puts ~/.local/bin, the
+// real bmesh's home, first on PATH. So PATH is the cell's bin (the fake and
+// the stubs), the toolchain, and base's directories outside this box's home,
+// also in SKILLTEST_PATH for the cell's profile to put back; with the cell's
+// TMPDIR, git config and inert bmesh config, no auto-memory and no module
+// downloads.
 func sessionEnv(base []string, dir string, h Host) []string {
 	path := append([]string{filepath.Join(dir, "bin")}, h.Tools...)
 	var env []string
@@ -125,7 +126,7 @@ func sessionEnv(base []string, dir string, h Host) []string {
 		case strings.HasPrefix(k, "CLAUDE"), strings.HasPrefix(k, "T3"), strings.HasPrefix(k, "BMESH_"),
 			strings.HasPrefix(k, "SKILLTEST_"), strings.HasPrefix(k, "GIT_"), strings.HasPrefix(k, "GO"), strings.HasPrefix(k, "TMUX"),
 			k == "XDG_CONFIG_HOME", k == "XDG_DATA_HOME", k == "XDG_CACHE_HOME", k == "XDG_STATE_HOME",
-			k == "AI_AGENT", k == "HOME", k == "SSH_AUTH_SOCK", k == "SSH_AGENT_PID", k == "TMPDIR", k == "BASH_ENV", k == "ENV":
+			k == "AI_AGENT", k == "HOME", k == "SSH_AUTH_SOCK", k == "SSH_AGENT_PID", k == "TMPDIR", k == "BASH_ENV", k == "ENV", k == "ZDOTDIR":
 			continue
 		}
 		env = append(env, kv)
@@ -134,6 +135,7 @@ func sessionEnv(base []string, dir string, h Host) []string {
 	env = append(env,
 		"HOME="+filepath.Join(dir, "home"),
 		"PATH="+strings.Join(path, string(os.PathListSeparator)),
+		"SKILLTEST_PATH="+strings.Join(path, string(os.PathListSeparator)),
 		"CLAUDE_CODE_DISABLE_AUTO_MEMORY=1",
 		"DISABLE_AUTOUPDATER=1",
 		"TMPDIR="+filepath.Join(dir, "tmp"),
@@ -156,11 +158,24 @@ func sessionEnv(base []string, dir string, h Host) []string {
 // own config, sign-in and session store, nothing else.
 var claudeLinks = []string{".claude", ".claude.json"}
 
-// makeHome makes the cell's home, linking claude's config from this box's.
+// cellProfile is the login profile of a cell's home, for sh and bash
+// (.profile) and zsh (.zprofile). A system's login profile runs before it
+// and may put its own directories first on PATH (macOS's path_helper puts
+// /usr/bin's ssh and Homebrew's tmux ahead of the stubs), so it puts the
+// session's PATH back.
+const cellProfile = "if [ -n \"$SKILLTEST_PATH\" ]; then PATH=$SKILLTEST_PATH; export PATH; fi\n"
+
+// makeHome makes the cell's home, with the cell's profile, linking claude's
+// config from this box's.
 func makeHome(dir string, h Host) error {
 	home := filepath.Join(dir, "home")
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		return err
+	}
+	for _, name := range []string{".profile", ".zprofile"} {
+		if err := os.WriteFile(filepath.Join(home, name), []byte(cellProfile), 0o644); err != nil {
+			return err
+		}
 	}
 	for _, name := range claudeLinks {
 		if h.Home == "" {
