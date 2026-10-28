@@ -1,0 +1,6 @@
+# Upgrade notes for v0.5.7. It carries no spec: the skill rewrite and the
+# audit change were made without one. A box that takes this release by its
+# own update needs nothing run, so the notes are a summary of what changed
+# for the people and scripts that drive bmesh.
+
+summary = "Nothing to run on a box. Every plugin skill is shorter: principles and the questions to ask, with commands' output and refusals carrying the steps. The work skill is a router that says when each rung applies, with each rung's steps in a file beside it (skills/work/references/) read when the rung is taken, and a session's first line says in its own words what it will do, with no fixed rung wording. bmesh audit prints each request's first reply line as written, and its last reply's when there were several, beside the rung its actions imply, with no matching and no mismatch: in --json, said and said_last replace named, named_line and mismatch. bmesh build prints three next: lines after the leads it starts, not four."
