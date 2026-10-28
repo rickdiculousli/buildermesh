@@ -164,7 +164,7 @@ func TestCommandsFromManual(t *testing.T) {
 	for _, c := range got {
 		gotSet[c] = true
 	}
-	for _, c := range []string{"build next:", "build next: your report", "ideate next:", "watch next:", "feedback next:"} {
+	for _, c := range []string{"build next:", "ideate next:", "watch next:", "feedback next:"} {
 		if !gotSet[c] {
 			t.Errorf("this manual's %q section documents no next: lines", strings.TrimSuffix(c, " next:"))
 		}
@@ -267,14 +267,22 @@ func TestFakeBuild(t *testing.T) {
 	expect("usage: bmesh build <repo> <NNN>", 2, "build", "shop")
 	expect("bmesh: build: flag provided but not defined: -accepted", 2, "build", "--accepted", "shop")
 	// The leads it started are followed by the binary's next: lines on
-	// stderr, on an arm whose manual documents them.
+	// stderr, on an arm whose manual documents them; the line a report
+	// opens with only on an arm whose manual has it (109's).
 	if _, stdout, stderr := fake(t, dir, sandbox, "build", "shop", "012", "014"); strings.Contains(stdout, "next:") ||
-		!strings.HasPrefix(stderr, "next: bmesh watch --nodes shop-012,shop-014 --timeout 30m,") || strings.Count(stderr, "next: ") != 4 ||
-		!strings.HasSuffix(stderr, "\nnext: your report on this opens Starting leads for 012 and 014\n") {
+		!strings.HasPrefix(stderr, "next: bmesh watch --nodes shop-012,shop-014 --timeout 30m,") || strings.Count(stderr, "next: ") != 3 {
 		t.Errorf("build's next lines: stdout %q, stderr %q", stdout, stderr)
 	}
-	if _, _, stderr := fake(t, dir, sandbox, "build", "shop", "013"); !strings.HasSuffix(stderr, "\nnext: your report on this opens Starting a lead for 013\n") {
-		t.Errorf("build of one's last next line: %q", stderr)
+	manual, err := os.ReadFile(filepath.Join(repoRoot(t), "docs", "manual.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	old109, _ := caseCell(t, "bug", string(manual)+"\n### `bmesh build`\n- `next: your report on this opens Starting leads for <ids>`\n")
+	if _, _, stderr := fake(t, old109, filepath.Join(old109, sandboxDir), "build", "shop", "012", "014"); !strings.HasSuffix(stderr, "\nnext: your report on this opens Starting leads for 012 and 014\n") {
+		t.Errorf("build's last next line on 109's arm: %q", stderr)
+	}
+	if _, _, stderr := fake(t, old109, filepath.Join(old109, sandboxDir), "build", "shop", "013"); !strings.HasSuffix(stderr, "\nnext: your report on this opens Starting a lead for 013\n") {
+		t.Errorf("build of one's last next line on 109's arm: %q", stderr)
 	}
 	if _, _, stderr := fake(t, dir, sandbox, "ideate", "shop"); !strings.HasPrefix(stderr, "next: bmesh watch --nodes shop-round-1 --timeout 30m,") {
 		t.Errorf("ideate's next line: %q", stderr)
@@ -997,8 +1005,7 @@ func TestReadTurn(t *testing.T) {
 		`{"type":"result","result":"last","total_cost_usd":0.3,"modelUsage":{"a":{"inputTokens":1,"outputTokens":1,"costUSD":0.1},"b":{"cacheReadInputTokens":5,"costUSD":0.2}}}` + "\n"
 	r, init, err = readTurn(write("stream.json", stream))
 	if err != nil || r.Result != "last" || turnSpend(r, nil).Tokens() != 7 || init == nil ||
-		!reflect.DeepEqual(names(init.Plugins), []string{"buildermesh"}) || len(names(init.Skills)) != 2 || len(init.MCPServers) != 0 ||
-		!reflect.DeepEqual(r.Texts, []string{"Making it here, XS: one line", "last"}) {
+		!reflect.DeepEqual(names(init.Plugins), []string{"buildermesh"}) || len(names(init.Skills)) != 2 || len(init.MCPServers) != 0 {
 		t.Errorf("stream: %+v, %+v, %v", r, init, err)
 	}
 	// A resumed session's result states its own spend in a stream; in a

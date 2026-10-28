@@ -274,7 +274,6 @@ type Result struct {
 	} `json:"usage"`
 	ModelUsage map[string]Spend `json:"modelUsage"`
 	SinceLast  map[string]Spend `json:"model_usage_since_last_result"`
-	Texts      []string         `json:"-"` // the turn's main-thread assistant texts, in order (readTurn's)
 }
 
 // Spend is tokens and cost: one model's in a result, or a turn's.
@@ -361,8 +360,7 @@ func names(raws []json.RawMessage) []string {
 }
 
 // readTurn reads a turn's output: the last result event, and the init
-// event when the output is a stream, with every text the main thread wrote
-// in the turn (a subagent's, with a parent_tool_use_id, left out). A turn a background task woke again
+// event when the output is a stream. A turn a background task woke again
 // ends with a result per wake, each stating its own spend, turns and time,
 // so the last carries all of theirs. Lines that are no JSON are skipped;
 // an array of events (an older json output) is read through.
@@ -373,7 +371,6 @@ func readTurn(file string) (Result, *Init, error) {
 	}
 	var last Result
 	var init *Init
-	var texts []string
 	found := false
 	take := func(raw json.RawMessage) {
 		var head struct{ Type, Subtype string }
@@ -394,20 +391,6 @@ func readTurn(file string) (Result, *Init, error) {
 					}
 				}
 				last, found = r, true
-			}
-		case head.Type == "assistant":
-			var a struct {
-				Parent  *string `json:"parent_tool_use_id"`
-				Message struct {
-					Content []struct{ Type, Text string } `json:"content"`
-				} `json:"message"`
-			}
-			if json.Unmarshal(raw, &a) == nil && a.Parent == nil {
-				for _, c := range a.Message.Content {
-					if c.Type == "text" && strings.TrimSpace(c.Text) != "" {
-						texts = append(texts, c.Text)
-					}
-				}
 			}
 		case head.Type == "system" && head.Subtype == "init" && init == nil:
 			var i Init
@@ -431,7 +414,6 @@ func readTurn(file string) (Result, *Init, error) {
 			take(line)
 		}
 	}
-	last.Texts = texts
 	if !found {
 		return last, init, fmt.Errorf("%s: no result in claude's output", filepath.Base(file))
 	}

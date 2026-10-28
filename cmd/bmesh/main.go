@@ -98,8 +98,8 @@ commands:
                                            nudge it hasn't heard, or drops (a compaction)
   audit [<path> | --session <id>] [--json]
                                            what a Claude Code session (this one, a node's, or --session's) read
-                                           and did per request: the rung its reply named, the rung its actions
-                                           imply (mismatch when they differ), what it read before it acted
+                                           and did per request: its replies' first lines as written, the rung its
+                                           actions imply, what it read before it acted
   started|progress|blocked|ask [--text T]  report an event; print <event> <path> (started keeps the Claude Code
                                            session it ran from on the node's record)
   done --commit SHA [--text T]             report done (a lead's commit must be its landing on main, its trailers

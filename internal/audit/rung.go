@@ -1,8 +1,7 @@
-// Package audit reads an agent session's transcript and says what it read
-// before it acted, the rung of the work skill's ladder each reply named and
-// the rung its actions imply (101). The rules are few and fixed, and
-// printed with each verdict: a mismatch shows both sides, never a pass or
-// a fail. The skill test scores its cases through the same rules.
+// Package audit reads an agent session's transcript and says, per request,
+// what it read before it acted, what its replies said, and the rung of the
+// work skill's ladder its actions imply (101). The rules are few and fixed,
+// and printed with what they found.
 package audit
 
 import (
@@ -10,8 +9,8 @@ import (
 	"strings"
 )
 
-// Rung is a step of the work skill's ladder, as a reply names it or as a
-// request's actions imply it.
+// Rung is a step of the work skill's ladder, as a request's actions imply
+// it.
 type Rung string
 
 const (
@@ -21,54 +20,6 @@ const (
 	Leads  Rung = "leads"  // leads started
 	Round  Rung = "round"  // a proposal round started
 )
-
-// Words are the openings a reply names each rung with, the work skill's
-// words: `Answering, no change`, `Already being built: <lead>`, `Already
-// done: <commit>`, `Making it here, S: <evidence>`, `Plan for your ok, L:
-// <evidence>`, `Starting leads for 012 and 014`, `Starting a lead for 013`,
-// `Starting a round on <repo>`.
-var Words = []struct {
-	Rung Rung
-	Says string
-}{
-	{Answer, "Answering"},
-	{Answer, "Already being built"},
-	{Answer, "Already done"},
-	{Here, "Making it here"},
-	{Plan, "Plan for your ok"},
-	{Leads, "Starting leads"},
-	{Leads, "Starting a lead"},
-	{Round, "Starting a round"},
-}
-
-// holdLine is the QA hold's first line, which the rung line follows.
-const holdLine = "holding for your qa"
-
-// lineMarks are what a line may open with before its words: a heading, a
-// quote, a list marker, bold or italics.
-var lineMarks = regexp.MustCompile(`^(#+\s*|>\s*|[-*]\s+|\*\*|__|\*|_)+`)
-
-// Named is the rung a reply names: its first line, or the line after the QA
-// hold's, opening with a rung's words. ok is false when it names none.
-func Named(reply string) (r Rung, line string, ok bool) {
-	n := 0
-	for _, l := range strings.Split(reply, "\n") {
-		l = strings.TrimSpace(l)
-		if l == "" {
-			continue
-		}
-		bare := strings.ToLower(lineMarks.ReplaceAllString(l, ""))
-		for _, w := range Words {
-			if strings.HasPrefix(bare, strings.ToLower(w.Says)) {
-				return w.Rung, l, true
-			}
-		}
-		if n++; n > 1 || !strings.HasPrefix(bare, holdLine) {
-			return "", "", false
-		}
-	}
-	return "", "", false
-}
 
 // Facts are what a request's actions did, as the rules read them.
 type Facts struct {

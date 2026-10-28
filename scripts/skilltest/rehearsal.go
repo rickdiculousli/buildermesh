@@ -16,14 +16,11 @@ import (
 
 // Ref is a reference end state of a case, played offline: a good one
 // (Fails empty) must pass every expectation, a bad one must fail the
-// expectation Fails names. They are checked before any session runs. A
-// reference plays on an arm whose manual documents bmesh audit, as this
-// tree's does, unless NoAudit puts it on an arm from before it.
+// expectation Fails names. They are checked before any session runs.
 type Ref struct {
-	Name    string
-	Fails   string
-	NoAudit bool
-	Play    func(r *Rehearsal)
+	Name  string
+	Fails string
+	Play  func(r *Rehearsal)
 }
 
 // Rehearsal is an offline cell a Ref plays into: the edits, commits, pushes
@@ -34,16 +31,11 @@ type Rehearsal struct {
 	Case  *Case
 	cell  *Cell
 	words []string
-	said  []string // the turn's texts before its reply
 	err   error
 }
 
-func newRehearsal(dir string, k *Case, fixture string, noAudit bool) (*Rehearsal, error) {
-	commands := []string{"help", "audit"}
-	if noAudit {
-		commands = commands[:1]
-	}
-	arm := Arm{Name: "ref", Commands: commands, Review: &kind.Kind{Name: "review", Prompt: "Review the change."}}
+func newRehearsal(dir string, k *Case, fixture string) (*Rehearsal, error) {
+	arm := Arm{Name: "ref", Commands: []string{"help"}, Review: &kind.Kind{Name: "review", Prompt: "Review the change."}}
 	now := time.Now()
 	cs, err := setupCell(dir, k, arm, fixture, thisBox(), now)
 	if err != nil {
@@ -245,10 +237,6 @@ func (r *Rehearsal) Let(what string) {
 	r.fail(f.Close())
 }
 
-// Say is a text the session writes in the turn before its reply, as a
-// stream records it.
-func (r *Rehearsal) Say(text string) { r.said = append(r.said, text) }
-
 // Reply ends the turn with the session's reply: the next scripted words,
 // or the case's steer once they are all sent.
 func (r *Rehearsal) Reply(text string) {
@@ -264,21 +252,13 @@ func (r *Rehearsal) Reply(text string) {
 		t.Words, t.Steer = r.Case.Steer, true
 		c.Steers++
 	}
-	var out []byte
-	for _, said := range append(r.said, text) {
-		b, err := json.Marshal(map[string]any{"type": "assistant", "parent_tool_use_id": nil, "session_id": "rehearsal",
-			"message": map[string]any{"role": "assistant", "content": []map[string]string{{"type": "text", "text": said}}}})
-		r.fail(err)
-		out = append(append(out, b...), '\n')
-	}
-	r.said = nil
 	b, err := json.Marshal(map[string]any{"type": "result", "subtype": "success", "is_error": false,
 		"result": text, "session_id": "rehearsal", "num_turns": 1, "total_cost_usd": 0, "duration_ms": 0})
 	if err != nil {
 		r.fail(err)
 		return
 	}
-	r.fail(os.WriteFile(filepath.Join(r.Dir, t.File), append(append(out, b...), '\n'), 0o644))
+	r.fail(os.WriteFile(filepath.Join(r.Dir, t.File), append(b, '\n'), 0o644))
 	t.After = snapshot(r.Dir, c.Base)
 	c.Turns = append(c.Turns, t)
 }
@@ -303,7 +283,7 @@ func checkRef(root string, k *Case, ref Ref, fixture string) error {
 		return err
 	}
 	defer os.RemoveAll(dir)
-	r, err := newRehearsal(dir, k, fixture, ref.NoAudit)
+	r, err := newRehearsal(dir, k, fixture)
 	if err != nil {
 		return err
 	}

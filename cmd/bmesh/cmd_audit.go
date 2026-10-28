@@ -15,8 +15,8 @@ import (
 )
 
 // cmdAudit prints what a Claude Code session's transcript says it did
-// (101): per request, the rung its reply named, the rung its actions
-// imply, and what it read before its first action. The session is this
+// (101): per request, what its replies said, the rung its actions imply,
+// and what it read before its first action. The session is this
 // one, a node's (the id its started kept, on the box it ran on), or one
 // named with --session.
 func (a *app) cmdAudit(args []string) error {
@@ -114,16 +114,15 @@ func printAudit(a *app, au *audit.Audit) {
 	fmt.Fprintf(w, "implied rung, first rule that holds: %s\n", audit.Rules)
 	for _, t := range au.Turns {
 		fmt.Fprintf(w, "\nturn %d %s %q\n", t.N, t.At, t.Words)
-		if t.Named != "" {
-			fmt.Fprintf(w, "  said: %s (%q)\n", t.Named, t.NamedLine)
+		if t.Said != "" {
+			fmt.Fprintf(w, "  said: %q\n", t.Said)
 		} else {
-			fmt.Fprintln(w, "  said: no rung")
+			fmt.Fprintln(w, "  said: nothing")
 		}
-		did := fmt.Sprintf("  did: %s (%s)", t.Implied, t.Rule)
-		if t.Mismatch {
-			did += fmt.Sprintf("; mismatch: said %s, did %s", t.Named, t.Implied)
+		if t.SaidLast != "" {
+			fmt.Fprintf(w, "  said last: %q\n", t.SaidLast)
 		}
-		fmt.Fprintln(w, did)
+		fmt.Fprintf(w, "  did: %s (%s)\n", t.Implied, t.Rule)
 		if t.Acted != "" {
 			fmt.Fprintf(w, "  first action: %s, at context %s; read before it:\n", t.Acted, session.K(t.Context))
 		} else {

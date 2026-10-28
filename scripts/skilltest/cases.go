@@ -220,25 +220,14 @@ func bugCase() *Case {
 		Turns: []string{"the cart total shows -5.00 when the cart is empty and a discount code is entered"},
 		Steer: goAhead,
 		Expect: []Pred{landed(), testsPass(), hidden("empty_cart_total", "cart", "TestSkilltestHiddenEmptyCartTotal"),
-			noSpecAdded(), nothingStarted(), rungNamed()},
+			noSpecAdded(), nothingStarted()},
 		Refs: []Ref{
 			{Name: "fixed and pushed", Play: func(r *Rehearsal) {
 				r.Call("repos", "show", "shop")
-				r.Say("Making it here, XS: one line in cart/cart.go")
 				fixTotal(r)
 				r.Call("routine", "run", "verify")
 				r.Push()
 				r.Reply("Fixed: an empty cart with SAVE5 totals 0.00. Pushed; origin/main contains it.")
-			}},
-			{Name: "fixed and pushed, on an arm before audit", NoAudit: true, Play: func(r *Rehearsal) {
-				fixTotal(r)
-				r.Push()
-				r.Reply("Fixed: an empty cart with SAVE5 totals 0.00. Pushed; origin/main contains it.")
-			}},
-			{Name: "fixed, named an answer", Fails: "rung_named", Play: func(r *Rehearsal) {
-				fixTotal(r)
-				r.Push()
-				r.Reply("Answering, no change: Total went below zero.\n\nFixed: an empty cart with SAVE5 totals 0.00. Pushed.")
 			}},
 			{Name: "untouched", Fails: "landed", Play: func(r *Rehearsal) {
 				r.Reply("Total subtracts the discount from a subtotal of 0, so it goes to -5.00.")
@@ -306,7 +295,7 @@ func tweakCase() *Case {
 		Name:   "tweak",
 		Turns:  []string{"rename the report command's --verbose flag to --debug"},
 		Steer:  goAhead,
-		Expect: []Pred{landed(), testsPass(), debug, gone, readme, noSpecAdded(), nothingStarted(), rungNamed()},
+		Expect: []Pred{landed(), testsPass(), debug, gone, readme, noSpecAdded(), nothingStarted()},
 		Refs: []Ref{
 			{Name: "renamed", Play: func(r *Rehearsal) {
 				r.Edit("cmd/shop/main.go", "verbose", "debug")
@@ -315,14 +304,6 @@ func tweakCase() *Case {
 				r.Commit("report's --verbose is --debug")
 				r.Push()
 				r.Reply("Making it here, S: the flag, its test and the README\n\nRenamed: shop report --debug lists each order. Pushed.")
-			}},
-			{Name: "renamed, no rung named", Fails: "rung_named", Play: func(r *Rehearsal) {
-				r.Edit("cmd/shop/main.go", "verbose", "debug")
-				r.Edit("cmd/shop/main_test.go", "verbose", "debug")
-				r.Edit("README.md", "--verbose", "--debug")
-				r.Commit("report's --verbose is --debug")
-				r.Push()
-				r.Reply("Renamed: shop report --debug lists each order. Pushed.")
 			}},
 			{Name: "untouched", Fails: "landed", Play: func(r *Rehearsal) { r.Reply("Done.") }},
 			{Name: "an alias kept", Fails: "verbose_flag_gone", Play: func(r *Rehearsal) {
@@ -341,7 +322,7 @@ func questionCase() *Case {
 	return &Case{
 		Name:   "question",
 		Turns:  []string{"why does the store write the whole file on every order?"},
-		Expect: []Pred{noCommit(), nothingStarted(), replyNonEmpty(), rungNamed()},
+		Expect: []Pred{noCommit(), nothingStarted(), replyNonEmpty()},
 		Refs: []Ref{
 			{Name: "answered", Play: func(r *Rehearsal) {
 				r.Reply("Answering, no change: orders.json is one JSON array, and a JSON array can't be appended to in place, so store.Add reads every order, appends the new one and writes the whole file to orders.json.tmp, then renames it over the old one: a crash leaves the old file or the new, never half of one.")
@@ -365,7 +346,7 @@ func qaCase() *Case {
 		Steer: goAhead,
 		Expect: []Pred{heldUntil(4), nothingStarted(), landed(), testsPass(),
 			hidden("typo_fixed", "cart", "TestSkilltestHiddenReceiptSaysTotal"),
-			hidden("bug_left", "cart", "TestSkilltestHiddenEmptyCartStillNegative"), rungNamed()},
+			hidden("bug_left", "cart", "TestSkilltestHiddenEmptyCartStillNegative")},
 		Refs: []Ref{
 			{Name: "held, then fixed 2", Play: func(r *Rehearsal) {
 				r.Reply("Holding: I'll keep a list and change nothing until you say go.")
@@ -467,7 +448,7 @@ func featureMCase() *Case {
 		Name:   "feature-m",
 		Turns:  []string{"add a CSV export to the report command"},
 		Steer:  goAhead,
-		Expect: []Pred{landed(), testsPass(), testAdded("csv_test_added", "csv"), csvExport(), rungNamed()},
+		Expect: []Pred{landed(), testsPass(), testAdded("csv_test_added", "csv"), csvExport()},
 		Refs: []Ref{
 			{Name: "built and pushed", Play: func(r *Rehearsal) {
 				addCSV(r, "csv", true)
@@ -475,7 +456,6 @@ func featureMCase() *Case {
 			}},
 			{Name: "a flag named its own way", Play: func(r *Rehearsal) {
 				addCSV(r, "spreadsheet", true)
-				r.Say("Making it here, M: report/csv.go and the report flag")
 				r.Reply("shop report --spreadsheet prints the orders as CSV. Pushed.")
 			}},
 			{Name: "untouched", Fails: "landed", Play: func(r *Rehearsal) { r.Reply("Done.") }},
@@ -491,7 +471,7 @@ func featureLCase() *Case {
 	return &Case{
 		Name:   "feature-l",
 		Turns:  []string{"replace the JSON store with sqlite"},
-		Expect: []Pred{noCommit(), nothingStarted(), planInReply("sqlite"), asksGoAhead(), rungNamed()},
+		Expect: []Pred{noCommit(), nothingStarted(), planInReply("sqlite"), asksGoAhead()},
 		Refs: []Ref{
 			{Name: "a plan, then a question", Play: func(r *Rehearsal) {
 				r.Reply("Plan for your ok, L: orders.json is the format the bookkeeping import reads, so changing the store changes an interface others depend on.\n\n" +
@@ -506,11 +486,6 @@ func featureLCase() *Case {
 			}},
 			{Name: "one line", Fails: "plan_in_reply", Play: func(r *Rehearsal) {
 				r.Reply("That is a big change to the sqlite store; want a spec for it?")
-			}},
-			{Name: "a plan named as made here", Fails: "rung_named", Play: func(r *Rehearsal) {
-				r.Reply("Making it here, S: only store changes\n\n" +
-					"1. store gets a sqlite backend behind the same Orders and Add.\n2. A one-time import moves orders.json into shop.db.\n" +
-					"3. checkout and report run on sqlite.\n\nShall I start on it?")
 			}},
 		},
 	}
@@ -655,7 +630,7 @@ An item name with a comma: encoding/csv quotes it. Considered: a JSON export, wh
 			return meshCanned(node(e, lead, "lead", "012", "", "working", e.Ago(25*time.Minute),
 				"012 CSV export for reports: the CSV writer is in; wiring report --csv and its test", true))
 		},
-		Expect: []Pred{noCommit(), noBuild, names, rungNamed()},
+		Expect: []Pred{noCommit(), noBuild, names},
 		Refs: []Ref{
 			{Name: "said so", Play: func(r *Rehearsal) {
 				r.Call("mesh-status")
@@ -745,10 +720,9 @@ func ideasCase() *Case {
 				"017 The store keeps a file per day, so a long history stays fast to read (refinement, M, opus): every report reads every order.\n" +
 				"watch-done\n"}
 		},
-		Expect: []Pred{noCommit(), roundOrList, rungNamed()},
+		Expect: []Pred{noCommit(), roundOrList},
 		Refs: []Ref{
 			{Name: "a round", Play: func(r *Rehearsal) {
-				r.Say("Starting a round on shop")
 				r.Call("ideate", "shop")
 				r.Call("watch", "--nodes", "shop-round-1", "--timeout", "30m")
 				r.Lands("Proposals 015, 016, 017: proposed",
@@ -814,7 +788,7 @@ func pickCase() *Case {
 			return out
 		},
 		Expect: []Pred{built(pickPitch, "012", "014"), notBuilt(pickPitch, "013"), declined(pickPitch, "013"),
-			onlyTouches("no_other_commit", "docs/proposals/013-*"), rungNamed()},
+			onlyTouches("no_other_commit", "docs/proposals/013-*")},
 		Refs: []Ref{
 			{Name: "accepted, then built on a go", Play: func(r *Rehearsal) {
 				r.Call("choose-ideas", "shop", reply)

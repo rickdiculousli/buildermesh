@@ -201,7 +201,6 @@ type State struct {
 	Cell    *Cell
 	Calls   []Call
 	Replies []string
-	Texts   [][]string // each turn's main-thread texts, its reply last
 	Results []Result
 	Inits   []*Init // each turn's init event, nil where its output had none
 
@@ -229,11 +228,6 @@ func loadState(dir string) (*State, error) {
 		s.Results = append(s.Results, r)
 		s.Inits = append(s.Inits, init)
 		s.Replies = append(s.Replies, r.Result)
-		texts := r.Texts
-		if r.Result != "" && (len(texts) == 0 || texts[len(texts)-1] != r.Result) {
-			texts = append(texts, r.Result)
-		}
-		s.Texts = append(s.Texts, texts)
 	}
 	return s, nil
 }
@@ -289,18 +283,13 @@ func (s *State) sessionCommits(from, to string) []string {
 	return cs
 }
 
-// filesOf are the files the commits changed, sorted, once each, limited to
-// a --diff-filter (all when "") and paths; a merge's are those it changed
-// from every parent, its own resolution.
-func (s *State) filesOf(commits []string, filter string, paths ...string) []string {
+// filesOf are the files the commits changed, sorted, once each; a merge's
+// are those it changed from every parent, its own resolution.
+func (s *State) filesOf(commits []string) []string {
 	if len(commits) == 0 {
 		return nil
 	}
-	args := []string{"log", "--no-walk", "-c", "--format=", "--name-only"}
-	if filter != "" {
-		args = append(args, "--diff-filter="+filter)
-	}
-	out, err := s.git(append(append(append(args, commits...), "--"), paths...)...)
+	out, err := s.git(append([]string{"log", "--no-walk", "-c", "--format=", "--name-only"}, commits...)...)
 	if err != nil {
 		return nil
 	}
@@ -313,16 +302,9 @@ func (s *State) filesOf(commits []string, filter string, paths ...string) []stri
 // lacks, newest first.
 func (s *State) NewCommits() []string { return s.sessionCommits(s.Cell.Base, mainRef) }
 
-// ArmHas reports whether the cell's arm documents the command, as the
-// fake reads its commands.txt.
-func (s *State) ArmHas(cmd string) bool {
-	b, _ := os.ReadFile(filepath.Join(s.Dir, "commands.txt"))
-	return slices.Contains(strings.Split(string(b), "\n"), cmd)
-}
-
 // Changed are the files the session's commits on origin's main changed
 // since the base.
-func (s *State) Changed() []string { return s.filesOf(s.NewCommits(), "") }
+func (s *State) Changed() []string { return s.filesOf(s.NewCommits()) }
 
 const mainRef = "refs/heads/main"
 

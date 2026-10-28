@@ -5,28 +5,6 @@ import (
 	"testing"
 )
 
-func TestNamed(t *testing.T) {
-	for _, c := range []struct {
-		reply string
-		want  Rung
-	}{
-		{"Answering, no change: the store rewrites the file because ...", Answer},
-		{"**Making it here, S: only internal/land changes.**\n\nDone.", Here},
-		{"Plan for your ok, L: changes the brief every lead reads\n1. ...", Plan},
-		{"# Starting leads for 012 and 014\n", Leads},
-		{"\n\nStarting a round on shop.", Round},
-		{"Holding for your QA: checkout.\nAnswering, no change: 2 noted.", Answer},
-		{"Holding for your QA: checkout.\n3 noted: the label.", ""},
-		{"I fixed it.\nMaking it here, XS: ...", ""},
-		{"", ""},
-	} {
-		got, _, ok := Named(c.reply)
-		if got != c.want || ok != (c.want != "") {
-			t.Errorf("Named(%q) = %q %v, want %q", c.reply, got, ok, c.want)
-		}
-	}
-}
-
 func TestImplied(t *testing.T) {
 	for _, c := range []struct {
 		f    Facts

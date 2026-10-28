@@ -810,18 +810,3 @@ func TestBuildRefusesADuplicateID(t *testing.T) {
 		t.Fatalf("the runner was called: %v", calls)
 	}
 }
-
-// The last next: line is the opening of the coordinator's report on the
-// pick, naming the specs whose leads started, in the order they started
-// (109).
-func TestBuildEndsWithTheRungLine(t *testing.T) {
-	buildSetup(t)
-	_, errs, code := runCLI(t, nil, "build", "demo", "006", "002")
-	if code != 0 || !strings.HasSuffix(errs, "\nnext: your report on this opens Starting leads for 002 and 006\n") {
-		t.Fatalf("code %d, stderr %q", code, errs)
-	}
-	_, errs, code = runCLI(t, nil, "build", "demo", "009", "--family", "demo-build-1")
-	if code != 0 || !strings.HasSuffix(errs, "\nnext: your report on this opens Starting a lead for 009\n") {
-		t.Fatalf("code %d, stderr %q", code, errs)
-	}
-}

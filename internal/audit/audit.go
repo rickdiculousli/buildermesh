@@ -36,19 +36,18 @@ type Subagents struct {
 // Turn is one request: a message the operator (or a harness on their
 // behalf) sent the main thread, and what followed up to the next.
 type Turn struct {
-	N         int    `json:"n"`
-	At        string `json:"at"`
-	Words     string `json:"words"` // the message's first line, clipped
-	Named     Rung   `json:"named,omitempty"`
-	NamedLine string `json:"named_line,omitempty"`
-	Implied   Rung   `json:"implied"`
-	Rule      string `json:"rule"`
-	Mismatch  bool   `json:"mismatch,omitempty"`
-	Facts     Facts  `json:"facts"`
-	Read      []Read `json:"read"`              // what it read before its first action
-	Other     Other  `json:"other"`             // the rest of its tool output before then
-	Acted     string `json:"acted,omitempty"`   // its first action that changes something
-	Context   int    `json:"context,omitempty"` // the context, in tokens, of the call that took it
+	N        int    `json:"n"`
+	At       string `json:"at"`
+	Words    string `json:"words"`               // the message's first line, clipped
+	Said     string `json:"said,omitempty"`      // its first reply's first line, clipped
+	SaidLast string `json:"said_last,omitempty"` // its last reply's, when it had more than one
+	Implied  Rung   `json:"implied"`
+	Rule     string `json:"rule"`
+	Facts    Facts  `json:"facts"`
+	Read     []Read `json:"read"`              // what it read before its first action
+	Other    Other  `json:"other"`             // the rest of its tool output before then
+	Acted    string `json:"acted,omitempty"`   // its first action that changes something
+	Context  int    `json:"context,omitempty"` // the context, in tokens, of the call that took it
 }
 
 // Read is one thing a turn read before it acted: a skill it loaded, a file
@@ -315,7 +314,9 @@ func Transcript(r io.Reader) (*Audit, error) {
 			for _, b := range blocks {
 				switch b.Type {
 				case "text":
-					texts = append(texts, b.Text)
+					if strings.TrimSpace(b.Text) != "" {
+						texts = append(texts, b.Text)
+					}
 				case "tool_use":
 					u := &use{name: b.Name, before: t.Acted == "", context: ctx}
 					json.Unmarshal(b.Input, &u.input)
@@ -512,25 +513,30 @@ func resultText(raw json.RawMessage) string {
 	return b.String()
 }
 
-// finish sets a turn's named rung, from the first of its replies that names
-// one, and its implied rung, from its facts and its last reply.
+// finish sets what a turn said, the first lines of its first and last
+// replies, and its implied rung, from its facts and its last reply.
 func finish(t *Turn, texts []string) {
-	for _, s := range texts {
-		if r, l, ok := Named(s); ok {
-			t.Named, t.NamedLine = r, clip(l, 120)
-			break
+	if n := len(texts); n > 0 {
+		t.Said = firstLine(texts[0])
+		if n > 1 {
+			t.SaidLast = firstLine(texts[n-1])
 		}
-	}
-	if len(texts) > 0 {
-		t.Facts.EndsAsking = EndsAsking(texts[len(texts)-1])
+		t.Facts.EndsAsking = EndsAsking(texts[n-1])
 	}
 	judge(t)
 }
 
-// judge sets a turn's implied rung from its facts, and the mismatch.
-func judge(t *Turn) {
-	t.Implied, t.Rule = Implied(t.Facts)
-	t.Mismatch = t.Named != "" && t.Named != t.Implied
+// judge sets a turn's implied rung from its facts.
+func judge(t *Turn) { t.Implied, t.Rule = Implied(t.Facts) }
+
+// firstLine is a reply's first line that isn't blank, clipped.
+func firstLine(s string) string {
+	for _, l := range strings.Split(s, "\n") {
+		if strings.TrimSpace(l) != "" {
+			return clip(l, 120)
+		}
+	}
+	return ""
 }
 
 func clip(s string, n int) string {
