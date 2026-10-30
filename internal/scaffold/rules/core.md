@@ -1,5 +1,6 @@
 - Make the smallest change that solves the problem. Delete what's dead before adding.
 - Read the code before you change it, and say what you learned before deciding.
+- When the `pick-principles` skill is installed, use it before designing, building, debugging, migrating or deleting, or briefing a builder.
 - Fix the first place it went wrong, not where it showed. A guard is a fix only when the state it handles is legitimate.
 - Prove it works on the real thing: run it the way a user would. Passing tests prove only what they reach.
 - When two fixes have failed on the same assumption, stop and test the assumption.
