@@ -27,4 +27,4 @@ Take the first option that fully works:
 
 Never cut: validation at trust boundaries, error handling that prevents data loss, security, accessibility, the calibration real hardware needs, anything the user asked for.
 
-From [ponytail](https://github.com/DietrichGebert/ponytail) v5.3.2 by DietrichGebert (MIT).
+From [ponytail](https://github.com/DietrichGebert/ponytail) v5.3.3 by DietrichGebert (MIT).

@@ -23,7 +23,7 @@ Half-page specs live in `docs/proposals/NNN-slug.md` (the template is `bmesh spe
 Builds here run as nodes on a buildermesh mesh through the `bmesh` CLI: a lead owns one spec in its own worktree, executors build pieces on branches under the lead's and hand them back through the mesh, and routines run this repo's checks. The repo's routine kinds live in `.bmesh/routines/<kind>.toml` (`verify` runs `TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test -count=1 ./...`, `go vet ./...`, `GOOS=windows go vet ./...`, `test -z "$(gofmt -l .)"`; `review` asks Opus, in a session that never saw the change, for findings; add a kind rather than a script when a check should be recorded). Commit before queueing a job: a job names a commit, and every result is recorded under that commit's tree hash, so a deterministic kind answers a repeat run from its record. A spec lands with its code, reading `done` in the tree that lands, and `bmesh land` rewords the landed commit to carry its proof as two trailers, `Spec: NNN` and `Verified: <entries>` (`verify ok t:<tree8>; review ok t:<tree8> m:<model>`), composed from the results recorded for the landed tree; `bmesh done` is the last word: it refuses until that commit is on `origin/main` with a result for every entry.
 <!-- /bmesh:mesh -->
 
-<!-- bmesh:rules core design tests ponytail aa8a483d -->
+<!-- bmesh:rules core design tests ponytail 5fd19472 -->
 ## Engineering rules
 From bmesh's rule sets `core`, `design`, `tests`, `ponytail`. Where the rest of this file says otherwise, the rest wins. Edit them freely: `bmesh scaffold` keeps an edited block and marks it customized.
 
@@ -82,5 +82,5 @@ Take the first option that fully works:
 
 Never cut: validation at trust boundaries, error handling that prevents data loss, security, accessibility, the calibration real hardware needs, anything the user asked for.
 
-From [ponytail](https://github.com/DietrichGebert/ponytail) v5.3.2 by DietrichGebert (MIT).
+From [ponytail](https://github.com/DietrichGebert/ponytail) v5.3.3 by DietrichGebert (MIT).
 <!-- /bmesh:rules -->
