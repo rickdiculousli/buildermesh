@@ -86,7 +86,7 @@ func (a *app) cmdContext(args []string) error {
 		if line, compacted := session.Heard(config.StateDir(), c, r, time.Now()); compacted {
 			fmt.Fprintln(a.stderr, line)
 		}
-		advice = contextAdvice(c, r.Tokens)
+		advice = contextAdvice(c, r.Tokens, session.IsLead(config.StateDir(), r.ID))
 	}
 	if a.json {
 		out := struct {
@@ -114,14 +114,14 @@ func (a *app) cmdContext(args []string) error {
 	return nil
 }
 
-// contextAdvice is the advice at tokens, or below nudge_from when the
-// first nudge is still ahead; "" with nudges off.
-func contextAdvice(c config.ContextConfig, tokens int) string {
+// contextAdvice is the advice at tokens, to a lead's session when lead, or
+// below nudge_from when the first nudge is still ahead; "" with nudges off.
+func contextAdvice(c config.ContextConfig, tokens int, lead bool) string {
 	if c.NudgeFrom <= 0 {
 		return ""
 	}
 	if level := session.Level(c, tokens); level > 0 {
-		return session.Advice(c, level)
+		return session.Advice(c, level, lead)
 	}
 	return "Nothing to do before " + session.K(c.NudgeFrom) + "."
 }

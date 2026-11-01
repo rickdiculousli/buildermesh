@@ -302,8 +302,8 @@ func TestLevelAndAdvice(t *testing.T) {
 		{config.ContextConfig{NudgeFrom: 250000}, 900000, 250000, ""},
 	} {
 		level := Level(tc.c, tc.tokens)
-		if level != tc.level || Advice(tc.c, level) != tc.advice {
-			t.Errorf("%+v at %d: level %d, %q; want %d, %q", tc.c, tc.tokens, level, Advice(tc.c, level), tc.level, tc.advice)
+		if level != tc.level || Advice(tc.c, level, false) != tc.advice {
+			t.Errorf("%+v at %d: level %d, %q; want %d, %q", tc.c, tc.tokens, level, Advice(tc.c, level, false), tc.level, tc.advice)
 		}
 	}
 }
@@ -321,5 +321,39 @@ func TestHeardConfigChangeIsNoCompaction(t *testing.T) {
 	r.Tokens = 401000
 	if l, _ := Heard(dir, raised, r, time.Now()); !strings.Contains(l, "401k") {
 		t.Fatalf("the raised nudge: %q", l)
+	}
+}
+
+func TestALeadsMarkOutlivesCompactionAndLevels(t *testing.T) {
+	dir := t.TempDir()
+	if IsLead(dir, "l") {
+		t.Fatal("unmarked session reads as a lead's")
+	}
+	for range 2 {
+		if err := MarkLead(dir, "l"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := Reading{Harness: "claude", ID: "l", Tokens: 260000, Main: true}
+	if l, _ := Heard(dir, defaults, r, time.Now()); l != "bmesh: this session's context is 260k. You'll hear again every 50k." {
+		t.Fatalf("below compact_from: %q", l)
+	}
+	r.Tokens = 304000
+	if l, _ := Heard(dir, defaults, r, time.Now()); l != "bmesh: this session's context is 304k. "+leadAdvice {
+		t.Fatalf("from compact_from: %q", l)
+	}
+	r.Tokens = 38000
+	if _, compacted := Heard(dir, defaults, r, time.Now()); !compacted || !IsLead(dir, "l") {
+		t.Fatalf("compaction: compacted %v, lead %v", compacted, IsLead(dir, "l"))
+	}
+	r.Tokens = 412000
+	if l, _ := Heard(dir, defaults, r, time.Now()); l != "bmesh: this session's context is 412k. "+leadAdvice {
+		t.Fatalf("from compact_soon after a compaction: %q", l)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "context", "l")); string(b) != "400000 412000 lead\n" {
+		t.Fatalf("state file = %q", b)
+	}
+	if err := MarkLead(dir, "../x"); err == nil {
+		t.Fatal("a path-unfit id was marked")
 	}
 }
