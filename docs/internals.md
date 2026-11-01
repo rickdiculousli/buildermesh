@@ -493,7 +493,7 @@ The map, `watch`, status, the push loop and the activity reader skip subjects wh
 
 The reading is the main thread's when a model call was in flight, or when a `tool_use` named `Bash` is unanswered and none named `Agent` or `Task` is.
 
-`<state dir>/context/<session id>` holds `<level> <tokens>` and a newline, written through a temp file and a rename whenever either changes (so once per main-thread command at or past `nudge_from`); each write also removes the dir's files unchanged for 7 days. Two commands of one session at once can both say a line.
+`<state dir>/context/<session id>` holds `<level> <tokens>`, then ` lead` when a lead's `started` marked the session (a file without it is not a lead's), and a newline, written through a temp file and a rename whenever any of them changes (so once per main-thread command at or past `nudge_from`); each write also removes the dir's files unchanged for 7 days. Two commands of one session at once can both say a line.
 
 ## Audit
 

@@ -4,7 +4,7 @@ title: A lead's context line says to hand off, not to compact
 kind: refinement
 size: M
 judge: opus
-status: accepted
+status: done
 lens: eng
 proposed_by: buildermesh-fix-10
 proposed_on: 2026-11-01

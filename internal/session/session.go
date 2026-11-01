@@ -291,11 +291,18 @@ const howToCompact = "To compact: update your state file (the plan, the order, t
 // state file, then set its effort for what is next.
 const afterCompact = "read your state file before going on, and set your effort for the work ahead now, where your harness lets a session set its own (T3 Code's t3_thread_configure): high to design, medium to run settled work."
 
+// leadAdvice is what a lead's session is told from compact_from (111): its
+// skill hands work off rather than compacting.
+const leadAdvice = "A lead never compacts: hand your next run of settled work to an executor, and retire at done."
+
 // Advice is what a session at level is told to do; "" below nudge_from.
-func Advice(c config.ContextConfig, level int) string {
+// lead is that the session is a lead's (MarkLead).
+func Advice(c config.ContextConfig, level int, lead bool) string {
 	switch {
 	case level <= 0:
 		return ""
+	case lead && (c.CompactFrom > 0 && level >= c.CompactFrom || c.CompactSoon > 0 && level >= c.CompactSoon):
+		return leadAdvice
 	case c.CompactSoon > 0 && level >= c.CompactSoon:
 		return "Compact at the next safe point. " + howToCompact
 	case c.CompactFrom > 0 && level >= c.CompactFrom:
@@ -317,9 +324,60 @@ func K(tokens int) string { return strconv.Itoa(tokens/1000) + "k" }
 // keep is how long a session's nudge state outlives its last change.
 const keep = 7 * 24 * time.Hour
 
-// state is <state dir>/context/<session>: the level the session last
-// heard and the context bmesh last read for it at or past nudge_from.
-type state struct{ level, tokens int }
+// state is <state dir>/context/<session>, `<level> <tokens>[ lead]`: the
+// level the session last heard, the context bmesh last read for it at or
+// past nudge_from, and that it is a lead's (MarkLead).
+type state struct {
+	level, tokens int
+	lead          bool
+}
+
+// readState reads p; a missing or unreadable file is the zero state, and
+// one without the third word is not a lead's.
+func readState(p string) state {
+	var s state
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return s
+	}
+	var mark string
+	fmt.Sscan(string(b), &s.level, &s.tokens, &mark)
+	s.lead = mark == "lead"
+	return s
+}
+
+// writeState writes s to p through a temp file and a rename.
+func writeState(p string, s state) error {
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
+	line := fmt.Sprintf("%d %d", s.level, s.tokens)
+	if s.lead {
+		line += " lead"
+	}
+	return writeAtomic(p, []byte(line+"\n"))
+}
+
+// MarkLead marks session id's state, under state dir dir, as a lead's, so
+// its advice from compact_from is to hand off (111); a no-op when marked.
+func MarkLead(dir, id string) error {
+	if !sessionID.MatchString(id) {
+		return fmt.Errorf("session id %q isn't fit for a path", id)
+	}
+	p := filepath.Join(dir, "context", id)
+	s := readState(p)
+	if s.lead {
+		return nil
+	}
+	s.lead = true
+	return writeState(p, s)
+}
+
+// IsLead is that session id's state, under state dir dir, is marked a
+// lead's.
+func IsLead(dir, id string) bool {
+	return sessionID.MatchString(id) && readState(filepath.Join(dir, "context", id)).lead
+}
 
 // Heard records r for its session and returns the line the session is
 // owed, "" for none. A level above the one it last heard is a nudge. A
@@ -336,21 +394,18 @@ func Heard(dir string, c config.ContextConfig, r Reading, now time.Time) (line s
 	}
 	d := filepath.Join(dir, "context")
 	p := filepath.Join(d, r.ID)
-	var last state
-	if b, err := os.ReadFile(p); err == nil {
-		fmt.Sscan(string(b), &last.level, &last.tokens)
-	}
-	cur := state{Level(c, r.Tokens), r.Tokens}
+	last := readState(p)
+	cur := state{Level(c, r.Tokens), r.Tokens, last.lead}
 	if cur.level == 0 && last.level == 0 || cur == last {
 		return "", false
 	}
-	if os.MkdirAll(d, 0o755) != nil || writeAtomic(p, []byte(fmt.Sprintf("%d %d\n", cur.level, cur.tokens))) != nil {
+	if writeState(p, cur) != nil {
 		return "", false
 	}
 	prune(d, now)
 	switch {
 	case cur.level > last.level:
-		return strings.TrimSpace("bmesh: this session's context is " + K(r.Tokens) + ". " + Advice(c, cur.level)), false
+		return strings.TrimSpace("bmesh: this session's context is " + K(r.Tokens) + ". " + Advice(c, cur.level, cur.lead)), false
 	case cur.level < last.level && r.Tokens < last.tokens:
 		return "bmesh: this session compacted (" + K(last.tokens) + " -> " + K(r.Tokens) + "); " + afterCompact, true
 	}

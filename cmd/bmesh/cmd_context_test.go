@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
 
 // claudeSession writes a transcript whose newest assistant message read
@@ -187,5 +189,40 @@ func TestContextNeedsNoSetup(t *testing.T) {
 	t.Setenv("BMESH_CONFIG", filepath.Join(t.TempDir(), "config.toml"))
 	if out, errs, code := runCLI(t, claudeSession(t, "fresh", 90000), "context"); code != 0 || !strings.HasPrefix(out, "context 90k") {
 		t.Fatalf("unset-up box: exit %d, %q, %q", code, out, errs)
+	}
+}
+
+// leadAdvice is the context line's advice from compact_from to a lead's
+// session (111): hand off, never compact.
+const leadAdvice = "A lead never compacts: hand your next run of settled work to an executor, and retire at done."
+
+func TestALeadsSessionIsToldToHandOffNotCompact(t *testing.T) {
+	c, ctx := setup(t)
+	putNode(t, c, ctx, mesh.Node{Path: "app-012", Role: "lead"})
+	putNode(t, c, ctx, mesh.Node{Path: "app-fix-3", Role: "fixer"})
+	for _, tc := range []struct{ node, inbox, context string }{
+		{"app-012", leadAdvice, leadAdvice},
+		{"app-fix-3", milestoneAdvice, "Compact at the next safe point. "},
+	} {
+		env := claudeSession(t, "s-"+tc.node, 200000)
+		env["BMESH_NODE"] = tc.node
+		if _, errs, code := runCLI(t, env, "started", "--text", "go"); code != 0 {
+			t.Fatalf("%s started: %d %s", tc.node, code, errs)
+		}
+		setTranscript(t, env, 304000, "Bash")
+		if _, errs, _ := runCLI(t, env, "inbox"); !strings.HasSuffix(errs, "bmesh: this session's context is 304k. "+tc.inbox+"\n") {
+			t.Errorf("%s inbox at 304k: stderr %q", tc.node, errs)
+		}
+		setTranscript(t, env, 412000, "Bash")
+		out, _, _ := runCLI(t, env, "context")
+		if want := "context 412k (claude session s-" + tc.node[:6] + "): " + tc.context; !strings.HasPrefix(out, want) {
+			t.Errorf("%s context at 412k: %q; want it to start %q", tc.node, out, want)
+		}
+		if tc.node == "app-fix-3" && !strings.Contains(out, "To compact:") {
+			t.Errorf("a fixer's context says how to compact: %q", out)
+		}
+		if tc.node == "app-012" && out != "context 412k (claude session s-app-01): "+leadAdvice+"\n" {
+			t.Errorf("a lead's context: %q", out)
+		}
 	}
 }
