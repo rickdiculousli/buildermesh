@@ -4,7 +4,7 @@ title: Review checks a change against what its spec promised, and the lead and i
 kind: refinement
 size: M
 judge: opus
-status: accepted
+status: done
 lens: eng
 proposed_by: c510cd5e-a483-4a86-bbea-b4542577dcf4
 proposed_on: 2026-11-02
@@ -104,6 +104,17 @@ Judge: opus, because the check must fail a dropped promise without failing a kep
   The flips and each arm's tokens go in this spec's `## Shown`.
 
 ## Shown
+- A lead's review job text reads `base:`, `spec:`, then the check, whatever the repo's kind says: `TestLandQueuesTheSizedReview` and `TestLandQueuesTheReviewAgainAfterItsRebase` in cmd/bmesh/cmd_land_test.go assert land's job text is `brief.Review(base, "docs/proposals/012-thing.md")`; `TestReviewBriefNamesBaseAndSpec` in internal/brief/brief_test.go checks the render, with no placeholder left.
+- A change that drops a promise gets a `Must fix` naming it and `VERDICT: fail`: `go run ./scripts/skilltest --rescore cache/skilltest/20261102-064139` -> `| review-spec-miss | cand | 3 | 3/3 | 0 | 0 | $0.43 | 69s | 126k | 9 |`.
+- No false fail on a change that keeps every promise: the same rescore -> `| review-spec-met | cand | 3 | 3/3 | 0 | 0 | $0.58 | 105s | 261k | 21 |`.
+- Every spec a lead lands carries `## Shown`: skills/lead/SKILL.md (Land) and the half-pager's `## Shown` (internal/brief/templates/half-pager.md); `go run ./scripts/skilltest --arm base=e9bbb81 --arm cand=. --cases review,review-spec-miss,review-spec-met,lead-s,lead-exec --runs 2` -> `- lead-s run 1: base fail, cand pass` (base misses only `shown`; cand passes it 2/2 on lead-s and 2/2 on lead-exec).
+- An executor's done line ends `Verified:`: skills/executor/SKILL.md and internal/brief/templates/executor.md; the same run -> `[18/20] lead-exec / cand #1: pass, 0 steers, 0 commits, $0.34, 54s` (base misses `executor_verified` both runs: "go test ./... passes").
+- Unit tests: `TestQueueReviewFromALeadCarriesItsSpec` in cmd/bmesh/cmd_routine_test.go (from a lead, with extra words, a `spec:` line, no node spec, no base); `TestPatchIDFollowsTheDiffNotTheBase` in internal/checkout/patch_test.go reads the base from the review brief; `TestExecutorNewMakesWorktreeBranchNode` checks the new report line.
+- `go test ./scripts/skilltest` plays each new case's references (a reply naming the dropped promise or its missing test passes; one naming only kept promises, ending `VERDICT: ok`, or a `Must fix` on a kept promise fails; `shown` and `executor_verified` good and bad): `TestReferences` and `TestReviewSpecChanges` -> `ok  github.com/rickdiculousli/buildermesh/scripts/skilltest`.
+- Every lead-case expectation that passed on base passes on cand, and `review` passes on cand: run 1, `review` 2/2 both arms, all four defects named each run; lead-s and lead-exec cand 2/2, base failing only `shown` and `executor_verified`.
+- Tokens per arm, base -> cand: run 1 (2 runs each) lead-s 430k -> 602k, lead-exec 696k -> 914k, review 157k -> 131k; run 2 (3 runs each) review-spec-miss 124k -> 126k, review-spec-met 203k -> 261k.
+- Easy to miss: `routine queue review` from a lead renders the brief too, not only land, and leaves a text with a `spec:` line, or from a node without a spec, as given: `TestQueueReviewFromALeadCarriesItsSpec`.
+- Not shown: `review-spec-miss` flipping from base to cand. The base arm's review (the seed prompt, which every fleet repo's kind matches in substance) already names the dropped promise, 3/3 in run 2 and 2/2 in run 1, since the spec, with its `Shown` silent on the promise, is in the diff it reads. So on this fixture the brief adds no catch the seed misses; what it adds is the same check in every repo and on every reviewer box, measured with no false fail on `review-spec-met`. Run 1's spec-case cells ran on a fixture with a real bug (an empty `--since` read as no filter), since fixed; run 2 is the measurement for those two cases.
 
 ## Risks and the alternative considered
 - **False fails cost a lead a wake at full context.** A review that fails a kept promise sends the lead through another land cycle. `review-spec-met` measures it, and an unconfirmable promise goes to `Not checked`, never a finding, when the lead showed it or said why not.
