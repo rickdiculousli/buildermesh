@@ -78,6 +78,19 @@ The repo's verify, plus:
 - The skills test checks that `ideate-engineer` names `bmesh spec rulings` and the three categories, and that `ideate` points at that section.
 - **A rehearsal, numbers in the closing commit:** the reviewer, once, on fe2c025's 068 (`git show fe2c025:docs/proposals/068-*.md`), with whether it finds the four issues above.
 
+## Shown
+- The fix brief renders identically before and after: internal/brief/testdata/fix.golden was rendered from the fix template before the move; `go test -count=1 -v -run TestFixBriefCarriesTheRulingsAsBefore ./internal/brief` -> `--- PASS: TestFixBriefCarriesTheRulingsAsBefore (0.00s)`.
+- A committed `.bmesh/briefs/rulings.md` changes neither the fix brief nor `spec rulings`: the same test renders at a repo with one; `TestSpecRulingsPrintsTheEmbeddedRulings` in cmd/bmesh/cmd_release_test.go prints `brief.Rulings` inside a repo that commits one -> `--- PASS: TestSpecRulingsPrintsTheEmbeddedRulings (0.13s)`.
+- `TestNames` is unchanged: `git diff origin/main -- internal/brief/brief_test.go | grep -c TestNames` -> `0`.
+- An idea brief carries the check sentence and a round brief doesn't: `TestIdeaBriefSendsItsSpecToTheCheck` -> `--- PASS: TestIdeaBriefSendsItsSpecToTheCheck (0.00s)`.
+- `docs/manual.md` contains `brief.Rulings`: `TestManualQuotesTheRulings` -> `--- PASS: TestManualQuotesTheRulings (0.00s)`.
+- `spec rulings` prints `brief.Rulings` from any directory: `cd / && bmesh spec rulings | tail -1` (this branch's build) -> ``8. `drop`: dropping is an outcome. That covers what a spec o``.
+- `ideate-engineer` names `bmesh spec rulings` and the three categories, and the spec-writing step points at that section: `TestSpecCheckIsWrittenOnce` in internal/brief/skills_test.go -> `--- PASS: TestSpecCheckIsWrittenOnce (0.00s)`.
+- The rehearsal on fe2c025's 068: a fresh Opus subagent (read-only Plan type) with the section's prompt returned 8 findings (7 defects, 1 note): three of the four issues outright (kinds verify never runs as, its #3; the build and release gate, #2; evidence counting main's commits, #4), the rebased lookup only in part (#2 names the rebased code commit's missing record for the gate, not for land's own walk), and the walk carrying an ok past a newer fail, which bea5259's "nearest record" fixed. The numbers are in the commit "Spec 069: done; the rehearsal on 068".
+- A round doesn't run the check: skilltest's `round` case, one run per arm, opus: no round ran a review; the first candidate wrote a `qa:` line into its Propose commit, and with the section opening "Skip this section in a round" it wrote none (commit "ideate-engineer: Check the spec opens by sending a round past it").
+- Easy to miss: the fix brief must render byte for byte as before, so `Rulings` drops the file's last newline and the template keeps `{{rulings}}` between its blank lines: `TestFixBriefCarriesTheRulingsAsBefore`, and `TestFixStartsOneFixerWithTheRulings` -> `--- PASS: TestFixStartsOneFixerWithTheRulings (0.23s)`.
+- Not shown: the operator's chat asking `<which>: an Opus review of the spec first? (minutes; yes/no)` and a report reading `qa: opus (...)`: no skilltest case writes a spec in the operator's chat or in an idea thread, and I ran neither by hand.
+
 ## Risks and the alternative considered
 - **The writer misjudges a risky spec as safe.** Its report says `qa: none (<why>)`, so the operator sees the call and can ask for the review; a correction reviews the landed spec and its fixes go in a second commit.
 - **The model is fixed in the skill text.** Changing Opus takes a spec, by design: no config key.
