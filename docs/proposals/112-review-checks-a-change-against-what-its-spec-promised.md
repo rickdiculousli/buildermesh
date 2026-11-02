@@ -4,7 +4,7 @@ title: Review checks a change against what its spec promised, and the lead and i
 kind: refinement
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: c510cd5e-a483-4a86-bbea-b4542577dcf4
 proposed_on: 2026-11-02
