@@ -42,7 +42,7 @@ const mesh = {
 // check is set by ?check=1: a self-check that writes viewport and
 // connection facts into document.title for headless screenshots.
 const check = new URLSearchParams(location.search).get("check") === "1"
-  ? { conn: [], trees: 0, replay: 0, live: 0, lanes: 0, segs: {}, ticks: 0, roles: 0, agents: 0, ctx: 0, quota: 0 } : null;
+  ? { conn: [], trees: 0, replay: 0, live: 0, lanes: 0, segs: {}, ticks: 0, roles: 0, agents: 0, ctx: 0, quota: 0, outliers: 0, burndown: 0 } : null;
 
 function svg(tag, attrs, parent) {
   const e = document.createElementNS(NS, tag);
@@ -335,6 +335,10 @@ function drawAll() {
     drawCoords($("coords-map"));
     drawCtxPanel();
     drawQuota($("quota-map"));
+    drawOutliers($("outliers-map"));
+    drawBurnRow();
+  } else if (pages.view === "specs") {
+    drawSpecs();
   } else if (pages.view === "timeline") {
     drawLanes($("tl-full"), tl.data, { fold: false, live: true, sessions: true });
   } else if (pages.view === "tokens") {
@@ -435,6 +439,7 @@ function drawLanes(box, d, opts) {
   const u = opts.sessions ? usageNow() : null;
   // A phone's gutter has room for the label only: the agents table has the reads.
   const reads = new Map(u && !phone.matches ? u.agents.map((a) => [a.agent, +a.read || 0]) : []);
+  const flagged = u ? flagMap(u) : new Map();
   if (u && u.sessions.length) {
     // The coordinator sessions, a group under the leads (before the routines).
     const gi = rows.findIndex((r) => r.group === "routines");
@@ -472,7 +477,7 @@ function drawLanes(box, d, opts) {
       continue;
     }
     if (r.s) {
-      sessionLane(root, r, x, y, G, reads.get(r.s.agent), from, to);
+      sessionLane(root, r, x, y, G, reads.get(r.s.agent), from, to, flagged.get(r.s.agent));
       y += LANE.h;
       continue;
     }
@@ -480,9 +485,11 @@ function drawLanes(box, d, opts) {
     const g = svg("g", { class: "tl-lane" + (r.depth ? " kid" : "") + " role-" + String(l.role || "").replace(/[^a-z-]/g, "") }, root);
     const read = reads.get(l.path);
     if (read) svgText({ class: "gread", x: G - 10, y: by + bar - 2, "text-anchor": "end" }, fmtTok(read), g);
-    const name = svgText({ class: "label", x: 4 + r.depth * 10, y: by + bar - 2 }, fit(r.label, Math.floor((G - 14 - r.depth * 10) / 7) - (r.more ? 3 : 0) - (read ? 6 : 0)), g);
+    const fl = flagged.get(l.path);
+    const name = svgText({ class: "label", x: 4 + r.depth * 10, y: by + bar - 2 }, fit(r.label, Math.floor((G - 14 - r.depth * 10) / 7) - (r.more ? 3 : 0) - (read ? 6 : 0) - (fl ? 2 : 0)), g);
     if (r.more) name.append(svgTspan("more", " +" + r.more));
-    hover(name, () => l.path + "\n" + (l.state || "idle") + (l.spec ? " · spec " + l.spec : "") + (l.repo ? " · " + l.repo : ""));
+    if (fl) name.append(svgTspan("flag fl-" + fl.level, " ▲"));
+    hover(name, () => l.path + "\n" + (l.state || "idle") + (l.spec ? " · spec " + l.spec : "") + (l.repo ? " · " + l.repo : "") + (fl ? "\n▲ " + fl.level + ": " + fl.words : ""));
     const live = opts.live && l.state !== "done" && !(l.role === "routine" && l.state !== "working");
     l.segs.forEach((s, i) => {
       const end = live && i === l.segs.length - 1 ? now : s[1];
@@ -521,13 +528,15 @@ function drawLanes(box, d, opts) {
 }
 
 // sessionLane draws a coordinator session's lane: its busy spans coloured
-// by phase, its read in the gutter, a link to its page.
-function sessionLane(root, r, x, y, G, read, from, to) {
+// by phase, its read in the gutter, a ▲ after its name when fl (flagged), a
+// link to its page.
+function sessionLane(root, r, x, y, G, read, from, to, fl) {
   const s = r.s, by = y + (LANE.h - LANE.bar) / 2;
   const g = svg("g", { class: "tl-lane session" }, root);
   if (read) svgText({ class: "gread", x: G - 10, y: by + LANE.bar - 2, "text-anchor": "end" }, fmtTok(read), g);
-  const name = svgText({ class: "label", x: 4, y: by + LANE.bar - 2 }, fit(r.label, Math.floor((G - 14) / 7) - (read ? 6 : 0)), g);
-  hover(name, () => s.agent + (s.repo ? "\n" + s.repo : ""));
+  const name = svgText({ class: "label", x: 4, y: by + LANE.bar - 2 }, fit(r.label, Math.floor((G - 14) / 7) - (read ? 6 : 0) - (fl ? 2 : 0)), g);
+  if (fl) name.append(svgTspan("flag fl-" + fl.level, " ▲"));
+  hover(name, () => s.agent + (s.repo ? "\n" + s.repo : "") + (fl ? "\n▲ " + fl.level + ": " + fl.words : ""));
   for (const [a, b, ph] of s.spans || []) {
     if (b < from || a > to) continue;
     const p = ph === "exec" ? "exec" : "design";
@@ -1025,18 +1034,33 @@ function olderFold(rows, open) {
 }
 
 // renderBand draws the band between the strip and the map: a needRow per
-// needRows entry, the stale and dismissed ones folded into olderFold at
-// the foot, then the operatorRows. Hidden when nothing needs the operator.
+// needRows entry, the flagRows, the stale and dismissed ones folded into
+// olderFold at the foot, then the operatorRows. Hidden when nothing needs the operator.
 function renderBand() {
   const band = $("needs");
   const open = band.querySelector("details.older[open]") !== null;
   const gone = dismissals(), live = [], older = [];
   for (const r of needRows()) (r.stale || isDismissed(r, gone) ? older : live).push(r);
   const rows = live.map((r) => needRow(r, true));
+  rows.push(...flagRows());
   if (older.length) rows.push(olderFold(older, open));
   band.replaceChildren(...rows, ...operatorRows());
   band.hidden = band.childElementCount === 0;
   if (check) checkSoon();
+}
+
+// flagRows are the band's rows for the flagged live agents (/api/usage's
+// band, runaway first): "▲ runaway" or "▲ overworking", the agent linking
+// its page, the flags' words. A row goes when the usage read drops it.
+function flagRows() {
+  return (tok.data && tok.data.band || []).map((b) => {
+    const lvl = b.level === "runaway" ? "runaway" : "overworking";
+    const who = el("a", "who tap", null, el("span", "badge fl-" + lvl, "▲ " + lvl), el("span", "p", agentName(b.agent)));
+    who.setAttribute("href", agentHref(b.agent));
+    const say = el("div", "say", flagWords(b.flags));
+    clampRow(say, "flag " + b.agent);
+    return el("div", "need flag fl-" + lvl, null, who, say);
+  });
 }
 
 // operatorRows are the band's rows for landed specs with steps for the
@@ -1396,11 +1420,24 @@ function renderKpis() {
     tile("Tokens read · " + tl.win, u ? fmtTok(u.read) : "–", u ? "out " + fmtTok(u.out) : "", "#/tokens"),
     tile("Last hour", u ? fmtTok(u.hour) : "–", "read"),
     tile("Landed · " + tl.win, landed.length + win, list(landed.map((l) => l.spec || short(l.path)), 6)),
-    tile("Land refused · " + tl.win, refused + win, worst ? short(worst.path) + " ×" + worstN : ""),
+    flagsTile(u, refused + win, worst ? short(worst.path) + " ×" + worstN : ""),
     tile("Asking / blocked", mesh.tree ? waiting.length : "–", list(waiting.map(short), 3)),
     quotaTile(),
     tile("Routines", queued, [queued === 1 ? "job queued · " : "jobs queued · ", running + " running"], "#/routines"));
   if (check) checkSoon();
+}
+
+// flagsTile counts the window's agents by their worst flag, runaway and
+// overworking, over the land refusals in the window (and the most refused).
+function flagsTile(u, refused, worst) {
+  const n = { runaway: 0, overworking: 0 };
+  for (const a of u ? u.agents : []) {
+    const l = worstLevel(a.flags);
+    if (l in n) n[l]++;
+  }
+  const line = (l) => el("div", n[l] ? "fl-" + l : "muted", "▲ " + n[l] + " " + l);
+  return tile("Flags · " + tl.win, u ? el("div", "v small", null, line("runaway"), line("overworking")) : "–",
+    "land refused " + refused + (worst ? " · " + worst : ""));
 }
 
 // quotaTile is each provider's 5h and week, a meter for the higher week
@@ -1563,8 +1600,29 @@ const usage = loader(async () => {
   tok.data = d;
   tok.win = win;
   drawAll();
+  renderBand();
   ctxPanel.run();
 });
+
+// worstLevel is the worst of an agent's flags (the API lists them worst
+// first): "runaway", "overworking" or "".
+function worstLevel(flags) {
+  return flags && flags.length ? flags[0].level : "";
+}
+
+// flagWords are the flags' words, the worst first.
+function flagWords(flags) {
+  return (flags || []).map((f) => f.words).join("; ");
+}
+
+// flagMap maps each flagged agent of a usage read (its rows and its band)
+// to {level, words}.
+function flagMap(d) {
+  const m = new Map();
+  for (const a of d.agents) if (worstLevel(a.flags)) m.set(a.agent, { level: worstLevel(a.flags), words: flagWords(a.flags) });
+  for (const b of d.band || []) m.set(b.agent, { level: b.level, words: flagWords(b.flags) });
+  return m;
+}
 
 // ctxAgent is the agent the overview's context panel shows: the row
 // selected, else the live agent with the largest context, else the
@@ -1730,7 +1788,10 @@ const AGENT_COLS = [
   ["peak", "peak ctx", (a) => +a.peak || 0, false],
   ["wall", "wall", (a) => (+a.last || 0) - (+a.first || 0), true],
   ["out", "out", (a) => +a.out || 0, true],
+  // runaway first when sorted ascending, as a word column sorts on its first click
+  ["watch", "watch", (a) => -(LEVEL_RANK[worstLevel(a.flags)] || 0), true],
 ];
+const LEVEL_RANK = { runaway: 2, overworking: 1 };
 
 // drawAgents draws the agents table: with opts.limit its first rows and a
 // link to the tokens tab, with opts.sortable a header that sorts it, with
@@ -1754,8 +1815,8 @@ function drawAgents(box, opts) {
   const top = Math.max(1, ...as.map((a) => +a.read || 0));
   const sel = opts.select ? ctxAgent() : "";
   const head = el("tr", null, null, ...AGENT_COLS.map(([key, words, , hide]) => {
-    const num = !["agent", "role", "size", "state", "mainsub"].includes(key);
-    const th = el("th", (num ? "r" : "") + (hide ? " hide-n" : ""));
+    const num = !["agent", "role", "size", "state", "mainsub", "watch"].includes(key);
+    const th = el("th", (num ? "r" : "") + (hide ? " hide-n" : "") + (key === "watch" ? " watch" : ""));
     if (!opts.sortable) {
       th.textContent = words;
       return th;
@@ -1774,8 +1835,11 @@ function drawAgents(box, opts) {
     const name = el("a", "p", agentName(a.agent));
     name.setAttribute("href", agentHref(a.agent));
     name.title = a.agent + (a.repo ? " · " + a.repo : "");
-    const who = el("td", "who", null, name);
+    const lvl = worstLevel(a.flags);
+    const who = el("td", "who" + (lvl ? " fl-" + lvl : ""), null, name);
     if (a.live) who.append(el("span", "livedot", " ●"));
+    // Narrower than 1400px there's no room for the watch column: the words go under the name.
+    if (lvl) who.append(el("div", "wsub fl-" + lvl, "▲ " + flagWords(a.flags)));
     const st = String(a.state || "");
     const bar = el("span", "ms", null, el("i", "m"), el("i", "s"));
     bar.firstChild.style.width = (kindsRead(a.main) / top * 100).toFixed(1) + "%";
@@ -1789,7 +1853,8 @@ function drawAgents(box, opts) {
       el("td", "hide-n", null, bar),
       el("td", "r", a.peak ? fmtTok(a.peak) : "–"),
       el("td", "r hide-n", a.calls > 1 ? dur(((+a.last || 0) - (+a.first || 0)) * 1000) : "–"),
-      el("td", "r hide-n", fmtTok(a.out)));
+      el("td", "r hide-n", fmtTok(a.out)),
+      el("td", "watch hide-n" + (lvl ? " fl-" + lvl : ""), lvl ? "▲ " + flagWords(a.flags) : ""));
     if (opts.select) {
       tr.classList.add("pick");
       tr.addEventListener("click", (ev) => {
@@ -2062,6 +2127,219 @@ function slot(provider) {
   return i < 0 ? PROVIDERS.length + 1 : i + 1;
 }
 
+// --- outliers and burndowns (108) -------------------------------------------
+
+// SIZE_SLOT is a spec size's categorical slot on the outliers chart; XS,
+// fixers and the unsized are muted (slot 0).
+const SIZE_SLOT = { S: 1, M: 2, L: 3 };
+
+// minutes renders a wall time in minutes: "45m", "2h", "2.5h".
+function minutes(m) {
+  return m >= 120 ? +(m / 60).toFixed(1) + "h" : Math.round(m) + "m";
+}
+
+// drawOutliers draws every lead and fixer with use in 30 days (/api/usage's
+// outliers, whatever the window): x its wall minutes, y its read, coloured
+// by size; a flagged point ringed in its level's colour and labelled. A
+// point's hover gives its numbers, its click opens its lead page compared
+// with its vs.
+function drawOutliers(box) {
+  if (!box) return;
+  const pts = tok.data ? tok.data.outliers || [] : null;
+  if (!pts) return box.replaceChildren(el("p", "empty", "loading…"));
+  tally(box, "outliers", pts.length);
+  const leg = legendOf([["o1", "S"], ["o2", "M"], ["o3", "L"], ["o0", "XS & fixers"], ["ring fl-runaway", "runaway"], ["ring fl-overworking", "overworking"]]);
+  if (!pts.length) return box.replaceChildren(leg, el("p", "empty", "No leads or fixers with model calls in 30 days."));
+  const W = Math.max(box.clientWidth, 240), H = 240, P = { l: 46, r: 12, t: 12, b: 20 };
+  const xMax = niceMax(Math.max(...pts.map((p) => (+p.wall || 0) / 60))), yMax = niceMax(Math.max(...pts.map((p) => +p.read || 0)));
+  const x = (m) => P.l + m / xMax * (W - P.l - P.r), y = (v) => H - P.b - v / yMax * (H - P.t - P.b);
+  const root = chartRoot(W, H, "outliers: read against wall time");
+  yAxis(root, y, yMax, P, W, fmtTok);
+  for (let i = 0; i <= 4; i++) {
+    const X = x(xMax * i / 4);
+    svg("line", { class: "grid", x1: X, x2: X, y1: P.t, y2: H - P.b }, root);
+    svgText({ class: "axis", x: X, y: H - 6, "text-anchor": i === 4 ? "end" : "middle" }, minutes(xMax * i / 4), root);
+  }
+  // The flagged on top.
+  const order = pts.slice().sort((a, b) => (LEVEL_RANK[a.level] || 0) - (LEVEL_RANK[b.level] || 0));
+  for (const p of order) {
+    const X = x((+p.wall || 0) / 60), Y = y(+p.read || 0);
+    const k = p.role === "lead" && SIZE_SLOT[p.size] || 0;
+    const g = svg("g", { class: "opt", tabindex: 0, role: "link", "aria-label": p.agent }, root);
+    svg("circle", { class: "dot o" + k, cx: X, cy: Y, r: 4 }, g);
+    if (p.level) {
+      svg("circle", { class: "ring fl-" + p.level, cx: X, cy: Y, r: 7.5 }, g);
+      const short = p.repo && p.repo.length >= 5 && p.agent.startsWith(p.repo + "-") ? abbrev(p.repo) + p.agent.slice(p.repo.length) : p.agent;
+      const right = X > W - 110;
+      svgText({ class: "olabel fl-" + p.level, x: right ? X - 7 : X + 7, y: Math.max(P.t + 8, Y - 9), "text-anchor": right ? "end" : "start" }, short, g);
+    }
+    svg("circle", { class: "hit", cx: X, cy: Y, r: 11 }, g);
+    hover(g, () => p.agent + (p.live ? " ● live" : "") + "\n" + (p.role === "fixer" ? "fixer" : "size " + (p.size || "–")) + " · " + p.repo +
+      "\nread " + fmtTok(p.read) + " · wall " + dur((+p.wall || 0) * 1000) + "\npeak ctx " + fmtTok(p.peak) + " · " + p.turns + " turns" +
+      (p.flags && p.flags.length ? "\n▲ " + p.level + ": " + flagWords(p.flags) : "") +
+      (p.vs && p.vs !== p.agent ? "\nclick: its page, compared with " + p.vs : ""));
+    const go = () => { location.hash = "#/lead/" + p.agent + (p.vs && p.vs !== p.agent ? "?vs=" + encodeURIComponent(p.vs) : ""); };
+    g.addEventListener("click", go);
+    g.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
+    });
+  }
+  box.replaceChildren(leg, root);
+}
+
+// specs is the last /api/specs.
+const specs = { data: null };
+
+const specsLoad = loader(async () => {
+  if (pages.view !== "map" && pages.view !== "specs") return;
+  const r = await fetchJSON("/api/specs");
+  if (!r.body) return;
+  r.body.repos = r.body.repos || [];
+  r.body.families = r.body.families || [];
+  specs.data = r.body;
+  drawAll();
+});
+
+// countAxis is a count axis's top: a multiple of four (whole quarters), at
+// least four.
+function countAxis(v) {
+  return Math.max(4, Math.ceil(v / 4) * 4);
+}
+
+// repoBurn draws a repo's 30 days into box: a bar per day for the specs
+// landed that day, a line for those open at the day's end. Returns the
+// marks drawn.
+function repoBurn(box, r) {
+  const days = r.days || [];
+  const leg = legendOf([["bd-l", "landed that day"], ["bd-o", "open at day's end"]]);
+  if (!days.length) {
+    box.replaceChildren(leg, el("p", "empty", "No spec history read for " + r.repo + "."));
+    return 0;
+  }
+  const W = Math.max(box.clientWidth, 240), H = 190, P = { l: 30, r: 8, t: 8, b: 20 };
+  const n = days.length, bw = (W - P.l - P.r) / n;
+  const yMax = countAxis(Math.max(...days.map((d) => Math.max(d.landed.length, d.open))));
+  const y = (v) => H - P.b - v / yMax * (H - P.t - P.b), cx = (i) => P.l + (i + 0.5) * bw;
+  const root = chartRoot(W, H, r.repo + ": specs per day");
+  yAxis(root, y, yMax, P, W, (v) => String(Math.round(v)));
+  const every = Math.ceil(52 / bw);
+  for (let i = n - 1; i >= 0; i -= every) svgText({ class: "axis", x: i === n - 1 ? W - P.r : cx(i), y: H - 6, "text-anchor": i === n - 1 ? "end" : "middle" }, days[i].day.slice(5), root);
+  let marks = 0;
+  days.forEach((d, i) => {
+    if (!d.landed.length) return;
+    svg("rect", { class: "bar bd-l", x: cx(i) - bw * 0.35, y: y(d.landed.length), width: Math.max(1, bw * 0.7), height: y(0) - y(d.landed.length), rx: 1.5 }, root);
+    marks++;
+  });
+  svg("path", { class: "openline bd-o", d: "M" + days.map((d, i) => cx(i).toFixed(1) + "," + y(d.open).toFixed(1)).join("L") }, root);
+  marks++;
+  if (bw >= 8) for (let i = 0; i < n; i++) svg("circle", { class: "opendot bd-o", cx: cx(i), cy: y(days[i].open), r: 2 }, root);
+  crosshair(root, P, W, H, (px) => {
+    const i = Math.max(0, Math.min(n - 1, Math.floor((px - P.l) / bw)));
+    const d = days[i];
+    return { x: cx(i), text: d.day + "\nlanded " + d.landed.length + (d.landed.length ? ": " + d.landed.join(", ") : "") + "\nopen at day's end " + d.open };
+  });
+  box.replaceChildren(leg, root);
+  return marks;
+}
+
+// familyBurn draws a build family's burndown into box: a step line of its
+// specs still open from its first lead's start, a step down at each lead's
+// done, its land refusals as ✕ on the line, a dashed now while live.
+// Returns the marks drawn.
+function familyBurn(box, f) {
+  const steps = f.steps || [];
+  if (!steps.length) {
+    box.replaceChildren(el("p", "empty", "No leads in " + f.family + "."));
+    return 0;
+  }
+  const now = Math.max(hubNow(), steps[steps.length - 1][0]);
+  const end = f.live ? now : steps[steps.length - 1][0];
+  const from = f.start, to = Math.max(end, from + 600) + (Math.max(end, from + 600) - from) * 0.02;
+  const W = Math.max(box.clientWidth, 240), H = 190, P = { l: 30, r: 8, t: 8, b: 20 };
+  const yMax = countAxis(steps[0][1]);
+  const x = (t) => P.l + (Math.max(from, Math.min(to, t)) - from) / Math.max(1, to - from) * (W - P.l - P.r);
+  const y = (v) => H - P.b - v / yMax * (H - P.t - P.b);
+  const root = chartRoot(W, H, f.family + ": specs open");
+  yAxis(root, y, yMax, P, W, (v) => String(Math.round(v)));
+  timeAxis(root, x, from, to, P.t, H - P.b, H);
+  const openAt = (t) => {
+    let v = steps[0][1];
+    for (const [at, o] of steps) if (at <= t) v = o;
+    return v;
+  };
+  let d = "M" + x(steps[0][0]).toFixed(1) + "," + y(steps[0][1]).toFixed(1);
+  for (const [at, o] of steps.slice(1)) d += "H" + x(at).toFixed(1) + "V" + y(o).toFixed(1);
+  d += "H" + x(end).toFixed(1);
+  svg("path", { class: "stepline", d }, root);
+  let marks = 1;
+  if (f.live) svg("line", { class: "now", x1: x(now), x2: x(now), y1: P.t, y2: H - P.b }, root);
+  const done = (f.leads || []).filter((l) => l.done).sort((a, b) => a.done - b.done);
+  crosshair(root, P, W, H, (px) => {
+    const t = Math.min(end, from + (px - P.l) / (W - P.l - P.r) * (to - from));
+    const by = done.filter((l) => l.done <= t);
+    return { x: x(t), text: md(t) + " " + hm(t) + "  " + openAt(t) + " open" + (by.length ? "\nlast done: " + by[by.length - 1].path : "") };
+  });
+  // Over the crosshair's hit area, so each ✕ has its own tip.
+  for (const [at, path, text] of f.refused || []) {
+    const m = svgText({ class: "tick refused", x: x(at), y: y(openAt(at)) + 4, "text-anchor": "middle" }, "✕", root);
+    hover(m, () => md(at) + " " + hm(at) + "  " + path + "  land refused" + (text ? "\n" + text : ""));
+    marks++;
+  }
+  box.replaceChildren(root);
+  return marks;
+}
+
+// familyNote is a family's subtitle: its repo, leads, start and state.
+function familyNote(f) {
+  const leads = (f.leads || []).length;
+  return f.family + " · " + f.repo + " · " + leads + (leads === 1 ? " lead" : " leads") + " from " + md(f.start) + " " + hm(f.start) + "Z · " +
+    (f.live ? "live" : "finished") + " · step down: a lead done · ✕ land refused" + (f.live ? " · dashed: now" : "");
+}
+
+// drawBurnRow draws the overview's row 5: the newest family's burndown and
+// the busiest repo's 30 days (most landed).
+function drawBurnRow() {
+  const fam = $("fam-map"), rep = $("repo-map");
+  const d = specs.data;
+  if (!d) {
+    for (const b of [fam, rep]) b.replaceChildren(el("p", "empty", "loading…"));
+    return;
+  }
+  let marks = 0;
+  const f = d.families[0];
+  $("fam-sub").textContent = f ? familyNote(f) : "the newest build family's specs still open";
+  if (f) marks += familyBurn(fam, f);
+  else fam.replaceChildren(el("p", "empty", "No build families started in 30 days."));
+  const landed = (r) => (r.days || []).reduce((s, x) => s + x.landed.length, 0);
+  const busy = d.repos.reduce((a, b) => !a || landed(b) > landed(a) ? b : a, null);
+  $("repo-sub").textContent = busy ? busy.repo + " · " + landed(busy) + " landed in 30 days · open: proposed or accepted, not landed" : "no repo configured";
+  if (busy) marks += repoBurn(rep, busy);
+  else rep.replaceChildren(el("p", "empty", "No repos configured."));
+  tally(fam, "burndown", marks);
+}
+
+// drawSpecs draws the specs tab: every repo's 30 days, then every family
+// started in 30 days, newest first.
+function drawSpecs() {
+  const repos = $("specs-repos"), fams = $("specs-families");
+  const d = specs.data;
+  if (!d) return repos.replaceChildren(el("p", "empty", "loading…"));
+  const panel = (title, note) => {
+    const box = el("div", "chart");
+    return { box, p: el("section", "tpanel", null, el("h2", null, title, el("small", null, note)), box) };
+  };
+  const rs = d.repos.map((r) => Object.assign(panel(r.repo, "specs landed per day (bars) and open at each day's end (line), 30 days"), { r }));
+  const fs = d.families.map((f) => Object.assign(panel("Burndown · " + f.family, familyNote(f)), { f }));
+  repos.replaceChildren(...rs.map((x) => x.p));
+  if (!rs.length) repos.replaceChildren(el("p", "empty", "No repos configured."));
+  fams.replaceChildren(...fs.map((x) => x.p));
+  if (!fs.length) fams.replaceChildren(el("p", "empty", "No build families started in 30 days."));
+  let marks = 0;
+  for (const x of rs) marks += repoBurn(x.box, x.r);
+  for (const x of fs) marks += familyBurn(x.box, x.f);
+  tally(repos, "burndown", marks);
+}
+
 // tokensCard is the lead page's tokens card: the four kinds, main and
 // sub, and each subagent with its description.
 function tokensCard(d) {
@@ -2093,14 +2371,17 @@ async function comparePeers(path) {
   const peers = (tok.peers ? tok.peers.agents : []).filter((a) => size && a.size === size && a.role === "lead" && a.state === "done" && a.agent !== path);
   const opts = [el("option", null, peers.length ? "compare with a done " + size + " lead…" : "no done " + (size || "sized") + " lead to compare")];
   opts[0].value = "";
-  for (const a of peers) {
+  const vs = tok.lead && tok.lead.vs || "";
+  // A vs from the hash may be older than the week the list reads.
+  const shown = vs && !peers.some((a) => a.agent === vs) ? [{ agent: vs, read: tok.lead.data && tok.lead.data.vs ? tok.lead.data.vs.agent.read : 0 }] : [];
+  for (const a of peers.concat(shown)) {
     const o = el("option", null, a.agent + " · " + fmtTok(a.read));
     o.value = a.agent;
     opts.push(o);
   }
   sel.replaceChildren(...opts);
-  sel.value = tok.lead && tok.lead.vs || "";
-  sel.disabled = !peers.length;
+  sel.value = vs;
+  sel.disabled = opts.length < 2;
 }
 
 // --- the session page
@@ -2210,6 +2491,7 @@ function connect() {
     loadTree();
     timeline.run();
     usage.run();
+    specsLoad.run();
     if (pages.view === "lead") lead.run();
     if (pages.view === "routines") routines.run();
   };
@@ -2249,9 +2531,10 @@ function checkSoon() {
 
 // selfCheck writes, under ?check=1, whether the page scrolls sideways, the
 // smallest tap target, the tree reads, the timeline drawn (lanes, segments
-// per state, ticks), the KPI tiles, the band's rows (held and landing ones
-// too), the older fold, the digest and the connection history into
-// document.title.
+// per state, ticks), the KPI tiles, the usage panels' counts, the band's
+// flag rows (runaway ones too), the outliers' points, the burndowns' marks,
+// the band's rows (held and landing ones too), the older fold, the digest
+// and the connection history into document.title.
 function selfCheck() {
   const sw = document.documentElement.scrollWidth, iw = window.innerWidth;
   let tap = Infinity;
@@ -2266,6 +2549,7 @@ function selfCheck() {
     (pages.view === "lead" ? ` firstCard=${firstCard()}` : "") +
     ` window=${tl.win} trees=${c.trees} lanes=${c.lanes} segs=${segs} ticks=${c.ticks} kpis=${n("#kpis .tile")}` +
     ` roles=${c.roles} agents=${c.agents} ctx=${c.ctx} quota=${c.quota}` +
+    ` flags=${n("#needs .need.flag")} flagsRunaway=${n("#needs .need.flag.fl-runaway")} outliers=${c.outliers} burndown=${c.burndown}` +
     ` conn=${c.conn.join(">")} replay=${c.replay} live=${c.live}` +
     ` band=${$("needs").hidden ? "hidden" : $("needs").children.length}` +
     ` bandHeld=${n("#needs .need.st-held")} bandLanding=${n("#needs .need.st-landing")}` +
@@ -2289,8 +2573,8 @@ function firstCard() {
 }
 
 // route shows the view the hash names: #/ the overview, #/timeline the
-// timeline, either with ?w=<window>; #/lead/<path> a lead, #/routines the
-// routines.
+// timeline, either with ?w=<window>; #/lead/<path> a lead (with ?vs=<path>
+// compared), #/specs the burndowns, #/routines the routines.
 function route() {
   const [h, q] = location.hash.replace(/^#\/?/, "").split("?");
   const w = new URLSearchParams(q || "").get("w");
@@ -2305,6 +2589,11 @@ function route() {
     view = "lead";
     path = h.slice(5);
     try { path = decodeURIComponent(path); } catch (e) { /* shown as written */ }
+    // ?vs=<path> opens the context chart compared (the outliers' click).
+    const vs = new URLSearchParams(q || "").get("vs");
+    if (vs !== null && !(tok.lead && tok.lead.path === path && tok.lead.vs === vs)) {
+      tok.lead = { path, vs, data: tok.lead && tok.lead.path === path ? tok.lead.data : null };
+    }
     if (path !== pages.leadShown) {
       $("lead-title").textContent = path;
       $("lead-head").replaceChildren();
@@ -2320,18 +2609,20 @@ function route() {
     if (!tok.session || tok.session.agent !== pages.session) {
       for (const b of ["session-head", "session-lane", "session-ctx", "session-subs"]) $(b).replaceChildren();
     }
-  } else if (h === "routines" || h === "timeline" || h === "tokens") {
+  } else if (h === "routines" || h === "timeline" || h === "tokens" || h === "specs") {
     view = h;
   }
   pages.view = view;
   pages.lead = path;
   if (view !== "session") pages.session = "";
-  for (const v of ["map", "timeline", "tokens", "lead", "session", "routines"]) $("view-" + v).hidden = v !== view;
-  $("windows").hidden = view === "lead" || view === "session" || view === "routines";
+  for (const v of ["map", "timeline", "tokens", "specs", "lead", "session", "routines"]) $("view-" + v).hidden = v !== view;
+  $("windows").hidden = view === "lead" || view === "session" || view === "routines" || view === "specs";
   showWindow();
   if (view === "lead") lead.run();
   if (view === "session") sessionPage.run();
   if (view === "routines") routines.run();
+  if (view === "specs") drawAll();
+  if (view === "map" || view === "specs") specsLoad.run();
   if (view === "map" || view === "timeline" || view === "tokens") {
     drawAll(); // the width may have changed while hidden
     timeline.run();
@@ -2380,6 +2671,7 @@ setInterval(() => {
   if (document.hidden) return;
   timeline.run();
   usage.run();
+  specsLoad.run();
 }, 2 * POLL_MS);
 setInterval(() => { if (pages.view === "routines" && !document.hidden) routines.run(); }, ROUTINES_MS);
 setInterval(drawAll, NOW_MS);

@@ -10,7 +10,9 @@
 # state dir too, so it never writes the box's serve record or plugin);
 # seed.pid there holds serve's pid. The seeded mesh also holds token use (the
 # bm-usage stream: leads, an executor, a routine, two coordinator sessions and
-# a day of quota readings) and the app repo's specs 39 to 42 carry a size.
+# a day of quota readings) and the app repo's specs carry a size, over a
+# month of back-dated commits for the burndowns (specs proposed and landed
+# with Spec: trailers on several days).
 # A run stops the previous one of the same checkout first. Other arguments go
 # to the seeder (scripts/seed), e.g. -leads 6. BMESH_SEED_HTTP sets serve's listen address. Serve reads no
 # transcripts: its Claude Code config dir is an empty one.
@@ -52,6 +54,52 @@ stop
 
 rm -rf "$dir/jetstream" "$dir/state" "$dir/serve.log" "$dir/cli.toml" "$dir/app" "$dir/quota.json"
 mkdir -p "$dir/app/docs/proposals" "$dir/app/.bmesh/routines"
+# spec ID SIZE STATUS TITLE writes a short spec: the other leads' specs,
+# for the sizes the usage table and the flags' size rule read.
+spec() {
+	printf -- '---\nid: %s\ntitle: %s\nsize: %s\nstatus: %s\n---\n# %s\n' "$1" "$4" "$2" "$3" "$4" >"$dir/app/docs/proposals/00$1-$4.md"
+}
+# commit DAYS MSG commits everything as of DAYS days ago: the history the
+# burndowns read (a spec's proposed day is its file's first commit, its
+# landed day the commit whose Spec: trailer names it).
+now=$(date +%s)
+commit() {
+	t="@$((now - $1 * 86400)) +0000"
+	git -C "$dir/app" add -A
+	GIT_AUTHOR_DATE=$t GIT_COMMITTER_DATE=$t git -C "$dir/app" -c user.name=seed -c user.email=seed@localhost commit -q -m "$2"
+}
+git -C "$dir/app" init -q -b main
+# A month of specs: app-batch-1's four (30 to 33) and four more proposed
+# 26 days ago, landed over the month; 39 to 42 proposed 12 days ago, 45 to
+# 47 five days ago.
+for id in 30 31 32 33 34 35 36 37; do spec "$id" S accepted "spec-$id"; done
+commit 26 "Propose 30 to 37"
+land() { # land DAYS ID...: each ID done in its own commit with its trailer
+	d=$1
+	shift
+	for id; do
+		spec "$id" S done "spec-$id"
+		commit "$d" "$(printf 'Spec %s\n\nSpec: %s' "$id" "$id")"
+	done
+}
+land 20 34
+land 16 35 36
+spec 39 S accepted legend
+spec 40 L accepted hub-move
+spec 41 S accepted parser
+spec 42 M accepted map
+commit 12 "Propose 39 to 42"
+land 9 37
+spec 45 M accepted fan-out
+spec 46 M proposed cache
+spec 47 S proposed retry
+commit 5 "Propose 45 to 47"
+land 3 30 31 32 33
+spec 40 L building hub-move
+spec 41 S building parser
+spec 45 M building fan-out
+spec 39 S done legend
+commit 0 "$(printf 'Spec 39\n\nSpec: 39')"
 cat >"$dir/app/docs/proposals/0042-map.md" <<'MD'
 ---
 id: 42
@@ -78,12 +126,6 @@ curl -s http://127.0.0.1:3775/api/tree | jq .
 
 The map works at 390x844 and 1280x800.
 MD
-# The other leads' specs, for the sizes the usage table shows.
-for spec in "39 S legend" "40 L hub-move" "41 M parser"; do
-	# shellcheck disable=SC2086
-	set -- $spec
-	printf -- '---\nid: %s\ntitle: %s\nsize: %s\nstatus: building\n---\n# %s\n' "$1" "$3" "$2" "$3" >"$dir/app/docs/proposals/00$1-$3.md"
-done
 # A spec app-round-1's engineer landed (the seed's thread-round-1-eng).
 cat >"$dir/app/docs/proposals/043-faster-tests.md" <<'MD'
 ---
@@ -137,9 +179,7 @@ mode = "fresh"
 model = "claude-opus-5-5"
 prompt = "Screenshot the surface."
 TOML
-git -C "$dir/app" init -q -b main
-git -C "$dir/app" add -A
-git -C "$dir/app" -c user.name=seed -c user.email=seed@localhost commit -q -m seed
+commit 0 seed
 cat >"$dir/serve.toml" <<TOML
 [mesh]
 nats = ""

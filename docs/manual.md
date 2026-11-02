@@ -4083,7 +4083,7 @@ Internals: [internals](internals.md#t3-done)
 
 ### Map
 
-The map (`/`) is a console under a top bar: `BMESH`, the connection (`● live · <host> hub`, else `connecting` or `reconnecting`), the tabs `overview`, `timeline`, `tokens` and `routines`, the window chips `1h 6h 24h 7d`, and the hub's clock in UTC. The window (default `6h`) is kept in the hash (`#/?w=24h`, `#/timeline?w=7d`, `#/tokens?w=1h`) and in this browser across reloads. The look is dark; a browser set to light gets the light palette. Every number, path and time is set in monospace.
+The map (`/`) is a console under a top bar: `BMESH`, the connection (`● live · <host> hub`, else `connecting` or `reconnecting`), the tabs `overview`, `timeline`, `tokens`, `specs` and `routines`, the window chips `1h 6h 24h 7d`, and the hub's clock in UTC. The window (default `6h`) is kept in the hash (`#/?w=24h`, `#/timeline?w=7d`, `#/tokens?w=1h`) and in this browser across reloads. The look is dark; a browser set to light gets the light palette. Every number, path and time is set in monospace.
 
 **The overview** shows, top to bottom:
 
@@ -4092,15 +4092,16 @@ The map (`/`) is a console under a top bar: `BMESH`, the connection (`● live �
    - `Tokens read`: what every agent's model calls read in the window (input, cache read and cache write) and, under it, their output, linking the tokens tab;
    - `Last hour`: what they read in the last hour;
    - `Landed`: the leads `done` in the window, and their spec ids;
-   - `Land refused`: the daemon's `land-refused` events in the window, and the node with the most (`bm-096 ×5`);
+   - `Flags`: the window's agents by their worst flag (`▲ 1 runaway`, `▲ 1 overworking`, each in its level's colour while above zero), and under them the daemon's `land-refused` events in the window and the node with the most (`land refused 6 · bm-096 ×5`);
    - `Asking / blocked`: the nodes asking or blocked, and up to three paths;
    - `Quota`: each provider's 5h and week (`▲` and the warning colour at 80% or more), a meter for the higher week and when that week resets;
    - `Routines`: jobs queued and instances running, linking the routines tab.
 2. The newest digest as a fold (`▸ digest 50m ago: <title>`) that opens to its body, while the digest is younger than twice `[notify] digest_every`; an older one is dropped (the phone's push is unchanged).
 3. **The needs-you band** (below).
 4. **The fleet timeline** (two thirds) beside **tokens read by role** (one third).
-5. **Agents** (two thirds) beside **coordinators: design and execution** (one third).
+5. **Agents** (two thirds) beside **outliers** over **coordinators: design and execution** (one third).
 6. **Context per model call** (two thirds) beside **quota** (one third).
+7. **The spec burndown** of the newest build family (two thirds) beside the busiest repo's **specs, 30 days** (one third; busiest: the most landed in the 30 days).
 
 Narrower than 1000px, each row of two panels stacks to one column.
 
@@ -4113,12 +4114,15 @@ The recent-events drawer is at the foot of every tab.
 - A label is the node's path. When every lane is of one repo with a name of five letters or more, that name is shortened to two letters (`buildermesh-096` is `bm-096`).
 - An executor or engineer folds into its parent's lane, counted after the label (`bm-096 +2`).
 - Live events extend the lanes at once (redrawn at most once a second), and a dashed line marks now, moving every 30 seconds.
+- A flagged agent's lane (a lead's or a session's) has a `▲` after its label, red for `runaway`, orange for `overworking`; hover the label for the flags' words.
 - Each lane's tokens read in the window are in its gutter, after the label (not on a phone, under 700px, where the label takes the gutter).
 - Under the leads, a `coordinators` group draws one lane per coordinator session (a Claude Code session no node owns, `bmesh usage`'s `session.<host>.<id>`) with model calls in the window, labelled `session <first 8 of its id>`, its repo on hover and its read in the gutter. Its bars are its busy spans: runs of model calls less than 5 minutes apart, `design` in violet and `exec` in magenta (its phase, as `bmesh usage` splits it). No state is drawn in either colour. Click a session's lane for its page.
 
 **Tokens read by role** stacks what the window's model calls read, per bucket (a minute on `1h`, 10 minutes on `6h`, 30 on `24h`, 3 hours on `7d`), in five series in this order: `leads` (leads, fixers, rounds and engineers, their own calls), `subagents` (executors and the Agent subagents of nodes), coordinator `design` and `exec` (a coordinator session's calls and its subagents', by phase) and `routines`. Hover for each series and the total of a bucket.
 
-**Agents** lists every agent with model calls in the window, most read first: its path or `session <id8>` (`●` when live: a node at work or waiting, or a session with a call in the last hour), role, its spec's `size` or its repo, state, read, a bar of its main thread's read (blue) against its subagents' (orange), peak context, wall time from first to last call, and output. The overview shows the first 20 rows and a link to the tokens tab. The agent links to its lead or session page; a click elsewhere on the row shows its context in the panel below.
+**Agents** lists every agent with model calls in the window, most read first: its path or `session <id8>` (`●` when live: a node at work or waiting, or a session with a call in the last hour), role, its spec's `size` or its repo, state, read, a bar of its main thread's read (blue) against its subagents' (orange), peak context, wall time from first to last call, output, and `watch`: every flag's words, `▲` first, in its level's colour, for live and done agents alike, the row's first cell ruled on its left in the worst level's colour. Narrower than 1400px the words go under the agent's name instead of in a column. On the tokens tab, sorting by `watch` puts runaways first. The overview shows the first 20 rows and a link to the tokens tab. The agent links to its lead or session page; a click elsewhere on the row shows its context in the panel below.
+
+**Outliers** plots every lead and fixer with model calls in the last 30 days, whatever the window: across, its wall time in minutes (from its start to its `done`, or to now while live); up, its read. A point's colour is its spec's size, `S` blue, `M` orange and `L` teal, with `XS` and fixers in grey. A flagged one is ringed in its level's colour and labelled with its path. There is no threshold line: each run is judged against its own repo's size median. Hover a point for its path, size, read, wall time, peak context and turns (main-thread calls). Click it for its lead page, compared (`?vs=` in the hash) with the done run of its size nearest that size's median read.
 
 **Coordinators: design and execution** has a row per coordinator session in the window: a bar of its design read (violet) against its exec read (magenta), both numbers, the design share, its peak context and its last call.
 
@@ -4127,11 +4131,17 @@ The recent-events drawer is at the foot of every tab.
 - The lower chart has a bar per call for the context it added, the two largest labelled with what fed them (`+19k Read cases.go`: the tool uses of the message before). A node's land refusals (`✕`) and readies (`▲`) run along its axis.
 - Hover either for the nearest call's time, context, growth, output and cause.
 
+**The spec burndown** draws a build family (its leads' `family`): a step line of its specs still open from its first lead's start, a step down at each lead's `done`, each of its leads' land refusals as a `✕` on the line (hover for its time, node and words), and a dashed `now` while any lead is live. Its subtitle gives the family, repo, lead count, start and whether it is live.
+
+**Specs, 30 days** draws a repo's last 30 UTC days: a bar for the specs landed each day (hover for their ids) and a line for the specs open at each day's end (proposed or accepted, not landed; rejected specs are left out). Both are read from `/api/specs` (see [internals](internals.md#map)).
+
 **Quota** draws each provider's week (solid) and 5-hour (dashed) use over the window on one percent axis, a provider in one colour, each reset in the window as a faint line. Its readings are the strip's, each good run kept on the mesh (below).
 
 Narrower than 1000px, the tiles go to three columns (two under 480px), band rows put their words under the badge, and the timeline's label gutter narrows, with a grid line each hour on `6h` and `24h`.
 
 **The timeline tab** draws every node's lane, executors and engineers in thinner lanes under their parent. Under them, in a `routines` group, it draws one lane per routine instance with a job in the window, each job a segment from its start to its end.
+
+**The specs tab** (`#/specs`) draws every configured repo's 30 days, then the burndown of every build family started in the last 30 days, newest first. It has no window chips.
 
 **The tokens tab** draws tokens read by role full width, the agents table with every agent in the window (click a column heading to sort by it, again to reverse), and the quota chart.
 
@@ -4146,8 +4156,9 @@ Narrower than 1000px, the tiles go to three columns (two under 480px), band rows
 **The needs-you band** under the KPI row has these rows, each with a 3px rule in its state's colour and a badge with an icon (`■ blocked`, `? asking`, `◌ silent`, `▸ operator`):
 
 1. One row per lead, round or engineer that is `asking`, `blocked` or `silent`, in need order and newest first within a state: badge, path (linking its lead page), the state's words (the ask or block text; for a silent node `quiet for 20m` and how long ago) and a `×`. A row leaves on the node's next `started`, `progress` or `done`.
-2. Then, when any row is stale or dismissed, one muted line, `▸ 1 older: buildermesh-round-2 blocked 16h`, that opens in place to those rows.
-3. Then one row per landed spec with operator steps still open, from every configured repo: badge, `<repo> NNN`, and `<title>: X of Y open · bmesh spec steps NNN --repo <repo>`. The row goes once every step is ticked.
+2. Then one row per flagged live agent (a node not done, or a coordinator session with a model call in the last hour), runaways first: `▲ runaway` in red or `▲ overworking` in orange, the agent (its path, or `session <id8>`, linking its lead or session page) and its flags' words, the worst first (`read 143M in the last hour`; `read 42.2M, 4.1× the buildermesh M median (10.2M); land refused 5× (3 rebase conflicts, 2 reviews failed)`). It has no `×`: it leaves when the flag clears or the agent is done, at the next usage read (every minute).
+3. Then, when any row is stale or dismissed, one muted line, `▸ 1 older: buildermesh-round-2 blocked 16h`, that opens in place to those rows.
+4. Then one row per landed spec with operator steps still open, from every configured repo: badge, `<repo> NNN`, and `<title>: X of Y open · bmesh spec steps NNN --repo <repo>`. The row goes once every step is ticked.
 
 **Stale needs.** An `asking`, `blocked` or `silent` state older than `[serve] stale_after` (default `6h`; `"0"`: never) is stale. Its row leaves the band's top rows for the older line, and its lane sorts after `held`, ahead of `idle`. The node's next event makes it fresh.
 
@@ -4162,7 +4173,7 @@ A `held` lead (a coordinator holds it at a gate) and a `landing` lead (it ran `r
 3. a `tokens` card: the four kinds (input, cache read, cache write, output) for its main thread and its subagents, then each subagent with its description, read, output and calls;
 4. its inbox and timeline.
 
-Between its lanes and the cards, its context per model call over its life (as on the overview). Its `compare` select lists the done leads of its spec's size with model calls in the last week; choosing one draws that lead in orange beside it, both on minutes since their first call.
+Between its lanes and the cards, its context per model call over its life (as on the overview). Its `compare` select lists the done leads of its spec's size with model calls in the last week; choosing one draws that lead in orange beside it, both on minutes since their first call. `#/lead/<path>?vs=<path>` opens the page compared (the outliers' click).
 
 The spec is read from the repo's local `origin/main` (`main` without an origin). While lead pages are viewed, the daemon fetches `origin main` in the background at most once a minute per repo, so a spec shows a minute or two after landing. A card with nothing to show (`no spec`, `no messages`, no events) is one muted line.
 

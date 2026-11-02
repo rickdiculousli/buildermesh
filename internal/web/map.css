@@ -179,7 +179,7 @@ a.tile:hover { text-decoration: none; border-color: var(--tm); }
 .need .who { display: inline-flex; align-items: center; gap: 10px; min-height: 36px; color: var(--tp); }
 .need .who:hover { text-decoration: none; }
 .need .who .p { font-family: var(--mono); overflow-wrap: anywhere; }
-.need .badge { border: 0; padding: 0; min-width: 96px; }
+.need .badge { border: 0; padding: 0; min-width: 118px; }
 /* The row's bottom padding sits on the row, not the words: a clamped box
    shows its overflow through its own padding. */
 .need .say { min-height: 28px; font-size: 13px; line-height: 20px; padding-top: 8px; overflow-wrap: anywhere; color: var(--ts); }
@@ -588,3 +588,58 @@ a.tile:hover { text-decoration: none; border-color: var(--tm); }
   .hide-n { display: none; }
   .ms { width: 70px; }
 }
+
+/* The flags (108): runaway in critical, overworking in serious, always
+   with a ▲ and the level's word or the rule's words. */
+:root { --runaway: var(--crit); --overworking: var(--ser); }
+.need.fl-runaway { border-left-color: var(--runaway); cursor: default; }
+.need.fl-overworking { border-left-color: var(--overworking); cursor: default; }
+.badge.fl-runaway { color: var(--runaway); }
+.badge.fl-overworking { color: var(--overworking); }
+.tile .v .fl-runaway { color: var(--runaway); }
+.tile .v .fl-overworking { color: var(--overworking); }
+.tile .v .muted { color: var(--tm); }
+.tl .label .flag.fl-runaway { fill: var(--runaway); }
+.tl .label .flag.fl-overworking { fill: var(--overworking); }
+.ag td.who.fl-runaway { border-left: 3px solid var(--runaway); }
+.ag td.who.fl-overworking { border-left: 3px solid var(--overworking); }
+.ag td.watch { min-width: 160px; max-width: 340px; white-space: normal; overflow-wrap: anywhere; font-size: 11px; line-height: 1.35; }
+.ag td.watch.fl-runaway { color: var(--runaway); }
+.ag td.watch.fl-overworking { color: var(--overworking); }
+.ag .wsub { display: none; }
+.ag .wsub.fl-runaway { color: var(--runaway); }
+.ag .wsub.fl-overworking { color: var(--overworking); }
+@media (max-width: 1399px) {
+  .ag .watch { display: none; }
+  .ag .wsub { display: block; max-width: 220px; white-space: normal; overflow-wrap: anywhere; font-size: 11px; line-height: 1.35; }
+}
+/* Row 3's right column: the outliers over the coordinators. */
+.col { display: grid; gap: var(--pad); min-width: 0; align-content: start; }
+/* Outliers: S, M and L in the first three categorical slots, the rest muted. */
+.chart .dot { stroke: var(--s1); stroke-width: 1; }
+.chart .dot.o0, .legend i.o0 { fill: var(--tm); background: var(--tm); }
+.chart .dot.o1, .legend i.o1 { fill: var(--c1); background: var(--c1); }
+.chart .dot.o2, .legend i.o2 { fill: var(--c2); background: var(--c2); }
+.chart .dot.o3, .legend i.o3 { fill: var(--c3); background: var(--c3); }
+.chart .ring { fill: none; stroke-width: 2; }
+.chart .ring.fl-runaway { stroke: var(--runaway); }
+.chart .ring.fl-overworking { stroke: var(--overworking); }
+.legend i.ring { background: none; border-radius: 50%; border: 2px solid; }
+.legend i.ring.fl-runaway { border-color: var(--runaway); }
+.legend i.ring.fl-overworking { border-color: var(--overworking); }
+.chart .olabel.fl-runaway { fill: var(--runaway); }
+.chart .olabel.fl-overworking { fill: var(--overworking); }
+.chart .opt { cursor: pointer; outline: none; }
+.chart .opt .hit { fill: transparent; }
+.chart .opt:hover .dot, .chart .opt:focus-visible .dot { stroke: var(--tp); stroke-width: 1.5; }
+/* Burndowns: landed bars in slot 1, open line in slot 2, a family's step line in slot 1. */
+.chart .bar.bd-l, .legend i.bd-l { fill: var(--c1); background: var(--c1); }
+.legend i.bd-o { background: var(--c2); height: 3px; vertical-align: 2px; }
+.chart .openline { fill: none; stroke: var(--c2); stroke-width: 2; stroke-linejoin: round; }
+.chart .opendot { fill: var(--c2); }
+.chart .stepline { fill: none; stroke: var(--c1); stroke-width: 2; }
+.chart .now { stroke: var(--ts); stroke-width: 1; stroke-dasharray: 2 3; }
+.chart .tick.refused { font-size: 14px; }
+/* The specs tab: a card per repo, then a card per family. */
+.cards { display: grid; gap: var(--pad); grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr)); }
+.cards > .empty { grid-column: 1 / -1; }
