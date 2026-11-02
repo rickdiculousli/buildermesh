@@ -14,6 +14,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
+	"github.com/rickdiculousli/buildermesh/internal/usage"
 )
 
 const (
@@ -44,6 +45,9 @@ type server struct {
 
 	histMu sync.Mutex // held through a read of hist
 	hist   histEntry  // bm-mesh read whole, for /api/timeline
+
+	usageMu    sync.Mutex            // held through a read of usageCache
+	usageCache map[string]usageEntry // /api/usage by window
 }
 
 type histEntry struct {
@@ -94,10 +98,10 @@ func newServer(c *mesh.Client, o Options) *server {
 	}
 	quota := o.Quota
 	if quota == nil {
-		quota = &Quota{Command: cfg.Quota.Command}
+		quota = &Quota{Command: cfg.Quota.Command, Client: c, Host: o.Host}
 	}
 	return &server{c: c, cfg: cfg, host: o.Host, now: now, quota: quota, log: log,
-		specs: map[string]specEntry{}, ledgers: map[string]ledgerEntry{}, fetched: map[string]time.Time{}}
+		usageCache: map[string]usageEntry{}, specs: map[string]specEntry{}, ledgers: map[string]ledgerEntry{}, fetched: map[string]time.Time{}}
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
@@ -664,9 +668,9 @@ type digest struct {
 // stripView is /api/strip; DigestEvery is the daemon's digest period in
 // seconds, so the page drops a digest older than twice it.
 type stripView struct {
-	Quota       []Reading `json:"quota"`
-	Digest      *digest   `json:"digest"`
-	DigestEvery int64     `json:"digest_every"`
+	Quota       []usage.QuotaReading `json:"quota"`
+	Digest      *digest              `json:"digest"`
+	DigestEvery int64                `json:"digest_every"`
 }
 
 func (s *server) strip(w http.ResponseWriter, r *http.Request) {
