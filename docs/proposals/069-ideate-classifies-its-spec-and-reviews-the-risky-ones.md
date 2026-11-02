@@ -4,7 +4,7 @@ title: The session that wrote an idea's spec judges in context whether a mistake
 kind: feature
 size: M
 judge: opus
-status: accepted
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-17
@@ -53,6 +53,8 @@ In:
   - its Skills section on `ideate` and `ideate-engineer`;
   - the README's command index.
 
+As built: the `ideate` skill this names was folded into `work`, whose one step that writes a spec is `references/leads.md` ("A spec you write for a lead lands first"), so the pointer is there; `ideate-engineer`'s sections are named, so the check is its "Check the spec" section, between "The half-pagers" and "Land on main", and the pointers name it. `choose-ideas` is gone too, so the reviewer's forbidden list drops it.
+
 Out: rounds, a second review pass, a classification file a repo sets, any record on the mesh, and the repo's `review` routine kind (it reviews a diff for bugs, with only `git diff` and `git log`, and doesn't fit a spec).
 
 Judge: opus, because the skill text decides when an Opus review is spent, and the rulings' move must leave the fix brief exactly as it renders.
@@ -85,6 +87,6 @@ The repo's verify, plus:
 - **Alternative: copy the rulings into the skills with a match test.** No new command, but two more copies to keep in step, where the manual's copy has already drifted.
 
 ## Upgrading
-Update the buildermesh plugin after `bmesh update`, not before. Skills that call `bmesh spec rulings` on an older binary report `qa: not run (bmesh has no spec rulings; update it)` and land without the review.
+nothing: the skills come with the binary that has `bmesh spec rulings`. A session whose skills are newer than its binary (`claude --plugin-dir <checkout>`) reports `qa: not run (bmesh has no spec rulings; update it)` and lands without the review.
 
 ## Needs from the operator
