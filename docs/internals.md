@@ -417,6 +417,8 @@ The sets are embedded from `internal/scaffold/rules/<name>.md`. The opening mark
 - registry (`bmesh/registry/v1`): `type, version, admin_key, rows, issued_at`;
 - presence (`bmesh/presence/v1`): `type, host, rev, os, routines, repos (name, path, origin), notes, ts`; its `held_sig` over those, then `held (kind, repo, from, commits, id, expires)` in their order.
 
+**A protected key's request** (`hosts.Request`: title, details, the items' bytes) is composed with every item it signs before the key is read: the unsigned roster (`Local.Next`, in its signed form), registry (`NextRegistry`), jobs (`ComposeJob`) or approval (`ComposeApprove`). Its sum is the SHA-256 of the items' bytes one after another, shown as 8 hex; after the read, `Request.Sign` signs each item's bytes as shown and the caller sets each `sig`. `Publish` and `PublishRegistry` take the signed document and refuse one whose version isn't the box's next. The Keychain store runs `osascript -e 'on run argv' -e 'display dialog …' -e 'end run' "bmesh: <title>" "<lines>"` (`giving up after 120`) before any `security` call, and reads only on `button returned:Continue to Keychain`; error `-128` or `gave up:true` is `hosts.ErrCancelled`, which the commands refuse with exit 3.
+
 **The receive check**, in order, stopping at the first failure:
 
 1. `by` is in the roster (an op that needs the admin is checked against the admin key).
@@ -640,11 +642,12 @@ These variables swap what bmesh runs or reads (commands split on spaces):
 | `BMESH_GO_COMMAND` | the `go` an update builds with | `sh <repo>/testdata/fake-go.sh` |
 | `BMESH_UPSTREAM_URL` | `https://<module path>`, where an update without a row and the notice read the module's `main` | a local repo |
 | `BMESH_SECURITY_COMMAND` | the macOS `security` the Keychain key store runs | `sh <repo>/testdata/fake-security.sh`: items under `$FAKE_SECURITY_DIR`, access list from `$FAKE_SECURITY_ACL` |
+| `BMESH_OSASCRIPT_COMMAND` | the macOS `osascript` that shows the `bmesh:` dialog before a Keychain read | `sh <repo>/testdata/fake-osascript.sh`: logs `osascript <title>` to `$FAKE_OSASCRIPT_LOG`, writes the body to `$FAKE_OSASCRIPT_BODY`, answers per `$FAKE_OSASCRIPT_ANSWER` (`continue`, the default, `cancel`, `giveup` or `fail`) |
 | `BMESH_CODEX_COMMAND` | the `codex` a level's plugin refresh runs (unset: only when on `PATH`) | `sh <repo>/testdata/fake-codex.sh` |
 | `BMESH_KEY_STORE` | the key store default (`keychain` or `file`) when `[hosts] key_store` is unset | `file` |
 | `BMESH_CACHE_DIR` | the user cache dir (`os.UserCacheDir`: `~/.cache` or `$XDG_CACHE_HOME` on Linux, `~/Library/Caches` on macOS), an absolute path, where briefs and a claude session's files go | |
 
-The `cmd/bmesh` tests set `BMESH_UPSTREAM_URL`, `XDG_STATE_HOME`, `BMESH_KEY_STORE`, `BMESH_SECURITY_COMMAND`, `BMESH_CLAUDE_COMMAND`, `BMESH_CODEX_COMMAND` and `BMESH_CACHE_DIR` package-wide (a test's own setting wins), and unset `CLAUDE_CODE_SESSION_ID`, so no test reaches the network, the box's notice or cache, the real Keychain dialog, the box's own `claude` and `codex`, or the transcript of the session running them. The context tests set `CLAUDE_CODE_SESSION_ID` and `CLAUDE_CONFIG_DIR` to a fake transcript of their own. Leave all ten unset outside tests.
+The `cmd/bmesh` tests set `BMESH_UPSTREAM_URL`, `XDG_STATE_HOME`, `BMESH_KEY_STORE`, `BMESH_SECURITY_COMMAND`, `BMESH_OSASCRIPT_COMMAND`, `BMESH_CLAUDE_COMMAND`, `BMESH_CODEX_COMMAND` and `BMESH_CACHE_DIR` package-wide (a test's own setting wins), and unset `CLAUDE_CODE_SESSION_ID`, so no test reaches the network, the box's notice or cache, the real Keychain or `bmesh:` dialog, the box's own `claude` and `codex`, or the transcript of the session running them. The context tests set `CLAUDE_CODE_SESSION_ID` and `CLAUDE_CONFIG_DIR` to a fake transcript of their own. Leave all eleven unset outside tests.
 
 The t3 runner, `bmesh t3 login`, the expiry pushes and the `lead start`, `build`, `ideate` and `node forget` tests run against `internal/runner/t3mcp/t3fake`, an `httptest` T3 0.1.0 (the environment document, the MCP OAuth endpoints and the MCP tools) that answers with shapes recorded from a live 0.1.0 server, kept in `testdata/t3v2/`.
 

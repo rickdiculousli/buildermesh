@@ -2524,7 +2524,7 @@ On the admin box, prints a one-time code for a new box to join with, then waits.
 | `--accept a,b` | `ping` | the ops the box accepts, comma-separated |
 | `--replace` | off | the name may already be in the roster; the joining box replaces its row |
 
-**Output.** `invite for <name>: <id>-<secret>`, then `` good once, until <hh:mm>: on <name> run `bmesh init --hosts` and type it at its prompt; waiting ``. The id (8 hex characters) isn't secret. The secret is 128 random bits in base32. The code works once, within 10 minutes. When the box joins, the command prints `joined: <name>, roster v<N>`.
+**Output.** First the admin key's request, `bmesh: Sign roster v<N> when <name> joins` with the row it adds (see [Hosts: Keys](#keys)); then `invite for <name>: <id>-<secret>`, then `` good once, until <hh:mm>: on <name> run `bmesh init --hosts` and type it at its prompt; waiting ``. The id (8 hex characters) isn't secret. The secret is 128 random bits in base32. The code works once, within 10 minutes. When the box joins, the command prints `joined: <name>, roster v<N>`.
 
 **Refusals.**
 
@@ -2534,8 +2534,9 @@ On the admin box, prints a one-time code for a new box to join with, then waits.
 | the name isn't one subject token | 2 | `host name "<name>": want lowercase letters, digits and single hyphens (at most 63)` |
 | the name is the admin's own (its row carries the admin key) | 3 | `<name> is the admin box: its row carries the admin key, so no invite replaces it` |
 | the name is already in the roster, without `--replace` | 3 | `<name> is already in the roster (invite it again with --replace)` |
-| this box isn't the roster's admin | 3 | `only the admin box (<admin>) can <action>` |
-| stdin isn't a terminal | 3 | `<action> needs the admin at this box's own screen (stdin is not a terminal)` |
+| this box isn't the roster's admin | 3 | `only the admin box (<admin>) can sign roster v<N> when <name> joins` |
+| stdin isn't a terminal | 3 | `sign roster v<N> when <name> joins needs the admin at this box's own screen (stdin is not a terminal)` |
+| `Cancel` at the `bmesh:` dialog, or no answer in 2 minutes (the `keychain` store) | 3 | `cancelled at the dialog: nothing signed` |
 
 Refused also as [`bmesh hosts`](#bmesh-hosts) is.
 
@@ -2552,7 +2553,7 @@ On the admin box, changes a box's row and publishes the next roster.
 | `--secure=true\|false` | unchanged | mark the box secure or not; secure needs the box's approve key, which only a `--secure` invite gives |
 | `--accept a,b` | unchanged | the ops the box accepts, comma-separated (`""` accepts none) |
 
-**Output.** `roster v<N>: …`, in the form `roster v<N>: <name> <secure\|not secure>, accept <ops>`.
+**Output.** First the admin key's request, `bmesh: Sign roster v<N>` with the row's change (see [Hosts: Keys](#keys)); then `roster v<N>: …`, in the form `roster v<N>: <name> <secure\|not secure>, accept <ops>`.
 
 **Refusals.**
 
@@ -2561,8 +2562,9 @@ On the admin box, changes a box's row and publishes the next roster.
 | no name, or neither flag given | 2 | `usage: bmesh hosts set <name> [--secure=true\|false] [--accept a,b]` |
 | the name isn't in the roster | 3 | `<name> is not in the roster` |
 | `--secure=true` for a box with no approve key | 3 | `<name> has no approve key: invite it again with --secure --replace` |
-| this box isn't the roster's admin | 3 | `only the admin box (<admin>) can <action>` |
-| stdin isn't a terminal | 3 | `<action> needs the admin at this box's own screen (stdin is not a terminal)` |
+| this box isn't the roster's admin | 3 | `only the admin box (<admin>) can sign roster v<N>` |
+| stdin isn't a terminal | 3 | `sign roster v<N> needs the admin at this box's own screen (stdin is not a terminal)` |
+| `Cancel` at the `bmesh:` dialog, or no answer in 2 minutes (the `keychain` store) | 3 | `cancelled at the dialog: nothing signed` |
 
 Refused also as [`bmesh hosts`](#bmesh-hosts) is.
 
@@ -2576,7 +2578,7 @@ bmesh hosts revoke <name>
 
 On the admin box, publishes the next roster without the box. No other box can revoke a box.
 
-**Output.** `roster v<N>: …`, in the form `roster v<N>: <name> revoked`.
+**Output.** First the admin key's request, `bmesh: Sign roster v<N>` with `- <name>` (see [Hosts: Keys](#keys)); then `roster v<N>: …`, in the form `roster v<N>: <name> revoked`.
 
 **Refusals.**
 
@@ -2585,8 +2587,9 @@ On the admin box, publishes the next roster without the box. No other box can re
 | no name, or extra arguments | 2 | `usage: bmesh hosts revoke <name>` |
 | the name isn't in the roster | 3 | `<name> is not in the roster` |
 | the name is the admin's own | 3 | `the admin can't revoke itself` |
-| this box isn't the roster's admin | 3 | `only the admin box (<admin>) can <action>` |
-| stdin isn't a terminal | 3 | `<action> needs the admin at this box's own screen (stdin is not a terminal)` |
+| this box isn't the roster's admin | 3 | `only the admin box (<admin>) can sign roster v<N>` |
+| stdin isn't a terminal | 3 | `sign roster v<N> needs the admin at this box's own screen (stdin is not a terminal)` |
+| `Cancel` at the `bmesh:` dialog, or no answer in 2 minutes (the `keychain` store) | 3 | `cancelled at the dialog: nothing signed` |
 
 Refused also as [`bmesh hosts`](#bmesh-hosts) is.
 
@@ -2656,15 +2659,15 @@ At the box's own screen, approves a hold: a held level on a secure box, or a reg
 **What it does** for a held level:
 
 1. It shows the log again.
-2. It reads the approve key (the admin key on the admin box), through the announced Keychain dialog or the passphrase (see [Hosts: Keys](#keys)).
+2. It reads the approve key (the admin key on the admin box) for the request `Approve level of <repo>`: `<repo>: <head8> -> <target8>, +<n> commits`, the log's first lines and the sum of the approval it signs, behind the `bmesh:` dialog and the Keychain's, or the passphrase (see [Hosts: Keys](#keys)).
 3. It signs an approval of the job at the target the operator saw, and sends it to the box's daemon.
 4. The daemon checks that the approval is signed by the box's roster approve key, names the hold's job and target, and is within 5 minutes of its clock.
 5. The daemon checks that the job's signature still verifies against its sender, and that the sender is still in the roster. Else it drops the hold.
-6. The daemon levels. When origin moved since the hold, nothing moves: the daemon updates the hold to the new target and log, and the command shows them and prompts again (`Approve <repo> at <target8>? [y/N]`), signing again with the key it read.
+6. The daemon levels. When origin moved since the hold, nothing moves: the daemon updates the hold to the new target and log, and the command shows them and prompts again (`Approve <repo> at <target8>? [y/N]`); a yes reads the key again for the new approval's request (step 2).
 
 Approved, it prints `<repo>: fast-forwarded <N> (approved)`. The job's sender gets this as a second reply. An answer other than yes to the prompt prints `left held: <id>` and exits 0; the hold stays.
 
-**What it does** for a registry proposal, at the admin's screen: it shows the diff, reads the admin key and publishes the proposal as the next version, `registry v<N> published: proposal from <box> approved`. The proposer gets the reply `approved: registry v<N> (<N> row changes)`. While the admin's own `repos.toml` has changes the registry doesn't, the approval is refused and the proposal stays held.
+**What it does** for a registry proposal, at the admin's screen: it shows the diff, reads the admin key for the request `Publish registry v<N> (proposal from <box>)` with the diff and the sum of the registry it signs, and publishes the proposal as the next version, `registry v<N> published: proposal from <box> approved`. The proposer gets the reply `approved: registry v<N> (<N> row changes)`. While the admin's own `repos.toml` has changes the registry doesn't, the approval is refused and the proposal stays held.
 
 **Refusals.**
 
@@ -2677,6 +2680,7 @@ Approved, it prints `<repo>: fast-forwarded <N> (approved)`. The job's sender ge
 | the daemon answers that it did not level | 3 | `not levelled`, after the daemon's answer |
 | the approve key read from the store isn't the roster's | 3 | `the <name> key in the <store> store isn't the approve key the roster names (<fingerprint>)` |
 | no answer to the re-prompt (stdin closed) | 3 | `left held: no answer` |
+| `Cancel` at the `bmesh:` dialog, or no answer in 2 minutes (the `keychain` store) | 3 | `cancelled at the dialog: nothing signed` |
 | a registry proposal that expired, doesn't verify, or was superseded; the hold is dropped and the proposer told | 3 | `<reason>: hold <id> dropped` |
 | a registry proposal while the admin's `repos.toml` has changes the registry doesn't; the proposal stays held | 3 | see below |
 
@@ -2810,7 +2814,7 @@ On the admin box, with `[hosts]` on, publishes this box's `repos.toml` as the ne
 
 1. It takes a newer registry from the hub first, when there is one, and then stops, refused (see the Refusals below).
 2. It prints the row diff from the current registry to this box's `repos.toml`: `registry v<N> -> v<N+1>:`, then `+ <name>: <field> <value>, …`, `- <name>` and `~ <name>: <field>: <old> -> <new>` lines, or `(comments and layout only)`.
-3. It reads the admin key (the announced dialog: `publish registry v<N+1>`).
+3. It reads the admin key for the request `Publish registry v<N+1>`, the row diff and the sum of the registry it signs (see [Hosts: Keys](#keys)).
 4. It publishes the next version: `registry v<N+1> published`. The version comes from the box's own record, never the hub's.
 
 **Output.** An unchanged file prints `registry v<N>: no change`.
@@ -2823,6 +2827,8 @@ On the admin box, with `[hosts]` on, publishes this box's `repos.toml` as the ne
 | this box isn't the admin | 3 | `` only the admin box (<admin>) publishes the registry: run `bmesh repos propose` to send it this box's changes `` |
 | the hub has a newer registry this bmesh can't read | 3 | `` the hub has registry v<N>, which this bmesh can't read: <error>; run `bmesh update` `` |
 | two names share a node token | 3 | `bmesh: repos Foo and foo are both foo in node paths; rename one` (see [Names](#names)) |
+| `Cancel` at the `bmesh:` dialog, or no answer in 2 minutes (the `keychain` store) | 3 | `cancelled at the dialog: nothing signed` |
+| the box's registry moved between the request and the publish | 1 | `registry v<N> was signed, but this box is at v<M> now: nothing published, run it again` |
 
 #### `bmesh repos propose`
 
@@ -2874,7 +2880,7 @@ On the admin box, publishes the next registry without the row. With `--checkouts
 **What it does** with `--checkouts`, in order:
 
 1. It takes a newer registry from the hub first, when there is one, as [`bmesh repos publish`](#bmesh-repos-publish) does, and stops there with the same message.
-2. It sends `nix` to every roster box whose verified presence lists the repo, the admin box too. Each box must accept `nix`. One read of the admin key signs the jobs and the registry.
+2. It sends `nix` to every roster box whose verified presence lists the repo, the admin box too. Each box must accept `nix`. One read of the admin key signs the jobs and the registry: its one request, `Send nix to <n> boxes, then publish registry v<N+1>`, names the repo, the boxes and its origin, then `then registry v<N+1>: - <name>, once every box answers removed or absent`, and the sum of all of them (see [Hosts: Keys](#keys)). The registry is signed then, and published only at step 4; a run that ends pending drops it, and the next run signs afresh. When no box is left to ask, the request is `Publish registry v<N+1>` with `- <name>`.
 3. It prints each answer.
 4. Once every box has answered `removed` or `absent`, it publishes the next registry without the row: `registry v<N>: <name> removed`.
 5. Until then it prints `pending: <box>, …; the registry keeps <name> until each answers removed or absent (run this again to re-ask them)` and remembers the boxes and their jobs. Run again, it counts the answers that arrived since and re-asks only the boxes still pending.
@@ -2892,6 +2898,7 @@ Without `--apply` it prints the boxes it would ask and the version it would publ
 | with `[hosts]` off, the row isn't in this box's `repos.toml` | 3 | `no repo "<name>" in <path>` |
 | `--checkouts` with `[hosts]` off | 3 | `` --checkouts sends nix to every box: it needs [hosts] enabled (`bmesh init --hosts`) `` |
 | the hub has a newer registry this bmesh can't read, or had a newer one it just took | 3 | as [`bmesh repos publish`](#bmesh-repos-publish) |
+| `Cancel` at the `bmesh:` dialog, or no answer in 2 minutes (the `keychain` store) | 3 | `cancelled at the dialog: nothing signed`; no `nix` is sent |
 
 ## Concepts
 
@@ -3461,7 +3468,7 @@ A box joins with [`bmesh init --hosts [--admin]`](#bmesh-init). It prompts for:
 
 Run again, it defaults to the current answers, from `config.toml`, `host.key` and `<state dir>/roster.json`. Restart the daemon afterwards.
 
-- **The admin** (`--admin`) makes the admin key (see [Keys](#keys)) if it is missing. It publishes roster v1 with its own row: its approve key is the admin key, and it accepts `ping`. Run again, it republishes only when its own row changed.
+- **The admin** (`--admin`) makes the admin key (see [Keys](#keys)) if it is missing. It publishes roster v1 with its own row: its approve key is the admin key, and it accepts `ping`. Run again, it republishes only when its own row changed, reading the admin key for the request `Sign roster v<N>` with the row's change; when `<config dir>/admin.pub` is missing, it first reads the key for `Read the admin key's public half`.
 - **The invite.** On the admin, [`bmesh hosts invite`](#bmesh-hosts-invite) prints a one-time code and waits. Without `--accept`, the box's row accepts only `ping` (`--accept ping`). A name already in the roster needs `--replace`. The admin's own name is always refused, since its row carries the admin key.
 - **The join.** On the new box, `bmesh init --hosts` prompts for the code. The code is never taken from argv, so it isn't in `ps` or the history. The box sends the admin a join request authenticated with a key derived from the code (the handshake is in [internals](internals.md#hosts)).
   1. The admin burns the invite on the first request that proves the code. A failing request is dropped without burning, and the third failure burns it.
@@ -3483,14 +3490,27 @@ The admin box, and every secure box, also has one key agents can't use:
 | the admin key | the admin box | rosters, registries and `nix` jobs | `<config dir>/admin.pub` |
 | the approve key | every secure box | approvals | `<config dir>/approve.pub` |
 
-Only signing reads the key itself, from the store `[hosts] key_store` names:
+Only signing reads the key itself, from the store `[hosts] key_store` names. Each read is for one request, shown before the key is read:
+
+- a title: `Sign roster v6`, `Publish registry v3`, `Approve level of <repo>`, `Send nix to 2 boxes, then publish registry v3`;
+- its details, at most 12 lines (a longer list keeps 11 and ends `... and <n> more`), naming what changes:
+  - a roster: each row's change, `k16: accept nix,ping -> nix,ping,stop-thread`, `+ <box>: <secure|not secure>, accept <ops>, key <fingerprint>`, `- <box>`, or `no row changes`;
+  - a registry: its row diff, as `bmesh repos publish` prints it;
+  - an approval: `<repo>: <head8> -> <target8>, +<n> commits`, then the log's first lines;
+  - a batch: every item, such as each box `nix` goes to and the registry after;
+- `signs <sum>`: the first 8 hex of the SHA-256 of the exact bytes the key signs (several items one after another). bmesh composes those bytes before the request and signs them as they are after it, so the sum shown is the sum signed.
+
+A command that signs several things reads the key once, for one request listing them all. `bmesh hosts invite` reads the key before the joining box's host key exists, so its request (`Sign roster v<N> when <name> joins`) names the row and shows no sum. Reading only a key's public half shows `signs nothing`.
+
+The terminal prints the request (`bmesh: <title>`, then its lines indented) on stdout in both stores:
 
 - **`keychain`** (the default on macOS): the login Keychain, service `bmesh`, account `admin` or `approve`.
   - bmesh writes it through `security -i` with the key on stdin (never in `ps`) and an empty trusted-app list (`-T ""`), so every read raises the macOS login-password dialog.
-  - bmesh prints `Keychain dialog follows for: <action>` first. Deny any unannounced dialog. Choose "Allow", never "Always Allow".
+  - Before that, bmesh shows its own dialog through `osascript`, with a caution icon: titled `bmesh: <title>`, showing the details and `signs <sum>`, with buttons `Cancel` (the default) and `Continue to Keychain`. `Continue to Keychain` goes on to the read; `Cancel`, or no answer within 2 minutes, refuses (exit 3) with `cancelled at the dialog: nothing signed`, and `security` isn't run. A dialog that can't be shown refuses too: `the bmesh dialog couldn't be shown (...): nothing signed`.
+  - A Keychain prompt about bmesh with no `bmesh:` dialog naming what it signs before it is not bmesh's: deny it. Choose "Allow", never "Always Allow". The `bmesh:` dialog informs; the Keychain prompt is still the guard.
   - Before a read, bmesh checks the item's access list (`security dump-keychain -a`). It refuses when an app was added (what one "Always Allow" does) or every app is trusted: `the admin key's Keychain item trusts <app>; remove it in Keychain Access`.
   - Over SSH there is no dialog and the read fails. Run admin and approve commands at the Mac's own screen.
-- **`file`** (the default elsewhere): `<config dir>/admin.key` (or `approve.key`), mode 0600, the seed sealed with XChaCha20-Poly1305 under `scrypt(passphrase, salt, N=32768, r=8, p=1)`. bmesh reads the passphrase from the terminal without echo (twice when it makes the key).
+- **`file`** (the default elsewhere): `<config dir>/admin.key` (or `approve.key`), mode 0600, the seed sealed with XChaCha20-Poly1305 under `scrypt(passphrase, salt, N=32768, r=8, p=1)`. bmesh prints the request, then reads the passphrase from the terminal without echo (`Passphrase for <path>`; twice when it makes the key).
 
 The admin commands also refuse (exit 3) when stdin isn't a terminal. The dialog and the passphrase are what keep agents from using these keys.
 
@@ -4129,7 +4149,7 @@ For a spec that calls for repeated runs on a Mac (`go test -count=10`), use the 
 
 ### Testing
 
-Runner tests drive shell fakes instead of tmux and claude, and a fake T3. The `cmd/bmesh` tests clear `CLAUDE_CODE_SESSION_ID`, so a test run inside a Claude Code session prints no context line. No test reaches the network, the box's cache, the real Keychain dialog, or the box's own `claude` and `codex` (the test-only variables and fixtures are in the internals; leave them unset outside tests). Check the real Keychain dialog by hand on a Mac.
+Runner tests drive shell fakes instead of tmux and claude, and a fake T3. The `cmd/bmesh` tests clear `CLAUDE_CODE_SESSION_ID`, so a test run inside a Claude Code session prints no context line. No test reaches the network, the box's cache, the real Keychain dialog, or the box's own `claude` and `codex` (the test-only variables and fixtures are in the internals; leave them unset outside tests). Check the real `bmesh:` and Keychain dialogs by hand on a Mac.
 
 **`scripts/seed.sh [seeder args]`** starts a throwaway `bmesh serve` in the background (embedded NATS and HTTP on free loopback ports; routines and ntfy off) over a seeded mesh that holds everything the map draws: every node state, a done lead on the shelf, a round with its engineers, routines with done instances, a queued job, leases, a digest 16 hours old (too old for the strip), quota lines, a lead blocked for a day (stale: the band's older line) and a landed spec with operator steps open (a band row). It prints the map's URL, its check command and a CLI config for poking the mesh, then returns; serve keeps running.
 
