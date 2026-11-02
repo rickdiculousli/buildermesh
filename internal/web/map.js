@@ -433,7 +433,8 @@ function drawLanes(box, d, opts) {
   const from = opts.life ? Math.min(d.from, to - 600) : now - (WINDOWS[tl.win] || d.to - d.from);
   const rows = rowsOf(d.lanes || [], opts.fold);
   const u = opts.sessions ? usageNow() : null;
-  const reads = new Map(u ? u.agents.map((a) => [a.agent, +a.read || 0]) : []);
+  // A phone's gutter has room for the label only: the agents table has the reads.
+  const reads = new Map(u && !phone.matches ? u.agents.map((a) => [a.agent, +a.read || 0]) : []);
   if (u && u.sessions.length) {
     // The coordinator sessions, a group under the leads (before the routines).
     const gi = rows.findIndex((r) => r.group === "routines");
@@ -1520,11 +1521,12 @@ function kindsRead(k) {
   return k ? (+k.in || 0) + (+k.cr || 0) + (+k.cw || 0) : 0;
 }
 
-// niceMax rounds v up to 1, 2, 2.5 or 5 times a power of ten.
+// niceMax rounds v up to a round multiple of a power of ten, whose
+// quarters are round too.
 function niceMax(v) {
   if (!(v > 0)) return 1;
   const p = Math.pow(10, Math.floor(Math.log10(v)));
-  for (const m of [1, 2, 2.5, 5, 10]) if (v <= m * p) return m * p;
+  for (const m of [1, 1.2, 1.6, 2, 2.4, 3, 4, 5, 6, 8, 10]) if (v <= m * p) return m * p;
   return 10 * p;
 }
 
@@ -1889,7 +1891,8 @@ function ctxChart(box, d, opts) {
     from = cs.length ? cs[0].at : 0;
     to = Math.max(from + 600, cs.length ? cs[cs.length - 1].at : 0);
   }
-  const W = Math.max(box.clientWidth, 240), P = { l: 46, r: 8, t: 8, b: 20 };
+  // The bottom padding holds the ✕ and ▲ row above the time labels.
+  const W = Math.max(box.clientWidth, 240), P = { l: 46, r: 8, t: 8, b: 34 };
   const H1 = 170, GAP = 18, H2 = 80, H = P.t + H1 + GAP + H2 + P.b;
   const x = (t) => P.l + (Math.max(from, Math.min(to, t)) - from) / Math.max(1, to - from) * (W - P.l - P.r);
   const ctxs = d.context || {};
@@ -1916,7 +1919,7 @@ function ctxChart(box, d, opts) {
   for (const [v, words] of lines) {
     if (v > yMax) continue;
     svg("line", { class: "ref", x1: P.l, x2: W - P.r, y1: y(v), y2: y(v) }, root);
-    svgText({ class: "axis", x: W - P.r - 2, y: y(v) - 3, "text-anchor": "end" }, words + " " + fmtTok(v), root);
+    svgText({ class: "axis", x: W - P.r - 2, y: y(v) - 3 < P.t + 9 ? y(v) + 11 : y(v) - 3, "text-anchor": "end" }, words + " " + fmtTok(v), root);
   }
   let points = 0;
   for (const s of [...ser].reverse()) {
@@ -1945,16 +1948,20 @@ function ctxChart(box, d, opts) {
     const X = x(tOf(s0, c.at));
     svg("rect", { class: "grow " + s0.cls, x: X - 1, y: gy(c.grow), width: 2, height: Math.max(1, base - gy(c.grow)) }, root);
   }
+  // The two largest, labelled; the second a line lower when they'd meet.
   const largest = grows.slice().sort((a, b) => b.grow - a.grow).slice(0, 2);
-  for (const c of largest) {
+  const labelX = [];
+  largest.forEach((c, i) => {
     const X = x(tOf(s0, c.at)), right = X > W - 200;
-    svgText({ class: "glabel", x: right ? X - 4 : X + 4, y: Math.max(gy(c.grow) + 9, P.t + H1 + GAP), "text-anchor": right ? "end" : "start" },
+    const near = i > 0 && Math.abs(X - labelX[0]) < 220;
+    labelX.push(X);
+    svgText({ class: "glabel", x: right ? X - 4 : X + 4, y: P.t + H1 + GAP + 2 + (near ? 13 : 0), "text-anchor": right ? "end" : "start" },
       "+" + fmtTok(c.grow) + (c.cause ? " " + fit(c.cause, 28) : ""), root);
-  }
+  });
   for (const e of s0.events) {
     const glyph = e.kind === "refused" ? "✕" : e.kind === "ready" ? "▲" : "";
     if (!glyph || tOf(s0, e.at) < from || tOf(s0, e.at) > to) continue;
-    const m = svgText({ class: "tick " + e.kind, x: x(tOf(s0, e.at)), y: base + 11, "text-anchor": "middle" }, glyph, root);
+    const m = svgText({ class: "tick " + e.kind, x: x(tOf(s0, e.at)), y: base + 12, "text-anchor": "middle" }, glyph, root);
     hover(m, () => md(e.at) + " " + hm(e.at) + "  " + (e.kind === "refused" ? "land refused" : e.kind) + (e.text ? "\n" + e.text : ""));
   }
   // The tip: the call nearest the pointer, of each agent.
@@ -1976,7 +1983,7 @@ function ctxChart(box, d, opts) {
   const items = mins ? ser.map((s) => [s.cls, agentName(s.a.agent) + " · " + fmtTok(s.a.read) + (s.a.size ? " · " + s.a.size : "")]) : [];
   box.replaceChildren(...(items.length ? [legendOf(items)] : []), root,
     el("div", "note", "Lower: what each call added to " + agentName(d.agent.agent) + "'s context, named by the tool use before it" +
-      (s0.events.length ? " · ✕ land refused · ▲ ready" : "") + "."));
+      (s0.events.some((e) => e.kind === "refused" || e.kind === "ready") ? " · ✕ land refused · ▲ ready" : "") + "."));
   return points;
 }
 

@@ -4089,7 +4089,7 @@ The recent-events drawer is at the foot of every tab.
 - A label is the node's path. When every lane is of one repo with a name of five letters or more, that name is shortened to two letters (`buildermesh-096` is `bm-096`).
 - An executor or engineer folds into its parent's lane, counted after the label (`bm-096 +2`).
 - Live events extend the lanes at once (redrawn at most once a second), and a dashed line marks now, moving every 30 seconds.
-- Each lane's tokens read in the window are in its gutter, after the label.
+- Each lane's tokens read in the window are in its gutter, after the label (not on a phone, under 700px, where the label takes the gutter).
 - Under the leads, a `coordinators` group draws one lane per coordinator session (a Claude Code session no node owns, `bmesh usage`'s `session.<host>.<id>`) with model calls in the window, labelled `session <first 8 of its id>`, its repo on hover and its read in the gutter. Its bars are its busy spans: runs of model calls less than 5 minutes apart, `design` in violet and `exec` in magenta (its phase, as `bmesh usage` splits it). No state is drawn in either colour. Click a session's lane for its page.
 
 **Tokens read by role** stacks what the window's model calls read, per bucket (a minute on `1h`, 10 minutes on `6h`, 30 on `24h`, 3 hours on `7d`), in five series in this order: `leads` (leads, fixers, rounds and engineers, their own calls), `subagents` (executors and the Agent subagents of nodes), coordinator `design` and `exec` (a coordinator session's calls and its subagents', by phase) and `routines`. Hover for each series and the total of a bucket.
