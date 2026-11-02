@@ -44,8 +44,8 @@ func TestSpecsBurndownAndFamilies(t *testing.T) {
 	meshtest.Git(t, filepath.Dir(repo), "init", "-q", "-b", "main", "buildermesh")
 	p := func(n string) string { return "docs/proposals/" + n }
 	commitAt(t, repo, -5, "propose", map[string]string{p("010-old.md"): specFile("10", "accepted"), p("011-rej.md"): specFile("11", "proposed"), p("README.md"): "x\n"})
-	commitAt(t, repo, -4, "propose", map[string]string{p("096-new.md"): specFile("96", "accepted"), p("098-pre.md"): specFile("98", "accepted"), p("099-open.md"): specFile("99", "proposed")})
-	commitAt(t, repo, -3, "reject", map[string]string{p("011-rej.md"): specFile("11", "rejected")})
+	commitAt(t, repo, -4, "propose", map[string]string{p("096-new.md"): specFile("96", "accepted"), p("098-pre.md"): specFile("98", "accepted"), p("099-open.md"): specFile("99", "proposed"), p("012-shelved.md"): specFile("12", "accepted")})
+	commitAt(t, repo, -3, "reject and shelve", map[string]string{p("011-rej.md"): specFile("11", "rejected"), p("012-shelved.md"): specFile("12", "later")})
 	commitAt(t, repo, -2, "old landing", map[string]string{p("098-pre.md"): specFile("98", "done")})
 	commitAt(t, repo, -1, "land\n\nSpec: 96\nVerified: ok", map[string]string{p("096-new.md"): specFile("96", "done")})
 
@@ -78,7 +78,7 @@ func TestSpecsBurndownAndFamilies(t *testing.T) {
 	if days[29].Day != "2026-10-24" || days[0].Day != "2026-09-25" {
 		t.Fatalf("days: %s..%s", days[0].Day, days[29].Day)
 	}
-	// index 29+d is the day offset d: open = proposed and not landed by then (011 rejected is never counted).
+	// index 29+d is the day offset d: open = proposed and not landed by then (011 rejected and 012 shelved are never counted).
 	for d, want := range map[int]struct {
 		open   int
 		landed []int

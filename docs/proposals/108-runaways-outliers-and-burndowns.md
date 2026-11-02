@@ -76,7 +76,7 @@ In:
   - **Click:** the lead page, with `vs` (107) set to the done lead of its size nearest that size's median read.
 
 - **Burndowns**, served by `/api/specs?repo=R`:
-  - **Per repo:** for the last 30 UTC days, bars for specs landed that day and a line for specs open at the day's end (`proposed` or `accepted`, not landed). Rejected specs are left out, having no rejection date.
+  - **Per repo:** for the last 30 UTC days, bars for specs landed that day and a line for specs open at the day's end (`proposed` or `accepted`, not landed). Rejected and shelved (`later`) specs are left out, having no date for either.
     - A spec's proposed day is the commit that added its file.
     - Its landed day is the commit whose `Spec:` trailer names it, or, before trailers (098), the first commit whose diff sets `status: done`.
     - It is read by one `git log -p` over `docs/proposals/` on the repo's local `origin/main`, cached per head. The background fetch is the lead page's.

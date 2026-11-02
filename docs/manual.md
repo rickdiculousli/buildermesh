@@ -1696,7 +1696,7 @@ Then, in order:
 1. `settled <family>: <n> threads` per family whose T3 threads the daemon settled (see [Runners: `t3`](#runners)) while any of its nodes is listed, `<n>` its nodes marked `settled`;
 2. `<path> held before land by <by> <age> ago: <why>` per hold (see [Holds](#holds));
 3. `<path> landing <age>: <text>` per ready request, its age since `bmesh ready` and the lead's `landing` text (`: held, waiting for the release` while held; `landed <sha8> (ready <age> ago); the final wake is pending` or `land refused (ready <age> ago): <refusal>; the wake carrying it is pending` while the daemon owes the lead its wake; see [`bmesh ready`](#bmesh-ready));
-4. `<path> ▲ <level> <age> ago: <words>` per open flag of a node not `done`: the newest `runaway` event of each rule the daemons announced for it in the stream's 30 days, a `runaway` hiding the same rule's `overworking`, runaway first (see [Flags](#flags));
+4. `<path> ▲ <level> <age> ago: <words>` per open flag of a node not `done`: the newest `runaway` event of each rule the daemons announced for it since it started (at most the stream's 30 days), a `runaway` hiding the same rule's `overworking`, runaway first (see [Flags](#flags));
 5. `<host>: <repo> waits for your approval (+<N> commits): in a terminal on <host>, bmesh hosts approve <id> (expires <day hh:mm>)` per hold any box's presence carries (`<host>: a registry proposal from <box> waits for your approval (<N> row changes): ...` for a registry proposal), this box's own among them; none with `[hosts]` off (see [Hosts: The hold](#levelling));
 6. `fixes: N pending for <repo> (<fixer> <state>)`, the open issues naming bmesh's own repo (see [The fixer](#the-fixer)): the parentheses read `(<fixer> <state>)` while a fixer has them (`fixes: N pending for <repo> (<fixer> working)`), `(starts within a minute)` when the daemon starts one on its next pass, `(<fixer> blocked)` while the newest fixer's block waits on the operator, and `(<fixer> done; they wait on you)` when the fixer had them and left them;
 7. `feedback: N pending in <family>` per family with other feedback pending (see [`bmesh feedback`](#bmesh-feedback));
@@ -4134,7 +4134,7 @@ The recent-events drawer is at the foot of every tab.
 
 **The spec burndown** draws a build family (its leads' `family`): a step line of its specs still open from its first lead's start, a step down at each lead's `done`, each of its leads' land refusals as a `✕` on the line (hover for its time, node and words), and a dashed `now` while any lead is live. Its subtitle gives the family, repo, lead count, start and whether it is live.
 
-**Specs, 30 days** draws a repo's last 30 UTC days: a bar for the specs landed each day (hover for their ids) and a line for the specs open at each day's end (proposed or accepted, not landed; rejected specs are left out). Both are read from `/api/specs` (see [internals](internals.md#map)).
+**Specs, 30 days** draws a repo's last 30 UTC days: a bar for the specs landed each day (hover for their ids) and a line for the specs open at each day's end (proposed and not yet landed; rejected and shelved (`later`) specs are left out, having no date for either). Both are read from `/api/specs` (see [internals](internals.md#map)).
 
 **Quota** draws each provider's week (solid) and 5-hour (dashed) use over the window on one percent axis, a provider in one colour, each reset in the window as a faint line. Its readings are the strip's, each good run kept on the mesh (below).
 

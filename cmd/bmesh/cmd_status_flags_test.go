@@ -15,13 +15,18 @@ import (
 // runaway hiding the same rule's overworking, nothing for a node done.
 func TestWatchAndMeshStatusPrintFlags(t *testing.T) {
 	c, ctx := setup(t)
-	putNode(t, c, ctx, mesh.Node{Path: "app-096", Role: "lead"})
+	putNode(t, c, ctx, mesh.Node{Path: "app-096", Role: "lead", StartedAt: time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)})
 	putNode(t, c, ctx, mesh.Node{Path: "app-097", Role: "lead"})
 	if _, err := mesh.WriteState(ctx, c, "app-096", mesh.State{State: "working", By: "node"}); err != nil {
 		t.Fatal(err)
 	}
 	meshtest.ForceState(t, c, "app-097", mesh.State{State: "done", By: "node"})
 	at := time.Now().UTC().Format(time.RFC3339)
+	// An earlier run of app-096, before this one started: never its flag.
+	if err := mesh.PublishEvent(ctx, c, mesh.Event{From: "daemon.k16", Event: "runaway", To: "app-096", At: time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339),
+		Text: "runaway app-096: read 154M in the last hour"}); err != nil {
+		t.Fatal(err)
+	}
 	for _, ev := range []mesh.Event{
 		{To: "app-096", Text: "overworking app-096: read 30.0M, 3.0× the app M median (10.0M)"},
 		{To: "app-096", Text: "overworking app-096: land refused 3× (3 rebase conflicts)"},
@@ -36,7 +41,7 @@ func TestWatchAndMeshStatusPrintFlags(t *testing.T) {
 	out, errs, code := runCLI(t, nil, "mesh-status")
 	want := "app-096 ▲ runaway 0m ago: read 60.0M, 6.0× the app M median (10.0M)\n" +
 		"app-096 ▲ overworking 0m ago: land refused 3× (3 rebase conflicts)\n"
-	if code != 0 || !strings.Contains(out, "\n"+want) || strings.Contains(out, "app-097 ▲") || strings.Contains(out, "3.0×") {
+	if code != 0 || !strings.Contains(out, "\n"+want) || strings.Contains(out, "app-097 ▲") || strings.Contains(out, "3.0×") || strings.Contains(out, "app-096 ▲ runaway 2h") {
 		t.Fatalf("mesh-status: %d %q %q", code, out, errs)
 	}
 

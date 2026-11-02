@@ -106,7 +106,7 @@ func specLives(ctx context.Context, repoPath, dir string) ([]specLife, error) {
 	}
 	lives := []specLife{}
 	for id, l := range byID {
-		if l.proposed == 0 || l.status == "rejected" {
+		if l.proposed == 0 || l.status == "rejected" || l.status == "later" { // neither has a dated end: left out
 			continue
 		}
 		if l.landed = trailer[id]; l.landed == 0 {

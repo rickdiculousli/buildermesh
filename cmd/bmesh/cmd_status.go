@@ -303,9 +303,11 @@ func flagLines(ctx context.Context, c *mesh.Client, nodes []mesh.Node, states ma
 		if states[n.Path].State == "done" {
 			continue
 		}
+		started, err := time.Parse(time.RFC3339, n.StartedAt)
 		var fs []open
 		for _, rule := range []string{"size", "refused", "context", "burn"} {
-			if f, ok := byNode[n.Path][rule]; ok {
+			// an event from before the node started is an earlier run's of the same path
+			if f, ok := byNode[n.Path][rule]; ok && (err != nil || !f.at.Before(started)) {
 				fs = append(fs, f)
 			}
 		}
