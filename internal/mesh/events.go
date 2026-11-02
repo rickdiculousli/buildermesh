@@ -99,21 +99,6 @@ func publishEvent(ctx context.Context, c *Client, ev Event, msgID string) (bool,
 // oldest first and returns once caught up. The consumer is ordered, so no
 // durable state is touched.
 func History(ctx context.Context, c *Client, filter string, since time.Time) ([]Stored, error) {
-	st, err := c.JS.Stream(ctx, StreamMesh)
-	if err != nil {
-		return nil, err
-	}
-	info, err := st.Info(ctx, jetstream.WithSubjectFilter(filter))
-	if err != nil {
-		return nil, err
-	}
-	total := 0
-	for _, n := range info.State.Subjects {
-		total += int(n)
-	}
-	if total == 0 || (!since.IsZero() && since.After(info.State.LastTime)) {
-		return nil, nil
-	}
 	cfg := jetstream.OrderedConsumerConfig{FilterSubjects: []string{filter}, DeliverPolicy: jetstream.DeliverAllPolicy}
 	if !since.IsZero() {
 		cfg.DeliverPolicy = jetstream.DeliverByStartTimePolicy
@@ -123,6 +108,8 @@ func History(ctx context.Context, c *Client, filter string, since time.Time) ([]
 	if err != nil {
 		return nil, err
 	}
+	// The create response counts what this consumer will deliver from since.
+	total := int(cons.CachedInfo().NumPending)
 	var out []Stored
 	for len(out) < total {
 		m, err := cons.Next(jetstream.FetchMaxWait(2 * time.Second))
