@@ -229,3 +229,12 @@ func onRef(repoPath, rev, ref string) bool {
 	_, err = git(repoPath, "merge-base", "--is-ancestor", strings.TrimSpace(sha), ref)
 	return err == nil
 }
+
+// LocalMain is the ref ScanMainLocal reads (origin/main, else main) and git
+// runs in repoPath under ctx, for readers that walk its history.
+func LocalMain(ctx context.Context, repoPath string) (ref string, git func(args ...string) (string, error), err error) {
+	if ref, err = mainRef(ctx, repoPath, false); err != nil {
+		return "", nil, err
+	}
+	return ref, func(args ...string) (string, error) { return gitCtx(ctx, repoPath, args...) }, nil
+}
