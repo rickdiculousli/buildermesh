@@ -45,6 +45,9 @@ type server struct {
 
 	histMu sync.Mutex // held through a read of hist
 	hist   histEntry  // bm-mesh read whole, for /api/timeline
+
+	usageMu    sync.Mutex            // held through a read of usageCache
+	usageCache map[string]usageEntry // /api/usage by window
 }
 
 type histEntry struct {
@@ -98,7 +101,7 @@ func newServer(c *mesh.Client, o Options) *server {
 		quota = &Quota{Command: cfg.Quota.Command, Client: c, Host: o.Host}
 	}
 	return &server{c: c, cfg: cfg, host: o.Host, now: now, quota: quota, log: log,
-		specs: map[string]specEntry{}, ledgers: map[string]ledgerEntry{}, fetched: map[string]time.Time{}}
+		usageCache: map[string]usageEntry{}, specs: map[string]specEntry{}, ledgers: map[string]ledgerEntry{}, fetched: map[string]time.Time{}}
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
