@@ -137,7 +137,7 @@ func cut(ls []parsed, last string, quiet bool) int {
 	return len(ls)
 }
 
-// segment reads ls in order into st until MaxCalls calls are read and
+// segment reads ls in order into st until maxCalls calls are read and
 // another would start; its end is the offset after the last line read.
 func (st *State) segment(ls []parsed, h how, end int64) (read, []parsed) {
 	r := read{end: end}
@@ -160,7 +160,7 @@ func (st *State) segment(ls []parsed, h how, end int64) (read, []parsed) {
 		case isCall(l):
 			id := callID(l)
 			if id != st.LastID {
-				if len(r.calls) == MaxCalls {
+				if len(r.calls) == maxCalls {
 					r.end = p.off
 					return r, ls[i:]
 				}

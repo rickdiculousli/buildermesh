@@ -35,7 +35,7 @@ type Mark struct {
 }
 
 // Message is what one transcript file's pass publishes: its head and the
-// file's new calls and marks, at most MaxCalls calls.
+// file's new calls and marks, at most maxCalls calls.
 type Message struct {
 	Agent   string `json:"agent"` // a node's path, or session.<host>.<session id>
 	Role    string `json:"role"`
@@ -49,8 +49,8 @@ type Message struct {
 	Marks   []Mark `json:"marks,omitempty"`
 }
 
-// MaxCalls is the most calls one message carries.
-const MaxCalls = 500
+// maxCalls is the most calls one message carries; a var for the tests.
+var maxCalls = 500
 
 // Coordinator is the role of a session no node owns.
 const Coordinator = "coordinator"

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -363,5 +364,74 @@ func TestUnnamedWorktreeFileIsASessionAfterTenMinutes(t *testing.T) {
 	a := agentOf(t, b.read(""), "session.k16."+leadID)
 	if a.Role != Coordinator || a.Repo != "app" || a.Design == nil {
 		t.Errorf("%+v", a)
+	}
+}
+
+func TestNodesUnreadDecideNothing(t *testing.T) {
+	b := newBox(t)
+	b.all()
+	if err := b.c.JS.DeleteKeyValue(b.ctx, mesh.BucketNodes); err != nil {
+		t.Fatal(err)
+	}
+	if err := Pass(b.ctx, b.env); err == nil {
+		t.Fatal("a pass that can't read the nodes went on")
+	}
+	if b.msgs() != 0 {
+		t.Fatal("a pass that can't read the nodes published")
+	}
+	if err := mesh.Provision(b.ctx, b.c, 0); err != nil {
+		t.Fatal(err)
+	}
+	b.node(mesh.Node{Path: "app-1", Role: "lead", Repo: "app", Host: "k16", Worktree: b.wt, StartedAt: "2026-10-24T10:59:00Z"})
+	b.node(mesh.Node{Path: "app-1.part", Role: "executor", Repo: "app", Host: "k16", StartedAt: "2026-10-24T10:59:30Z"})
+	b.pass()
+	if a := agentOf(t, b.read(""), "app-1"); a.Role != "lead" || a.Calls != 3 {
+		t.Errorf("once the nodes were read: %+v", a)
+	}
+}
+
+// longSession is a coordinator's turn of n calls, each reading the file
+// the next call's cause names.
+func longSession(n int) string {
+	var s strings.Builder
+	s.WriteString(`{"type":"user","isSidechain":false,"uuid":"u0","timestamp":"2026-10-24T10:00:00.000Z","cwd":"/gone","message":{"role":"user","content":"read them all"}}` + "\n")
+	for i := 1; i <= n; i++ {
+		ts := day.Add(10*time.Hour + time.Duration(i)*time.Second).Format("2006-01-02T15:04:05.000Z")
+		s.WriteString(`{"type":"assistant","isSidechain":false,"uuid":"a` + strconv.Itoa(i) + `","timestamp":"` + ts + `","message":{"model":"claude-opus-5-5","id":"msg_` + strconv.Itoa(i) +
+			`","content":[{"type":"tool_use","id":"t` + strconv.Itoa(i) + `","name":"Read","input":{"file_path":"/gone/f` + strconv.Itoa(i) + `.go"}}],"usage":{"input_tokens":1,"cache_read_input_tokens":100,"cache_creation_input_tokens":0,"output_tokens":1}}}` + "\n")
+		s.WriteString(`{"type":"user","isSidechain":false,"uuid":"r` + strconv.Itoa(i) + `","timestamp":"` + ts + `","message":{"role":"user","content":[{"tool_use_id":"t` + strconv.Itoa(i) + `","type":"tool_result","content":"x"}]}}` + "\n")
+	}
+	return s.String()
+}
+
+func TestCallsSplitAcrossMessagesAndPasses(t *testing.T) {
+	defer func(c int, p int64) { maxCalls, passBytes = c, p }(maxCalls, passBytes)
+	maxCalls = 2
+	for _, budget := range []int64{64 << 20, 300} { // one pass; a pass per line, each longer than the budget
+		passBytes = budget
+		b := newBox(t)
+		p := filepath.Join(b.root, "projects", "-gone", coordID+".jsonl")
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte(longSession(5)), 0o644)
+		b.age(p)
+		for i := 0; i < 20; i++ {
+			b.pass()
+		}
+		if budget > 300 && b.msgs() != 3 {
+			t.Errorf("budget %d: %d messages for 5 calls at 2 a message", budget, b.msgs())
+		}
+		calls := b.read("session." + coordID).Calls
+		if len(calls) != 5 {
+			t.Fatalf("budget %d: %d calls", budget, len(calls))
+		}
+		for i, c := range calls {
+			cause := "message"
+			if i > 0 {
+				cause = "Read f" + strconv.Itoa(i) + ".go"
+			}
+			if c.ID != "msg_"+strconv.Itoa(i+1) || c.Cause != cause || c.Phase != Design {
+				t.Errorf("budget %d, call %d: %+v, want cause %q", budget, i, c, cause)
+			}
+		}
 	}
 }

@@ -18,12 +18,13 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
 
+// passBytes bounds what one pass reads; a var for the tests.
+var passBytes int64 = 64 << 20
+
 const (
 	// Keep is how far back calls are kept: the stream's age and the first
 	// pass's reach.
 	Keep = 30 * 24 * time.Hour
-	// passBytes bounds what one pass reads.
-	passBytes = 64 << 20
 	// quiet is how long a file goes unwritten before its newest call is
 	// read without a later line to show it finished.
 	quiet = time.Minute
@@ -66,8 +67,7 @@ type entry struct {
 type pass struct {
 	env   Env
 	cur   *cursor
-	nodes []mesh.Node
-	fetch bool // nodes read
+	nodes []mesh.Node // this box's, read once a pass before any file is decided
 }
 
 func (p *pass) cursorPath() string { return filepath.Join(p.env.StateDir, "usage", "cursor.json") }
@@ -82,23 +82,24 @@ func (p *pass) rel(path string) string {
 	return filepath.ToSlash(r)
 }
 
-// here is the nodes on this box, read once a pass.
-func (p *pass) here() []mesh.Node {
-	if !p.fetch {
-		p.fetch = true
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		nodes, err := mesh.ListNodes(ctx, p.env.Client)
-		if err != nil {
-			p.env.Log.Warn("usage: read nodes", "err", err)
-		}
-		for _, n := range nodes {
-			if n.Host == p.env.Host {
-				p.nodes = append(p.nodes, n)
-			}
+// here is the nodes on this box.
+func (p *pass) here() []mesh.Node { return p.nodes }
+
+// readNodes reads the nodes on this box; an error leaves every file
+// undecided for the next pass, never decided without them.
+func (p *pass) readNodes(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	nodes, err := mesh.ListNodes(ctx, p.env.Client)
+	if err != nil {
+		return fmt.Errorf("usage: read nodes: %w", err)
+	}
+	for _, n := range nodes {
+		if n.Host == p.env.Host {
+			p.nodes = append(p.nodes, n)
 		}
 	}
-	return p.nodes
+	return nil
 }
 
 // Pass reads what grew in this box's transcripts and publishes it: each
@@ -166,7 +167,15 @@ func Pass(ctx context.Context, env Env) error {
 	for _, fs := range [][]file{mains, subs} {
 		sort.Slice(fs, func(i, j int) bool { return fs[i].mod.Before(fs[j].mod) })
 	}
-	budget := int64(passBytes)
+	for _, f := range append(mains, subs...) {
+		if e := p.cur.Files[p.rel(f.path)]; e == nil || e.Agent == "" {
+			if err := p.readNodes(ctx); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	budget := passBytes
 	for i, f := range append(mains, subs...) {
 		if budget <= 0 || ctx.Err() != nil {
 			break
@@ -199,7 +208,7 @@ func Pass(ctx context.Context, env Env) error {
 
 // file reads one file from its offset, at most budget bytes (more only to
 // end a line that began within them), and publishes it in messages of at
-// most MaxCalls calls; it returns the bytes read.
+// most maxCalls calls; it returns the bytes read.
 func (p *pass) file(ctx context.Context, path, rel string, e *entry, size int64, quiet bool, budget int64) (int64, error) {
 	fh, err := os.Open(path)
 	if err != nil {
