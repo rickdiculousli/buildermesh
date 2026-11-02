@@ -4,10 +4,11 @@ title: The map draws each build family's coordinator as a layer above its leads,
 kind: ux
 size: M
 judge: opus
-status: accepted
+status: rejected
 lens: ux
 proposed_by: operator
 proposed_on: 2026-10-16
+reason: superseded by the console (106), which removes the lead blocks, done shelf and tree they style
 ---
 
 ## Opportunity

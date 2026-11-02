@@ -4,10 +4,11 @@ title: The map gets one design pass: a calm page where the live work is the firs
 kind: ux
 size: M
 judge: fable
-status: accepted
+status: rejected
 lens: ux
 proposed_by: operator
 proposed_on: 2026-10-16
+reason: superseded by the console (106), which removes the lead blocks, done shelf and tree they style
 ---
 
 ## Opportunity
