@@ -1,54 +1,48 @@
 "use strict";
-// The map: /api/tree drawn as an SVG tree and kept current by /events. Live
-// node events restyle a node at once, live inbox messages flash an edge,
-// replayed frames only fill the recent-events drawer. Every mesh value goes
-// in through textContent or setAttribute.
+// The console: KPI tiles, the needs-you band and a fleet timeline drawn from
+// /api/tree, /api/strip and /api/timeline, kept current by /events. Live
+// node events restyle the band and tiles at once and extend the timeline's
+// lanes; replayed frames only fill the recent-events drawer. Every mesh
+// value goes in through textContent or setAttribute.
 
 const NS = "http://www.w3.org/2000/svg";
-// gutter is the room right of the boxes in the vertical layout, where
-// message edges between boxes of one column bow out; minW the narrowest box.
-const G = { row: 48, nodeW: 184, nodeH: 40, indent: 24, gap: 40, pad: 16, head: 28, gutter: 28, minW: 120 };
-const LABEL_PX = 7.5, SUB_PX = 6; // average glyph widths of .label and .sub
-// The done shelf's chips; font and headFont are .chip .label's and
-// .shelf-head's in map.css, for textW.
-const CHIP = { h: 32, pad: 8, gap: 8, inset: 10, checkW: 16, maxLabel: 28, font: "500 12px", headFont: "700 14px" };
-// NEED orders the map's leads: what needs a hand, then what runs, what has
-// no state yet, what is finished.
+// NEED orders the band's rows and the timeline's lanes: what needs a hand,
+// then what runs, what has no state yet, what is finished.
 const NEED = { blocked: 0, asking: 1, silent: 2, working: 3, landing: 4, held: 5, idle: 6, done: 7 };
-// STALE_RANK places a stale need (see isStale) after the live leads, ahead of idle.
-const STALE_RANK = NEED.held + 0.5;
 const PHONE = "(max-width: 699px)";
-const FETCH_MS = 10000; // a /api/tree read taking longer is abandoned
+const NARROW = "(max-width: 999px)";
+const FETCH_MS = 10000; // a read taking longer is abandoned
 const RECENT = 30;
-const EDGE_MS = 1200;
 const REFETCH_MS = 500;
 const REFETCH_MAX_MS = 2000; // a steady stream of events still refetches this often
 const POLL_MS = 30000; // unread counts and runners change without an event
+// EVENT_STATE and DAEMON_STATE are the state table (internal/web/timeline.go
+// nodeState and daemonState): the state a node's own event sets, and the
+// state a daemon event sets on the node it is addressed to (to).
 const EVENT_STATE = { started: "working", progress: "working", ask: "asking", blocked: "blocked", held: "held", ready: "landing", done: "done" };
-// DAEMON_STATE maps a daemon event addressed to a node to the state it
-// sets there: the daemon's silent verdict, and its landing of a ready lead.
 const DAEMON_STATE = { silent: "silent", landing: "landing", "land-refused": "working", "land-withdrawn": "working" };
-const MSG_KINDS = new Set(["message", "wake", "job", "reply"]);
+// LIVE are the states of a node at work or waiting: the Live agents tile.
+const LIVE = new Set(["working", "asking", "blocked", "silent", "landing", "held"]);
+// ICON goes with every state colour, beside the state's word.
+const ICON = { working: "●", landing: "▲", held: "‖", silent: "◌", asking: "?", blocked: "■", idle: "○", done: "✓", operator: "▸" };
 
 const $ = (id) => document.getElementById(id);
 
 const mesh = {
   tree: null, // the last /api/tree
-  drawn: new Map(), // path -> {g, sub, box, extra, text, kind, state}
-  layer: null, // where message edges go, above the nodes
-  vertical: false, // blocks top to bottom instead of left to right
-  width: 0, // the drawn SVG's width
   // path -> {state, text, since, at}: states set by live events, with the
   // event's words and time (since) and when the page saw it (at).
   live: new Map(),
   recent: [], // newest first
   staleMs: 0, // [serve] stale_after from /api/tree; 0 = nothing goes stale
+  host: "", // the serving daemon's host
+  skew: 0, // the hub's clock less this browser's, in ms
 };
 
 // check is set by ?check=1: a self-check that writes viewport and
 // connection facts into document.title for headless screenshots.
 const check = new URLSearchParams(location.search).get("check") === "1"
-  ? { conn: [], trees: 0, leads: 0, replay: 0, live: 0, flashes: 0 } : null;
+  ? { conn: [], trees: 0, replay: 0, live: 0, lanes: 0, segs: {}, ticks: 0 } : null;
 
 function svg(tag, attrs, parent) {
   const e = document.createElementNS(NS, tag);
@@ -72,23 +66,17 @@ function lastToken(path) {
   return path.slice(path.lastIndexOf(".") + 1);
 }
 
-let ruler = null;
-
-// textW measures s on a canvas in font, a weight and size, in the page's family.
-function textW(s, font) {
-  if (!ruler) ruler = document.createElement("canvas").getContext("2d");
-  ruler.font = font + " " + getComputedStyle(document.body).fontFamily;
-  return ruler.measureText(s).width;
+// hubNow is the hub's clock in unix seconds.
+function hubNow() {
+  return (Date.now() + mesh.skew) / 1000;
 }
-
-// --- layout ---------------------------------------------------------------
 
 function startOf(t) {
   const v = Date.parse(t.node.started_at || "");
   return isNaN(v) ? Infinity : v;
 }
 
-// byStart orders leads by started_at (unknown last), ties by path.
+// byStart orders nodes by started_at (unknown last), ties by path.
 function byStart(a, b) {
   const x = startOf(a), y = startOf(b);
   if (x !== y) return x < y ? -1 : 1;
@@ -107,363 +95,32 @@ function isStale(st) {
   return !isNaN(at) && Date.now() - at > mesh.staleMs;
 }
 
-function needOf(t) {
-  return isStale(t.state) ? STALE_RANK : needRank(t.state.state);
-}
-
-// byNeed orders leads by need, ties by byStart, so a running lead's place
-// stays stable.
-function byNeed(a, b) {
-  const x = needOf(a), y = needOf(b);
-  return x !== y ? x - y : byStart(a, b);
-}
-
-function isDone(t) {
-  return t.state.state === "done";
-}
-
-function treeSub(t) {
-  const extra = [];
-  if (t.unread > 0) extra.push(t.unread + " unread");
-  return extra;
-}
-
 function instanceSub(i) {
   const extra = [i.uses === 1 ? "1 use" : (i.uses || 0) + " uses"];
   if (i.context > 0) extra.push(Math.round(i.context / 1000) + "k ctx");
   return extra;
 }
 
-// kindCounts counts a kind's queue and its instances by state: busy the
-// working ones, idle the idle ones, spent the done ones.
-function kindCounts(g) {
-  const c = { queued: g.depth || 0, busy: 0, idle: 0, spent: 0 };
-  for (const i of g.instances || []) {
-    const s = i.state && i.state.state;
-    if (s === "working") c.busy++;
-    else if (s === "idle") c.idle++;
-    else if (s === "done") c.spent++;
-  }
-  return c;
-}
-
-// kindSub is a kind box's second line: its non-zero counts, else its mode.
-function kindSub(g, c) {
-  const extra = ["queued", "busy", "idle", "spent"].filter((k) => c[k] > 0).map((k) => c[k] + " " + k);
-  return extra.length ? extra : [g.mode || "no kind file"];
-}
-
-// layout places the tree: one block per lead in need order (byNeed), then
-// the orphans block under its synthetic root, then the routines. Blocks run
-// left to right with the routines as the right column, or, when vertical,
-// top to bottom with the routines last. Each block is a vertical tree with
-// one node per row. Boxes with a key are mesh nodes (or a kind's inbox); a
-// routine kind is one box, its instances counted, not drawn.
-// When a lead is live (any state but done) and another is done, the done
-// leads leave the tree for a shelf: a row of chips, newest first, under the
-// blocks (and before the routines when vertical). A vertical layout given a
-// width fits it: boxes stretch to its right edge less the gutter, and only a
-// tree nested past the narrowest box overflows; a horizontal one uses the
-// width only to wrap the shelf.
-function layout(tree, vertical, width) {
-  const out = { boxes: [], edges: [], headings: [], frames: [], width: 0, height: 0 };
-  const boxW = (x) => vertical && width ? Math.max(G.minW, width - G.pad - G.gutter - x) : G.nodeW;
-  const add = (b) => {
-    b.w = b.w || boxW(b.x);
-    b.h = b.h || G.nodeH;
-    out.boxes.push(b);
-    out.width = Math.max(out.width, b.x + b.w);
-    out.height = Math.max(out.height, b.y + b.h);
-    return b;
+// eachNode calls fn with every non-routine node of the loaded tree (leads,
+// rounds, orphans and everything under them) and its state, a live event's
+// state winning over the tree's.
+function eachNode(fn) {
+  const walk = (t) => {
+    const live = mesh.live.get(t.node.path);
+    fn(t, live ? live.state : t.state && t.state.state);
+    for (const c of t.children || []) walk(c);
   };
-  const elbow = (p, c) => {
-    const x = p.x + 12;
-    out.edges.push(`M${x},${p.y + p.h} V${c.y + c.h / 2} H${c.x}`);
-  };
-
-  // block draws roots (under root when given) at ox, oy; returns its size.
-  const block = (roots, ox, oy, root) => {
-    let row = 0, depthMax = 0;
-    const place = (b, depth) => {
-      depthMax = Math.max(depthMax, depth);
-      b.x = ox + depth * G.indent;
-      b.y = oy + row * G.row;
-      row++;
-      return add(b);
-    };
-    const walk = (t, depth, parent) => {
-      const role = t.node.role === "lead" ? "lead" : "executor";
-      const label = depth === 0 || !parent || parent.kind === "root" ? t.node.path : lastToken(t.node.path);
-      const b = place({ key: t.node.path, kind: role, label, title: t.node.path, state: t.state.state,
-        stale: isStale(t.state), top: !parent, text: t.state.text || "", extra: treeSub(t) }, depth);
-      if (parent) elbow(parent, b);
-      for (const c of t.children || []) walk(c, depth + 1, b);
-    };
-    let top = null, base = 0;
-    if (root) {
-      top = place(root, 0);
-      base = 1;
-    }
-    for (const r of roots) walk(r, base, top);
-    return { w: depthMax * G.indent + G.nodeW, h: row * G.row };
-  };
-
-  // shelf lays leads out as chips, newest first, at ox, oy after a "done (n)"
-  // heading, wrapping within maxW; returns the size of the frame around them.
-  const shelf = (leads, ox, oy, maxW) => {
-    const head = "done (" + leads.length + ")";
-    const left = ox + CHIP.inset, right = ox + maxW - CHIP.inset;
-    out.headings.push({ x: left, y: oy + CHIP.inset + CHIP.h / 2 + 5, text: head, cls: "shelf-head" });
-    let cx = left + Math.ceil(textW(head, CHIP.headFont)) + CHIP.gap, cy = oy + CHIP.inset, w = cx;
-    for (const t of leads.slice().sort((a, b) => byStart(b, a))) {
-      const label = fit(t.node.path, CHIP.maxLabel);
-      const cw = Math.ceil(2 * CHIP.pad + textW(label, CHIP.font) + CHIP.checkW);
-      if (cx + cw > right && cx > left) {
-        cx = left;
-        cy += CHIP.h + CHIP.gap;
-      }
-      add({ key: t.node.path, kind: "chip", label, title: t.node.path, state: "done", extra: [],
-        x: cx, y: cy, w: cw, h: CHIP.h });
-      cx += cw + CHIP.gap;
-      w = Math.max(w, cx);
-    }
-    const size = { w: vertical ? maxW : Math.min(maxW, w - CHIP.gap - ox + CHIP.inset), h: cy + CHIP.h + CHIP.inset - oy };
-    out.frames.push({ x: ox, y: oy, w: size.w, h: size.h });
-    out.width = Math.max(out.width, ox + size.w);
-    out.height = Math.max(out.height, oy + size.h);
-    return size;
-  };
-
-  let x = G.pad, y = G.pad, tall = 0;
-  const next = (size) => {
-    if (vertical) y += size.h + G.gap / 2;
-    else x += size.w + G.gap;
-    tall = Math.max(tall, size.h);
-  };
-  const leads = tree.leads.slice().sort(byNeed);
-  const done = leads.filter(isDone);
-  const fold = done.length > 0 && done.length < leads.length;
-  for (const l of fold ? leads.filter((t) => !isDone(t)) : leads) next(block([l], x, y));
-  if (tree.orphans.length) {
-    const n = tree.orphans.length;
-    const root = { kind: "root", label: "orphans", title: "nodes whose lead is not registered", state: "",
-      extra: [n === 1 ? "1 root" : n + " roots"] };
-    next(block(tree.orphans, x, y, root));
-  }
-  const kinds = tree.routines.map((g) => {
-    const c = kindCounts(g);
-    return { g, busy: c.busy > 0, extra: kindSub(g, c) };
-  });
-  // In columns the kind boxes widen together to fit their longest counts.
-  const colW = vertical && width ? 0 : Math.max(G.nodeW,
-    ...kinds.map((k) => Math.ceil(k.extra.join(" · ").length * SUB_PX) + 16));
-  if (fold) {
-    if (vertical) {
-      next(shelf(done, x, y, boxW(x)));
-    } else {
-      // Under the blocks, as wide as they or the page beside the routines
-      // column allow; the column sits right of both.
-      const column = kinds.length ? 1.5 * G.gap + colW : 0;
-      const room = width ? width - 2 * G.pad - column : 0;
-      const s = shelf(done, G.pad, y + tall + G.gap / 2, Math.max(x - G.gap - G.pad, room, G.nodeW));
-      x = Math.max(x, G.pad + s.w + G.gap);
-    }
-  }
-
-  if (tree.routines.length) {
-    if (!vertical && x > G.pad) x += G.gap / 2;
-    out.headings.push({ x, y: y + 14, text: "routines" });
-    let ry = y + G.head;
-    for (const k of kinds) {
-      const key = "routine." + k.g.kind;
-      add({ key, kind: "group", label: k.g.kind, title: key, state: k.busy ? "working" : "", x, y: ry, w: colW,
-        extra: k.extra });
-      ry += G.row;
-    }
-    out.width = Math.max(out.width, x + (colW || boxW(x)));
-  }
-  out.width += vertical && width ? G.gutter + G.pad : G.pad;
-  out.height += G.pad;
-  return out;
+  if (!mesh.tree) return;
+  for (const t of mesh.tree.leads) walk(t);
+  for (const t of mesh.tree.orphans) walk(t);
 }
 
-// --- drawing --------------------------------------------------------------
+// --- the tree: the band's and tiles' data ----------------------------------
 
-function classOf(kind, state, stale) {
-  const link = kind === "lead" || kind === "chip" || kind === "group" ? " link" : "";
-  return "node " + kind + link + (state ? " st-" + state : "") + (stale ? " stale" : "");
-}
+let loading = false, reload = false;
 
-// subText is a box's second line, cut to n characters: for an asking,
-// blocked, held or landing node the state and its words (the ask, the block,
-// the hold or the landing's progress), else the
-// state and the extras.
-function subText(state, text, extra, n) {
-  const parts = state === "asking" || state === "blocked" || state === "held" || state === "landing" ? [state, text] : [state, ...extra];
-  return fit(parts.filter(Boolean).join(" · "), n);
-}
-
-// room is how many characters of px average width fit a box w wide less
-// its padding (and, for a label, the done check).
-function room(w, px, pad) {
-  return Math.max(4, Math.floor((w - pad) / px));
-}
-
-function hrefOf(b) {
-  if (b.kind === "lead" || b.kind === "chip") return "#/lead/" + b.key;
-  if (b.kind === "group") return "#/routines";
-  return "";
-}
-
-function link(g, b) {
-  const href = hrefOf(b);
-  if (!href) return;
-  g.setAttribute("tabindex", "0");
-  g.setAttribute("role", "link");
-  g.setAttribute("aria-label", b.title);
-  const go = () => { location.hash = href; };
-  g.addEventListener("click", go);
-  g.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
-  });
-}
-
-function drawChip(parent, b) {
-  const g = svg("g", { class: classOf(b.kind, b.state), transform: `translate(${b.x},${b.y})` }, parent);
-  svg("title", {}, g).textContent = b.title;
-  svg("rect", { class: "box", width: b.w, height: b.h, rx: b.h / 2 }, g);
-  svgText({ class: "label", x: CHIP.pad, y: b.h / 2 + 4 }, b.label, g);
-  svgText({ class: "check", x: b.w - CHIP.pad - 9, y: b.h / 2 + 5 }, "✓", g);
-  link(g, b);
-  return { g, sub: null };
-}
-
-function drawBox(parent, b) {
-  if (b.kind === "chip") return drawChip(parent, b);
-  const g = svg("g", { class: classOf(b.kind, b.state, b.stale), transform: `translate(${b.x},${b.y})` }, parent);
-  svg("title", {}, g).textContent = b.title;
-  svg("rect", { class: "ring", x: -4, y: -4, width: b.w + 8, height: b.h + 8, rx: 10 }, g);
-  svg("rect", { class: "box", width: b.w, height: b.h, rx: 7 }, g);
-  svgText({ class: "label", x: 10, y: 17 }, fit(b.label, room(b.w, LABEL_PX, 32)), g);
-  const sub = svgText({ class: "sub", x: 10, y: 32 },
-    subText(b.kind === "group" ? "" : b.state, b.text || "", b.extra, room(b.w, SUB_PX, 16)), g);
-  svgText({ class: "check", x: b.w - 22, y: 26 }, "✓", g);
-  link(g, b);
-  return { g, sub };
-}
-
-function render() {
-  const t = mesh.tree;
-  if (!t) return;
-  // A hidden map has no width; the view's would be the page's less its padding.
-  const w = $("map").clientWidth || document.documentElement.clientWidth - 2 * 12;
-  const L = layout(t, mesh.vertical, w);
-  const root = svg("svg", { width: L.width, height: L.height, viewBox: `0 0 ${L.width} ${L.height}`,
-    role: "group", "aria-label": "mesh map" });
-  const edges = svg("g", { class: "edges" }, root);
-  for (const f of L.frames) svg("rect", { class: "shelf", x: f.x, y: f.y, width: f.w, height: f.h, rx: 10 }, edges);
-  for (const d of L.edges) svg("path", { class: "tree-edge", d }, edges);
-  for (const h of L.headings) svgText({ class: h.cls || "heading", x: h.x, y: h.y }, h.text, root);
-  const nodes = svg("g", { class: "nodes" }, root);
-  const drawn = new Map();
-  for (const b of L.boxes) {
-    const { g, sub } = drawBox(nodes, b);
-    if (b.key) drawn.set(b.key, { g, sub, box: b, extra: b.extra, text: b.text || "", kind: b.kind, state: b.state, stale: !!b.stale });
-  }
-  // Edges still in flight move to the new drawing rather than vanish.
-  if (mesh.layer) root.append(mesh.layer);
-  else mesh.layer = svg("g", { class: "messages" }, root);
-  mesh.drawn = drawn;
-  mesh.width = L.width;
-  $("map").replaceChildren(root);
-  $("map-empty").hidden = L.boxes.length > 0;
-  if (check) {
-    check.trees++;
-    check.leads = t.leads.length;
-    checkSoon();
-  }
-}
-
-// onShelf reports whether path is drawn as a chip, which only a redraw
-// can move off the shelf.
-function onShelf(path) {
-  const d = mesh.drawn.get(path);
-  return !!d && d.kind === "chip";
-}
-
-// setState restyles a drawn node; text is the state's words. A new state
-// is never stale.
-function setState(path, state, text) {
-  const d = mesh.drawn.get(path);
-  if (!d || d.kind === "group" || d.kind === "chip") return;
-  d.state = state;
-  d.stale = false;
-  d.text = text || "";
-  d.g.setAttribute("class", classOf(d.kind, state));
-  d.sub.textContent = subText(state, d.text, d.extra, room(d.box.w, SUB_PX, 16));
-}
-
-// curve is a path from box a to box b, leaving and entering on the facing
-// sides; boxes in one column bow out to the right, within the drawing.
-function curve(a, b) {
-  const ay = a.y + a.h / 2, by = b.y + b.h / 2;
-  if (Math.abs(a.x - b.x) < a.w / 2 || mesh.vertical) {
-    const x1 = a.x + a.w, x2 = b.x + b.w;
-    const bow = Math.max(8, Math.min(36 + Math.abs(by - ay) / 4, mesh.width - Math.max(x1, x2) - 4));
-    return `M${x1},${ay} C${x1 + bow},${ay} ${x2 + bow},${by} ${x2},${by}`;
-  }
-  const right = b.x > a.x;
-  const x1 = right ? a.x + a.w : a.x, x2 = right ? b.x : b.x + b.w;
-  const mx = (x1 + x2) / 2;
-  let lift = Math.min(80, Math.abs(x2 - x1) / 3);
-  if (Math.min(ay, by) < lift + 8) lift = -lift; // near the top: sag instead
-  return `M${x1},${ay} C${mx},${ay - lift} ${mx},${by - lift} ${x2},${by}`;
-}
-
-// entry is a path into box b from above the map, for a sender not drawn.
-function entry(b) {
-  const x = b.x + b.w / 2;
-  return `M${x + 40},0 Q${x + 40},${b.y / 2} ${x},${b.y}`;
-}
-
-// kindKey is the kind box of a routine instance's path, else "".
-function kindKey(path) {
-  const m = /^routine\.[^.]+/.exec(path);
-  return m ? m[0] : "";
-}
-
-// flash draws a message edge from -> to for EDGE_MS with a dot travelling
-// along it.
-function flash(from, to, kind) {
-  const b = mesh.drawn.get(to);
-  if (!b || !mesh.layer) return;
-  const a = mesh.drawn.get(from) || mesh.drawn.get(kindKey(from));
-  const g = svg("g", { class: "msg k-" + (MSG_KINDS.has(kind) ? kind : "message") }, mesh.layer);
-  const p = svg("path", { class: "msg-edge", d: a ? curve(a.box, b.box) : entry(b.box) }, g);
-  const dot = svg("circle", { class: "msg-dot", r: 5 }, g);
-  if (check) check.flashes++;
-  const len = p.getTotalLength();
-  const t0 = performance.now();
-  const step = (now) => {
-    if (!g.isConnected) return;
-    const k = Math.min(1, (now - t0) / EDGE_MS);
-    const pt = p.getPointAtLength(len * k);
-    dot.setAttribute("cx", pt.x);
-    dot.setAttribute("cy", pt.y);
-    g.setAttribute("opacity", k > 0.75 ? ((1 - k) / 0.25).toFixed(2) : "1");
-    if (k < 1) requestAnimationFrame(step);
-  };
-  step(t0);
-  setTimeout(() => g.remove(), EDGE_MS); // also when frames are paused (a hidden tab)
-}
-
-// --- the tree -------------------------------------------------------------
-
-let loading = false, reload = false, refetchTimer = 0, refetchFirst = 0;
-
-// loadTree reads /api/tree and redraws. One read runs at a time: a call
-// while one is in flight runs one more read after it, so a slow server
-// still gets every answer drawn instead of each being overtaken.
+// loadTree reads /api/tree and redraws the band and tiles. One read runs at
+// a time: a call while one is in flight runs one more read after it.
 async function loadTree() {
   if (loading) {
     reload = true;
@@ -471,26 +128,24 @@ async function loadTree() {
   }
   loading = true;
   const began = Date.now();
-  const stop = new AbortController();
-  const timer = setTimeout(() => stop.abort(), FETCH_MS);
   try {
-    const r = await fetch("/api/tree", { cache: "no-store", signal: stop.signal });
-    if (!r.ok) throw new Error("/api/tree: " + r.status);
-    const v = await r.json();
+    const r = await fetchJSON("/api/tree");
+    if (!r.body) throw new Error("/api/tree: " + r.status);
+    const v = r.body;
     mesh.tree = { leads: v.leads || [], routines: v.routines || [], orphans: v.orphans || [], operator: v.operator || [] };
     mesh.staleMs = (+v.stale_after || 0) * 1000;
-    render();
+    mesh.host = String(v.host || "");
+    const now = Date.parse(v.now || "");
+    if (!isNaN(now)) mesh.skew = now - (began + Date.now()) / 2;
     // A live event newer than this read wins over the state it returned.
-    for (const [path, s] of mesh.live) {
-      if (s.at >= began) setState(path, s.state, s.text);
-      else mesh.live.delete(path);
-    }
+    for (const [path, s] of mesh.live) if (s.at < began) mesh.live.delete(path);
+    if (check) check.trees++;
     renderBand();
-    renderStrip();
+    renderKpis();
+    showConn();
   } catch (e) {
     // The next event or poll tries again.
   } finally {
-    clearTimeout(timer);
     loading = false;
     if (reload) {
       reload = false;
@@ -499,57 +154,382 @@ async function loadTree() {
   }
 }
 
-// refetchSoon loads the tree REFETCH_MS after the last call, but no later
-// than REFETCH_MAX_MS after the first one waiting.
-function refetchSoon() {
-  const now = Date.now();
-  if (!refetchTimer) refetchFirst = now;
-  clearTimeout(refetchTimer);
-  const wait = Math.max(0, Math.min(REFETCH_MS, refetchFirst + REFETCH_MAX_MS - now));
-  refetchTimer = setTimeout(() => { refetchTimer = 0; loadTree(); }, wait);
-}
+const treeSoon = loader(loadTree).soon;
 
-// liveState restyles a node at once with the event's words (text) and time
-// (since), and redraws the band; a lead whose need changed is also reloaded,
-// so the blocks keep their order.
+// liveState records a node's state from a live event with its words (text)
+// and time (since), and redraws the band and tiles.
 function liveState(path, state, text, since) {
-  const d = mesh.drawn.get(path);
-  const moved = !!d && d.kind === "lead" && (d.stale || needRank(d.state) !== needRank(state));
   mesh.live.set(path, { state, text: text || "", since: since || "", at: Date.now() });
-  setState(path, state, text);
-  if (moved) refetchSoon();
   renderBand();
-  renderStrip();
+  renderKpis();
 }
 
-// apply acts on a live frame: node and daemon events restyle nodes, inbox
-// messages flash an edge, and anything the map cannot place refetches.
+// known reports whether the loaded tree has path.
+function known(path) {
+  let found = false;
+  eachNode((t) => { if (t.node.path === path) found = true; });
+  return found;
+}
+
+// apply acts on a live frame: node and daemon events move the node's state
+// and its lane, a job sent marks its sender's lane, and a node the tree
+// doesn't have refetches it.
 function apply(f) {
   const rest = f.subject.replace(/^bm\./, "");
   const p = f.payload && typeof f.payload === "object" ? f.payload : {};
+  const at = Date.parse(String(p.at || f.at || "")) / 1000;
   // The hosts layer's jobs and replies: mirrors mesh.IsHostTraffic.
   if (rest.startsWith("inbox.host.") || rest.startsWith("hostreply.")) return;
   if (rest.startsWith("inbox.")) {
-    const to = rest.slice(6);
-    flash(String(p.from || ""), to, String(p.kind || "message"));
-    if (!mesh.drawn.has(to) && !to.startsWith("routine.") && !onShelf(to.split(".")[0])) refetchSoon();
+    if (p.kind === "job" && p.from) liveLane(String(p.from), "", at, "job", String(p.text || (p.job && p.job.kind) || ""));
     return;
   }
   if (rest.startsWith("feedback.")) return; // a family's queue, not a node
   const i = rest.lastIndexOf(".");
   if (i <= 0) return;
   const path = rest.slice(0, i), ev = rest.slice(i + 1);
-  const text = String(p.text || ""), at = String(p.at || f.at || "");
+  const text = String(p.text || "");
   if (path.startsWith("daemon.")) {
-    if (p.to && DAEMON_STATE[ev]) liveState(String(p.to), DAEMON_STATE[ev], text, at);
+    if (p.to && DAEMON_STATE[ev]) {
+      liveState(String(p.to), DAEMON_STATE[ev], text, p.at || f.at);
+      liveLane(String(p.to), DAEMON_STATE[ev], at, ev === "land-refused" ? "refused" : "", text);
+    }
     return;
   }
-  if (EVENT_STATE[ev]) liveState(path, EVENT_STATE[ev], text, at);
-  // A shelved lead's executors are not drawn and a reload would not draw them.
-  if (!mesh.drawn.has(path) && onShelf(path.split(".")[0])) return;
-  if (ev === "started" || ev === "done" || !mesh.drawn.has(path) || onShelf(path)) refetchSoon();
+  if (path.startsWith("routine.")) {
+    liveJob(path, ev, text, at);
+    return;
+  }
+  if (EVENT_STATE[ev]) {
+    liveState(path, EVENT_STATE[ev], text, p.at || f.at);
+    liveLane(path, EVENT_STATE[ev], at, TICK[ev] || "", text);
+  }
+  if (ev === "started" || ev === "done" || !known(path)) treeSoon();
 }
 
+// --- the fleet timeline -------------------------------------------------------
+
+// WINDOWS are the spans the window chips pick, in seconds.
+const WINDOWS = { "1h": 3600, "6h": 6 * 3600, "24h": 24 * 3600, "7d": 7 * 86400 };
+const WINDOW_KEY = "bmesh.window";
+// TICK is the tick a node's event draws on its lane.
+const TICK = { progress: "progress", ready: "ready", done: "done" };
+// Lane geometry: a lane's height and its bar's, for a top lane and for a
+// child's thinner lane on the timeline tab and the lead page.
+const LANE = { h: 22, bar: 13, kidH: 16, kidBar: 9, top: 12, axis: 20, gutter: 170, narrowGutter: 118 };
+const DRAW_MS = 1000; // live events redraw at most this often
+const NOW_MS = 30000; // the now line moves this often
+
+const tl = {
+  win: "6h",
+  data: null, // the last /api/timeline: {from, to, lanes}
+  lead: null, // the lead page's lanes: {path, data}
+  drawTimer: 0,
+  lastDraw: 0,
+};
+
+function storedWindow() {
+  try {
+    const w = localStorage.getItem(WINDOW_KEY);
+    return WINDOWS[w] ? w : "";
+  } catch (e) {
+    return "";
+  }
+}
+
+function setWindow(w) {
+  if (!WINDOWS[w] || w === tl.win) return;
+  tl.win = w;
+  try {
+    localStorage.setItem(WINDOW_KEY, w);
+  } catch (e) {
+    // Storage off: the hash still carries it.
+  }
+  const base = pages.view === "timeline" ? "#/timeline" : "#/";
+  history.replaceState(null, "", base + "?w=" + w);
+  showWindow();
+  tl.data = null;
+  drawAll();
+  timeline.run();
+}
+
+function showWindow() {
+  for (const b of document.querySelectorAll("#windows button")) b.setAttribute("aria-pressed", String(b.dataset.w === tl.win));
+}
+
+const timeline = loader(async () => {
+  if (pages.view !== "map" && pages.view !== "timeline") return;
+  const win = tl.win;
+  const r = await fetchJSON("/api/timeline?since=" + win);
+  if (!r.body || win !== tl.win) return;
+  tl.data = r.body;
+  tl.data.lanes = tl.data.lanes || [];
+  replayLive(tl.data);
+  drawAll();
+});
+
+// liveLog holds the live events since the page opened, so a timeline read
+// (cached on the hub for 30 s) gets the ones newer than it reapplied.
+const liveLog = [];
+const LIVE_LOG_MAX = 500;
+
+// liveLane extends path's lane with a live event at (unix seconds): state
+// ("" for none) closes the last segment and opens one, done ends the lane;
+// kind ("" for none) adds a tick with its text.
+function liveLane(path, state, at, kind, text) {
+  if (isNaN(at)) return;
+  liveLog.push({ path, state, at, kind, text, job: "" });
+  if (liveLog.length > LIVE_LOG_MAX) liveLog.shift();
+  for (const d of [tl.data, tl.lead && tl.lead.data]) if (d) laneEvent(d, path, state, at, kind, text);
+  drawSoon();
+}
+
+// liveJob extends a routine instance's lane: "job <id> started" opens a
+// working segment, "job <id> ok|fail ..." closes it.
+function liveJob(path, ev, text, at) {
+  if (ev !== "progress" || isNaN(at)) return;
+  const state = /^job \S+ started$/.test(text) ? "working" : /^job \S+ (ok|fail) \d+/.test(text) ? "idle" : "";
+  if (state) liveLane(path, state, at, "", "");
+}
+
+function replayLive(d) {
+  for (const e of liveLog) if (e.at > d.to) laneEvent(d, e.path, e.state, e.at, e.kind, e.text);
+}
+
+function laneEvent(d, path, state, at, kind, text) {
+  let l = d.lanes.find((x) => x.path === path);
+  if (!l) {
+    if (!state || state === "done") return;
+    const dot = path.lastIndexOf(".");
+    const routine = path.startsWith("routine.");
+    l = { path, role: routine ? "routine" : dot > 0 ? "executor" : "lead", parent: !routine && dot > 0 ? path.slice(0, dot) : "",
+      repo: "", spec: "", state: "idle", segs: [], ticks: [] };
+    eachNode((t) => { if (t.node.path === path) Object.assign(l, { role: t.node.role, parent: t.node.parent || "", repo: t.node.repo || "", spec: t.node.spec || "" }); });
+    d.lanes.push(l);
+  }
+  if (kind) l.ticks.push([at, kind, text]);
+  if (!state) return;
+  const last = l.segs[l.segs.length - 1];
+  const open = !!last && (l.role === "routine" ? l.state === "working" : l.state !== "done");
+  if (open) last[1] = Math.max(last[0], at); // the last segment ends at the event
+  l.state = state;
+  if (state === "done" || l.role === "routine" && state === "idle") return;
+  if (open && last[2] === state) return; // the same state goes on
+  l.segs.push([at, at, state]);
+}
+
+function drawSoon() {
+  if (tl.drawTimer) return;
+  tl.drawTimer = setTimeout(() => { tl.drawTimer = 0; drawAll(); }, Math.max(0, tl.lastDraw + DRAW_MS - Date.now()));
+}
+
+// drawAll draws the timeline of the view shown.
+function drawAll() {
+  tl.lastDraw = Date.now();
+  if (pages.view === "map") {
+    drawLanes($("tl-map"), tl.data, { fold: true, live: true });
+    renderKpis();
+  } else if (pages.view === "timeline") {
+    drawLanes($("tl-full"), tl.data, { fold: false, live: true });
+  } else if (pages.view === "lead" && tl.lead && tl.lead.path === pages.lead) {
+    drawLanes($("lead-lanes"), tl.lead.data, { fold: false, live: true, life: true });
+  }
+}
+
+// abbrev shortens a repo name for lane labels: its first letter and the
+// letter two thirds into its first word (buildermesh: bm).
+function abbrev(repo) {
+  const w = repo.split(/[-_.]/)[0];
+  return w.length < 3 ? w : w[0] + w[Math.floor(2 * w.length / 3)];
+}
+
+// shortener drops the repo's prefix from lane labels when every top lane is
+// <repo>-... of one repo whose name has five letters or more, putting
+// abbrev(repo) in its place.
+function shortener(tops) {
+  const repo = tops.length && tops[0].repo;
+  if (!repo || repo.length < 5 || !tops.every((l) => l.repo === repo && l.path.startsWith(repo + "-"))) return (p) => p;
+  const ab = abbrev(repo);
+  return (p) => p.startsWith(repo + "-") ? ab + p.slice(repo.length) : p;
+}
+
+// rowsOf turns lanes into the rows drawn: with fold, the top lanes only
+// (a lane whose parent has no lane), each with the count of lanes under it;
+// else every lane at its depth, the routine lanes after the rest.
+function rowsOf(lanes, fold) {
+  const by = new Map(lanes.map((l) => [l.path, l]));
+  const isTop = (l) => !by.has(l.parent) || l.parent === l.path;
+  const depth = (l) => {
+    let n = 0;
+    for (let p = l; !isTop(p) && n < 8; p = by.get(p.parent)) n++;
+    return n;
+  };
+  const nodes = lanes.filter((l) => l.role !== "routine");
+  const tops = nodes.filter(isTop);
+  const short = shortener(tops);
+  const under = (l) => nodes.filter((x) => x !== l && x.path.startsWith(l.path + ".")).length;
+  if (fold) return tops.map((l) => ({ l, depth: 0, label: short(l.path), more: under(l) }));
+  const rows = nodes.map((l) => {
+    const d = depth(l);
+    return { l, depth: d, label: d ? lastToken(l.path) : short(l.path), more: 0 };
+  });
+  const rs = lanes.filter((l) => l.role === "routine");
+  if (rs.length) rows.push({ group: "routines" }, ...rs.map((l) => ({ l, depth: 0, label: l.path.replace(/^routine\./, ""), more: 0 })));
+  return rows;
+}
+
+// axisStep is the time between grid lines for a span and width: an hour
+// each hour narrower than 1000px on the 6h and 24h windows.
+function axisStep(span) {
+  const narrow = narrowQ.matches;
+  if (span <= 3600) return 600;
+  if (span <= 6 * 3600) return narrow ? 3600 : 1800;
+  if (span <= 24 * 3600) return narrow ? 3600 : 7200;
+  if (span <= 3 * 86400) return 6 * 3600;
+  return 86400;
+}
+
+function hm(t) {
+  return new Date(t * 1000).toISOString().slice(11, 16);
+}
+
+function md(t) {
+  return new Date(t * 1000).toISOString().slice(5, 10);
+}
+
+// spanText is "14:30–15:10 (40m)", the day too when the span crosses one.
+function spanText(a, b) {
+  const day = md(a) !== md(b);
+  return (day ? md(a) + " " : "") + hm(a) + "–" + (day ? md(b) + " " : "") + hm(b) + " (" + dur((b - a) * 1000) + ")";
+}
+
+// drawLanes draws d's lanes into box over d's window moved to the hub's now
+// (opts.live), or from d.from to now (opts.life): segments by state, idle
+// dashed, ticks, grid lines, the now line, hover tips and links to the lead
+// page; with opts.fold only the top lanes.
+function drawLanes(box, d, opts) {
+  if (!box) return;
+  if (!d) {
+    box.replaceChildren(el("p", "empty", "loading…"));
+    return;
+  }
+  // A life whose lanes are all done ends at its last event, not now.
+  const ended = opts.life && d.lanes.length > 0 && d.lanes.every((l) => l.state === "done");
+  const now = Math.max(hubNow(), d.to);
+  const to = ended ? d.to : now;
+  const from = opts.life ? Math.min(d.from, to - 600) : now - (WINDOWS[tl.win] || d.to - d.from);
+  const rows = rowsOf(d.lanes || [], opts.fold);
+  const counts = { lanes: 0, segs: {}, ticks: 0 };
+  if (!rows.length) {
+    box.replaceChildren(el("p", "empty", opts.life ? "no events for this node" : "No lanes in this window."));
+    tallyCheck(box, counts);
+    return;
+  }
+  const W = Math.max(box.clientWidth, 240);
+  const G = narrowQ.matches ? LANE.narrowGutter : LANE.gutter;
+  const hOf = (r) => r.group ? 18 : r.depth ? LANE.kidH : LANE.h;
+  const H = LANE.top + rows.reduce((s, r) => s + hOf(r), 0) + LANE.axis;
+  const root = svg("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "group", "aria-label": "fleet timeline" });
+  const x = (t) => G + (Math.max(from, Math.min(to, t)) - from) / (to - from) * (W - G - 8);
+  const step = axisStep(to - from);
+  let lastLabel = -Infinity;
+  for (let t = Math.ceil(from / step) * step; t <= to; t += step) {
+    const X = x(t);
+    svg("line", { class: "grid", x1: X, x2: X, y1: LANE.top - 6, y2: H - LANE.axis + 2 }, root);
+    if (X - lastLabel >= 52 && X <= W - 18) {
+      svgText({ class: "axis", x: X, y: H - 6, "text-anchor": "middle" }, step >= 86400 ? md(t) : hm(t), root);
+      lastLabel = X;
+    }
+  }
+  let y = LANE.top;
+  for (const r of rows) {
+    if (r.group) {
+      svg("line", { class: "grid", x1: 0, x2: W, y1: y + 6, y2: y + 6 }, root);
+      svgText({ class: "axis", x: 4, y: y + 15 }, r.group, root);
+      y += 18;
+      continue;
+    }
+    const l = r.l, h = hOf(r), bar = r.depth ? LANE.kidBar : LANE.bar, by = y + (h - bar) / 2;
+    const g = svg("g", { class: "tl-lane" + (r.depth ? " kid" : "") + " role-" + String(l.role || "").replace(/[^a-z-]/g, "") }, root);
+    const name = svgText({ class: "label", x: 4 + r.depth * 10, y: by + bar - 2 }, fit(r.label, Math.floor((G - 14 - r.depth * 10) / 7) - (r.more ? 3 : 0)), g);
+    if (r.more) name.append(svgTspan("more", " +" + r.more));
+    hover(name, () => l.path + "\n" + (l.state || "idle") + (l.spec ? " · spec " + l.spec : "") + (l.repo ? " · " + l.repo : ""));
+    const live = opts.live && l.state !== "done" && !(l.role === "routine" && l.state !== "working");
+    l.segs.forEach((s, i) => {
+      const end = live && i === l.segs.length - 1 ? now : s[1];
+      if (end < from || s[0] > to) return;
+      const st = String(s[2]).replace(/[^a-z-]/g, "");
+      const x0 = x(s[0]), w = Math.max(2, x(end) - x0 - 1);
+      const rect = svg("rect", { class: "seg st-" + st, x: x0, y: by, width: w, height: bar, rx: 3 }, g);
+      hover(rect, () => l.path + "\n" + st + "  " + spanText(s[0], end));
+      counts.segs[st] = (counts.segs[st] || 0) + 1;
+    });
+    if (!r.depth || !opts.fold) {
+      for (const [at, kind, text] of l.ticks) {
+        if (at < from || at > to) continue;
+        const X = x(at);
+        let m;
+        if (kind === "progress") m = svg("rect", { class: "tick progress", x: X - 1, y: by, width: 2, height: bar }, g);
+        else if (kind === "job") m = svgText({ class: "tick job", x: X, y: by - 1, "text-anchor": "middle" }, "◆", g);
+        else if (kind === "refused") m = svgText({ class: "tick refused", x: X, y: by - 1, "text-anchor": "middle" }, "✕", g);
+        else if (kind === "ready") m = svgText({ class: "tick ready", x: X, y: by - 1, "text-anchor": "middle" }, "▲", g);
+        else if (kind === "done") m = svgText({ class: "tick done", x: X + 3, y: by + bar - 1 }, "✓", g);
+        if (!m) continue;
+        counts.ticks++;
+        hover(m, () => l.path + "  " + md(at) + " " + hm(at) + "  " + kind + (text ? "\n" + text : ""));
+      }
+    }
+    if (l.role !== "routine") linkLane(g, l.path);
+    counts.lanes++;
+    y += h;
+  }
+  if (!ended) {
+    const nx = x(now);
+    svg("line", { class: "now", x1: nx, x2: nx, y1: LANE.top - 6, y2: H - LANE.axis + 2 }, root);
+  }
+  box.replaceChildren(root);
+  tallyCheck(box, counts);
+}
+
+function svgTspan(cls, s) {
+  const e = document.createElementNS(NS, "tspan");
+  e.setAttribute("class", cls);
+  e.textContent = s;
+  return e;
+}
+
+function linkLane(g, path) {
+  g.setAttribute("tabindex", "0");
+  g.setAttribute("role", "link");
+  g.setAttribute("aria-label", path);
+  const go = () => { location.hash = "#/lead/" + path; };
+  g.addEventListener("click", go);
+  g.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
+  });
+}
+
+// hover shows the tip with text() under the mouse while it is on e.
+function hover(e, text) {
+  const tip = $("tip");
+  e.addEventListener("pointermove", (ev) => {
+    tip.textContent = text();
+    tip.hidden = false;
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = Math.max(4, Math.min(ev.clientX + 14, window.innerWidth - w - 4)) + "px";
+    tip.style.top = (ev.clientY + 14 + h > window.innerHeight ? ev.clientY - h - 8 : ev.clientY + 14) + "px";
+  });
+  e.addEventListener("pointerleave", () => { tip.hidden = true; });
+}
+
+// tallyCheck keeps, under ?check=1, the counts of the timeline the view shows.
+function tallyCheck(box, c) {
+  if (!check || box.closest(".view").hidden) return;
+  check.lanes = c.lanes;
+  check.segs = c.segs;
+  check.ticks = c.ticks;
+  checkSoon();
+}
 // --- the recent-events drawer ---------------------------------------------
 
 // describe turns a frame into {path, event, text}; an inbox frame's also
@@ -807,7 +787,7 @@ function el(tag, cls, text, ...children) {
 
 function badge(state) {
   const s = String(state || "idle");
-  return el("span", "badge st-" + s.replace(/[^a-z-]/g, ""), s);
+  return el("span", "badge st-" + s.replace(/[^a-z-]/g, ""), (ICON[s] ? ICON[s] + " " : "") + s);
 }
 
 // dur renders ms as "1d 3h", "1h 10m", "4m" or, with secs, "4m 10s".
@@ -1118,6 +1098,14 @@ function renderLead(path, v) {
   }
   const n = v.node || {}, st = v.state || {}, sp = v.spec;
   const parts = [badge(st.state)];
+  if (n.spec || sp) parts.push(el("span", "hd-spec", "spec " + (n.spec || sp.id) + (sp && sp.title ? " · " + sp.title : "")));
+  for (const f of [n.host, n.model]) if (f) parts.push(el("span", "mono muted", f));
+  const began = Date.parse(n.started_at || "");
+  if (!isNaN(began)) {
+    const ended = st.state === "done" ? Date.parse(st.at || "") : NaN;
+    parts.push(el("span", "mono muted", "started " + md(began / 1000) + " " + hm(began / 1000) + "Z"),
+      el("span", "mono muted", dur((isNaN(ended) ? hubNow() * 1000 : ended) - began)));
+  }
   if (st.text) parts.push(el("span", "muted", st.text));
   if (n.branch) parts.push(el("code", "branch", n.branch));
   const url = safeURL(v.console_url);
@@ -1192,13 +1180,15 @@ function roundSpec(round, s) {
 const lead = loader(async () => {
   const path = pages.lead;
   if (!path) return;
-  let r;
-  try {
-    r = await fetchJSON("/api/lead/" + encodeURIComponent(path));
-  } catch (e) {
-    r = { status: 0, body: null };
-  }
+  const get = (url) => fetchJSON(url).catch(() => ({ status: 0, body: null }));
+  const [r, t] = await Promise.all([get("/api/lead/" + encodeURIComponent(path)),
+    get("/api/timeline?lead=" + encodeURIComponent(path))]);
   if (pages.lead !== path) return; // the route moved on
+  if (t.body) {
+    t.body.lanes = t.body.lanes || [];
+    replayLive(t.body);
+    tl.lead = { path, data: t.body };
+  }
   if (r.status === 404) {
     renderLead(path, null);
   } else if (r.body) {
@@ -1210,6 +1200,7 @@ const lead = loader(async () => {
     return; // keep what is shown
   }
   pages.leadShown = path;
+  drawAll();
   if (check) checkSoon();
 });
 
@@ -1296,7 +1287,7 @@ const routines = loader(async () => {
   if (r.body) renderRoutines(r.body);
 });
 
-// --- the strip
+// --- the KPI row and the digest
 
 // every is the daemon's digest period ([notify] digest_every) in ms.
 const strip = { quota: [], digest: null, every: 0 };
@@ -1305,39 +1296,76 @@ function pct(x) {
   return Math.round(+x || 0) + "%";
 }
 
-// COUNTED are the states the summary row counts, in the order it names them.
-const COUNTED = ["working", "landing", "asking", "blocked", "silent", "held", "done"];
-
-// stateCounts counts the loaded tree's leads, rounds and their children by
-// state (routines are not nodes of it); a live event's state wins over the
-// tree's, as on the boxes. Null when the tree has no nodes.
-function stateCounts() {
-  const n = new Map();
-  let any = false;
-  const walk = (t) => {
-    const live = mesh.live.get(t.node.path);
-    const s = live ? live.state : t.state && t.state.state;
-    n.set(s, (n.get(s) || 0) + 1);
-    any = true;
-    for (const c of t.children || []) walk(c);
-  };
-  for (const t of mesh.tree ? mesh.tree.leads : []) walk(t);
-  return any ? n : null;
+// tile is one KPI: a small-caps label, a large mono value and a mono
+// subline; a link when href is given.
+function tile(label, value, sub, href) {
+  const t = el(href ? "a" : "div", "tile" + (href ? " tap" : ""), null, el("div", "k", label),
+    value instanceof Node ? value : el("div", "v", value), el("div", "s", null, ...[].concat(sub)));
+  if (href) t.setAttribute("href", href);
+  return t;
 }
 
-// summaryRow is the strip's first row: the count per state, zero counts
-// dropped, each word coloured as its badge. Null when there is no tree.
-function summaryRow() {
-  const n = stateCounts();
-  if (!n) return null;
-  const row = el("div", "sum");
-  for (const s of COUNTED) {
-    if (!n.get(s)) continue;
-    if (row.childNodes.length) row.append(" · ");
-    row.append(el("span", "st-" + s, n.get(s) + " " + s));
+// list is up to n of names joined with " · ", "+N" for the rest.
+function list(names, n) {
+  const more = names.length > n ? " +" + (names.length - n) : "";
+  return names.slice(0, n).join(" · ") + more;
+}
+
+// renderKpis draws the six tiles from the tree (with live states), the
+// window's timeline, the routines and the quota readings.
+function renderKpis() {
+  const box = $("kpis");
+  const lanes = tl.data ? tl.data.lanes : [];
+  const paths = new Set(lanes.map((l) => l.path));
+  const short = shortener(lanes.filter((l) => l.role !== "routine" && !paths.has(l.parent)));
+  const live = [], waiting = [];
+  eachNode((t, s) => {
+    if (LIVE.has(s)) live.push(t.node.path);
+    if (s === "asking" || s === "blocked") waiting.push(t.node.path);
+  });
+  const from = hubNow() - WINDOWS[tl.win];
+  const inWin = (l, kind) => l.ticks.filter((k) => k[1] === kind && k[0] >= from).length;
+  const landed = lanes.filter((l) => l.role === "lead" && inWin(l, "done"));
+  let refused = 0, worst = null, worstN = 0;
+  for (const l of lanes) {
+    const n = inWin(l, "refused");
+    refused += n;
+    if (n > worstN) [worst, worstN] = [l, n];
   }
-  if (!row.childNodes.length) row.append(el("span", "st-idle", "all idle"));
-  return row;
+  let queued = 0, running = 0;
+  for (const g of mesh.tree ? mesh.tree.routines : []) {
+    queued += g.depth || 0;
+    for (const i of g.instances || []) if (i.state && i.state.state === "working") running++;
+  }
+  const win = tl.data ? "" : " …";
+  box.replaceChildren(
+    tile("Live agents", mesh.tree ? live.length : "–", list(live.map(short), 3)),
+    tile("Landed · " + tl.win, landed.length + win, list(landed.map((l) => l.spec || short(l.path)), 6)),
+    tile("Land refused · " + tl.win, refused + win, worst ? short(worst.path) + " ×" + worstN : ""),
+    tile("Asking / blocked", mesh.tree ? waiting.length : "–", list(waiting.map(short), 3)),
+    quotaTile(),
+    tile("Routines", queued, [queued === 1 ? "job queued · " : "jobs queued · ", running + " running"], "#/routines"));
+  if (check) checkSoon();
+}
+
+// quotaTile is each provider's 5h and week, a meter for the higher week
+// and that week's reset.
+function quotaTile() {
+  const q = strip.quota || [];
+  if (!q.length) return tile("Quota", "–", "no reading");
+  const top = q.reduce((a, b) => (+b.week || 0) > (+a.week || 0) ? b : a);
+  const lines = el("div", "v small", null, ...q.map((r) => {
+    const high = +r.five_hour >= 80 || +r.week >= 80;
+    return el("div", high ? "high" : "", (high ? "▲ " : "") + (r.provider || "?") + " 5h " + pct(r.five_hour) + " · wk " + pct(r.week));
+  }));
+  const meter = el("div", "meter" + (+top.week >= 80 ? " high" : ""), null, el("i"));
+  meter.firstChild.style.width = Math.max(0, Math.min(100, +top.week || 0)) + "%";
+  meter.setAttribute("role", "img");
+  meter.setAttribute("aria-label", (top.provider || "?") + " week " + pct(top.week));
+  const sub = [meter, (top.provider || "?") + " wk "];
+  if (top.week_reset) sub.push(clock("reset", top.week_reset, true));
+  if (top.read_at) sub.push(" ", clock("read", top.read_at, false));
+  return tile("Quota", lines, sub);
 }
 
 // freshDigest is the newest digest while it is younger than twice the
@@ -1348,36 +1376,25 @@ function freshDigest() {
   return d && strip.every > 0 && age > 2 * strip.every ? null : d;
 }
 
-// renderStrip draws the strip; an open digest stays open.
+// renderStrip draws the digest fold under the KPI row; an open one stays open.
 function renderStrip() {
   const s = $("strip");
-  const q = strip.quota || [], d = freshDigest();
+  const d = freshDigest();
   const open = s.querySelector("details[open]") !== null;
-  const top = summaryRow();
-  if (!top && !q.length && !d) {
+  if (!d) {
     s.hidden = true;
     s.replaceChildren();
     return;
   }
-  const rows = (top ? [top] : []).concat(q.map((r) => {
-    const line = el("div", "quota", null, el("b", null, r.provider || "?"),
-      " · 5h " + pct(r.five_hour) + " · wk " + pct(r.week));
-    if (+r.five_hour >= 80 || +r.week >= 80) line.classList.add("high");
-    if (r.five_reset) line.append(" · ", clock("reset", r.five_reset, true));
-    if (r.read_at) line.append(" ", clock("read", r.read_at, false));
-    return line;
-  }));
-  if (d) {
-    const head = el("summary", "tap", null, clock("digest", d.at, false), ": " + (d.title || ""));
-    if (d.body) {
-      const det = el("details", "digest", null, head, el("pre", null, d.body));
-      if (open) det.setAttribute("open", "");
-      rows.push(det);
-    } else {
-      rows.push(el("div", "digest", null, ...head.childNodes));
-    }
+  const head = el("summary", "tap", null, clock("digest", d.at, false), ": " + (d.title || ""));
+  let row;
+  if (d.body) {
+    row = el("details", "digest", null, head, el("pre", null, d.body));
+    if (open) row.setAttribute("open", "");
+  } else {
+    row = el("div", "digest", null, ...head.childNodes);
   }
-  s.replaceChildren(...rows);
+  s.replaceChildren(row);
   s.hidden = false;
 }
 
@@ -1389,6 +1406,7 @@ async function loadStrip() {
     strip.digest = r.body.digest || null; // null: no digest any more
     strip.every = (+r.body.digest_every || 0) * 1000;
     renderStrip();
+    renderKpis();
   } catch (e) {
     // The next minute tries again.
   }
@@ -1409,8 +1427,8 @@ function pagesApply(f) {
   if (/^daemon\.[^.]+\.digest$/.test(rest)) liveDigest(f);
   if (pages.view === "lead" && touchesLead(rest, p)) lead.soon();
   if (pages.view === "routines" && (rest.startsWith("routine.") || rest.startsWith("inbox.routine."))) routines.soon();
+  if (rest.startsWith("routine.") || rest.startsWith("inbox.routine.")) treeSoon(); // the Routines tile
 }
-
 // --- events, routes, start ------------------------------------------------
 
 function parseFrame(data) {
@@ -1422,14 +1440,29 @@ function parseFrame(data) {
   }
 }
 
+let connState = "connecting";
+
 function setConn(s) {
-  const c = $("conn");
-  c.textContent = s;
-  c.classList.toggle("down", s === "reconnecting");
+  connState = s;
+  showConn();
   if (check) {
     if (check.conn[check.conn.length - 1] !== s) check.conn.push(s);
     checkSoon();
   }
+}
+
+// showConn writes the connection state: "● live · <host> hub" once live.
+function showConn() {
+  const c = $("conn");
+  c.textContent = connState === "live" ? "● live" + (mesh.host ? " · " + mesh.host + " hub" : "") : connState;
+  c.classList.toggle("down", connState === "reconnecting");
+  c.classList.toggle("up", connState === "live");
+}
+
+// showClock writes the hub's clock in UTC.
+function showClock() {
+  const d = new Date(hubNow() * 1000).toISOString();
+  $("clock").textContent = d.slice(5, 10) + " " + d.slice(11, 16) + "Z";
 }
 
 const RETRY_MS = [1000, 2000, 5000, 10000];
@@ -1448,6 +1481,7 @@ function connect() {
     drawRecent();
     setConn("live");
     loadTree();
+    timeline.run();
     if (pages.view === "lead") lead.run();
     if (pages.view === "routines") routines.run();
   };
@@ -1486,45 +1520,27 @@ function checkSoon() {
 }
 
 // selfCheck writes, under ?check=1, whether the page scrolls sideways, the
-// smallest tap target, the page offset of the first working box's top (none
-// without one), the held and landing boxes and band rows, and the connection history into document.title.
+// smallest tap target, the tree reads, the timeline drawn (lanes, segments
+// per state, ticks), the KPI tiles, the band's rows (held and landing ones
+// too), the older fold, the digest and the connection history into
+// document.title.
 function selfCheck() {
   const sw = document.documentElement.scrollWidth, iw = window.innerWidth;
   let tap = Infinity;
-  for (const e of document.querySelectorAll(".node.link .box, nav a, .drawer summary, header h1 a, .tap")) {
+  for (const e of document.querySelectorAll("nav a, #windows button, .drawer summary, header h1 a, .tap")) {
     const r = e.getBoundingClientRect();
     if (r.width || r.height) tap = Math.min(tap, r.height, r.width);
   }
-  const live = document.querySelector("#map .node.st-working:not(.group) .box");
-  const workingTop = live ? Math.round(live.getBoundingClientRect().top + window.scrollY) : "none";
-  const held = document.querySelectorAll("#map .node.st-held:not(.group)").length;
-  const bandHeld = document.querySelectorAll("#needs .need.st-held").length;
-  const landing = document.querySelectorAll("#map .node.st-landing:not(.group)").length;
-  const bandLanding = document.querySelectorAll("#needs .need.st-landing").length;
-  const older = document.querySelectorAll("#needs details.older .need").length;
   const c = check;
+  const segs = Object.keys(c.segs).sort().map((s) => s + ":" + c.segs[s]).join(",") || "none";
+  const n = (sel) => document.querySelectorAll(sel).length;
   document.title = `bmesh ${sw <= iw ? "ok" : "SCROLLS"} view=${pages.view} scrollWidth=${sw} innerWidth=${iw} minTap=${Math.round(tap)}` +
-    ` workingTop=${workingTop}` +
     (pages.view === "lead" ? ` firstCard=${firstCard()}` : "") +
-    ` svgWidth=${mesh.width} mapWidth=${$("map").clientWidth}` +
-    ` vertical=${mesh.vertical} leads=${c.leads} trees=${c.trees} conn=${c.conn.join(">")}` +
-    ` replay=${c.replay} live=${c.live} flashes=${c.flashes} strip=${$("strip").hidden ? "hidden" : $("strip").children.length}` +
+    ` window=${tl.win} trees=${c.trees} lanes=${c.lanes} segs=${segs} ticks=${c.ticks} kpis=${n("#kpis .tile")}` +
+    ` conn=${c.conn.join(">")} replay=${c.replay} live=${c.live}` +
     ` band=${$("needs").hidden ? "hidden" : $("needs").children.length}` +
-    ` held=${held} bandHeld=${bandHeld} landing=${landing} bandLanding=${bandLanding}` +
-    ` older=${older} staleLast=${staleLast()} digest=${$("strip").querySelector(".digest") ? 1 : 0}`;
-}
-
-// staleLast says whether every stale block sorts after every working one:
-// "yes", "no", or "none" without a stale block.
-function staleLast() {
-  let working = -1, stale = Infinity, i = 0;
-  for (const d of mesh.drawn.values()) {
-    if (!d.box.top) continue;
-    if (d.stale) stale = Math.min(stale, i);
-    else if (d.state === "working") working = i;
-    i++;
-  }
-  return stale === Infinity ? "none" : stale > working ? "yes" : "no";
+    ` bandHeld=${n("#needs .need.st-held")} bandLanding=${n("#needs .need.st-landing")}` +
+    ` older=${n("#needs details.older .need")} digest=${$("strip").querySelector(".digest") ? 1 : 0}`;
 }
 
 // firstCard names the lead page's card drawn highest (leftmost on a tie),
@@ -1543,10 +1559,17 @@ function firstCard() {
   return best ? String(best.dataset.card).replace(/\s+/g, "_") : "none";
 }
 
-// route shows the view the hash names: #/ the map, #/lead/<path> a lead,
-// #/routines the routines.
+// route shows the view the hash names: #/ the overview, #/timeline the
+// timeline, either with ?w=<window>; #/lead/<path> a lead, #/routines the
+// routines.
 function route() {
-  const h = location.hash.replace(/^#\/?/, "");
+  const [h, q] = location.hash.replace(/^#\/?/, "").split("?");
+  const w = new URLSearchParams(q || "").get("w");
+  if (WINDOWS[w] && w !== tl.win) {
+    tl.win = w;
+    tl.data = null;
+    try { localStorage.setItem(WINDOW_KEY, w); } catch (e) { /* the hash carries it */ }
+  }
   let view = "map";
   let path = "";
   if (h.startsWith("lead/")) {
@@ -1556,37 +1579,38 @@ function route() {
     if (path !== pages.leadShown) {
       $("lead-title").textContent = path;
       $("lead-head").replaceChildren();
+      $("lead-lanes").replaceChildren();
       $("lead-panel").replaceChildren();
       pages.leadShown = "";
     }
-  } else if (h === "routines") {
-    view = "routines";
+  } else if (h === "routines" || h === "timeline") {
+    view = h;
   }
   pages.view = view;
   pages.lead = path;
-  for (const v of ["map", "lead", "routines"]) $("view-" + v).hidden = v !== view;
+  for (const v of ["map", "timeline", "lead", "routines"]) $("view-" + v).hidden = v !== view;
+  $("windows").hidden = view === "lead" || view === "routines";
+  showWindow();
   if (view === "lead") lead.run();
   if (view === "routines") routines.run();
-  if (view === "map") render(); // the width may have changed while hidden
+  if (view === "map" || view === "timeline") {
+    drawAll(); // the width may have changed while hidden
+    timeline.run();
+  }
   for (const a of document.querySelectorAll("nav a[data-route]")) a.classList.toggle("on", a.dataset.route === view);
 }
 
-// The phone layout stacks the blocks; the map is redrawn when the media
-// query flips and, since boxes and the shelf fit the width, when the window
-// changes width (not height: a phone's toolbar hiding on scroll resizes it).
 const phone = window.matchMedia(PHONE);
-mesh.vertical = phone.matches;
-phone.addEventListener("change", () => {
-  mesh.vertical = phone.matches;
-  render();
-  drawRecent(); // the lane count follows the width
-});
+const narrowQ = window.matchMedia(NARROW);
+phone.addEventListener("change", drawRecent); // the lane count follows the width
+// Timelines fit the width: redrawn when it changes (not the height: a
+// phone's toolbar hiding on scroll resizes it).
 let resizeTimer = 0, lastWidth = window.innerWidth;
 window.addEventListener("resize", () => {
   if (window.innerWidth === lastWidth) return;
   lastWidth = window.innerWidth;
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(render, 100);
+  resizeTimer = setTimeout(drawAll, 100);
 });
 
 for (const id of ["needs", "recent", "lead-panel"]) $(id).addEventListener("click", toggleRows);
@@ -1594,13 +1618,21 @@ $("recent").addEventListener("click", pinChip);
 $("recent").addEventListener("pointermove", (ev) => { if (ev.pointerType === "mouse") setHover(hoverPath(ev)); });
 $("recent").addEventListener("pointerleave", () => setHover(""));
 $("drawer").addEventListener("toggle", measureTime);
+$("windows").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button[data-w]");
+  if (b) setWindow(b.dataset.w);
+});
 document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && recentFocus.pin) unpin(); });
 window.addEventListener("hashchange", route);
+tl.win = storedWindow() || "6h";
 route();
 loadTree();
 connect();
 loadStrip();
 setInterval(loadTree, POLL_MS);
 setInterval(loadStrip, STRIP_MS);
+setInterval(() => { if (!document.hidden) timeline.run(); }, 2 * POLL_MS);
 setInterval(() => { if (pages.view === "routines" && !document.hidden) routines.run(); }, ROUTINES_MS);
-setInterval(tick, 1000);
+setInterval(drawAll, NOW_MS);
+setInterval(() => { tick(); showClock(); }, 1000);
+showClock();

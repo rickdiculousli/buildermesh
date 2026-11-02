@@ -1,16 +1,19 @@
 // check.mjs <url> <width> <height> [png]: loads the map at url (with
 // ?check=1 added when missing) in headless Chromium at width x height over
 // the DevTools protocol, waits for the self-check title to show a loaded
-// tree on a live connection, prints the title, writes a screenshot of the
+// tree and a drawn timeline (lanes= at least 1; the routines view draws
+// none) on a live connection, prints the title, writes a screenshot of the
 // viewport to png when given, and exits: 0 once the title showed, 1 when it
 // did not within 20 s, its bandHeld= or bandLanding= is a non-zero number
-// (a held or landing node in the needs-you band), its landing= or older= is
-// 0 or missing, its staleLast= isn't yes or its digest= is 1 (the seed
-// always has one landing lead, and one lead blocked for a day that folds
-// into the band's older line and sorts after the working leads, and its
-// digest is too old for the strip; the last title is printed all the same),
-// 2 on a usage or browser error. No --dump-dom: the page's /events stream never
-// ends, so a plain headless load never returns.
+// (a held or landing node in the needs-you band), its older= is 0 or
+// missing, its digest= is 1, on the overview or timeline view its segs=
+// lacks any of working, landing, held, silent, asking or blocked, or on the
+// overview its kpis= isn't 6 (the seed always has a segment of each of
+// those states on the default window, one lead blocked for a day that folds
+// into the band's older line, and a digest too old for the strip; the last
+// title is printed all the same), 2 on a usage or browser error. No
+// --dump-dom: the page's /events stream never ends, so a plain headless
+// load never returns.
 //
 // Chromium is $CHROME, else the newest headless shell or Chromium in the
 // Playwright cache ($PLAYWRIGHT_BROWSERS_PATH, ~/.cache/ms-playwright or
@@ -108,15 +111,20 @@ try {
   });
   const title = async () => (await send("Runtime.evaluate", { expression: "document.title", returnByValue: true })).result.value;
   await send("Emulation.setDeviceMetricsOverride", { width: +w, height: +h, deviceScaleFactor: 2, mobile: +w < 700 });
+  // CHECK_COLOR_SCHEME=dark|light picks prefers-color-scheme; unset, Chromium's own (light).
+  if (process.env.CHECK_COLOR_SCHEME) {
+    await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: process.env.CHECK_COLOR_SCHEME }] });
+  }
   await send("Page.enable");
   await send("Page.navigate", { url: url.href });
-  // The page writes its title 100 ms after each change; wait for a tree on
-  // a live connection, then (for up to 3 s) for the title to hold still.
+  // The page writes its title 100 ms after each change; wait for a tree and
+  // a drawn timeline on a live connection, then (for up to 3 s) for the
+  // title to hold still.
   let t = "", ready = false;
   for (let i = 0; i < 100 && !ready; i++) {
     await sleep(200);
     t = await title();
-    ready = /trees=[1-9]/.test(t) && /conn=\S*live/.test(t);
+    ready = /trees=[1-9]/.test(t) && /conn=\S*live/.test(t) && (/ lanes=[1-9]/.test(t) || / view=routines/.test(t));
   }
   if (ready) {
     for (let last = "", i = 0; last !== t && i < 10; i++) {
@@ -131,20 +139,22 @@ try {
     writeFileSync(png, Buffer.from(shot.data, "base64"));
     console.log(`  screenshot ${png}`);
   }
-  if (!ready) console.error("check.mjs: no loaded tree on a live connection within 20 s");
-  const bandHeld = /bandHeld=([1-9]\d*)/.test(t);
-  if (bandHeld) console.error("check.mjs: a held node is in the needs-you band");
-  const bandLanding = /bandLanding=([1-9]\d*)/.test(t);
-  if (bandLanding) console.error("check.mjs: a landing node is in the needs-you band");
-  const noLanding = !/ landing=[1-9]\d*/.test(t);
-  if (noLanding) console.error("check.mjs: no landing box on the map");
-  const noOlder = !/ older=[1-9]\d*/.test(t);
-  if (noOlder) console.error("check.mjs: no stale row in the band's older fold");
-  const staleFirst = !/ staleLast=yes/.test(t);
-  if (staleFirst) console.error("check.mjs: a stale block is not after the working ones");
-  const oldDigest = / digest=1/.test(t);
-  if (oldDigest) console.error("check.mjs: the strip shows a digest older than twice digest_every");
-  code = ready && !bandHeld && !bandLanding && !noLanding && !noOlder && !staleFirst && !oldDigest ? 0 : 1;
+  if (!ready) console.error("check.mjs: no loaded tree and timeline on a live connection within 20 s");
+  const fails = [];
+  if (/bandHeld=[1-9]/.test(t)) fails.push("a held node is in the needs-you band");
+  if (/bandLanding=[1-9]/.test(t)) fails.push("a landing node is in the needs-you band");
+  if (!/ older=[1-9]/.test(t)) fails.push("no stale row in the band's older fold");
+  if (/ digest=1/.test(t)) fails.push("the strip shows a digest older than twice digest_every");
+  if (/ view=(map|timeline) /.test(t)) {
+    const segs = (/ segs=(\S*)/.exec(t) || [])[1] || "";
+    const drawn = new Set(segs.split(",").map((s) => s.split(":")[0]));
+    for (const st of ["working", "landing", "held", "silent", "asking", "blocked"]) {
+      if (!drawn.has(st)) fails.push(`no ${st} segment on the timeline`);
+    }
+  }
+  if (/ view=map /.test(t) && !/ kpis=6 /.test(t)) fails.push("the KPI row hasn't 6 tiles");
+  for (const f of fails) console.error(`check.mjs: ${f}`);
+  code = ready && !fails.length ? 0 : 1;
   ws.close();
 } catch (e) {
   console.error(`check.mjs: ${e.message}`);

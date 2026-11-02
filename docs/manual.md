@@ -4059,27 +4059,52 @@ Internals: [internals](internals.md#t3-done)
 
 ### Map
 
-The map (`/`) draws one block per lead, a tree of the lead and its executors (a round and its engineers alike), then the orphans block, then the routines column (last on a phone, where blocks stack). Blocks run in need order: `blocked`, `asking`, `silent`, `working`, `landing`, `held`, then stale ones (below), `idle` (no state yet), `done`. While a live lead (any state but `done`) is on the map, done leads leave the tree for a shelf under the live blocks: chips (`buildermesh-001 ✓`, newest first) headed `done (N)`, each linking its lead page. With no live lead, done leads draw as trees.
+The map (`/`) is a console under a top bar: `BMESH`, the connection (`● live · <host> hub`, else `connecting` or `reconnecting`), the tabs `overview`, `timeline` and `routines`, the window chips `1h 6h 24h 7d`, and the hub's clock in UTC. The window (default `6h`) is kept in the hash (`#/?w=24h`, `#/timeline?w=7d`) and in this browser across reloads. The look is dark; a browser set to light gets the light palette. Every number, path and time is set in monospace.
 
-**The routines column** draws one box per kind, with its queue and instance counts, linking to the routines page, which lists the instances per repo.
+**The overview** shows, top to bottom:
 
-**The strip**, under the header, opens with a summary row, `2 working · 1 landing · 1 asking · 1 silent · 2 held · 3 done` (`all idle` when none), over leads, rounds and their children, not routines. Below it come the quota lines, then the newest digest as a fold (`▸ digest 50m ago: <title>`) that opens to its body, while the digest is younger than twice `[notify] digest_every`; an older one is dropped from the strip (the phone's push is unchanged).
+1. **The KPI row**, six tiles:
+   - `Live agents`: the nodes (not routines) that are working, asking, blocked, silent, landing or held, and up to three paths;
+   - `Landed`: the leads `done` in the window, and their spec ids;
+   - `Land refused`: the daemon's `land-refused` events in the window, and the node with the most (`bm-096 ×5`);
+   - `Asking / blocked`: the nodes asking or blocked, and up to three paths;
+   - `Quota`: each provider's 5h and week (`▲` and the warning colour at 80% or more), a meter for the higher week and when that week resets;
+   - `Routines`: jobs queued and instances running, linking the routines tab.
+2. The newest digest as a fold (`▸ digest 50m ago: <title>`) that opens to its body, while the digest is younger than twice `[notify] digest_every`; an older one is dropped (the phone's push is unchanged).
+3. **The needs-you band** (below).
+4. **The fleet timeline** (below).
+
+The recent-events drawer is at the foot of every tab.
+
+**The fleet timeline** draws one lane per lead, round and fixer with a segment in the window. A lane is the node's states over time as bars: `working` blue, `landing` teal, `silent` yellow, `held` slate, `asking` and `blocked` red, and `idle` (registered, not yet started) dashed. Ticks mark a progress (a thin bar across the lane), a job queued (`◆`), a land refused (`✕`), a `ready` (`▲`) and a `done` (`✓`).
+- Hover a segment for its state, span and duration, and a tick for its time and words. Click a lane for its lead page.
+- Lanes run in need order of their state at the window's end (`blocked`, `asking`, `silent`, `working`, `landing`, `held`, then stale needs, `idle`, `done`), then by start.
+- A lead done before the window has no lane, so nothing finished hides the live ones; `7d` shows the week.
+- A label is the node's path. When every lane is of one repo with a name of five letters or more, that name is shortened to two letters (`buildermesh-096` is `bm-096`).
+- An executor or engineer folds into its parent's lane, counted after the label (`bm-096 +2`).
+- Live events extend the lanes at once (redrawn at most once a second), and a dashed line marks now, moving every 30 seconds.
+
+Narrower than 1000px, the tiles go to three columns (two under 480px), band rows put their words under the badge, and the timeline's label gutter narrows, with a grid line each hour on `6h` and `24h`.
+
+**The timeline tab** draws every node's lane, executors and engineers in thinner lanes under their parent. Under them, in a `routines` group, it draws one lane per routine instance with a job in the window, each job a segment from its start to its end.
+
+**The routines tab** lists each kind with its instances per repo, its queue, results and leases.
 
 **The recent-events drawer** shows each row's node as a chip in its lead tree's hue (routines and `daemon.*` grey); an inbox row shows the sender's chip, `→`, and a small recipient chip. Hovering a chip dims every row but that node's and those addressed to it. Clicking it (a tap on touch) pins that focus until you click it again or press Escape.
 
-**The needs-you band** above the map has these rows:
+**The needs-you band** under the KPI row has these rows, each with a 3px rule in its state's colour and a badge with an icon (`■ blocked`, `? asking`, `◌ silent`, `▸ operator`):
 
-1. One row per lead, round or engineer that is `asking`, `blocked` or `silent`, in need order and newest first within a state: state badge, path (linking its lead page), the state's words (the ask or block text; for a silent node `quiet for 20m` and how long ago) and a `×`. A row leaves on the node's next `started`, `progress` or `done`.
+1. One row per lead, round or engineer that is `asking`, `blocked` or `silent`, in need order and newest first within a state: badge, path (linking its lead page), the state's words (the ask or block text; for a silent node `quiet for 20m` and how long ago) and a `×`. A row leaves on the node's next `started`, `progress` or `done`.
 2. Then, when any row is stale or dismissed, one muted line, `▸ 1 older: buildermesh-round-2 blocked 16h`, that opens in place to those rows.
-3. Then one row per landed spec with operator steps still open, from every configured repo: an `operator` badge, `<repo> NNN`, and `<title>: X of Y open · bmesh spec steps NNN --repo <repo>`. The row goes once every step is ticked.
+3. Then one row per landed spec with operator steps still open, from every configured repo: badge, `<repo> NNN`, and `<title>: X of Y open · bmesh spec steps NNN --repo <repo>`. The row goes once every step is ticked.
 
-**Stale needs.** An `asking`, `blocked` or `silent` state older than `[serve] stale_after` (default `6h`; `"0"`: never) is stale. Its row leaves the band's top rows for the older line, and its block sorts after `held`, ahead of `idle`, faded with its state colours kept. The strip counts it as before. The node's next event makes it fresh.
+**Stale needs.** An `asking`, `blocked` or `silent` state older than `[serve] stale_after` (default `6h`; `"0"`: never) is stale. Its row leaves the band's top rows for the older line, and its lane sorts after `held`, ahead of `idle`. The node's next event makes it fresh.
 
 **Dismiss.** A row's `×` moves it to the older line at once. The dismissal is this browser's: kept in `localStorage` under the node's path and its state's time, never written to the mesh, so the node's next state shows again.
 
-On the map, an `asking` or `blocked` box's second line is the state and its words. A `held` box (a coordinator holds the lead at a gate) has a badge in its own slate colour and its words as the second line. A `held` lead counts in the strip but never gets a band row, because the coordinator put it there. A `landing` box (a lead that ran `ready`, its box's daemon landing its change) has a badge in its own calm teal and as its second line the daemon's latest landing words (`review job abc running on k16`); it counts in the strip (`1 landing`) and never gets a band row. The daemon's `land-refused` and `land-withdrawn` events put the lead back to `working`.
+A `held` lead (a coordinator holds it at a gate) and a `landing` lead (it ran `ready` and its box's daemon is landing it) never get a band row: their lanes show them. The daemon's `land-refused` and `land-withdrawn` events put a lead back to `working`.
 
-**The lead page** (`#/lead/<path>`, for any node) shows, in order:
+**The lead page** (`#/lead/<path>`, for any node) opens with a head line: state badge, spec id and title, host, model, when it started and how long it has run (to its `done` once done), then its words, branch and console link. Under it are its lane and its children's lanes over its whole life, ending at its last event once all are done. Then, in order:
 
 1. a `tree` card, one row per child (state badge, last segment of its path, branch, `N unread`) linking its page;
 2. the lead's `spec` card, or for a round a `specs` card with one `NNN title · status` line per spec its engineers proposed, opening the body in place (`no specs landed yet` before any lands);
@@ -4151,7 +4176,7 @@ For a spec that calls for repeated runs on a Mac (`go test -count=10`), use the 
 
 Runner tests drive shell fakes instead of tmux and claude, and a fake T3. The `cmd/bmesh` tests clear `CLAUDE_CODE_SESSION_ID`, so a test run inside a Claude Code session prints no context line. No test reaches the network, the box's cache, the real Keychain dialog, or the box's own `claude` and `codex` (the test-only variables and fixtures are in the internals; leave them unset outside tests). Check the real `bmesh:` and Keychain dialogs by hand on a Mac.
 
-**`scripts/seed.sh [seeder args]`** starts a throwaway `bmesh serve` in the background (embedded NATS and HTTP on free loopback ports; routines and ntfy off) over a seeded mesh that holds everything the map draws: every node state, a done lead on the shelf, a round with its engineers, routines with done instances, a queued job, leases, a digest 16 hours old (too old for the strip), quota lines, a lead blocked for a day (stale: the band's older line) and a landed spec with operator steps open (a band row). It prints the map's URL, its check command and a CLI config for poking the mesh, then returns; serve keeps running.
+**`scripts/seed.sh [seeder args]`** starts a throwaway `bmesh serve` in the background (embedded NATS and HTTP on free loopback ports; routines and ntfy off) over a seeded mesh that holds everything the map draws: every node state, a done lead, a round with its engineers, routines with done instances and their jobs, a queued job, leases, a digest 16 hours old (too old to show), quota readings, a lead blocked for a day (stale: the band's older line) and a landed spec with operator steps open (a band row). Its events are back-dated (each event's `at`) over the last six hours, so every state segment and every tick kind shows on the timeline's default window. It prints the map's URL, its check command and a CLI config for poking the mesh, then returns; serve keeps running.
 
 - State lives under `~/.cache/bmesh-scratch/seed/<checkout directory name>` (`BMESH_SEED_DIR` overrides it, `BMESH_SEED_HTTP` the listen address), wiped each run, so two checkouts seed side by side. Serve's state dir is `state/` there (`XDG_STATE_HOME`), so the seed never writes the box's serve record or plugin dir. `seed.pid` there holds serve's pid; a run first stops its checkout's previous serve.
 - `go run ./scripts/seed -nats <url> -again <path>` seeds nothing: it publishes a new `ask` on the seeded `<path>` (an asking or silent node, such as `docs-0007`), so a band row dismissed with `×` shows again. `<url>` is the `nats` of the printed CLI config.
@@ -4161,21 +4186,21 @@ Runner tests drive shell fakes instead of tmux and claude, and a fake T3. The `c
 **`node scripts/check.mjs <url> <width> <height> [png]`** (Node 22 or later) is the map's browser check:
 
 1. It loads `url` (adding `?check=1`) in headless Chromium at that viewport, over the DevTools protocol.
-2. It waits for the self-check title to show a loaded tree on a live connection (`trees=` at least 1, `conn=` ending `live`).
+2. It waits for the self-check title to show a loaded tree and a drawn timeline on a live connection (`trees=` and `lanes=` at least 1, `conn=` ending `live`; the routines tab draws no lanes, so there `lanes=` isn't waited for).
 3. It prints the title and, with `png` given, writes a viewport screenshot there.
 
 | Exit | When |
 |---|---|
 | 0 | the title showed |
-| 1 | no such title showed within 20 s (the last title is printed anyway), or the title's `bandHeld=` is non-zero (stderr: `check.mjs: a held node is in the needs-you band`), or its `bandLanding=` is non-zero (`check.mjs: a landing node is in the needs-you band`), or its `landing=` is 0 or missing (`check.mjs: no landing box on the map`; the seed always has one landing lead), or its `older=` is 0 or missing (`check.mjs: no stale row in the band's older fold`), or its `staleLast=` isn't `yes` (`check.mjs: a stale block is not after the working ones`), or its `digest=` is 1 (`check.mjs: the strip shows a digest older than twice digest_every`; the seed's digest is 16 hours old) |
+| 1 | no such title showed within 20 s (the last title is printed anyway), or the title's `bandHeld=` is non-zero (stderr: `check.mjs: a held node is in the needs-you band`), or its `bandLanding=` is non-zero (`check.mjs: a landing node is in the needs-you band`), or its `older=` is 0 or missing (`check.mjs: no stale row in the band's older fold`), or its `digest=` is 1 (`check.mjs: the strip shows a digest older than twice digest_every`; the seed's digest is 16 hours old), or on the overview or timeline tab its `segs=` lacks any of `working`, `landing`, `held`, `silent`, `asking` or `blocked` (`check.mjs: no held segment on the timeline`), or on the overview its `kpis=` isn't 6 (`check.mjs: the KPI row hasn't 6 tiles`). The seed has all of these. |
 | 2 | a usage or browser error |
 
-A hash picks the view (`/#/lead/<path>`, `/#/routines`). Chromium is `$CHROME`, else the newest headless shell or Chromium in the Playwright cache (`$PLAYWRIGHT_BROWSERS_PATH`, `~/.cache/ms-playwright`, `~/Library/Caches/ms-playwright`); stderr names it. `chromium --dump-dom` is no substitute: the page's `/events` stream never ends, so it never returns.
+A hash picks the view and window (`/#/timeline?w=24h`, `/#/lead/<path>`, `/#/routines`). `CHECK_COLOR_SCHEME=dark` (or `light`) sets the page's `prefers-color-scheme`; unset, it is Chromium's own, light. Chromium is `$CHROME`, else the newest headless shell or Chromium in the Playwright cache (`$PLAYWRIGHT_BROWSERS_PATH`, `~/.cache/ms-playwright`, `~/Library/Caches/ms-playwright`); stderr names it. `chromium --dump-dom` is no substitute: the page's `/events` stream never ends, so it never returns.
 
 To check a UI change:
 
 1. Run `scripts/seed.sh`.
-2. Run the printed `node scripts/check.mjs ... 390 844 shot.png`, and the same at `1280 800`.
+2. Run the printed `node scripts/check.mjs ... 390 844 shot.png`, and the same at `1000 800` and `1600 1000`.
 3. Run `scripts/seed.sh stop`.
 
 **`go run ./scripts/skilltest --arm <name>=<ref or dir> ...`** measures the plugin's skills and the review prompt `bmesh scaffold` seeds: scripted operator asks, a lead's build brief, the fix lead's brief and a review of a change with planted defects, run as headless Claude Code sessions, one arm per version of the plugin, twice each by default, each in a sandbox repo with a local origin and a fake `bmesh` first on PATH, and each cell is scored on what landed, what it ran, what it replied and how often it had to be steered, and its summary opens with the cases whose pass flipped between the arms (`scripts/skilltest/README.md`). Its Go tests check its scorers offline and run with the rest; no test starts a session.

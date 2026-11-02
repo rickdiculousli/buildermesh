@@ -76,7 +76,7 @@ func asset(dir, name string, body []byte, contentType string) http.HandlerFunc {
 }
 
 // Handler serves / (the page, with /map.js and /map.css), /api/nodes, /api/tree, /api/lead/{path},
-// /api/routines, /api/strip and /events, whose replay starts hist before the
+// /api/routines, /api/strip, /api/timeline and /events, whose replay starts hist before the
 // request unless ?since=RFC3339 says otherwise.
 func Handler(c *mesh.Client, hist time.Duration, opts Options) http.Handler {
 	s := newServer(c, opts)
@@ -89,6 +89,7 @@ func Handler(c *mesh.Client, hist time.Duration, opts Options) http.Handler {
 	mux.HandleFunc("GET /api/lead/{path}", s.lead)
 	mux.HandleFunc("GET /api/routines", s.routines)
 	mux.HandleFunc("GET /api/strip", s.strip)
+	mux.HandleFunc("GET /api/timeline", s.timeline)
 	mux.HandleFunc("GET /events", func(w http.ResponseWriter, r *http.Request) { events(w, r, c, hist) })
 	return mux
 }

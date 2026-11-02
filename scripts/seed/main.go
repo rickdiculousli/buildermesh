@@ -1,12 +1,14 @@
 // Command seed fills a scratch mesh (scripts/seed.sh runs it against a
-// throwaway bmesh serve) with every state the map draws: two live leads and
-// their executors (working, asking, done and one idle), a held lead, a
-// landing lead (ready, its box's daemon landing it), a done lead for the
-// shelf, a silent lead, a lead blocked for a day (stale: the band's older
+// throwaway bmesh serve) with every state the map draws, its events
+// back-dated over the last six hours so the timeline's default window shows
+// every state and tick: two live leads and their executors (working,
+// asking, done and one idle), a held lead that asked first, a landing lead
+// (ready three times, refused twice, its box's daemon landing it), a done
+// lead, a silent lead, a lead blocked for a day (stale: the band's older
 // fold), an orphan, a round and its two engineers (one blocked), a pooled
-// routine kind with instances in two repos and three spent fresh runs, a
-// queued job, a few events and messages, two leases, a result and a daemon
-// digest 16 hours old (too old for the strip), and writes the quota fixture
+// routine kind with instances in two repos and three spent fresh runs
+// (each instance's jobs a segment), a queued job, a few events and
+// messages, two leases, a result and a daemon digest 16 hours old (too old for the strip), and writes the quota fixture
 // the seeded config's quota command reads (-quota). -leads N (default 2)
 // adds N-2 working leads, each with one working executor, to look at a
 // crowded map (and long names) on a phone. -again PATH seeds nothing: it
@@ -64,22 +66,22 @@ func seed(ctx context.Context, url string, leads int) error {
 	defer c.Close()
 	ago := func(m int) string { return time.Now().UTC().Add(-time.Duration(m) * time.Minute).Format(time.RFC3339) }
 	for _, n := range []mesh.Node{
-		{Path: "app-0042", Role: "lead", Repo: "app", Spec: "0042", StartedAt: ago(50), Branch: "bmesh/app-0042",
-			Runner: mesh.NodeRunner{Kind: "t3", Thread: "thread-0042"}},
-		{Path: "app-0042.api", Role: "executor", Repo: "app", Parent: "app-0042", StartedAt: ago(45)},
-		{Path: "app-0042.web", Role: "executor", Repo: "app", Parent: "app-0042", StartedAt: ago(40)},
+		{Path: "app-0042", Role: "lead", Repo: "app", Spec: "0042", StartedAt: ago(330), Branch: "bmesh/app-0042",
+			Runner: mesh.NodeRunner{Kind: "t3", Thread: "thread-0042"}, Model: "claude-opus-5-5"},
+		{Path: "app-0042.api", Role: "executor", Repo: "app", Parent: "app-0042", StartedAt: ago(305)},
+		{Path: "app-0042.web", Role: "executor", Repo: "app", Parent: "app-0042", StartedAt: ago(285)},
 		{Path: "app-0042.e2e", Role: "executor", Repo: "app", Parent: "app-0042", StartedAt: ago(5)},
-		{Path: "app-0039", Role: "lead", Repo: "app", Spec: "0039", StartedAt: ago(80), Branch: "bmesh/app-0039"},
-		{Path: "app-0041", Role: "lead", Repo: "app", Spec: "0041", StartedAt: ago(55), Branch: "bmesh/app-0041"},
-		{Path: "app-0040", Role: "lead", Repo: "app", Spec: "0040", StartedAt: ago(60), Branch: "bmesh/app-0040"},
+		{Path: "app-0039", Role: "lead", Repo: "app", Spec: "0039", StartedAt: ago(245), Branch: "bmesh/app-0039"},
+		{Path: "app-0041", Role: "lead", Repo: "app", Spec: "0041", StartedAt: ago(300), Branch: "bmesh/app-0041"},
+		{Path: "app-0040", Role: "lead", Repo: "app", Spec: "0040", StartedAt: ago(275), Branch: "bmesh/app-0040"},
 		{Path: "app-0038", Role: "lead", Repo: "app", Spec: "0038", StartedAt: ago(26 * 60), Branch: "bmesh/app-0038"},
-		{Path: "docs-0007", Role: "lead", Repo: "docs", Spec: "0007", StartedAt: ago(30)},
-		{Path: "docs-0007.guide", Role: "executor", Repo: "docs", Parent: "docs-0007", StartedAt: ago(25)},
-		{Path: "old-0001.fix", Role: "executor", Repo: "app", Parent: "old-0001", StartedAt: ago(90)},
-		{Path: "app-round-1", Role: "round", Repo: "app", StartedAt: ago(35)},
-		{Path: "app-round-1.eng", Role: "engineer", Repo: "app", Parent: "app-round-1", StartedAt: ago(35),
+		{Path: "docs-0007", Role: "lead", Repo: "docs", Spec: "0007", StartedAt: ago(205)},
+		{Path: "docs-0007.guide", Role: "executor", Repo: "docs", Parent: "docs-0007", StartedAt: ago(195)},
+		{Path: "old-0001.fix", Role: "executor", Repo: "app", Parent: "old-0001", StartedAt: ago(95)},
+		{Path: "app-round-1", Role: "round", Repo: "app", StartedAt: ago(155)},
+		{Path: "app-round-1.eng", Role: "engineer", Repo: "app", Parent: "app-round-1", StartedAt: ago(152),
 			Branch: "app-round-1-eng", Runner: mesh.NodeRunner{Kind: "t3", Thread: "thread-round-1-eng"}},
-		{Path: "app-round-1.ux", Role: "engineer", Repo: "app", Parent: "app-round-1", StartedAt: ago(35),
+		{Path: "app-round-1.ux", Role: "engineer", Repo: "app", Parent: "app-round-1", StartedAt: ago(152),
 			Branch: "app-round-1-ux", Runner: mesh.NodeRunner{Kind: "t3", Thread: "thread-round-1-ux"}},
 		{Path: "routine.review.opus-5-5-1", Role: "routine", Repo: "app", Model: "claude-opus-5-5"},
 		{Path: "routine.review.opus-5-5-2", Role: "routine", Repo: "app", Model: "claude-opus-5-5"},
@@ -93,57 +95,85 @@ func seed(ctx context.Context, url string, leads int) error {
 			return err
 		}
 	}
-	// Each step is an event and the state it sets; silent and landing are
-	// the daemon's, addressed to the node they move.
-	for _, s := range [][5]string{
-		{"app-0038", "started", "", "working", ago(25 * 60)},
-		{"app-0038", "blocked", "the branches already exist", "blocked", ago(24 * 60)},
-		{"app-0042", "started", "planning the endpoints", "working"},
-		{"app-0042.api", "started", "", "working"},
-		{"app-0042.api", "progress", "handlers written, tests next", "working"},
-		{"app-0042.web", "started", "", "working"},
-		{"app-0042.web", "ask", "which chart library?", "asking"},
-		{"docs-0007", "started", "", "working"},
-		{"app-0040", "started", "", "working"},
-		{"app-0040", "held", "before land by operator: hub move first", "held"},
-		{"app-0041", "started", "", "working"},
-		{"app-0041", "ready", "ready to land", "landing"},
-		{"daemon.seed", "landing", "review job 9f2kQ running on seed", "landing"},
-		{"app-0039", "started", "", "working"},
-		{"app-0039", "done", "landed the map's legend", "done"},
-		{"daemon.seed", "silent", "quiet for 25m", "silent"},
-		{"docs-0007.guide", "started", "", "working"},
-		{"docs-0007.guide", "done", "guide drafted", "done"},
-		{"old-0001.fix", "started", "", "working"},
-		{"app-round-1", "started", "", "working"},
-		{"app-round-1.eng", "started", "", "working"},
-		{"app-round-1.eng", "progress", "043 landed, writing 044", "working"},
-		{"app-round-1.ux", "started", "", "working"},
-		{"app-round-1.ux", "blocked", "the app will not run", "blocked"},
-		{"routine.review.opus-5-5-1", "started", "", "working"},
-		{"routine.review.opus-5-5-1", "progress", "job seed-j1 ok 4200 ctx 51000", "working"},
-		{"routine.review.f1a2b3c4d", "started", "", "working"},
-		{"routine.review.f1a2b3c4d", "done", "", "done"},
-		{"routine.review.f5e6f7a8b", "started", "", "working"},
-		{"routine.review.f5e6f7a8b", "done", "", "done"},
-		{"routine.review.f9c0d1e2f", "started", "", "working"},
-		{"routine.review.f9c0d1e2f", "done", "", "done"},
+	// Each step is an event, back-dated (its at) over the last six hours so
+	// every state and tick the timeline draws shows on its default window,
+	// and the state it sets; the daemon's silent, landing and land-refused
+	// are addressed to (to) the node they move. Steps run oldest first.
+	type step struct {
+		from, event, text, state, to string
+		ago                          int
+	}
+	for _, s := range []step{
+		{"app-0038", "started", "", "working", "", 25 * 60},
+		{"app-0038", "blocked", "the branches already exist", "blocked", "", 24 * 60},
+		{"app-0042", "started", "planning the endpoints", "working", "", 320},
+		{"app-0041", "started", "", "working", "", 290},
+		{"app-0042.api", "started", "", "working", "", 300},
+		{"app-0042.web", "started", "", "working", "", 280},
+		{"app-0040", "started", "", "working", "", 270},
+		{"app-0042", "progress", "endpoints planned, executors briefed", "working", "", 250},
+		{"app-0039", "started", "", "working", "", 240},
+		{"app-0040", "ask", "which hub does the map read?", "asking", "", 230},
+		{"app-0041", "progress", "parser and tests in", "working", "", 200},
+		{"app-0042.api", "progress", "handlers written, tests next", "working", "", 200},
+		{"app-0040", "progress", "answered: the k16 hub", "working", "", 200},
+		{"docs-0007", "started", "", "working", "", 200},
+		{"docs-0007.guide", "started", "", "working", "", 190},
+		{"app-0042", "progress", "api merged", "working", "", 180},
+		{"app-0039", "progress", "legend drawn", "working", "", 180},
+		{"app-round-1", "started", "", "working", "", 150},
+		{"app-round-1.eng", "started", "", "working", "", 148},
+		{"app-round-1.ux", "started", "", "working", "", 148},
+		{"routine.review.opus-5-5-1", "started", "", "working", "", 160},
+		{"routine.review.opus-5-5-1", "progress", "job seed-j0 started", "working", "", 150},
+		{"routine.review.opus-5-5-1", "progress", "job seed-j0 ok 300000 ctx 42000", "working", "", 145},
+		{"app-0041", "ready", "ready to land", "landing", "", 120},
+		{"docs-0007", "progress", "outline agreed", "working", "", 120},
+		{"daemon.seed", "landing", "review job 7h3kQ running on seed", "landing", "app-0041", 118},
+		{"routine.review.f1a2b3c4d", "started", "", "working", "", 112},
+		{"routine.review.f1a2b3c4d", "progress", "job seed-f1 started", "working", "", 111},
+		{"routine.review.f1a2b3c4d", "progress", "job seed-f1 ok 420000 ctx 61000", "working", "", 104},
+		{"routine.review.f1a2b3c4d", "done", "", "done", "", 104},
+		{"daemon.seed", "land-refused", "refused: rebase onto origin/main conflicts in map.js", "working", "app-0041", 100},
+		{"app-0039", "ready", "ready to land", "landing", "", 100},
+		{"docs-0007.guide", "done", "guide drafted", "done", "", 100},
+		{"daemon.seed", "landing", "verify running on seed", "landing", "app-0039", 98},
+		{"old-0001.fix", "started", "", "working", "", 90},
+		{"app-0039", "done", "landed the map's legend", "done", "", 90},
+		{"app-0041", "ready", "conflicts resolved", "landing", "", 80},
+		{"daemon.seed", "landing", "review job 8m2pR running on seed", "landing", "app-0041", 78},
+		{"routine.review.f5e6f7a8b", "started", "", "working", "", 77},
+		{"routine.review.f5e6f7a8b", "progress", "job seed-f5 started", "working", "", 76},
+		{"routine.review.f5e6f7a8b", "progress", "job seed-f5 fail 900000", "working", "", 62},
+		{"routine.review.f5e6f7a8b", "done", "", "done", "", 62},
+		{"daemon.seed", "land-refused", "refused: review failed at t:8a638215", "working", "app-0041", 60},
+		{"app-0042", "progress", "lead page done, strip next", "working", "", 60},
+		{"app-round-1.eng", "progress", "043 landed, writing 044", "working", "", 60},
+		{"app-0040", "held", "before land by operator: hub move first", "held", "", 40},
+		{"app-round-1.ux", "blocked", "the app will not run", "blocked", "", 40},
+		{"routine.review.opus-5-5-1", "progress", "job seed-j1 started", "working", "", 32},
+		{"app-0042.web", "ask", "which chart library?", "asking", "", 30},
+		{"routine.review.opus-5-5-1", "progress", "job seed-j1 ok 4200 ctx 51000", "working", "", 28},
+		{"daemon.seed", "silent", "quiet for 25m", "silent", "docs-0007", 25},
+		{"routine.review.f9c0d1e2f", "started", "", "working", "", 24},
+		{"routine.review.f9c0d1e2f", "progress", "job seed-f9 started", "working", "", 23},
+		{"app-0041", "ready", "review fixed", "landing", "", 20},
+		{"daemon.seed", "landing", "review job 9f2kQ running on seed", "landing", "app-0041", 18},
+		{"routine.review.f9c0d1e2f", "progress", "job seed-f9 ok 600000 ctx 58000", "working", "", 13},
+		{"routine.review.f9c0d1e2f", "done", "", "done", "", 13},
 	} {
-		ev, path := mesh.Event{From: s[0], Event: s[1], Text: s[2], At: s[4]}, s[0]
-		switch s[1] {
-		case "silent":
-			ev.To, path = "docs-0007", "docs-0007"
-		case "landing":
-			ev.To, path = "app-0041", "app-0041"
+		ev, path := mesh.Event{From: s.from, Event: s.event, Text: s.text, To: s.to, At: ago(s.ago)}, s.from
+		if s.to != "" {
+			path = s.to
 		}
-		if s[1] == "done" {
+		if s.event == "done" {
 			ev.Commit = "0123abcd"
 		}
 		if err := mesh.PublishEvent(ctx, c, ev); err != nil {
 			return err
 		}
-		if _, err := mesh.WriteState(ctx, c, path, mesh.State{State: s[3], Text: s[2], By: "seed", At: s[4]}); err != nil {
-			return fmt.Errorf("%s %s: %w", path, s[3], err)
+		if _, err := mesh.WriteState(ctx, c, path, mesh.State{State: s.state, Text: s.text, By: "seed", At: ev.At}); err != nil {
+			return fmt.Errorf("%s %s: %w", path, s.state, err)
 		}
 	}
 	if err := mesh.PutLeadHold(ctx, c, mesh.LeadHold{Path: "app-0040", Gate: "land", Text: "hub move first", By: "operator", At: ago(3)}); err != nil {
@@ -157,7 +187,7 @@ func seed(ctx context.Context, url string, leads int) error {
 		{From: "app-0042", To: "app-0042.api", Text: "keep the handlers small"},
 		{From: "app-0042.web", To: "app-0042", Text: "ask from app-0042.web: which chart library?"},
 		{From: "rick", To: "app-0042", Text: "ship the lead page before the strip"},
-		{From: "app-0042", To: "routine.review", Kind: "job", Text: "review api",
+		{From: "app-0042", To: "routine.review", Kind: "job", Text: "review api", At: ago(150),
 			Job: &mesh.Job{ID: "seed-j2", Kind: "review", Repo: "app", Commit: "0123abcd"}},
 	} {
 		if _, err := mesh.Send(ctx, c, m); err != nil {
