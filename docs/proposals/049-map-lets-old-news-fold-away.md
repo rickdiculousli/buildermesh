@@ -4,7 +4,7 @@ title: The map lets old alerts fold away instead of heading the page forever
 kind: ux
 size: M
 judge: opus
-status: accepted
+status: done
 lens: ux
 proposed_by: operator
 proposed_on: 2026-10-16
@@ -49,5 +49,8 @@ The seed's stale digest must be absent from `strip=`. A dismissed row stays dism
 ## Risks and the alternative considered
 A real block left overnight goes quiet on the map. The fold still names it with its age, and the push already went out when it blocked. Alternative: auto-retire blocked nodes after a day. Rejected: that destroys the record, and a stuck round is the operator's to forget.
 
+## Upgrading
+- New key `[serve] stale_after`: the map folds a blocked, asking or silent state older than this into one `older` line under the needs-you band, and fades its block after the live ones. How old should a need grow before it folds away? Choices: `6h`, `2h`, `24h`, `0` (never). Default `6h`.
+
 ## Needs from the operator
-`stale_after`'s default (6 hours) is a taste call. Change it in `[serve]` of `config.toml` if you want it shorter.
+nothing: the upgrade notes ask for `[serve] stale_after`, and it can be changed in `config.toml` at any time.

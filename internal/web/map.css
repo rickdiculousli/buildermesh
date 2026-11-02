@@ -124,7 +124,7 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
 .needs { display: grid; gap: 6px; margin-bottom: var(--pad); }
 .need {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 1fr) auto;
   gap: 0 12px;
   align-items: start;
   min-height: 40px;
@@ -146,6 +146,41 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
 .need.st-asking .say { color: var(--fg); }
 .need .say:empty::before { content: "no words"; color: var(--muted); }
 .need .say .clock { color: var(--muted); }
+/* A row's ×: hides it into the older fold until the node's next event. */
+.need .dismiss {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 40px;
+  min-height: 40px;
+  margin-right: calc(-1 * var(--pad) + 2px);
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 18px;
+  cursor: pointer;
+}
+.need .dismiss:hover, .need .dismiss:focus-visible { color: var(--fg); }
+/* The older fold: stale and dismissed rows, one muted line until opened. */
+.needs .older { color: var(--muted); }
+.needs .older summary {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 var(--pad) 0 14px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.needs .older summary span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.needs .older summary::-webkit-details-marker { display: none; }
+.needs .older summary::before { content: "▸"; margin-right: 6px; }
+.needs .older[open] summary::before { content: "▾"; }
+.needs .older[open] { display: grid; gap: 6px; }
+.needs .older .need { opacity: 0.7; }
 
 /* Rows clamped to three lines until tapped: the band's words and the
    drawer's rows (the row itself, its spans flowing inline), the lead page's
@@ -272,6 +307,8 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
 .node .sub { fill: var(--muted); font-size: 11px; }
 .node .check { fill: var(--check); font-size: 15px; font-weight: 700; display: none; }
 .node.link { cursor: pointer; }
+/* A need older than [serve] stale_after: faded, its state colours kept. */
+.node.stale { opacity: 0.45; }
 .node.link:hover .box, .node.link:focus-visible .box { stroke: var(--link); }
 .node:focus { outline: none; }
 .node.group .box, .node.root .box { fill: var(--group-bg); }
@@ -403,7 +440,9 @@ header nav a.on { background: var(--group-bg); color: var(--fg); }
    same query), and the drawer is a bottom sheet. */
 @media (max-width: 699px) {
   .map { overflow-x: hidden; }
-  .need { grid-template-columns: minmax(0, 1fr); }
+  .need { grid-template-columns: minmax(0, 1fr) auto; }
+  .need .dismiss { grid-column: 2; }
+  .need .say { grid-column: 1 / -1; }
   .drawer {
     max-height: 70vh;
     border: 1px solid var(--line);

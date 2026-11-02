@@ -193,10 +193,7 @@ func Run(ctx context.Context, d Deps) error {
 	})
 	start(func() { every(ctx, silenceEvery, func() { silenceOnce(ctx, d, act) }) })
 	if d.Cfg.Notify.Ntfy != "" || d.Cfg.Notify.Command != "" {
-		digestEvery := d.Cfg.Notify.DigestEvery
-		if digestEvery <= 0 {
-			digestEvery = time.Hour
-		}
+		digestEvery := d.Cfg.Notify.DigestPeriod()
 		since := d.Now()
 		start(func() { every(ctx, digestEvery, func() { digestOnce(ctx, d, &since) }) })
 	}

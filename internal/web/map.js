@@ -15,6 +15,8 @@ const CHIP = { h: 32, pad: 8, gap: 8, inset: 10, checkW: 16, maxLabel: 28, font:
 // NEED orders the map's leads: what needs a hand, then what runs, what has
 // no state yet, what is finished.
 const NEED = { blocked: 0, asking: 1, silent: 2, working: 3, landing: 4, held: 5, idle: 6, done: 7 };
+// STALE_RANK places a stale need (see isStale) after the live leads, ahead of idle.
+const STALE_RANK = NEED.held + 0.5;
 const PHONE = "(max-width: 699px)";
 const FETCH_MS = 10000; // a /api/tree read taking longer is abandoned
 const RECENT = 30;
@@ -40,6 +42,7 @@ const mesh = {
   // event's words and time (since) and when the page saw it (at).
   live: new Map(),
   recent: [], // newest first
+  staleMs: 0, // [serve] stale_after from /api/tree; 0 = nothing goes stale
 };
 
 // check is set by ?check=1: a self-check that writes viewport and
@@ -97,8 +100,15 @@ function needRank(state) {
   return r === undefined ? NEED.idle : r;
 }
 
+// isStale reports a needs-you state (NEEDS) older than [serve] stale_after.
+function isStale(st) {
+  if (!mesh.staleMs || !NEEDS.has(st.state)) return false;
+  const at = Date.parse(st.at || "");
+  return !isNaN(at) && Date.now() - at > mesh.staleMs;
+}
+
 function needOf(t) {
-  return needRank(t.state.state);
+  return isStale(t.state) ? STALE_RANK : needRank(t.state.state);
 }
 
 // byNeed orders leads by need, ties by byStart, so a running lead's place
@@ -185,7 +195,7 @@ function layout(tree, vertical, width) {
       const role = t.node.role === "lead" ? "lead" : "executor";
       const label = depth === 0 || !parent || parent.kind === "root" ? t.node.path : lastToken(t.node.path);
       const b = place({ key: t.node.path, kind: role, label, title: t.node.path, state: t.state.state,
-        text: t.state.text || "", extra: treeSub(t) }, depth);
+        stale: isStale(t.state), top: !parent, text: t.state.text || "", extra: treeSub(t) }, depth);
       if (parent) elbow(parent, b);
       for (const c of t.children || []) walk(c, depth + 1, b);
     };
@@ -279,9 +289,9 @@ function layout(tree, vertical, width) {
 
 // --- drawing --------------------------------------------------------------
 
-function classOf(kind, state) {
+function classOf(kind, state, stale) {
   const link = kind === "lead" || kind === "chip" || kind === "group" ? " link" : "";
-  return "node " + kind + link + (state ? " st-" + state : "");
+  return "node " + kind + link + (state ? " st-" + state : "") + (stale ? " stale" : "");
 }
 
 // subText is a box's second line, cut to n characters: for an asking,
@@ -330,7 +340,7 @@ function drawChip(parent, b) {
 
 function drawBox(parent, b) {
   if (b.kind === "chip") return drawChip(parent, b);
-  const g = svg("g", { class: classOf(b.kind, b.state), transform: `translate(${b.x},${b.y})` }, parent);
+  const g = svg("g", { class: classOf(b.kind, b.state, b.stale), transform: `translate(${b.x},${b.y})` }, parent);
   svg("title", {}, g).textContent = b.title;
   svg("rect", { class: "ring", x: -4, y: -4, width: b.w + 8, height: b.h + 8, rx: 10 }, g);
   svg("rect", { class: "box", width: b.w, height: b.h, rx: 7 }, g);
@@ -358,7 +368,7 @@ function render() {
   const drawn = new Map();
   for (const b of L.boxes) {
     const { g, sub } = drawBox(nodes, b);
-    if (b.key) drawn.set(b.key, { g, sub, box: b, extra: b.extra, text: b.text || "", kind: b.kind, state: b.state });
+    if (b.key) drawn.set(b.key, { g, sub, box: b, extra: b.extra, text: b.text || "", kind: b.kind, state: b.state, stale: !!b.stale });
   }
   // Edges still in flight move to the new drawing rather than vanish.
   if (mesh.layer) root.append(mesh.layer);
@@ -381,11 +391,13 @@ function onShelf(path) {
   return !!d && d.kind === "chip";
 }
 
-// setState restyles a drawn node; text is the state's words.
+// setState restyles a drawn node; text is the state's words. A new state
+// is never stale.
 function setState(path, state, text) {
   const d = mesh.drawn.get(path);
   if (!d || d.kind === "group" || d.kind === "chip") return;
   d.state = state;
+  d.stale = false;
   d.text = text || "";
   d.g.setAttribute("class", classOf(d.kind, state));
   d.sub.textContent = subText(state, d.text, d.extra, room(d.box.w, SUB_PX, 16));
@@ -466,6 +478,7 @@ async function loadTree() {
     if (!r.ok) throw new Error("/api/tree: " + r.status);
     const v = await r.json();
     mesh.tree = { leads: v.leads || [], routines: v.routines || [], orphans: v.orphans || [], operator: v.operator || [] };
+    mesh.staleMs = (+v.stale_after || 0) * 1000;
     render();
     // A live event newer than this read wins over the state it returned.
     for (const [path, s] of mesh.live) {
@@ -501,7 +514,7 @@ function refetchSoon() {
 // so the blocks keep their order.
 function liveState(path, state, text, since) {
   const d = mesh.drawn.get(path);
-  const moved = !!d && d.kind === "lead" && needRank(d.state) !== needRank(state);
+  const moved = !!d && d.kind === "lead" && (d.stale || needRank(d.state) !== needRank(state));
   mesh.live.set(path, { state, text: text || "", since: since || "", at: Date.now() });
   setState(path, state, text);
   if (moved) refetchSoon();
@@ -765,7 +778,7 @@ function clampRow(e, key) {
 // words from anywhere in the row), unless the tap is a link, a fold or a
 // chip.
 function toggleRows(ev) {
-  if (ev.target.closest("a, summary, .chip")) return;
+  if (ev.target.closest("a, summary, button, .chip")) return;
   const row = ev.target.closest(".clamp, .need");
   const e = row && row.classList.contains("need") ? row.querySelector(".clamp") : row;
   if (!e || !this.contains(e)) return;
@@ -895,37 +908,106 @@ const pages = { view: "map", lead: "", leadShown: "" };
 const NEEDS = new Set(["blocked", "asking", "silent"]);
 
 // needRows lists the leads, rounds and engineers (a round's children) in a
-// NEEDS state, in need order: a live event's state and words win over the
-// tree's, as on the boxes.
+// NEEDS state, in need order, newest first within a state: a live event's
+// state, words and time win over the tree's, as on the boxes.
 function needRows() {
   const rows = [];
   const consider = (t) => {
     const live = mesh.live.get(t.node.path);
     const st = live ? { state: live.state, text: live.text, at: live.since } : t.state;
-    if (NEEDS.has(st.state)) rows.push({ t, path: t.node.path, state: st.state, text: st.text || "", at: st.at || "" });
+    if (NEEDS.has(st.state)) {
+      rows.push({ t, path: t.node.path, state: st.state, text: st.text || "", at: st.at || "", stale: isStale(st) });
+    }
   };
   for (const t of mesh.tree ? mesh.tree.leads : []) {
     consider(t);
     if (t.node.role === "round") for (const c of t.children || []) consider(c);
   }
-  return rows.sort((a, b) => needRank(a.state) - needRank(b.state) || byStart(a.t, b.t));
+  const at = (r) => { const v = Date.parse(r.at); return isNaN(v) ? 0 : v; };
+  return rows.sort((a, b) => needRank(a.state) - needRank(b.state) || at(b) - at(a) || byStart(a.t, b.t));
 }
 
-// renderBand draws the band between the strip and the map: one row per
-// needRows entry, its badge and path a link to the lead page, its words (for
-// silent, the daemon's verdict and its age) clamped to three lines until
-// tapped, then the operatorRows. Hidden when nothing needs the operator.
+// Dismissals are this browser's, never the mesh's: localStorage maps a
+// dismissed row's path to its state's at, so the node's next state shows
+// again. DISMISS_SLACK_MS covers a live event's at and the stored state's
+// at, which its writer stamps a moment apart.
+const DISMISS_KEY = "bmesh.dismissed";
+const DISMISS_SLACK_MS = 5000;
+
+function dismissals() {
+  try {
+    const v = JSON.parse(localStorage.getItem(DISMISS_KEY) || "{}");
+    return v && typeof v === "object" ? v : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function isDismissed(r, gone) {
+  const at = Date.parse(r.at), was = Date.parse(gone[r.path] || "");
+  return !isNaN(at) && !isNaN(was) && at - was <= DISMISS_SLACK_MS;
+}
+
+// dismiss hides row r until its node's next state, keeping only the
+// dismissals of rows still in the band.
+function dismiss(r) {
+  const gone = dismissals(), keep = {};
+  for (const x of needRows()) if (gone[x.path]) keep[x.path] = gone[x.path];
+  keep[r.path] = r.at;
+  try {
+    localStorage.setItem(DISMISS_KEY, JSON.stringify(keep));
+  } catch (e) {
+    // Storage off: nothing to hide it with.
+  }
+  renderBand();
+}
+
+// needRow is one band row: its badge and path a link to the lead page, its
+// words (for silent, the daemon's verdict and its age) clamped to three
+// lines until tapped, and, when x, the × that dismisses it.
+function needRow(r, x) {
+  const who = el("a", "who tap", null, badge(r.state), el("span", "p", r.path));
+  who.setAttribute("href", "#/lead/" + r.path);
+  const say = el("div", "say", r.text);
+  if (r.state === "silent" && r.at) say.append(r.text ? " · " : "", clock("since", r.at, false));
+  clampRow(say, r.path);
+  const row = el("div", "need tap st-" + r.state, null, who, say);
+  if (x) {
+    const b = el("button", "dismiss tap", "×");
+    b.type = "button";
+    b.title = "hide until it changes";
+    b.setAttribute("aria-label", "hide " + r.path + " until it changes");
+    b.addEventListener("click", () => dismiss(r));
+    row.append(b);
+  }
+  return row;
+}
+
+// olderFold is the band's foot for its stale and dismissed rows: one muted
+// line, "1 older: <path> <state> <age>", opening in place to the rows.
+function olderFold(rows, open) {
+  const age = (r) => {
+    const ms = Date.now() - Date.parse(r.at);
+    return isNaN(ms) ? "" : " " + dur(ms).split(" ")[0];
+  };
+  const head = el("summary", "tap", null, el("span", null, rows.length + " older: " +
+    rows.map((r) => r.path + " " + r.state + age(r)).join(", ")));
+  const det = el("details", "older", null, head, ...rows.map((r) => needRow(r, false)));
+  det.open = open;
+  return det;
+}
+
+// renderBand draws the band between the strip and the map: a needRow per
+// needRows entry, the stale and dismissed ones folded into olderFold at
+// the foot, then the operatorRows. Hidden when nothing needs the operator.
 function renderBand() {
   const band = $("needs");
-  const rows = needRows();
-  band.replaceChildren(...rows.map((r) => {
-    const who = el("a", "who tap", null, badge(r.state), el("span", "p", r.path));
-    who.setAttribute("href", "#/lead/" + r.path);
-    const say = el("div", "say", r.text);
-    if (r.state === "silent" && r.at) say.append(r.text ? " · " : "", clock("since", r.at, false));
-    clampRow(say, r.path);
-    return el("div", "need tap st-" + r.state, null, who, say);
-  }), ...operatorRows());
+  const open = band.querySelector("details.older[open]") !== null;
+  const gone = dismissals(), live = [], older = [];
+  for (const r of needRows()) (r.stale || isDismissed(r, gone) ? older : live).push(r);
+  const rows = live.map((r) => needRow(r, true));
+  if (older.length) rows.push(olderFold(older, open));
+  band.replaceChildren(...rows, ...operatorRows());
   band.hidden = band.childElementCount === 0;
   if (check) checkSoon();
 }
@@ -1216,7 +1298,8 @@ const routines = loader(async () => {
 
 // --- the strip
 
-const strip = { quota: [], digest: null };
+// every is the daemon's digest period ([notify] digest_every) in ms.
+const strip = { quota: [], digest: null, every: 0 };
 
 function pct(x) {
   return Math.round(+x || 0) + "%";
@@ -1257,10 +1340,18 @@ function summaryRow() {
   return row;
 }
 
+// freshDigest is the newest digest while it is younger than twice the
+// digest period, else null: an older one no longer says what is going on.
+function freshDigest() {
+  const d = strip.digest;
+  const age = d ? Date.now() - Date.parse(d.at) : NaN;
+  return d && strip.every > 0 && age > 2 * strip.every ? null : d;
+}
+
 // renderStrip draws the strip; an open digest stays open.
 function renderStrip() {
   const s = $("strip");
-  const q = strip.quota || [], d = strip.digest;
+  const q = strip.quota || [], d = freshDigest();
   const open = s.querySelector("details[open]") !== null;
   const top = summaryRow();
   if (!top && !q.length && !d) {
@@ -1296,6 +1387,7 @@ async function loadStrip() {
     if (!r.body) return; // keep the last strip
     strip.quota = r.body.quota || [];
     strip.digest = r.body.digest || null; // null: no digest any more
+    strip.every = (+r.body.digest_every || 0) * 1000;
     renderStrip();
   } catch (e) {
     // The next minute tries again.
@@ -1409,6 +1501,7 @@ function selfCheck() {
   const bandHeld = document.querySelectorAll("#needs .need.st-held").length;
   const landing = document.querySelectorAll("#map .node.st-landing:not(.group)").length;
   const bandLanding = document.querySelectorAll("#needs .need.st-landing").length;
+  const older = document.querySelectorAll("#needs details.older .need").length;
   const c = check;
   document.title = `bmesh ${sw <= iw ? "ok" : "SCROLLS"} view=${pages.view} scrollWidth=${sw} innerWidth=${iw} minTap=${Math.round(tap)}` +
     ` workingTop=${workingTop}` +
@@ -1417,7 +1510,21 @@ function selfCheck() {
     ` vertical=${mesh.vertical} leads=${c.leads} trees=${c.trees} conn=${c.conn.join(">")}` +
     ` replay=${c.replay} live=${c.live} flashes=${c.flashes} strip=${$("strip").hidden ? "hidden" : $("strip").children.length}` +
     ` band=${$("needs").hidden ? "hidden" : $("needs").children.length}` +
-    ` held=${held} bandHeld=${bandHeld} landing=${landing} bandLanding=${bandLanding}`;
+    ` held=${held} bandHeld=${bandHeld} landing=${landing} bandLanding=${bandLanding}` +
+    ` older=${older} staleLast=${staleLast()} digest=${$("strip").querySelector(".digest") ? 1 : 0}`;
+}
+
+// staleLast says whether every stale block sorts after every working one:
+// "yes", "no", or "none" without a stale block.
+function staleLast() {
+  let working = -1, stale = Infinity, i = 0;
+  for (const d of mesh.drawn.values()) {
+    if (!d.box.top) continue;
+    if (d.stale) stale = Math.min(stale, i);
+    else if (d.state === "working") working = i;
+    i++;
+  }
+  return stale === Infinity ? "none" : stale > working ? "yes" : "no";
 }
 
 // firstCard names the lead page's card drawn highest (leftmost on a tie),

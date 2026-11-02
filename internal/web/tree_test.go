@@ -93,7 +93,7 @@ func TestTreeGroupsExecutorsUnderLeads(t *testing.T) {
 	}
 	// Empty lists encode as [], not null.
 	data, _ := json.Marshal(Tree(nil, nil, Extras{}))
-	if string(data) != `{"leads":[],"routines":[],"orphans":[]}` {
+	if string(data) != `{"leads":[],"routines":[],"orphans":[],"stale_after":0}` {
 		t.Fatalf("empty tree %s", data)
 	}
 }

@@ -24,6 +24,7 @@ type strip struct {
 		Title string `json:"title"`
 		Body  string `json:"body"`
 	} `json:"digest"`
+	DigestEvery int64 `json:"digest_every"`
 }
 
 func TestQuotaKeepsLastReadingOnError(t *testing.T) {
@@ -38,7 +39,7 @@ func TestQuotaKeepsLastReadingOnError(t *testing.T) {
 	}
 	start := time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC)
 	now := start
-	cfg := &config.Config{Quota: config.QuotaConfig{Command: cmd}}
+	cfg := &config.Config{Quota: config.QuotaConfig{Command: cmd}, Notify: config.NotifyConfig{DigestEvery: 30 * time.Minute}}
 	srv := httptest.NewServer(Handler(c, time.Hour, Options{Cfg: cfg, Host: "box", Now: func() time.Time { return now }}))
 	defer srv.Close()
 
@@ -75,8 +76,8 @@ func TestQuotaKeepsLastReadingOnError(t *testing.T) {
 	}
 	getJSON(t, srv, "/api/strip", 200, &s)
 	if s.Digest == nil || s.Digest.Title != "bmesh other: 1 working" || s.Digest.Body != "b: asking since 5m" ||
-		s.Digest.At != "2026-10-15T09:05:00Z" {
-		t.Fatalf("digest %+v", s.Digest)
+		s.Digest.At != "2026-10-15T09:05:00Z" || s.DigestEvery != 1800 {
+		t.Fatalf("digest %+v every %d", s.Digest, s.DigestEvery)
 	}
 }
 
@@ -84,7 +85,7 @@ func TestQuotaWithoutCommandOrGoodRun(t *testing.T) {
 	ctx, c := connect(t)
 	srv := httptest.NewServer(Handler(c, time.Hour, Options{}))
 	defer srv.Close()
-	if body := getJSON(t, srv, "/api/strip", 200, nil); strings.TrimSpace(body) != `{"quota":[],"digest":null}` {
+	if body := getJSON(t, srv, "/api/strip", 200, nil); strings.TrimSpace(body) != `{"quota":[],"digest":null,"digest_every":3600}` {
 		t.Fatalf("empty strip %s", body)
 	}
 	q := &Quota{Command: "exit 1"}
