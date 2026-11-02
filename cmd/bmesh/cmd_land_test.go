@@ -1677,6 +1677,7 @@ func TestLandWaitsForAReviewAlreadyQueued(t *testing.T) {
 	t.Run("by hand", func(t *testing.T) {
 		c, ctx := setup(t)
 		reviewLandRepo(t, c, ctx, "M")
+		gitOut(t, "push", "-q", "origin", "HEAD")
 		qout, errs, code := runCLI(t, as("app-012"), "routine", "queue", "review", "--effort", "medium")
 		id := strings.TrimSpace(strings.TrimPrefix(qout, "queued "))
 		if code != 0 || id == "" {
@@ -1938,6 +1939,7 @@ func TestLandStopsForWhatNeedsTheLead(t *testing.T) {
 func TestLandOutsideANodeQueuesNoReview(t *testing.T) {
 	c, ctx := setup(t)
 	reviewLandRepo(t, c, ctx, "M")
+	gitOut(t, "push", "-q", "origin", "HEAD")
 	if _, errs, code := runCLI(t, as("app-012"), "routine", "queue", "review", "--go"); code != 0 {
 		t.Fatal(code, errs)
 	}

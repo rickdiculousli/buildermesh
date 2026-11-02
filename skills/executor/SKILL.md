@@ -20,7 +20,7 @@ Never merge your branch into anyone's, rebase onto `main`, edit the spec or land
 
 - When your header puts `bmesh setup` first, run it, and again after you change dependencies.
 - `bmesh inbox` at each milestone and before any question: your lead's corrections arrive there.
-- The repo's routines are yours (`routine list`; `routine run <kind>` inline, or `routine queue <kind> --go` then `routine wait <job id>`). Commit first: a job names a commit. When the daemon runs on another box, push your branch first (your brief says so when it applies).
+- The repo's routines are yours (`routine list`; `routine run <kind>` inline, or `routine queue <kind> --go` then `routine wait <job id>`). Commit first: a job names a commit.
 - `progress --text "<one line>"` after a milestone, at most once every ten minutes, so long quiet work isn't marked silent.
 
 ## Report, ask, blocked

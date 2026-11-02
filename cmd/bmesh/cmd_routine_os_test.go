@@ -171,3 +171,27 @@ func TestQueueRunsWhereMainSendsIt(t *testing.T) {
 		t.Fatalf("main's os: %d %q", code, errs)
 	}
 }
+
+func TestQueuePooledKindNeedsPushWithOrigin(t *testing.T) {
+	c, ctx := setup(t)
+	repo := kindRepo(t, map[string]string{"build": "command = \"make\"\n"})
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	meshtest.Git(t, t.TempDir(), "init", "-q", "--bare", bare)
+	meshtest.Git(t, repo, "remote", "add", "origin", bare)
+	meshtest.Git(t, repo, "push", "-q", "origin", "main")
+	meshtest.Git(t, repo, "checkout", "-q", "-b", "feature")
+	meshtest.CommitFiles(t, repo, map[string]string{"b.txt": "b\n"})
+	// A daemon on another box takes a pooled job too, and fetches from origin.
+	_, errs, code := runCLI(t, as("app-001"), "routine", "queue", "build")
+	if code != 3 || errs != "bmesh: push first: build can run on another box, which fetches the commit from origin: git push origin HEAD, then queue it again\n" {
+		t.Fatalf("unpushed: %d %q", code, errs)
+	}
+	if n, err := mesh.Depth(ctx, c, "build"); err != nil || n != 0 {
+		t.Fatalf("depth %d %v", n, err)
+	}
+	meshtest.Git(t, repo, "push", "-q", "origin", "feature")
+	out, errs, code := runCLI(t, as("app-001"), "routine", "queue", "build")
+	if code != 0 || !strings.HasPrefix(out, "queued ") || strings.Contains(out, "runs on") {
+		t.Fatalf("pushed: %d %q %q", code, out, errs)
+	}
+}

@@ -379,8 +379,9 @@ func (a *app) cmdRoutineQueue(args []string) error {
 		return err
 	}
 	elsewhere := runsOn != "" && runsOn != hostOS
-	if elsewhere {
-		// The box that runs it fetches the commit from origin.
+	// A daemon on any box with the repo may take the job, and one on
+	// another box fetches the commit from origin.
+	if elsewhere || gitwork.HasOrigin(ctx, top) {
 		sha, err := gitIn(ctx, top, "rev-parse", "--verify", "--end-of-options", *commit+"^{commit}")
 		if err != nil {
 			return err
@@ -390,7 +391,11 @@ func (a *app) cmdRoutineQueue(args []string) error {
 			return err
 		}
 		if on == "" {
-			return fail(exitRefused, "push first: %s runs on %s, which fetches the commit from origin: git push origin HEAD, then queue it again", name, runsOn)
+			where := "can run on another box"
+			if elsewhere {
+				where = "runs on " + runsOn
+			}
+			return fail(exitRefused, "push first: %s %s, which fetches the commit from origin: git push origin HEAD, then queue it again", name, where)
 		}
 	}
 	repo, err := a.repoName(ctx, self, top)

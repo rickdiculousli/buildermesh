@@ -2019,7 +2019,7 @@ Queues a job: one run of `<kind>` against a commit, run by a daemon that runs th
 4. For `review` without `--again`, checks that the branch has no review yet. A review is one pass per branch: `queue review` is refused when the branch already has a `review` result for a commit that is an ancestor of HEAD but not of `main` (or `origin/main` when the repo has an origin, so a landed spec's review doesn't count). Only `--again` queues it, for code a rebase changed.
 5. For a deterministic kind, checks the record. A recorded result, ok or failed, answers the job without a run, unless `--rerun`.
 6. Checks the kind at the job's commit (`git show`, not the working copy). When that kind sets an `os`, `queue` compares it with the kind on `origin/main` (`main` without an origin) and refuses when main's `os` differs, when main lacks the kind (it has no feed anywhere), or when main can't be read. A commit with no `os` in the kind, or no kind file, isn't checked: it runs where main sends it.
-7. For an OS other than this box's, checks that the commit is on an `origin` branch (`git branch -r --contains <commit> --list 'origin/*'` prints something).
+7. When the repo has an origin, or the kind runs on an OS other than this box's, checks that the commit is on an `origin` branch (`git branch -r --contains <commit> --list 'origin/*'` prints something): a daemon on any box with the repo may take the job, and one on another box fetches the commit from origin.
 8. Resolves the job's repo, the first of:
     1. the requester node's `repo`, when a registered node names one;
     2. the registry name whose path shares the cwd's git common dir (so a linked worktree, where leads live, names its main repo);
@@ -2045,6 +2045,7 @@ Queues a job: one run of `<kind>` against a commit, run by a daemon that runs th
 | main lacks the kind | 3 | `bmesh: <kind> is not on main: land it first` |
 | main can't be read | 3 | `bmesh: cannot read kind <kind> on <ref>: <why>` |
 | another OS, and the commit is on no `origin` branch | 3 | `bmesh: push first: <kind> runs on darwin, which fetches the commit from origin: git push origin HEAD, then queue it again` |
+| the repo has an origin, and the commit is on no `origin` branch | 3 | `bmesh: push first: <kind> can run on another box, which fetches the commit from origin: git push origin HEAD, then queue it again` |
 | the branch already has a `review` result, without `--again` (naming that result, its verdict, commit and time) | 3 | `this branch already has a review: <result key> (<ok\|fail>, commit <sha8>, at <at>). A review's findings are fixed and then landed; the second pass only after a rebase changed the code, with --again` |
 | a `--model` with spaces or `;` | 2 | `model "<m>": want no spaces or ";"` |
 | a `--model` the kind lacks | 2 | `kind <k> has no model "<m>"` |
@@ -2053,7 +2054,7 @@ Queues a job: one run of `<kind>` against a commit, run by a daemon that runs th
 
 **The review's text.** For `review`, when the queuing node names a spec that is in the cwd worktree and `--text` has a `base: <sha>` line and no `spec:` line, the job's text is the review brief for that base and spec (`base:`, `spec:`, then the spec check, see [`bmesh land`](#bmesh-land)), followed by the text's other non-empty lines. Any other text (no node, no spec in the worktree, no `base:` line, or a `spec:` line already) is sent as given.
 
-**Details.** A commit not in the daemon's clone (queued from another box) gets one `git fetch origin` before the job is answered `not a commit`: push the branch before queueing to a daemon elsewhere.
+**Details.** A commit not in the daemon's clone (queued from another box) gets one `git fetch origin` before the job is answered `not a commit`.
 
 See also: [Jobs](#jobs), [`bmesh routine wait`](#bmesh-routine-wait), [Results](#results).
 
