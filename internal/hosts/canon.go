@@ -299,12 +299,18 @@ func (r *Roster) Bytes() []byte {
 	return e.b
 }
 
-func (r *Roster) Sign(admin ed25519.PrivateKey) {
+// Prepare puts r in its signed form (type set, accept lists as names,
+// hosts sorted), so Bytes is what a signature covers.
+func (r *Roster) Prepare() {
 	r.Type = TagRoster
 	for i := range r.Hosts {
 		r.Hosts[i].Accept = Names(r.Hosts[i].Accept)
 	}
 	slices.SortFunc(r.Hosts, func(a, b Host) int { return strings.Compare(a.Name, b.Name) })
+}
+
+func (r *Roster) Sign(admin ed25519.PrivateKey) {
+	r.Prepare()
 	r.Sig = sign(admin, r.Bytes())
 }
 

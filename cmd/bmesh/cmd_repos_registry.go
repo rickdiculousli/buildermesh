@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -91,6 +90,26 @@ func (a *app) printDiff(head string, reg hosts.Registry, rows map[string]config.
 	return diff, nil
 }
 
+// signRegistry composes rows as the registry after the box's own, shows
+// it (title plus suffix, details the row diff) as the admin key's request
+// and signs those bytes.
+func (a *app) signRegistry(b *hostsBox, rows string, diff []string, suffix string) (hosts.Registry, error) {
+	next, err := hosts.NextRegistry(b.stateDir, b.local.Roster.AdminKey, rows, time.Now())
+	if err != nil {
+		return hosts.Registry{}, err
+	}
+	if len(diff) == 0 {
+		diff = []string{"(comments and layout only)"}
+	}
+	req := hosts.Request{Title: fmt.Sprintf("Publish registry v%d%s", next.Version, suffix), Details: diff, Signs: [][]byte{next.Bytes()}}
+	key, err := a.adminKey(b, req)
+	if err != nil {
+		return hosts.Registry{}, err
+	}
+	next.Sig = req.Sign(key)[0]
+	return next, nil
+}
+
 // cmdReposPublish (admin) publishes this box's repos.toml as the next
 // registry version, after printing the row diff from the current one and
 // reading the admin key.
@@ -133,10 +152,11 @@ func (a *app) cmdReposPublish(args []string) error {
 	if err := tokenClash(a.cfg.Repos); err != nil {
 		return err
 	}
-	if _, err := a.printDiff(fmt.Sprintf("registry v%d -> v%d:", reg.Version, reg.Version+1), reg, a.cfg.Repos); err != nil {
+	diff, err := a.printDiff(fmt.Sprintf("registry v%d -> v%d:", reg.Version, reg.Version+1), reg, a.cfg.Repos)
+	if err != nil {
 		return err
 	}
-	key, err := a.adminKey(b, fmt.Sprintf("publish registry v%d", reg.Version+1))
+	next, err := a.signRegistry(b, text, diff, "")
 	if err != nil {
 		return err
 	}
@@ -144,7 +164,7 @@ func (a *app) cmdReposPublish(args []string) error {
 	if err != nil {
 		return err
 	}
-	next, err := hosts.PublishRegistry(ctx, kv, b.stateDir, text, key, time.Now(), a.applyRegistry)
+	next, err = hosts.PublishRegistry(ctx, kv, b.stateDir, next, a.applyRegistry)
 	if err != nil && next.Version == 0 {
 		return err
 	}
@@ -338,22 +358,46 @@ func (a *app) cmdReposRemove(args []string) error {
 	if err != nil {
 		return err
 	}
-	// One read of the admin key signs the nix jobs and the registry.
-	var key ed25519.PrivateKey
-	adminKey := func(nix []string) (ed25519.PrivateKey, error) {
-		if key != nil {
-			return key, nil
+	// One read of the admin key signs the nix jobs and the registry, all
+	// composed before it and shown in its one request.
+	nextReg, err := hosts.NextRegistry(b.stateDir, b.local.Roster.AdminKey, next, time.Now())
+	if err != nil {
+		return err
+	}
+	signAll := func(jobs []hosts.Job) error {
+		if nextReg.Sig != "" {
+			return nil
 		}
-		action := fmt.Sprintf("publish registry v%d without %s", reg.Version+1, name)
-		if len(nix) > 0 {
-			action = fmt.Sprintf("nix %s on %s, then %s", name, strings.Join(nix, ", "), action)
+		req := hosts.Request{Title: fmt.Sprintf("Publish registry v%d", nextReg.Version),
+			Details: []string{fmt.Sprintf("- %s", name)}}
+		if len(jobs) > 0 {
+			boxes := make([]string, len(jobs))
+			for i, j := range jobs {
+				boxes[i] = j.To
+				req.Signs = append(req.Signs, j.Bytes())
+			}
+			n := fmt.Sprintf("%d boxes", len(jobs))
+			if len(jobs) == 1 {
+				n = "1 box"
+			}
+			req.Title = fmt.Sprintf("Send nix to %s, then publish registry v%d", n, nextReg.Version)
+			req.Details = []string{fmt.Sprintf("nix %s on %s (origin %s)", name, strings.Join(boxes, ", "), row.Remote),
+				fmt.Sprintf("then registry v%d: - %s, once every box answers removed or absent", nextReg.Version, name)}
 		}
-		k, err := a.adminKey(b, action)
-		key = k
-		return k, err
+		req.Signs = append(req.Signs, nextReg.Bytes())
+		key, err := a.adminKey(b, req)
+		if err != nil {
+			return err
+		}
+		sigs := req.Sign(key)
+		for i := range jobs {
+			jobs[i].Sig = sigs[i]
+		}
+		nextReg.Sig = sigs[len(sigs)-1]
+		return nil
 	}
 	if *checkouts {
-		done, err := a.nixEverywhere(ctx, b, row, *ignoredOK, *apply, *wait, adminKey)
+		done, err := a.nixEverywhere(ctx, b, row, *ignoredOK, *apply, *wait, signAll)
 		if err != nil || !done {
 			return err
 		}
@@ -362,14 +406,14 @@ func (a *app) cmdReposRemove(args []string) error {
 		fmt.Fprintf(a.stdout, "would publish registry v%d without %s (run again with --apply)\n", reg.Version+1, name)
 		return nil
 	}
-	if _, err := adminKey(nil); err != nil {
+	if err := signAll(nil); err != nil {
 		return err
 	}
 	kv, err := hosts.Bucket(ctx, a.client.JS, hosts.BucketRoster)
 	if err != nil {
 		return err
 	}
-	pub, err := hosts.PublishRegistry(ctx, kv, b.stateDir, next, key, time.Now(), a.applyRegistry)
+	pub, err := hosts.PublishRegistry(ctx, kv, b.stateDir, nextReg, a.applyRegistry)
 	if err != nil && pub.Version == 0 {
 		return err
 	}
@@ -383,7 +427,7 @@ func (a *app) cmdReposRemove(args []string) error {
 // removed or absent (an answer that came in since counts). done is true
 // once every box has; without apply it prints what it would ask.
 func (a *app) nixEverywhere(ctx context.Context, b *hostsBox, row config.Repo, ignoredOK, apply bool, wait time.Duration,
-	adminKey func(nix []string) (ed25519.PrivateKey, error)) (done bool, err error) {
+	signAll func(jobs []hosts.Job) error) (done bool, err error) {
 	if row.Remote == "" {
 		return false, fail(exitRefused, "%s has no remote in the registry: nix matches each checkout's origin against it", row.Name)
 	}
@@ -447,10 +491,6 @@ func (a *app) nixEverywhere(ctx context.Context, b *hostsBox, row config.Repo, i
 		return true, nil
 	}
 	if len(left) > 0 {
-		key, err := adminKey(left)
-		if err != nil {
-			return false, err
-		}
 		jobArgs := []string{row.Remote}
 		if ignoredOK {
 			jobArgs = append(jobArgs, "ignored-ok")
@@ -458,9 +498,13 @@ func (a *app) nixEverywhere(ctx context.Context, b *hostsBox, row config.Repo, i
 		var jobs []hosts.Job
 		now := time.Now()
 		for _, box := range left {
-			j := hosts.NewJob(key, b.host, box, "nix", row.Name, jobArgs, r.Version, now, nixTTL)
-			run.Jobs[box] = j
-			jobs = append(jobs, j)
+			jobs = append(jobs, hosts.ComposeJob(b.host, box, "nix", row.Name, jobArgs, r.Version, now, nixTTL))
+		}
+		if err := signAll(jobs); err != nil {
+			return false, err
+		}
+		for _, j := range jobs {
+			run.Jobs[j.To] = j
 		}
 		if err := saveNixRun(b.stateDir, run); err != nil {
 			return false, err

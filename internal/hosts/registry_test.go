@@ -110,7 +110,15 @@ func TestPublishRegistryTakesTheNextVersionFromTheBox(t *testing.T) {
 	dir := t.TempDir()
 	var applied []string
 	apply := func(r Registry) error { applied = append(applied, r.Rows); return nil }
-	r1, err := PublishRegistry(ctx, kv, dir, "one", keyFor("admin"), time.Now(), apply)
+	signed := func(rows string) Registry {
+		n, err := NextRegistry(dir, pubFor("admin"), rows, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		n.Sign(keyFor("admin"))
+		return n
+	}
+	r1, err := PublishRegistry(ctx, kv, dir, signed("one"), apply)
 	if err != nil || r1.Version != 1 || r1.Verify(pubFor("admin")) != nil {
 		t.Fatalf("first: %+v %v", r1, err)
 	}
@@ -120,7 +128,8 @@ func TestPublishRegistryTakesTheNextVersionFromTheBox(t *testing.T) {
 	if _, err := kv.Put(ctx, RegistryKey, b); err != nil {
 		t.Fatal(err)
 	}
-	r2, err := PublishRegistry(ctx, kv, dir, "two", keyFor("admin"), time.Now(), apply)
+	two := signed("two")
+	r2, err := PublishRegistry(ctx, kv, dir, two, apply)
 	if err != nil || r2.Version != 2 {
 		t.Fatalf("second: %+v %v", r2, err)
 	}
@@ -130,8 +139,12 @@ func TestPublishRegistryTakesTheNextVersionFromTheBox(t *testing.T) {
 	if strings.Join(applied, ",") != "one,two" {
 		t.Fatalf("applied %v", applied)
 	}
+	// A registry signed for a version the box has since passed is refused.
+	if _, err := PublishRegistry(ctx, kv, dir, two, apply); err == nil || !strings.Contains(err.Error(), "nothing published") {
+		t.Fatalf("stale publish: %v", err)
+	}
 	// A refused apply publishes nothing.
-	if _, err := PublishRegistry(ctx, kv, dir, "three", keyFor("admin"), time.Now(), func(Registry) error {
+	if _, err := PublishRegistry(ctx, kv, dir, signed("three"), func(Registry) error {
 		return errors.New("no")
 	}); err == nil {
 		t.Fatal("a refused apply published")

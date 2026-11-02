@@ -296,9 +296,24 @@ func (a *app) passphrase(prompt string, confirm bool) ([]byte, error) {
 	return p, nil
 }
 
-// adminKey reads the admin key for action, refusing a box that isn't the
+// readKey reads this box's protected key name for req, behind the
+// request's dialog (or passphrase); a cancelled dialog refuses.
+func (a *app) readKey(name string, req hosts.Request) (ed25519.PrivateKey, hosts.Store, error) {
+	store, err := a.keyStore()
+	if err != nil {
+		return nil, nil, err
+	}
+	key, err := store.Get(name, req)
+	if errors.Is(err, hosts.ErrCancelled) {
+		return nil, store, fail(exitRefused, "%v", err)
+	}
+	return key, store, err
+}
+
+// adminKey reads the admin key for req, refusing a box that isn't the
 // roster's admin and a key that isn't the roster's.
-func (a *app) adminKey(b *hostsBox, action string) (ed25519.PrivateKey, error) {
+func (a *app) adminKey(b *hostsBox, req hosts.Request) (ed25519.PrivateKey, error) {
+	action := strings.ToLower(req.Title[:1]) + req.Title[1:]
 	admin, ok := b.local.Roster.Admin()
 	if !b.cfg.Hosts.Admin || !ok || admin.Name != b.host {
 		return nil, fail(exitRefused, "only the admin box (%s) can %s", admin.Name, action)
@@ -306,11 +321,7 @@ func (a *app) adminKey(b *hostsBox, action string) (ed25519.PrivateKey, error) {
 	if !atScreen(a.stdin) {
 		return nil, fail(exitRefused, "%s needs the admin at this box's own screen (stdin is not a terminal)", action)
 	}
-	store, err := a.keyStore()
-	if err != nil {
-		return nil, err
-	}
-	key, err := store.Get(hosts.KeyAdmin, action)
+	key, store, err := a.readKey(hosts.KeyAdmin, req)
 	if err != nil {
 		return nil, err
 	}
@@ -319,6 +330,20 @@ func (a *app) adminKey(b *hostsBox, action string) (ed25519.PrivateKey, error) {
 			store.Kind(), hosts.Fingerprint(b.local.Roster.AdminKey))
 	}
 	return key, nil
+}
+
+// signRoster composes the roster after the box's own with rows, shows it
+// as the admin key's request and signs those bytes.
+func (a *app) signRoster(b *hostsBox, rows []hosts.Host) (hosts.Roster, error) {
+	next := b.local.Next(rows, b.local.Roster.AdminKey, time.Now())
+	req := hosts.Request{Title: fmt.Sprintf("Sign roster v%d", next.Version),
+		Details: hosts.RosterDiff(b.local.Roster, next), Signs: [][]byte{next.Bytes()}}
+	key, err := a.adminKey(b, req)
+	if err != nil {
+		return hosts.Roster{}, err
+	}
+	next.Sig = req.Sign(key)[0]
+	return next, nil
 }
 
 // acceptFlag is a comma-separated --accept.
@@ -344,14 +369,13 @@ func withRow(r hosts.Roster, h hosts.Host) []hosts.Host {
 	return append(out, h)
 }
 
-func (a *app) publish(ctx context.Context, b *hostsBox, key ed25519.PrivateKey, rows []hosts.Host) (hosts.Roster, error) {
+// publish puts next, signed, on this box and the hub.
+func (a *app) publish(ctx context.Context, b *hostsBox, next hosts.Roster) (hosts.Roster, error) {
 	kv, err := hosts.Bucket(ctx, a.client.JS, hosts.BucketRoster)
 	if err != nil {
 		return hosts.Roster{}, err
 	}
-	next := b.local.Roster
-	next.Hosts = rows
-	return hosts.Publish(ctx, kv, b.stateDir, &b.local, next, key, time.Now())
+	return hosts.Publish(ctx, kv, b.stateDir, &b.local, next)
 }
 
 // cmdHostsInvite prints a one-time code for name and waits (up to ten
@@ -391,7 +415,18 @@ func (a *app) cmdHostsInvite(args []string) error {
 	if _, taken := b.local.Roster.Host(name); taken && !*replace {
 		return fail(exitRefused, "%s is already in the roster (invite it again with --replace)", name)
 	}
-	key, err := a.adminKey(b, "invite "+name)
+	// The joining box's host key comes with the join, so the roster this
+	// read signs isn't composed yet: the request names its row instead.
+	state, acc := "not secure", strings.Join(acceptList(*accept), ",")
+	if *secure {
+		state = "secure"
+	}
+	if acc == "" {
+		acc = "(none)"
+	}
+	key, err := a.adminKey(b, hosts.Request{Title: fmt.Sprintf("Sign roster v%d when %s joins", b.local.Roster.Version+1, name),
+		Details: []string{fmt.Sprintf("+ %s: %s, accept %s", name, state, acc),
+			"its host key comes with the join, within " + hosts.InviteTTL.String() + ": the roster is signed then, so no sum yet"}})
 	if err != nil {
 		return err
 	}
@@ -421,7 +456,9 @@ func (a *app) cmdHostsInvite(args []string) error {
 			}
 			row.ApproveKey = req.ApproveKey
 		}
-		r, err := a.publish(ctx, b, key, withRow(b.local.Roster, row))
+		next := b.local.Next(withRow(b.local.Roster, row), b.local.Roster.AdminKey, time.Now())
+		next.Sign(key)
+		r, err := a.publish(ctx, b, next)
 		if err != nil && r.Version == 0 {
 			return nil, "", err
 		}
@@ -479,11 +516,11 @@ func (a *app) cmdHostsSet(args []string) error {
 	if given["accept"] {
 		row.Accept = acceptList(*accept)
 	}
-	key, err := a.adminKey(b, "set "+row.Name)
+	next, err := a.signRoster(b, withRow(b.local.Roster, row))
 	if err != nil {
 		return err
 	}
-	r, err := a.publish(ctx, b, key, withRow(b.local.Roster, row))
+	r, err := a.publish(ctx, b, next)
 	if err != nil && r.Version == 0 {
 		return err
 	}
@@ -524,12 +561,12 @@ func (a *app) cmdHostsRevoke(args []string) error {
 	if name == b.host {
 		return fail(exitRefused, "the admin can't revoke itself")
 	}
-	key, err := a.adminKey(b, "revoke "+name)
+	rows := slices.DeleteFunc(slices.Clone(b.local.Roster.Hosts), func(h hosts.Host) bool { return h.Name == name })
+	next, err := a.signRoster(b, rows)
 	if err != nil {
 		return err
 	}
-	rows := slices.DeleteFunc(slices.Clone(b.local.Roster.Hosts), func(h hosts.Host) bool { return h.Name == name })
-	r, err := a.publish(ctx, b, key, rows)
+	r, err := a.publish(ctx, b, next)
 	if err != nil && r.Version == 0 {
 		return err
 	}

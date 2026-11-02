@@ -3,6 +3,7 @@ package hosts
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -143,11 +144,15 @@ func TestPublishTakesTheVersionFromTheBoxNotTheHub(t *testing.T) {
 	junk.AdminKey = pubFor("k16")
 	junk.Sign(keyFor("k16"))
 	putRaw(t, ctx, kv, junk)
-	next := l.Roster
-	next.Hosts = next.Hosts[1:] // k16 revoked
-	got, err := Publish(ctx, kv, dir, &l, next, keyFor("admin"), t0)
+	next := l.Next(l.Roster.Hosts[1:], pubFor("admin"), t0) // k16 revoked
+	next.Sign(keyFor("admin"))
+	got, err := Publish(ctx, kv, dir, &l, next)
 	if err != nil || got.Version != 3 {
 		t.Fatalf("publish: v%d err %v", got.Version, err)
+	}
+	// A roster signed for a version the box has since passed is refused.
+	if _, err := Publish(ctx, kv, dir, &l, next); err == nil || !strings.Contains(err.Error(), "nothing published") {
+		t.Fatalf("stale publish: %v", err)
 	}
 	if hubVersion(t, ctx, kv) != 3 {
 		t.Error("hub not at v3")
@@ -264,5 +269,29 @@ func TestPresenceHoldWords(t *testing.T) {
 		if tc.got != tc.want {
 			t.Errorf("got  %q\nwant %q", tc.got, tc.want)
 		}
+	}
+}
+
+func TestRosterDiffNamesEachRowChange(t *testing.T) {
+	old := Roster{Hosts: []Host{
+		{Name: "k16", Key: pubFor("k16"), Accept: []string{"nix", "ping"}},
+		{Name: "mac", Key: pubFor("mac"), Secure: true, ApproveKey: pubFor("admin"), Accept: []string{"ping"}},
+		{Name: "old", Key: pubFor("old")},
+	}}
+	next := Roster{Hosts: []Host{
+		{Name: "k16", Key: pubFor("k16"), Accept: []string{"stop-thread", "nix", "ping"}},
+		{Name: "mac", Key: pubFor("mac"), Secure: true, ApproveKey: pubFor("admin"), Accept: []string{"ping"}},
+		{Name: "new", Key: pubFor("new"), Secure: true},
+	}}
+	want := []string{
+		"k16: accept nix,ping -> nix,ping,stop-thread",
+		"+ new: secure, accept (none), key " + Fingerprint(pubFor("new")),
+		"- old",
+	}
+	if got := RosterDiff(old, next); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("diff %q", got)
+	}
+	if got := RosterDiff(old, old); len(got) != 1 || got[0] != "no row changes" {
+		t.Fatalf("no change: %q", got)
 	}
 }

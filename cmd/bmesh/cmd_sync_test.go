@@ -164,6 +164,12 @@ func TestSyncLevelsEveryBoxAndHoldsOnASecureOne(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "skill.md") || !strings.Contains(out, "tools: fast-forwarded 1 (approved)") {
 		t.Fatalf("approve: %d %s %s", code, out, errs)
 	}
+	// The request named the repo, its move and the log's lines.
+	block := requestBlock(t, out, "Approve level of tools")
+	wantRequest(t, block, fmt.Sprintf("tools: %s -> %s, +1 commit", held[0].Head[:8], toolsTop[:8]))
+	if !strings.Contains(block, "skill.md") || !regexp.MustCompile(`\n  signs [0-9a-f]{8}\n$`).MatchString(block) {
+		t.Fatalf("approve request:\n%s", block)
+	}
 	if got := meshtest.Git(t, macDir("tools"), "rev-parse", "HEAD"); got != toolsTop {
 		t.Fatalf("mac tools at %s, want %s", got, toolsTop)
 	}

@@ -2,12 +2,13 @@ package hosts
 
 import (
 	"context"
-	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -209,16 +210,23 @@ func isConflict(err error) bool {
 	return errors.Is(err, jetstream.ErrKeyExists) || errors.Is(err, jetstream.ErrKeyRevisionMismatch)
 }
 
-// Publish signs next as the version after the box's own (never the hub's),
-// saves it to roster.json and writes it to the hub, compare-and-set on the
-// entry's revision (retried when another writer gets there first). The
-// saved copy is what every daemon re-puts, so a failed hub write heals.
-func Publish(ctx context.Context, kv jetstream.KeyValue, stateDir string, l *Local, next Roster,
-	admin ed25519.PrivateKey, now time.Time) (Roster, error) {
-	next.Version = l.Roster.Version + 1
-	next.AdminKey = KeyHex(admin.Public().(ed25519.PublicKey))
-	next.IssuedAt = Stamp(now)
-	next.Sign(admin)
+// Next is the roster after l's own (never the hub's) with rows, issued
+// now under adminKey, unsigned in its signed form: what a request shows
+// and the admin key then signs.
+func (l *Local) Next(rows []Host, adminKey string, now time.Time) Roster {
+	next := Roster{Version: l.Roster.Version + 1, AdminKey: adminKey, Hosts: slices.Clone(rows), IssuedAt: Stamp(now)}
+	next.Prepare()
+	return next
+}
+
+// Publish takes next, signed, as the version after the box's own, saves it
+// to roster.json and writes it to the hub, compare-and-set on the entry's
+// revision (retried when another writer gets there first). The saved copy
+// is what every daemon re-puts, so a failed hub write heals.
+func Publish(ctx context.Context, kv jetstream.KeyValue, stateDir string, l *Local, next Roster) (Roster, error) {
+	if next.Version != l.Roster.Version+1 {
+		return Roster{}, fmt.Errorf("roster v%d was signed, but this box is at v%d now: nothing published, run it again", next.Version, l.Roster.Version)
+	}
 	if l.Pinned == "" {
 		l.Pinned = next.AdminKey
 	}
@@ -243,4 +251,81 @@ func Publish(ctx context.Context, kv jetstream.KeyValue, stateDir string, l *Loc
 		return next, fmt.Errorf("roster v%d saved here but not on the hub (the daemon puts it back within a minute): %w", next.Version, err)
 	}
 	return next, nil
+}
+
+// RosterDiff is what next changes in old, a line per row by name:
+// "+ k16: secure, accept nix,ping, key <fp>", "- k16",
+// "k16: accept nix,ping -> nix,ping,stop-thread"; "no row changes" when
+// none does.
+func RosterDiff(old, next Roster) []string {
+	rows := func(r Roster) map[string]Host {
+		m := map[string]Host{}
+		for _, h := range r.Hosts {
+			m[h.Name] = h
+		}
+		return m
+	}
+	om, nm := rows(old), rows(next)
+	var names []string
+	for n := range om {
+		names = append(names, n)
+	}
+	for n := range nm {
+		if _, ok := om[n]; !ok {
+			names = append(names, n)
+		}
+	}
+	slices.Sort(names)
+	secure := func(b bool) string {
+		if b {
+			return "secure"
+		}
+		return "not secure"
+	}
+	accept := func(h Host) string {
+		if len(h.Accept) == 0 {
+			return "(none)"
+		}
+		return strings.Join(Names(h.Accept), ",")
+	}
+	var out []string
+	for _, n := range names {
+		o, inOld := om[n]
+		w, inNew := nm[n]
+		switch {
+		case !inOld:
+			out = append(out, fmt.Sprintf("+ %s: %s, accept %s, key %s", n, secure(w.Secure), accept(w), Fingerprint(w.Key)))
+		case !inNew:
+			out = append(out, "- "+n)
+		default:
+			var ch []string
+			if o.Key != w.Key {
+				ch = append(ch, fmt.Sprintf("key %s -> %s", Fingerprint(o.Key), Fingerprint(w.Key)))
+			}
+			if o.Secure != w.Secure {
+				ch = append(ch, fmt.Sprintf("%s -> %s", secure(o.Secure), secure(w.Secure)))
+			}
+			if o.ApproveKey != w.ApproveKey {
+				ch = append(ch, fmt.Sprintf("approve key %s -> %s", orNone(o.ApproveKey, Fingerprint), orNone(w.ApproveKey, Fingerprint)))
+			}
+			if a, b := accept(o), accept(w); a != b {
+				ch = append(ch, fmt.Sprintf("accept %s -> %s", a, b))
+			}
+			if len(ch) > 0 {
+				out = append(out, n+": "+strings.Join(ch, "; "))
+			}
+		}
+	}
+	if len(out) == 0 {
+		out = []string{"no row changes"}
+	}
+	return out
+}
+
+// orNone is f(s), or "(none)" for an empty s.
+func orNone(s string, f func(string) string) string {
+	if s == "" {
+		return "(none)"
+	}
+	return f(s)
 }

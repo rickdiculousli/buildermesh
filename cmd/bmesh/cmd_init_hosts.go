@@ -125,7 +125,8 @@ func (a *app) protectedKey(name string) (pub string, made ed25519.PrivateKey, er
 				return strings.TrimSpace(string(b)), nil, nil
 			}
 		}
-		key, err := store.Get(name, "read the "+name+" key's public half")
+		key, _, err := a.readKey(name, hosts.Request{Title: fmt.Sprintf("Read the %s key's public half", name),
+			Details: []string{"writes " + pubPath, "signs nothing"}})
 		if err != nil {
 			return "", nil, err
 		}
@@ -186,24 +187,22 @@ func (a *app) becomeAdmin(ctx context.Context, host, hostPub string, secure bool
 			return nil
 		}
 	}
+	next := local.Next(withRow(local.Roster, row), adminPub, time.Now())
+	req := hosts.Request{Title: fmt.Sprintf("Sign roster v%d", next.Version),
+		Details: hosts.RosterDiff(local.Roster, next), Signs: [][]byte{next.Bytes()}}
 	if adminKey == nil {
 		if !atScreen(a.stdin) {
 			return fail(exitRefused, "signing the roster needs the admin at this box's own screen (stdin is not a terminal)")
 		}
-		store, err := a.keyStore()
-		if err != nil {
-			return err
-		}
-		if adminKey, err = store.Get(hosts.KeyAdmin, fmt.Sprintf("sign roster v%d", local.Roster.Version+1)); err != nil {
+		if adminKey, _, err = a.readKey(hosts.KeyAdmin, req); err != nil {
 			return err
 		}
 		if hosts.KeyHex(adminKey.Public().(ed25519.PublicKey)) != adminPub {
 			return fail(exitRefused, "the admin key doesn't match %s", filepath.Join(a.cfg.ConfigDir(), "admin.pub"))
 		}
 	}
-	next := local.Roster
-	next.Hosts = withRow(local.Roster, row)
-	r, err := hosts.Publish(ctx, kv, stateDir, &local, next, adminKey, time.Now())
+	next.Sig = req.Sign(adminKey)[0]
+	r, err := hosts.Publish(ctx, kv, stateDir, &local, next)
 	if err != nil && r.Version == 0 {
 		return err
 	}

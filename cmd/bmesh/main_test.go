@@ -43,18 +43,19 @@ func TestMain(m *testing.M) {
 		// and end commands with the session's context line (094).
 		os.Unsetenv("CLAUDE_CODE_SESSION_ID")
 		for k, v := range map[string]string{
-			"BMESH_KEY_STORE":        "file",
-			"BMESH_CACHE_DIR":        filepath.Join(dir, "cache"),
-			"XDG_STATE_HOME":         filepath.Join(dir, "state"),
-			"CLAUDE_CONFIG_DIR":      filepath.Join(dir, "claude"),
-			"BMESH_UPSTREAM_URL":     filepath.Join(dir, "no-upstream"),
-			"BMESH_SECURITY_COMMAND": "sh " + filepath.Join(testdata, "fake-security.sh"),
-			"BMESH_CLAUDE_COMMAND":   "sh " + filepath.Join(testdata, "fake-claude-plugin.sh"),
-			"BMESH_CODEX_COMMAND":    "sh " + filepath.Join(testdata, "fake-codex.sh"),
-			"FAKE_SECURITY_DIR":      filepath.Join(dir, "items"),
-			"FAKE_SECURITY_LOG":      filepath.Join(dir, "log"),
-			"FAKE_SECURITY_ACL":      "",
-			"FAKE_SECURITY_DENY":     "",
+			"BMESH_KEY_STORE":         "file",
+			"BMESH_CACHE_DIR":         filepath.Join(dir, "cache"),
+			"XDG_STATE_HOME":          filepath.Join(dir, "state"),
+			"CLAUDE_CONFIG_DIR":       filepath.Join(dir, "claude"),
+			"BMESH_UPSTREAM_URL":      filepath.Join(dir, "no-upstream"),
+			"BMESH_SECURITY_COMMAND":  "sh " + filepath.Join(testdata, "fake-security.sh"),
+			"BMESH_OSASCRIPT_COMMAND": "sh " + filepath.Join(testdata, "fake-osascript.sh"),
+			"BMESH_CLAUDE_COMMAND":    "sh " + filepath.Join(testdata, "fake-claude-plugin.sh"),
+			"BMESH_CODEX_COMMAND":     "sh " + filepath.Join(testdata, "fake-codex.sh"),
+			"FAKE_SECURITY_DIR":       filepath.Join(dir, "items"),
+			"FAKE_SECURITY_LOG":       filepath.Join(dir, "log"),
+			"FAKE_SECURITY_ACL":       "",
+			"FAKE_SECURITY_DENY":      "",
 		} {
 			os.Setenv(k, v)
 		}

@@ -175,20 +175,33 @@ func SyncRegistry(ctx context.Context, kv jetstream.KeyValue, stateDir, pinned s
 	return out, nil
 }
 
-// PublishRegistry signs rows as the version after the box's own
-// registry.json (never the hub's), applies it here, saves it and writes
-// it to the hub, compare-and-set on the entry's revision (retried when
-// another writer gets there first). The saved copy is what every daemon
-// re-puts, so a failed hub write heals.
-func PublishRegistry(ctx context.Context, kv jetstream.KeyValue, stateDir string, rows string,
-	admin ed25519.PrivateKey, now time.Time, apply ApplyRegistry) (Registry, error) {
-	pinned := KeyHex(admin.Public().(ed25519.PublicKey))
+// NextRegistry is rows as the version after the box's own registry.json
+// (never the hub's), issued now under the admin key pinned, unsigned: what
+// a request shows and the admin key then signs.
+func NextRegistry(stateDir, pinned, rows string, now time.Time) (Registry, error) {
 	local, _, err := LoadRegistry(stateDir, pinned)
 	if err != nil {
 		return Registry{}, err
 	}
-	next := Registry{Version: local.Version + 1, AdminKey: pinned, Rows: rows, IssuedAt: Stamp(now)}
-	next.Sign(admin)
+	return Registry{Type: TagRegistry, Version: local.Version + 1, AdminKey: pinned, Rows: rows, IssuedAt: Stamp(now)}, nil
+}
+
+// PublishRegistry takes next, signed, as the version after the box's own
+// registry.json, applies it here, saves it and writes it to the hub,
+// compare-and-set on the entry's revision (retried when another writer
+// gets there first). The saved copy is what every daemon re-puts, so a
+// failed hub write heals.
+func PublishRegistry(ctx context.Context, kv jetstream.KeyValue, stateDir string, next Registry, apply ApplyRegistry) (Registry, error) {
+	local, _, err := LoadRegistry(stateDir, next.AdminKey)
+	if err != nil {
+		return Registry{}, err
+	}
+	if next.Version != local.Version+1 {
+		return Registry{}, fmt.Errorf("registry v%d was signed, but this box is at v%d now: nothing published, run it again", next.Version, local.Version)
+	}
+	if err := next.Verify(next.AdminKey); err != nil {
+		return Registry{}, err
+	}
 	if err := apply(next); err != nil {
 		return Registry{}, err
 	}

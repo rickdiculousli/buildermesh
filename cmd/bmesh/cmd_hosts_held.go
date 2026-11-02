@@ -130,20 +130,19 @@ func (a *app) cmdHostsApprove(args []string) error {
 	if me.ApproveKey == b.local.Roster.AdminKey {
 		name = hosts.KeyAdmin // the admin box approves with the admin key
 	}
-	store, err := a.keyStore()
-	if err != nil {
-		return err
-	}
-	key, err := store.Get(name, fmt.Sprintf("approve %s +%d %s", x.Repo, x.Commits, plural(x.Commits, "commit")))
-	if err != nil {
-		return err
-	}
-	if hosts.KeyHex(key.Public().(ed25519.PublicKey)) != me.ApproveKey {
-		return fail(exitRefused, "the %s key in the %s store isn't the approve key the roster names (%s)",
-			name, store.Kind(), hosts.Fingerprint(me.ApproveKey))
-	}
 	for {
-		ans, err := a.sendApproval(ctx, b, hosts.NewApprove(key, x, b.host, time.Now()))
+		ap := hosts.ComposeApprove(x, b.host, time.Now())
+		req := hosts.Request{Title: "Approve level of " + x.Repo, Details: approveDetails(x), Signs: [][]byte{ap.Bytes()}}
+		key, store, err := a.readKey(name, req)
+		if err != nil {
+			return err
+		}
+		if hosts.KeyHex(key.Public().(ed25519.PublicKey)) != me.ApproveKey {
+			return fail(exitRefused, "the %s key in the %s store isn't the approve key the roster names (%s)",
+				name, store.Kind(), hosts.Fingerprint(me.ApproveKey))
+		}
+		ap.Sig = req.Sign(key)[0]
+		ans, err := a.sendApproval(ctx, b, ap)
 		if err != nil {
 			return err
 		}
@@ -238,7 +237,7 @@ func (a *app) approveProposal(ctx context.Context, b *hostsBox, x hosts.Held) er
 	if err != nil {
 		return err
 	}
-	key, err := a.adminKey(b, fmt.Sprintf("publish registry v%d (proposal from %s)", reg.Version+1, x.From()))
+	next, err := a.signRegistry(b, text, diff, fmt.Sprintf(" (proposal from %s)", x.From()))
 	if err != nil {
 		return err
 	}
@@ -246,7 +245,7 @@ func (a *app) approveProposal(ctx context.Context, b *hostsBox, x hosts.Held) er
 	if err != nil {
 		return err
 	}
-	next, err := hosts.PublishRegistry(ctx, kv, b.stateDir, text, key, time.Now(), a.applyRegistry)
+	next, err = hosts.PublishRegistry(ctx, kv, b.stateDir, next, a.applyRegistry)
 	if err != nil && next.Version == 0 {
 		return err
 	}
@@ -262,6 +261,18 @@ func (a *app) approveProposal(ctx context.Context, b *hostsBox, x hosts.Held) er
 }
 
 // showHold prints what an approval would let in.
+// approveDetails is an approval's request: the repo, head -> target and
+// the commit count, then the log's first lines.
+func approveDetails(x hosts.Held) []string {
+	d := []string{fmt.Sprintf("%s: %s -> %s, +%d %s", x.Repo, short8(x.Head), short8(x.Target), x.Commits, plural(x.Commits, "commit"))}
+	for _, l := range strings.Split(strings.TrimSpace(x.Log), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			d = append(d, l)
+		}
+	}
+	return d
+}
+
 func showHold(a *app, x hosts.Held) {
 	fmt.Fprintf(a.stdout, "%s: %s +%d %s, %s -> %s (from %s)\n\n%s\n\n", x.ID, x.Repo, x.Commits, plural(x.Commits, "commit"),
 		short8(x.Head), short8(x.Target), x.From(), x.Log)
