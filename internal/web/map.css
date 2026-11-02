@@ -179,7 +179,7 @@ a.tile:hover { text-decoration: none; border-color: var(--tm); }
 .need .who { display: inline-flex; align-items: center; gap: 10px; min-height: 36px; color: var(--tp); }
 .need .who:hover { text-decoration: none; }
 .need .who .p { font-family: var(--mono); overflow-wrap: anywhere; }
-.need .badge { border: 0; padding: 0; min-width: 96px; }
+.need .badge { border: 0; padding: 0; min-width: 118px; }
 /* The row's bottom padding sits on the row, not the words: a clamped box
    shows its overflow through its own padding. */
 .need .say { min-height: 28px; font-size: 13px; line-height: 20px; padding-top: 8px; overflow-wrap: anywhere; color: var(--ts); }
@@ -594,7 +594,6 @@ a.tile:hover { text-decoration: none; border-color: var(--tm); }
 :root { --runaway: var(--crit); --overworking: var(--ser); }
 .need.fl-runaway { border-left-color: var(--runaway); cursor: default; }
 .need.fl-overworking { border-left-color: var(--overworking); cursor: default; }
-.need .badge.fl-runaway, .need .badge.fl-overworking { min-width: 118px; }
 .badge.fl-runaway { color: var(--runaway); }
 .badge.fl-overworking { color: var(--overworking); }
 .tile .v .fl-runaway { color: var(--runaway); }
