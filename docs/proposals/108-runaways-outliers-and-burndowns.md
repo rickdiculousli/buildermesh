@@ -38,17 +38,19 @@ In:
 
   | Rule | Overworking | Runaway | Applies to |
   |---|---|---|---|
-  | `size` | read past 2.5× its size's median | past 5× | leads and fixers |
+  | `size` | read past 2.5× its size's median, and past 5M | past 5× | leads and fixers |
   | `refused` | land refused 3 or more times | | leads |
   | `context` | | main-thread context past `[context] compact_soon` | every agent |
   | `burn` | read past 50M in the trailing 60 minutes | past 100M | every agent |
 
   - **The words** name the numbers and the baseline, e.g. `read 42.2M, 4.1× the buildermesh M median (10.2M)`, `land refused 5× (3 rebase conflicts, 2 reviews failed)`, `context 537k, past compact_soon (400k)`, `read 154M in the last hour`.
-  - **Calibration:** the thresholds come from 10-15 to 10-24 as measured above, and are fixed in code, not config. On those 90 leads and fixers:
-    - `size` flags 6 as overworking (096 and 101 among them) and 2 as runaway: `buildermesh-039` at 5.8× its repo's S median and `opengym-rick-003` at 6.9× its repo's M;
-    - with fleet-wide medians, it would have flagged four of opengym's S leads as runaways too;
-    - `burn` flags the two hours over 100M as runaway;
-    - `refused` flags 096.
+  - **Calibration:** the thresholds come from 10-15 to 10-24 as measured above, and are fixed in code, not config. Run as built over k16's 30 days to 11-02 (132 sized done runs; buildermesh M median 10.2M, S 3.5M, L 20.8M, fixers 3.9M; opengym M 20.5M, L 26.4M), on the 113 leads and fixers done 10-15 to 10-24:
+    - `size` flags 10 as overworking and none as runaway: `buildermesh-096` (3.8×), 101 (2.8×), 012 (S, 4.0×), 027 (S, 2.8×), 039 (S, 4.97×, a hair under runaway), `buildermesh-fix-8` (3.3× the fixer median), and `opengym-rick-002` (L, 3.7×), 003 (M, 3.4×) and 004 (M, 3.2×). Its own repo's M median is high, so opengym-rick-003 is 3.4×, not the 6.9× it reads against buildermesh's;
+    - the 5M floor was added after the first run, which also flagged two XS leads that read 1.6M and 1.8M against a fleet XS median of 417k: small runs, not heavy ones;
+    - `burn` flags `ec03a02c`'s two hours over 100M (154M at most) as runaway, and as overworking opengym-rick-002, 003 and 004 and the executor `opengym-rick-002.frontend` on 10-23's morning (66M to 86M), and session `d010f02c` (55M);
+    - `context` flags `ec03a02c` (537k), opengym-rick-002, its frontend executor, 003 and 004 (423k to 474k), `buildermesh-002` (436k) and `d010f02c` (428k);
+    - `refused` flags 096 alone;
+    - from 10-25 to 11-02 the rules flag only `buildermesh-106` (`size` 3.1× and `refused` 3×) and session `e6db7950` (`burn` 85M, `context` 744k).
 
 - **On the console:**
   - **The needs-you band** gets one row per flagged live agent (a node not done, or a coordinator session with a call in the last 60 minutes), after its `silent` rows.

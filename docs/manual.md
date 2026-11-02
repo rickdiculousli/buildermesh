@@ -1504,6 +1504,29 @@ With an agent that has no calls in the window: `no usage for <agent> since <time
 
 Internals: [internals](internals.md#usage)
 
+#### Flags
+
+The daemon and the map flag an agent that is overworking or a runaway, by fixed rules against the fleet's own baselines. The thresholds are in the code, not config:
+
+| Rule | Overworking | Runaway | Applies to |
+|---|---|---|---|
+| `size` | read past 2.5× its size's median, and past 5M | past 5× | leads and fixers |
+| `refused` | land refused 3 or more times | | leads |
+| `context` | | main-thread context past `[context] compact_soon` | every agent |
+| `burn` | read past 50M in the trailing 60 minutes | past 100M | every agent |
+
+**Baselines.** A lead's size is its spec's `size` (`XS`, `S`, `M` or `L`); a fixer is compared with fixers. The median read is taken over the done leads (and fixers) with use in the usage stream's 30 days: per repo and size when the repo has 5 of them, else across the fleet when it has 5, else the size rule says nothing. A read of 5M or less is never flagged by size, whatever its median. The daemon and the map read the baselines again every hour.
+
+**Words.** Each flag says its numbers and its baseline, the worst first:
+- `read 42.2M, 4.1× the buildermesh M median (10.2M)` (`the fleet M median` when the fleet's is used, `the buildermesh fixer median` for a fixer);
+- `land refused 5× (3 rebase conflicts, 2 reviews failed)` (also `verify failed` and `other`);
+- `context 537k, past compact_soon (400k)`;
+- `read 154M in the last hour`.
+
+**On the mesh.** After each usage pass, each box's daemon judges its own nodes that are not `done` and publishes `runaway` (`bm.daemon.<host>.runaway`, `to` the node, `text` `<level> <path>: <words>`) once per node, rule and level, kept in `<state dir>/usage/flags.json` so a restart announces nothing twice. [`bmesh watch`](#bmesh-watch) prints it for the nodes it watches and [`bmesh mesh-status`](#bmesh-mesh-status) lists each live node's open flags. A flag is never pushed to the phone, nothing acts on it (stopping or holding the agent is the coordinator's or the operator's call), and a coordinator session gets no event. The map shows flags for sessions too (see [Map](#map)).
+
+Internals: [internals](internals.md#flags)
+
 ### `bmesh started`, `progress`, `blocked`, `ask`, `done`
 
 ```
@@ -1673,13 +1696,14 @@ Then, in order:
 1. `settled <family>: <n> threads` per family whose T3 threads the daemon settled (see [Runners: `t3`](#runners)) while any of its nodes is listed, `<n>` its nodes marked `settled`;
 2. `<path> held before land by <by> <age> ago: <why>` per hold (see [Holds](#holds));
 3. `<path> landing <age>: <text>` per ready request, its age since `bmesh ready` and the lead's `landing` text (`: held, waiting for the release` while held; `landed <sha8> (ready <age> ago); the final wake is pending` or `land refused (ready <age> ago): <refusal>; the wake carrying it is pending` while the daemon owes the lead its wake; see [`bmesh ready`](#bmesh-ready));
-4. `<host>: <repo> waits for your approval (+<N> commits): in a terminal on <host>, bmesh hosts approve <id> (expires <day hh:mm>)` per hold any box's presence carries (`<host>: a registry proposal from <box> waits for your approval (<N> row changes): ...` for a registry proposal), this box's own among them; none with `[hosts]` off (see [Hosts: The hold](#levelling));
-5. `fixes: N pending for <repo> (<fixer> <state>)`, the open issues naming bmesh's own repo (see [The fixer](#the-fixer)): the parentheses read `(<fixer> <state>)` while a fixer has them (`fixes: N pending for <repo> (<fixer> working)`), `(starts within a minute)` when the daemon starts one on its next pass, `(<fixer> blocked)` while the newest fixer's block waits on the operator, and `(<fixer> done; they wait on you)` when the fixer had them and left them;
-6. `feedback: N pending in <family>` per family with other feedback pending (see [`bmesh feedback`](#bmesh-feedback));
-7. `t3 sign-in on <host>: expires in N days (bmesh t3 login)` with the `t3` runner and this box's T3 sign-in under 7 days from expiry (`expires in 1 day` in the singular, and `t3 sign-in on <host>: expired (bmesh t3 login)` once it has expired; see [`bmesh t3 login`](#bmesh-t3-login));
-8. the behind-main notice (see [Updates](#updates));
-9. the hub line when this box's `bmesh hub` runs an older binary than its `bmesh serve` (see [Several boxes](#several-boxes));
-10. the `operator: ...` lines `bmesh spec steps` prints with no id (see [`bmesh spec steps`](#bmesh-spec-steps) and [The ledger](#the-ledger)).
+4. `<path> ▲ <level> <age> ago: <words>` per open flag of a node not `done`: the newest `runaway` event of each rule the daemons announced for it in the stream's 30 days, a `runaway` hiding the same rule's `overworking`, runaway first (see [Flags](#flags));
+5. `<host>: <repo> waits for your approval (+<N> commits): in a terminal on <host>, bmesh hosts approve <id> (expires <day hh:mm>)` per hold any box's presence carries (`<host>: a registry proposal from <box> waits for your approval (<N> row changes): ...` for a registry proposal), this box's own among them; none with `[hosts]` off (see [Hosts: The hold](#levelling));
+6. `fixes: N pending for <repo> (<fixer> <state>)`, the open issues naming bmesh's own repo (see [The fixer](#the-fixer)): the parentheses read `(<fixer> <state>)` while a fixer has them (`fixes: N pending for <repo> (<fixer> working)`), `(starts within a minute)` when the daemon starts one on its next pass, `(<fixer> blocked)` while the newest fixer's block waits on the operator, and `(<fixer> done; they wait on you)` when the fixer had them and left them;
+7. `feedback: N pending in <family>` per family with other feedback pending (see [`bmesh feedback`](#bmesh-feedback));
+8. `t3 sign-in on <host>: expires in N days (bmesh t3 login)` with the `t3` runner and this box's T3 sign-in under 7 days from expiry (`expires in 1 day` in the singular, and `t3 sign-in on <host>: expired (bmesh t3 login)` once it has expired; see [`bmesh t3 login`](#bmesh-t3-login));
+9. the behind-main notice (see [Updates](#updates));
+10. the hub line when this box's `bmesh hub` runs an older binary than its `bmesh serve` (see [Several boxes](#several-boxes));
+11. the `operator: ...` lines `bmesh spec steps` prints with no id (see [`bmesh spec steps`](#bmesh-spec-steps) and [The ledger](#the-ledger)).
 
 `--all` lists every node; `--json` carries every node whatever the flag, as the map's `/api/nodes` does: an array of `{"node","state","runner","unread"}`, a held node's with `hold`, a node with a ready request with `ready` (`{"phase","head","at"}`). `--json` prints only the array, none of the lines after the table.
 
@@ -1711,7 +1735,7 @@ Follows the named nodes until every one is `done`, `blocked` or `silent`. A coor
 2. Else it prints the events since `--since` in the trees of the named nodes' leads, then follows new ones live, and prints each named node's runner change.
 3. It reads the states again on every event and every 5 seconds (the daemon marks silence without an event), and stops with `watch-done` once every named node is `done`, `blocked` or `silent`.
 
-**Output.** One line per event, `<at> <path> <event> <text>` (with the event's `to` path before the text when it has one); the daemon's events addressed into a watched tree print too. A runner change prints `<at> <path> runner running|idle`. A held lead shows as the `held` event, `<at> <path> held <text>`, and the watch goes on (see [Holds](#holds)). A family whose T3 threads the daemon settled shows as `<at> daemon.<host> settled <family>: <n> threads`, with no `to` (see [Runners: `t3`](#runners)). Host jobs and replies never show. The last line is `watch-done`, which names the next step when a named node is a lead of a build family, not a fixer's, with feedback pending other than what names bmesh's own repo (the fixer's): `watch-done; next: bmesh feedback list <family>` (several: `, then bmesh feedback list <family>`), in the order the nodes were named (see [`bmesh feedback`](#bmesh-feedback)). A node or a queue it can't read adds nothing.
+**Output.** One line per event, `<at> <path> <event> <text>` (with the event's `to` path before the text when it has one); the daemon's events addressed into a watched tree print too. A runner change prints `<at> <path> runner running|idle`. A held lead shows as the `held` event, `<at> <path> held <text>`, and the watch goes on (see [Holds](#holds)). A flag the daemon raised on a watched node shows as `<at> daemon.<host> runaway <path> <level> <path>: <words>`, once per node, rule and level (see [Flags](#flags)); it is never pushed. A family whose T3 threads the daemon settled shows as `<at> daemon.<host> settled <family>: <n> threads`, with no `to` (see [Runners: `t3`](#runners)). Host jobs and replies never show. The last line is `watch-done`, which names the next step when a named node is a lead of a build family, not a fixer's, with feedback pending other than what names bmesh's own repo (the fixer's): `watch-done; next: bmesh feedback list <family>` (several: `, then bmesh feedback list <family>`), in the order the nodes were named (see [`bmesh feedback`](#bmesh-feedback)). A node or a queue it can't read adds nothing.
 
 **Refusals.**
 
