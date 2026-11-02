@@ -4,10 +4,11 @@ title: bmesh map draws the live mesh as a coloured, pulsing tree in the terminal
 kind: feature
 size: M
 judge: opus
-status: later
+status: rejected
 lens: ux
 proposed_by: operator
 proposed_on: 2026-10-16
+reason: dropped by the operator
 ---
 
 ## Opportunity

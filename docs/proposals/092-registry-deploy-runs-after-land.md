@@ -4,10 +4,11 @@ title: A repo's deploy kind runs on its host after every code change, and a lead
 kind: feature
 size: L
 judge: opus
-status: proposed
+status: rejected
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-23
+reason: dropped by the operator
 ---
 
 ## Opportunity
