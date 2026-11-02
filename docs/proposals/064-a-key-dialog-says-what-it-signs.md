@@ -4,7 +4,7 @@ title: Before a protected key is used, bmesh shows a dialog saying exactly what 
 kind: ux
 size: M
 judge: opus
-status: accepted
+status: done
 lens: ux
 proposed_by: dfdc9673-27b2-4f3f-9f17-95a5b436de66
 proposed_on: 2026-10-17
@@ -38,6 +38,11 @@ In:
 - **One request per batch.** A command that signs several things with one read, such as `repos remove` (each box's `nix`, then the registry), lists them all in the one dialog.
 - **The rule, in the README's Hosts and Security sections and the agents snippet:** a Keychain prompt about bmesh that isn't preceded by a `bmesh:` dialog naming what it signs is not bmesh's. Deny it.
 - The publish key from 063 uses the same request, and so does any key added later.
+
+As built:
+- `bmesh hosts invite` reads the key before the joining box's host key exists, so its request (`Sign roster v<N> when <name> joins`) names the row it adds and shows no sum; every other request shows the sum of what it signs.
+- 063 was rejected, so no release request exists; any key added later takes the same `hosts.Request`.
+- When `hosts approve` finds origin moved and you approve the new target, it reads the key again for the new approval's own request.
 
 Out:
 - Changing the Keychain prompt's own text, which macOS fixes.
@@ -73,3 +78,4 @@ The repo's verify, plus:
 nothing
 
 ## Needs from the operator
+- [ricks-macbook] after the release reaches it (`bmesh update`), at its own screen, re-set a row to its current accept list (`bmesh hosts set <box> --accept <its accept list>`): a `bmesh: Sign roster v<N>` dialog shows `no row changes` and `signs <sum>` before any Keychain prompt; choose `Cancel`, and it refuses with `cancelled at the dialog: nothing signed`. check: `bmesh hosts --json` shows the same `roster_version` as before
