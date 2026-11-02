@@ -4059,12 +4059,14 @@ Internals: [internals](internals.md#t3-done)
 
 ### Map
 
-The map (`/`) is a console under a top bar: `BMESH`, the connection (`● live · <host> hub`, else `connecting` or `reconnecting`), the tabs `overview`, `timeline` and `routines`, the window chips `1h 6h 24h 7d`, and the hub's clock in UTC. The window (default `6h`) is kept in the hash (`#/?w=24h`, `#/timeline?w=7d`) and in this browser across reloads. The look is dark; a browser set to light gets the light palette. Every number, path and time is set in monospace.
+The map (`/`) is a console under a top bar: `BMESH`, the connection (`● live · <host> hub`, else `connecting` or `reconnecting`), the tabs `overview`, `timeline`, `tokens` and `routines`, the window chips `1h 6h 24h 7d`, and the hub's clock in UTC. The window (default `6h`) is kept in the hash (`#/?w=24h`, `#/timeline?w=7d`, `#/tokens?w=1h`) and in this browser across reloads. The look is dark; a browser set to light gets the light palette. Every number, path and time is set in monospace.
 
 **The overview** shows, top to bottom:
 
-1. **The KPI row**, six tiles:
+1. **The KPI row**, eight tiles:
    - `Live agents`: the nodes (not routines) that are working, asking, blocked, silent, landing or held, and up to three paths;
+   - `Tokens read`: what every agent's model calls read in the window (input, cache read and cache write) and, under it, their output, linking the tokens tab;
+   - `Last hour`: what they read in the last hour;
    - `Landed`: the leads `done` in the window, and their spec ids;
    - `Land refused`: the daemon's `land-refused` events in the window, and the node with the most (`bm-096 ×5`);
    - `Asking / blocked`: the nodes asking or blocked, and up to three paths;
@@ -4072,7 +4074,11 @@ The map (`/`) is a console under a top bar: `BMESH`, the connection (`● live �
    - `Routines`: jobs queued and instances running, linking the routines tab.
 2. The newest digest as a fold (`▸ digest 50m ago: <title>`) that opens to its body, while the digest is younger than twice `[notify] digest_every`; an older one is dropped (the phone's push is unchanged).
 3. **The needs-you band** (below).
-4. **The fleet timeline** (below).
+4. **The fleet timeline** (two thirds) beside **tokens read by role** (one third).
+5. **Agents** (two thirds) beside **coordinators: design and execution** (one third).
+6. **Context per model call** (two thirds) beside **quota** (one third).
+
+Narrower than 1000px, each row of two panels stacks to one column.
 
 The recent-events drawer is at the foot of every tab.
 
@@ -4083,10 +4089,31 @@ The recent-events drawer is at the foot of every tab.
 - A label is the node's path. When every lane is of one repo with a name of five letters or more, that name is shortened to two letters (`buildermesh-096` is `bm-096`).
 - An executor or engineer folds into its parent's lane, counted after the label (`bm-096 +2`).
 - Live events extend the lanes at once (redrawn at most once a second), and a dashed line marks now, moving every 30 seconds.
+- Each lane's tokens read in the window are in its gutter, after the label.
+- Under the leads, a `coordinators` group draws one lane per coordinator session (a Claude Code session no node owns, `bmesh usage`'s `session.<host>.<id>`) with model calls in the window, labelled `session <first 8 of its id>`, its repo on hover and its read in the gutter. Its bars are its busy spans: runs of model calls less than 5 minutes apart, `design` in violet and `exec` in magenta (its phase, as `bmesh usage` splits it). No state is drawn in either colour. Click a session's lane for its page.
+
+**Tokens read by role** stacks what the window's model calls read, per bucket (a minute on `1h`, 10 minutes on `6h`, 30 on `24h`, 3 hours on `7d`), in five series in this order: `leads` (leads, fixers, rounds and engineers, their own calls), `subagents` (executors and the Agent subagents of nodes), coordinator `design` and `exec` (a coordinator session's calls and its subagents', by phase) and `routines`. Hover for each series and the total of a bucket.
+
+**Agents** lists every agent with model calls in the window, most read first: its path or `session <id8>` (`●` when live: a node at work or waiting, or a session with a call in the last hour), role, its spec's `size` or its repo, state, read, a bar of its main thread's read (blue) against its subagents' (orange), peak context, wall time from first to last call, and output. The overview shows the first 20 rows and a link to the tokens tab. The agent links to its lead or session page; a click elsewhere on the row shows its context in the panel below.
+
+**Coordinators: design and execution** has a row per coordinator session in the window: a bar of its design read (violet) against its exec read (magenta), both numbers, the design share, its peak context and its last call.
+
+**Context per model call** shows the selected agent; with none selected, the live agent with the largest context, else the window's largest reader.
+- The upper chart is the main thread's context at each model call over the window, with dashed lines at the serving box's `[context]` `nudge_from`, `compact_from` and `compact_soon` (each labelled; a line above the chart's top is left out) and a `compacted` mark at each compaction.
+- The lower chart has a bar per call for the context it added, the two largest labelled with what fed them (`+19k Read cases.go`: the tool uses of the message before). A node's land refusals (`✕`) and readies (`▲`) run along its axis.
+- Hover either for the nearest call's time, context, growth, output and cause.
+
+**Quota** draws each provider's week (solid) and 5-hour (dashed) use over the window on one percent axis, a provider in one colour, each reset in the window as a faint line. Its readings are the strip's, each good run kept on the mesh (below).
 
 Narrower than 1000px, the tiles go to three columns (two under 480px), band rows put their words under the badge, and the timeline's label gutter narrows, with a grid line each hour on `6h` and `24h`.
 
 **The timeline tab** draws every node's lane, executors and engineers in thinner lanes under their parent. Under them, in a `routines` group, it draws one lane per routine instance with a job in the window, each job a segment from its start to its end.
+
+**The tokens tab** draws tokens read by role full width, the agents table with every agent in the window (click a column heading to sort by it, again to reverse), and the quota chart.
+
+**The session page** (`#/session/<host>/<id>`, linked from a session's lane and rows) shows a coordinator session over the last 30 days: its repo and host, first and last call, read and output, and its design/exec split as a bar, numbers and share; its busy lane; its context per model call; and its subagents, each with its description, the phase it ran in, read, output and calls.
+
+**Quota history.** Each good run of `[quota] command` (at most one every five minutes, while the map or the quota reminder reads it) is also published to the mesh's usage stream, so any box's map draws the window's readings, each provider's newest per five minutes across boxes.
 
 **The routines tab** lists each kind with its instances per repo, its queue, results and leases.
 
@@ -4108,7 +4135,10 @@ A `held` lead (a coordinator holds it at a gate) and a `landing` lead (it ran `r
 
 1. a `tree` card, one row per child (state badge, last segment of its path, branch, `N unread`) linking its page;
 2. the lead's `spec` card, or for a round a `specs` card with one `NNN title · status` line per spec its engineers proposed, opening the body in place (`no specs landed yet` before any lands);
-3. its inbox and timeline.
+3. a `tokens` card: the four kinds (input, cache read, cache write, output) for its main thread and its subagents, then each subagent with its description, read, output and calls;
+4. its inbox and timeline.
+
+Between its lanes and the cards, its context per model call over its life (as on the overview). Its `compare` select lists the done leads of its spec's size with model calls in the last week; choosing one draws that lead in orange beside it, both on minutes since their first call.
 
 The spec is read from the repo's local `origin/main` (`main` without an origin). While lead pages are viewed, the daemon fetches `origin main` in the background at most once a minute per repo, so a spec shows a minute or two after landing. A card with nothing to show (`no spec`, `no messages`, no events) is one muted line.
 

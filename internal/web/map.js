@@ -42,7 +42,7 @@ const mesh = {
 // check is set by ?check=1: a self-check that writes viewport and
 // connection facts into document.title for headless screenshots.
 const check = new URLSearchParams(location.search).get("check") === "1"
-  ? { conn: [], trees: 0, replay: 0, live: 0, lanes: 0, segs: {}, ticks: 0 } : null;
+  ? { conn: [], trees: 0, replay: 0, live: 0, lanes: 0, segs: {}, ticks: 0, roles: 0, agents: 0, ctx: 0, quota: 0 } : null;
 
 function svg(tag, attrs, parent) {
   const e = document.createElementNS(NS, tag);
@@ -245,12 +245,13 @@ function setWindow(w) {
   } catch (e) {
     // Storage off: the hash still carries it.
   }
-  const base = pages.view === "timeline" ? "#/timeline" : "#/";
+  const base = pages.view === "timeline" || pages.view === "tokens" ? "#/" + pages.view : "#/";
   history.replaceState(null, "", base + "?w=" + w);
   showWindow();
   tl.data = null;
   drawAll();
   timeline.run();
+  usage.run();
 }
 
 function showWindow() {
@@ -327,12 +328,24 @@ function drawSoon() {
 function drawAll() {
   tl.lastDraw = Date.now();
   if (pages.view === "map") {
-    drawLanes($("tl-map"), tl.data, { fold: true, live: true });
+    drawLanes($("tl-map"), tl.data, { fold: true, live: true, sessions: true });
     renderKpis();
+    drawRoles($("roles-map"));
+    drawAgents($("agents-map"), { limit: AGENTS_SHOWN, select: true });
+    drawCoords($("coords-map"));
+    drawCtxPanel();
+    drawQuota($("quota-map"));
   } else if (pages.view === "timeline") {
-    drawLanes($("tl-full"), tl.data, { fold: false, live: true });
+    drawLanes($("tl-full"), tl.data, { fold: false, live: true, sessions: true });
+  } else if (pages.view === "tokens") {
+    drawRoles($("roles-tok"));
+    drawAgents($("agents-tok"), { sortable: true });
+    drawQuota($("quota-tok"));
   } else if (pages.view === "lead" && tl.lead && tl.lead.path === pages.lead) {
     drawLanes($("lead-lanes"), tl.lead.data, { fold: false, live: true, life: true });
+    if (tok.lead && tok.lead.path === pages.lead) ctxChart($("lead-ctx"), tok.lead.data, { empty: "No model calls of this node on the mesh." });
+  } else if (pages.view === "session") {
+    drawSession();
   }
 }
 
@@ -419,6 +432,14 @@ function drawLanes(box, d, opts) {
   const to = ended ? d.to : now;
   const from = opts.life ? Math.min(d.from, to - 600) : now - (WINDOWS[tl.win] || d.to - d.from);
   const rows = rowsOf(d.lanes || [], opts.fold);
+  const u = opts.sessions ? usageNow() : null;
+  const reads = new Map(u ? u.agents.map((a) => [a.agent, +a.read || 0]) : []);
+  if (u && u.sessions.length) {
+    // The coordinator sessions, a group under the leads (before the routines).
+    const gi = rows.findIndex((r) => r.group === "routines");
+    rows.splice(gi < 0 ? rows.length : gi, 0, { group: "coordinators · design / exec" },
+      ...u.sessions.map((s) => ({ s, depth: 0, label: agentName(s.agent) })));
+  }
   const counts = { lanes: 0, segs: {}, ticks: 0 };
   if (!rows.length) {
     box.replaceChildren(el("p", "empty", opts.life ? "no events for this node" : "No lanes in this window."));
@@ -449,9 +470,16 @@ function drawLanes(box, d, opts) {
       y += 18;
       continue;
     }
+    if (r.s) {
+      sessionLane(root, r, x, y, G, reads.get(r.s.agent), from, to);
+      y += LANE.h;
+      continue;
+    }
     const l = r.l, h = hOf(r), bar = r.depth ? LANE.kidBar : LANE.bar, by = y + (h - bar) / 2;
     const g = svg("g", { class: "tl-lane" + (r.depth ? " kid" : "") + " role-" + String(l.role || "").replace(/[^a-z-]/g, "") }, root);
-    const name = svgText({ class: "label", x: 4 + r.depth * 10, y: by + bar - 2 }, fit(r.label, Math.floor((G - 14 - r.depth * 10) / 7) - (r.more ? 3 : 0)), g);
+    const read = reads.get(l.path);
+    if (read) svgText({ class: "gread", x: G - 10, y: by + bar - 2, "text-anchor": "end" }, fmtTok(read), g);
+    const name = svgText({ class: "label", x: 4 + r.depth * 10, y: by + bar - 2 }, fit(r.label, Math.floor((G - 14 - r.depth * 10) / 7) - (r.more ? 3 : 0) - (read ? 6 : 0)), g);
     if (r.more) name.append(svgTspan("more", " +" + r.more));
     hover(name, () => l.path + "\n" + (l.state || "idle") + (l.spec ? " · spec " + l.spec : "") + (l.repo ? " · " + l.repo : ""));
     const live = opts.live && l.state !== "done" && !(l.role === "routine" && l.state !== "working");
@@ -491,6 +519,30 @@ function drawLanes(box, d, opts) {
   tallyCheck(box, counts);
 }
 
+// sessionLane draws a coordinator session's lane: its busy spans coloured
+// by phase, its read in the gutter, a link to its page.
+function sessionLane(root, r, x, y, G, read, from, to) {
+  const s = r.s, by = y + (LANE.h - LANE.bar) / 2;
+  const g = svg("g", { class: "tl-lane session" }, root);
+  if (read) svgText({ class: "gread", x: G - 10, y: by + LANE.bar - 2, "text-anchor": "end" }, fmtTok(read), g);
+  const name = svgText({ class: "label", x: 4, y: by + LANE.bar - 2 }, fit(r.label, Math.floor((G - 14) / 7) - (read ? 6 : 0)), g);
+  hover(name, () => s.agent + (s.repo ? "\n" + s.repo : ""));
+  for (const [a, b, ph] of s.spans || []) {
+    if (b < from || a > to) continue;
+    const p = ph === "exec" ? "exec" : "design";
+    const rect = svg("rect", { class: "seg ph-" + p, x: x(a), y: by, width: Math.max(2, x(b) - x(a)), height: LANE.bar, rx: 3 }, g);
+    hover(rect, () => agentName(s.agent) + (s.repo ? " · " + s.repo : "") + "\n" + p + "  " + spanText(a, b));
+  }
+  g.setAttribute("tabindex", "0");
+  g.setAttribute("role", "link");
+  g.setAttribute("aria-label", s.agent);
+  const go = () => { location.hash = agentHref(s.agent); };
+  g.addEventListener("click", go);
+  g.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
+  });
+}
+
 function svgTspan(cls, s) {
   const e = document.createElementNS(NS, "tspan");
   e.setAttribute("class", cls);
@@ -512,13 +564,7 @@ function linkLane(g, path) {
 // hover shows the tip with text() under the mouse while it is on e.
 function hover(e, text) {
   const tip = $("tip");
-  e.addEventListener("pointermove", (ev) => {
-    tip.textContent = text();
-    tip.hidden = false;
-    const w = tip.offsetWidth, h = tip.offsetHeight;
-    tip.style.left = Math.max(4, Math.min(ev.clientX + 14, window.innerWidth - w - 4)) + "px";
-    tip.style.top = (ev.clientY + 14 + h > window.innerHeight ? ev.clientY - h - 8 : ev.clientY + 14) + "px";
-  });
+  e.addEventListener("pointermove", (ev) => showTip(ev, text()));
   e.addEventListener("pointerleave", () => { tip.hidden = true; });
 }
 
@@ -880,7 +926,7 @@ function loader(load) {
   return { run, soon };
 }
 
-const pages = { view: "map", lead: "", leadShown: "" };
+const pages = { view: "map", lead: "", leadShown: "", session: "" };
 
 // --- the needs-you band
 
@@ -1152,7 +1198,8 @@ function renderLead(path, v) {
     clampRow(li, frameKey(f));
     return li;
   });
-  panel.replaceChildren(el("div", "stack", null, ...main), el("div", "stack", null,
+  const used = tok.lead && tok.lead.path === path ? tok.lead.data : null;
+  panel.replaceChildren(el("div", "stack", null, ...main), el("div", "stack", null, tokensCard(used),
     inbox.length ? card("inbox", el("ol", "rows", null, ...inbox)) : bare("inbox", "no messages"),
     tl.length ? card("timeline", el("ol", "rows", null, ...tl)) : bare("timeline", "no events in the last day")));
 }
@@ -1181,9 +1228,12 @@ const lead = loader(async () => {
   const path = pages.lead;
   if (!path) return;
   const get = (url) => fetchJSON(url).catch(() => ({ status: 0, body: null }));
-  const [r, t] = await Promise.all([get("/api/lead/" + encodeURIComponent(path)),
-    get("/api/timeline?lead=" + encodeURIComponent(path))]);
+  const vs = tok.lead && tok.lead.path === path ? tok.lead.vs : "";
+  const [r, t, u] = await Promise.all([get("/api/lead/" + encodeURIComponent(path)),
+    get("/api/timeline?lead=" + encodeURIComponent(path)),
+    get("/api/usage/agent?agent=" + encodeURIComponent(path) + (vs ? "&vs=" + encodeURIComponent(vs) : ""))]);
   if (pages.lead !== path) return; // the route moved on
+  if (u.body || u.status === 404) tok.lead = { path, vs, data: u.body };
   if (t.body) {
     t.body.lanes = t.body.lanes || [];
     replayLive(t.body);
@@ -1201,6 +1251,7 @@ const lead = loader(async () => {
   }
   pages.leadShown = path;
   drawAll();
+  comparePeers(path);
   if (check) checkSoon();
 });
 
@@ -1311,8 +1362,8 @@ function list(names, n) {
   return names.slice(0, n).join(" · ") + more;
 }
 
-// renderKpis draws the six tiles from the tree (with live states), the
-// window's timeline, the routines and the quota readings.
+// renderKpis draws the eight tiles from the tree (with live states), the
+// window's timeline and usage, the routines and the quota readings.
 function renderKpis() {
   const box = $("kpis");
   const lanes = tl.data ? tl.data.lanes : [];
@@ -1338,8 +1389,11 @@ function renderKpis() {
     for (const i of g.instances || []) if (i.state && i.state.state === "working") running++;
   }
   const win = tl.data ? "" : " …";
+  const u = usageNow();
   box.replaceChildren(
     tile("Live agents", mesh.tree ? live.length : "–", list(live.map(short), 3)),
+    tile("Tokens read · " + tl.win, u ? fmtTok(u.read) : "–", u ? "out " + fmtTok(u.out) : "", "#/tokens"),
+    tile("Last hour", u ? fmtTok(u.hour) : "–", "read"),
     tile("Landed · " + tl.win, landed.length + win, list(landed.map((l) => l.spec || short(l.path)), 6)),
     tile("Land refused · " + tl.win, refused + win, worst ? short(worst.path) + " ×" + worstN : ""),
     tile("Asking / blocked", mesh.tree ? waiting.length : "–", list(waiting.map(short), 3)),
@@ -1429,6 +1483,672 @@ function pagesApply(f) {
   if (pages.view === "routines" && (rest.startsWith("routine.") || rest.startsWith("inbox.routine."))) routines.soon();
   if (rest.startsWith("routine.") || rest.startsWith("inbox.routine.")) treeSoon(); // the Routines tile
 }
+// --- tokens: the usage panels (107) -------------------------------------------
+
+// ROLES are the tokens-by-role series in their fixed order, each drawn in
+// map.css's --r-<name>; design and exec are a coordinator's phases, never a
+// state's colour.
+const ROLES = [["lead", "leads"], ["sub", "subagents"], ["design", "design"], ["exec", "exec"], ["routine", "routines"]];
+const AGENTS_SHOWN = 20; // the overview's agents table; the tokens tab has every row
+const PEERS_MS = 5 * 60000; // the compare list's read of the week's agents
+// PROVIDERS gives each quota provider its colour slot, by name, so a
+// provider missing from the window never repaints another.
+const PROVIDERS = ["claude", "codex"];
+
+const tok = {
+  data: null, // the last /api/usage, for window win
+  win: "",
+  sel: "", // the agent the overview's context panel shows; "" = the default
+  ctx: null, // {agent, data}: that panel's /api/usage/agent
+  sort: { key: "read", dir: -1 }, // the tokens tab's agents table
+  lead: null, // {path, vs, data}: the lead page's /api/usage/agent
+  peers: null, // {at, agents}: the week's agents, for the compare select
+  session: null, // {agent, data}: the session page's
+};
+
+// fmtTok renders a token count: 416M, 42.2M, 347k, 19k, 845.
+function fmtTok(n) {
+  n = +n || 0;
+  const a = Math.abs(n);
+  if (a >= 1e9) return (n / 1e9).toFixed(a >= 1e10 ? 0 : 1) + "G";
+  if (a >= 1e6) return (n / 1e6).toFixed(a >= 1e8 ? 0 : 1) + "M";
+  if (a >= 1e3) return (n / 1e3).toFixed(a >= 1e4 ? 0 : 1) + "k";
+  return String(Math.round(n));
+}
+
+function kindsRead(k) {
+  return k ? (+k.in || 0) + (+k.cr || 0) + (+k.cw || 0) : 0;
+}
+
+// niceMax rounds v up to 1, 2, 2.5 or 5 times a power of ten.
+function niceMax(v) {
+  if (!(v > 0)) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const m of [1, 2, 2.5, 5, 10]) if (v <= m * p) return m * p;
+  return 10 * p;
+}
+
+// sessionOf splits session.<host>.<id> into {host, id}; null for a node.
+function sessionOf(agent) {
+  const m = /^session\.([^.]+)\.(.+)$/.exec(String(agent || ""));
+  return m ? { host: m[1], id: m[2] } : null;
+}
+
+// agentName is how an agent reads in a row: "session <id8>" or its path.
+function agentName(agent) {
+  const s = sessionOf(agent);
+  return s ? "session " + s.id.slice(0, 8) : String(agent);
+}
+
+// agentHref is an agent's page: a session's, else its lead page.
+function agentHref(agent) {
+  const s = sessionOf(agent);
+  return s ? "#/session/" + encodeURIComponent(s.host) + "/" + encodeURIComponent(s.id) : "#/lead/" + agent;
+}
+
+// usageNow is the loaded /api/usage when it is the window shown.
+function usageNow() {
+  return tok.data && tok.win === tl.win ? tok.data : null;
+}
+
+const usage = loader(async () => {
+  if (pages.view !== "map" && pages.view !== "timeline" && pages.view !== "tokens") return;
+  const win = tl.win;
+  const r = await fetchJSON("/api/usage?since=" + win);
+  if (!r.body || win !== tl.win) return;
+  const d = r.body;
+  for (const k of ["agents", "sessions", "quota"]) d[k] = d[k] || [];
+  tok.data = d;
+  tok.win = win;
+  drawAll();
+  ctxPanel.run();
+});
+
+// ctxAgent is the agent the overview's context panel shows: the row
+// selected, else the live agent with the largest context, else the
+// window's largest reader.
+function ctxAgent() {
+  const as = usageNow() ? tok.data.agents : [];
+  if (tok.sel && as.some((a) => a.agent === tok.sel)) return tok.sel;
+  let best = null;
+  for (const a of as) if (a.live && (!best || a.last_ctx > best.last_ctx)) best = a;
+  return best ? best.agent : as.length ? as[0].agent : "";
+}
+
+const ctxPanel = loader(async () => {
+  if (pages.view !== "map" || !usageNow()) return;
+  const agent = ctxAgent(), win = tl.win;
+  if (!agent) {
+    tok.ctx = null;
+    drawCtxPanel();
+    return;
+  }
+  const r = await fetchJSON("/api/usage/agent?agent=" + encodeURIComponent(agent) + "&since=" + win);
+  if (win !== tl.win || ctxAgent() !== agent) return;
+  tok.ctx = { agent, data: r.body };
+  drawCtxPanel();
+});
+
+// select makes agent the context panel's, from a click on its row.
+function select(agent) {
+  tok.sel = agent;
+  drawAgents($("agents-map"), { limit: AGENTS_SHOWN, select: true });
+  ctxPanel.run();
+}
+
+// tally keeps, under ?check=1, a panel's count when its view is shown.
+function tally(box, key, n) {
+  if (!check || !box || box.closest(".view").hidden) return;
+  check[key] = n;
+  checkSoon();
+}
+
+// showTip puts the tip with text beside the pointer of ev.
+function showTip(ev, text) {
+  const tip = $("tip");
+  tip.textContent = text;
+  tip.hidden = false;
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.max(4, Math.min(ev.clientX + 14, window.innerWidth - w - 4)) + "px";
+  tip.style.top = (ev.clientY + 14 + h > window.innerHeight ? ev.clientY - h - 8 : ev.clientY + 14) + "px";
+}
+
+// crosshair lays a hit area over a plot (P its padding in a W x H svg):
+// at(x) gives the crosshair's x and the tip's words for a pointer at x,
+// or null for none.
+function crosshair(root, P, W, H, at) {
+  const line = svg("line", { class: "xhair", x1: 0, x2: 0, y1: P.t, y2: H - P.b, visibility: "hidden" }, root);
+  const hit = svg("rect", { class: "hit", x: P.l, y: 0, width: Math.max(0, W - P.l - P.r), height: H }, root);
+  const hide = () => {
+    $("tip").hidden = true;
+    line.setAttribute("visibility", "hidden");
+  };
+  hit.addEventListener("pointermove", (ev) => {
+    const r = at(ev.clientX - root.getBoundingClientRect().left);
+    if (!r) return hide();
+    line.setAttribute("x1", r.x);
+    line.setAttribute("x2", r.x);
+    line.setAttribute("visibility", "visible");
+    showTip(ev, r.text);
+  });
+  hit.addEventListener("pointerleave", hide);
+}
+
+// timeAxis draws the grid lines and labels of [from, to] under a plot.
+function timeAxis(root, x, from, to, top, bottom, H) {
+  const step = axisStep(to - from);
+  let lastLabel = -Infinity;
+  for (let t = Math.ceil(from / step) * step; t <= to; t += step) {
+    const X = x(t);
+    svg("line", { class: "grid", x1: X, x2: X, y1: top, y2: bottom }, root);
+    if (X - lastLabel >= 52 && X <= +root.getAttribute("width") - 18) {
+      svgText({ class: "axis", x: X, y: H - 6, "text-anchor": "middle" }, step >= 86400 ? md(t) : hm(t), root);
+      lastLabel = X;
+    }
+  }
+}
+
+// yAxis draws four grid lines up to max with their labels at the left.
+function yAxis(root, y, max, P, W, fmt) {
+  for (let i = 0; i <= 4; i++) {
+    const v = max * i / 4, Y = y(v);
+    svg("line", { class: "grid", x1: P.l, x2: W - P.r, y1: Y, y2: Y }, root);
+    svgText({ class: "axis", x: P.l - 6, y: Y + 4, "text-anchor": "end" }, fmt(v), root);
+  }
+}
+
+function chartRoot(W, H, label) {
+  return svg("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": label });
+}
+
+// legendOf is a legend row: [class, words] pairs, each a swatch and its name.
+function legendOf(items) {
+  return el("div", "legend", null, ...items.map(([cls, words]) => el("span", null, null, el("i", cls), words)));
+}
+
+// drawRoles draws the tokens-by-role chart: the five series stacked in
+// their fixed order, a surface gap between fills, a crosshair tip giving
+// each series and the bucket's total.
+function drawRoles(box) {
+  if (!box) return;
+  const d = usageNow();
+  if (!d) return box.replaceChildren(el("p", "empty", "loading…"));
+  const r = d.roles || {}, step = +r.step || 60, from = +r.from || d.from, series = r.series || {};
+  const n = Math.max(0, ...ROLES.map(([k]) => (series[k] || []).length));
+  const val = (k, i) => +((series[k] || [])[i]) || 0;
+  const drawn = ROLES.filter(([k]) => (series[k] || []).some((v) => v > 0));
+  tally(box, "roles", drawn.length);
+  const leg = legendOf(ROLES.map(([k, words]) => ["r-" + k, words]));
+  if (!n || !drawn.length) return box.replaceChildren(leg, el("p", "empty", "No tokens read in this window."));
+  const W = Math.max(box.clientWidth, 240), H = box.classList.contains("tall") ? 260 : 210;
+  const P = { l: 46, r: 8, t: 8, b: 20 };
+  let top = 0;
+  const totals = [];
+  for (let i = 0; i < n; i++) {
+    totals.push(ROLES.reduce((s, [k]) => s + val(k, i), 0));
+    top = Math.max(top, totals[i]);
+  }
+  const yMax = niceMax(top), to = d.to;
+  const x = (t) => P.l + (Math.max(from, Math.min(to, t)) - from) / Math.max(1, to - from) * (W - P.l - P.r);
+  const y = (v) => H - P.b - v / yMax * (H - P.t - P.b);
+  const root = chartRoot(W, H, "tokens read by role");
+  yAxis(root, y, yMax, P, W, fmtTok);
+  timeAxis(root, x, from, to, P.t, H - P.b, H);
+  const mid = (i) => x(from + i * step + step / 2);
+  const below = new Array(n).fill(0);
+  for (const [k] of ROLES) {
+    if (!(series[k] || []).some((v) => v > 0)) continue;
+    const upper = [], lower = [];
+    for (let i = 0; i < n; i++) {
+      lower.push([mid(i), y(below[i])]);
+      below[i] += val(k, i);
+      upper.push([mid(i), y(below[i])]);
+    }
+    const pts = upper.concat(lower.reverse()).map(([a, b]) => a.toFixed(1) + "," + b.toFixed(1));
+    svg("path", { class: "area r-" + k, d: "M" + pts.join("L") + "Z" }, root);
+  }
+  crosshair(root, P, W, H, (px) => {
+    const i = Math.max(0, Math.min(n - 1, Math.round((px - P.l) / (W - P.l - P.r) * (to - from) / step - 0.5)));
+    const t = from + i * step;
+    const lines = ROLES.map(([k, words]) => words.padEnd(10) + fmtTok(val(k, i)).padStart(7));
+    return { x: mid(i), text: hm(t) + "–" + hm(t + step) + "\n" + lines.join("\n") + "\n" + "total".padEnd(10) + fmtTok(totals[i]).padStart(7) };
+  });
+  box.replaceChildren(leg, root);
+}
+
+// AGENT_COLS are the agents table's columns: key, heading, the value it
+// sorts by, and whether it hides on a phone.
+const AGENT_COLS = [
+  ["agent", "agent", (a) => agentName(a.agent), false],
+  ["role", "role", (a) => a.role || "", true],
+  ["size", "size / repo", (a) => a.size || a.repo || "", false],
+  ["state", "state", (a) => a.state || "", true],
+  ["read", "read", (a) => +a.read || 0, false],
+  ["mainsub", "main · sub", (a) => kindsRead(a.sub), true],
+  ["peak", "peak ctx", (a) => +a.peak || 0, false],
+  ["wall", "wall", (a) => (+a.last || 0) - (+a.first || 0), true],
+  ["out", "out", (a) => +a.out || 0, true],
+];
+
+// drawAgents draws the agents table: with opts.limit its first rows and a
+// link to the tokens tab, with opts.sortable a header that sorts it, with
+// opts.select rows a click selects for the context panel.
+function drawAgents(box, opts) {
+  if (!box) return;
+  const d = usageNow();
+  if (!d) return box.replaceChildren(el("p", "empty", "loading…"));
+  let as = d.agents.slice();
+  if (opts.sortable) {
+    const col = AGENT_COLS.find((c) => c[0] === tok.sort.key) || AGENT_COLS[4];
+    as.sort((a, b) => {
+      const x = col[2](a), y = col[2](b);
+      return (x < y ? -1 : x > y ? 1 : 0) * tok.sort.dir || (+b.read || 0) - (+a.read || 0);
+    });
+  }
+  const all = as.length;
+  if (opts.limit) as = as.slice(0, opts.limit);
+  tally(box, "agents", as.length);
+  if (!as.length) return box.replaceChildren(el("p", "empty", "No model calls in this window."));
+  const top = Math.max(1, ...as.map((a) => +a.read || 0));
+  const sel = opts.select ? ctxAgent() : "";
+  const head = el("tr", null, null, ...AGENT_COLS.map(([key, words, , hide]) => {
+    const num = !["agent", "role", "size", "state", "mainsub"].includes(key);
+    const th = el("th", (num ? "r" : "") + (hide ? " hide-n" : ""));
+    if (!opts.sortable) {
+      th.textContent = words;
+      return th;
+    }
+    const b = el("button", "sort", words);
+    b.type = "button";
+    if (tok.sort.key === key) th.setAttribute("aria-sort", tok.sort.dir < 0 ? "descending" : "ascending");
+    b.addEventListener("click", () => {
+      tok.sort = { key, dir: tok.sort.key === key ? -tok.sort.dir : num ? -1 : 1 };
+      drawAgents(box, opts);
+    });
+    th.append(b);
+    return th;
+  }));
+  const rows = as.map((a) => {
+    const name = el("a", "p", agentName(a.agent));
+    name.setAttribute("href", agentHref(a.agent));
+    name.title = a.agent + (a.repo ? " · " + a.repo : "");
+    const who = el("td", "who", null, name);
+    if (a.live) who.append(el("span", "livedot", " ●"));
+    const st = String(a.state || "");
+    const bar = el("span", "ms", null, el("i", "m"), el("i", "s"));
+    bar.firstChild.style.width = (kindsRead(a.main) / top * 100).toFixed(1) + "%";
+    bar.lastChild.style.width = (kindsRead(a.sub) / top * 100).toFixed(1) + "%";
+    bar.title = "main " + fmtTok(kindsRead(a.main)) + " · sub " + fmtTok(kindsRead(a.sub));
+    const tr = el("tr", a.agent === sel ? "sel" : "", null, who,
+      el("td", "hide-n", a.role || ""),
+      el("td", null, a.size || a.repo || ""),
+      el("td", "hide-n st st-" + st.replace(/[^a-z-]/g, ""), st ? (ICON[st] ? ICON[st] + " " : "") + st : "–"),
+      el("td", "r", fmtTok(a.read)),
+      el("td", "hide-n", null, bar),
+      el("td", "r", a.peak ? fmtTok(a.peak) : "–"),
+      el("td", "r hide-n", a.calls > 1 ? dur(((+a.last || 0) - (+a.first || 0)) * 1000) : "–"),
+      el("td", "r hide-n", fmtTok(a.out)));
+    if (opts.select) {
+      tr.classList.add("pick");
+      tr.addEventListener("click", (ev) => {
+        if (ev.target.closest("a")) return;
+        select(a.agent);
+      });
+    }
+    return tr;
+  });
+  const out = [el("div", "tw", null, el("table", "ag", null, el("thead", null, null, head), el("tbody", null, null, ...rows)))];
+  if (opts.limit && all > as.length) {
+    const more = el("a", "more tap", "more: all " + all + " agents on the tokens tab");
+    more.setAttribute("href", "#/tokens");
+    out.push(more);
+  }
+  box.replaceChildren(...out);
+}
+
+// phaseBar is a stacked bar of design (violet) against exec (magenta),
+// scaled to top.
+function phaseBar(design, exec, top) {
+  const b = el("span", "ms ph", null, el("i", "d"), el("i", "e"));
+  b.firstChild.style.width = (design / top * 100).toFixed(1) + "%";
+  b.lastChild.style.width = (exec / top * 100).toFixed(1) + "%";
+  b.title = "design " + fmtTok(design) + " · exec " + fmtTok(exec);
+  return b;
+}
+
+function share(design, exec) {
+  const t = design + exec;
+  return t ? Math.round(design / t * 100) + "%" : "–";
+}
+
+// drawCoords draws a row per coordinator session: its design and exec
+// read, the design share, peak context and last call.
+function drawCoords(box) {
+  if (!box) return;
+  const d = usageNow();
+  if (!d) return box.replaceChildren(el("p", "empty", "loading…"));
+  const ss = d.sessions.slice().sort((a, b) => (b.design + b.exec) - (a.design + a.exec));
+  const leg = legendOf([["r-design", "design"], ["r-exec", "exec"]]);
+  if (!ss.length) return box.replaceChildren(leg, el("p", "empty", "No coordinator sessions in this window."));
+  const top = Math.max(1, ...ss.map((s) => (+s.design || 0) + (+s.exec || 0)));
+  const rows = ss.map((s) => {
+    const name = el("a", "p", agentName(s.agent));
+    name.setAttribute("href", agentHref(s.agent));
+    name.title = s.agent + (s.repo ? " · " + s.repo : "");
+    return el("tr", null, null, el("td", "who", null, name), el("td", null, null, phaseBar(+s.design || 0, +s.exec || 0, top)),
+      el("td", "r", fmtTok(s.design)), el("td", "r", fmtTok(s.exec)), el("td", "r", share(+s.design || 0, +s.exec || 0)),
+      el("td", "r hide-n", s.peak ? fmtTok(s.peak) : "–"), el("td", "r hide-n", s.last ? hm(s.last) : "–"));
+  });
+  const head = el("tr", null, null, ...["session", "design · exec", "design", "exec", "share", "peak", "last"].map((h, i) =>
+    el("th", (i > 1 ? "r" : "") + (i > 4 ? " hide-n" : ""), h)));
+  box.replaceChildren(leg, el("div", "tw", null, el("table", "ag", null, el("thead", null, null, head), el("tbody", null, null, ...rows))));
+}
+
+// mainCalls are a series' main-thread calls with the growth each added
+// (null for the first and after a compaction's drop).
+function mainCalls(calls) {
+  const out = [];
+  let prev = null;
+  for (const c of calls || []) {
+    if (c.sub) continue;
+    out.push(Object.assign({}, c, { grow: prev === null ? null : c.ctx - prev }));
+    prev = c.ctx;
+  }
+  return out;
+}
+
+// CTX_LINES are the [context] thresholds the upper chart rules, labelled.
+const CTX_LINES = [["nudge_from", "nudge"], ["compact_from", "compact"], ["compact_soon", "compact soon"]];
+
+// ctxChart draws an agent's context per call (d, /api/usage/agent) into
+// box: above, the main thread's ctx per call with the thresholds dashed and
+// each compaction marked; below, a bar per call for the growth it added,
+// the two largest labelled, and the node's land refusals (✕) and readies
+// (▲). The axis is opts.from to opts.to, else the agent's life; with d.vs
+// both agents on minutes since their first call. Returns the points drawn.
+function ctxChart(box, d, opts) {
+  if (!box) return 0;
+  if (!d || !d.agent) {
+    box.replaceChildren(el("p", "empty", opts.empty || "No model calls."));
+    return 0;
+  }
+  const mins = !!d.vs;
+  const ser = [{ a: d.agent, calls: mainCalls(d.calls), marks: d.marks || [], events: d.events || [], cls: "s-a" }];
+  if (d.vs) ser.push({ a: d.vs.agent, calls: mainCalls(d.vs.calls), marks: d.vs.marks || [], events: d.vs.events || [], cls: "s-b" });
+  const first = (s) => +s.a.first || (s.calls[0] ? s.calls[0].at : 0);
+  const tOf = (s, at) => mins ? at - first(s) : at;
+  let from, to;
+  if (mins) {
+    from = 0;
+    to = Math.max(600, ...ser.map((s) => s.calls.length ? tOf(s, s.calls[s.calls.length - 1].at) : 0));
+  } else if (opts.from) {
+    from = opts.from;
+    to = opts.to;
+  } else {
+    const cs = ser[0].calls;
+    from = cs.length ? cs[0].at : 0;
+    to = Math.max(from + 600, cs.length ? cs[cs.length - 1].at : 0);
+  }
+  const W = Math.max(box.clientWidth, 240), P = { l: 46, r: 8, t: 8, b: 20 };
+  const H1 = 170, GAP = 18, H2 = 80, H = P.t + H1 + GAP + H2 + P.b;
+  const x = (t) => P.l + (Math.max(from, Math.min(to, t)) - from) / Math.max(1, to - from) * (W - P.l - P.r);
+  const ctxs = d.context || {};
+  const lines = CTX_LINES.map(([k, words]) => [+ctxs[k] || 0, words]).filter(([v]) => v > 0);
+  const peak = Math.max(0, ...ser.flatMap((s) => s.calls.map((c) => c.ctx)));
+  const yMax = niceMax(Math.max(peak, lines.length ? lines[0][0] : 0) * 1.05);
+  const y = (v) => P.t + H1 - v / yMax * H1;
+  const root = chartRoot(W, H, "context per model call");
+  // The upper plot's axes, thresholds and lines.
+  for (let i = 0; i <= 4; i++) {
+    const v = yMax * i / 4;
+    svg("line", { class: "grid", x1: P.l, x2: W - P.r, y1: y(v), y2: y(v) }, root);
+    svgText({ class: "axis", x: P.l - 6, y: y(v) + 4, "text-anchor": "end" }, fmtTok(v), root);
+  }
+  if (mins) {
+    const step = [600, 1200, 1800, 3600, 7200, 14400, 28800, 86400].find((s) => (to - from) / s <= 8) || 86400;
+    for (let t = 0; t <= to; t += step) {
+      svg("line", { class: "grid", x1: x(t), x2: x(t), y1: P.t, y2: H - P.b }, root);
+      svgText({ class: "axis", x: x(t), y: H - 6, "text-anchor": "middle" }, Math.round(t / 60) + "m", root);
+    }
+  } else {
+    timeAxis(root, x, from, to, P.t, H - P.b, H);
+  }
+  for (const [v, words] of lines) {
+    if (v > yMax) continue;
+    svg("line", { class: "ref", x1: P.l, x2: W - P.r, y1: y(v), y2: y(v) }, root);
+    svgText({ class: "axis", x: W - P.r - 2, y: y(v) - 3, "text-anchor": "end" }, words + " " + fmtTok(v), root);
+  }
+  let points = 0;
+  for (const s of [...ser].reverse()) {
+    const pts = s.calls.filter((c) => tOf(s, c.at) >= from && tOf(s, c.at) <= to);
+    points += pts.length;
+    if (pts.length) {
+      svg("path", { class: "ctxline " + s.cls, d: "M" + pts.map((c) => x(tOf(s, c.at)).toFixed(1) + "," + y(c.ctx).toFixed(1)).join("L") }, root);
+    }
+    for (const m of s.marks) {
+      if (m.sub || tOf(s, m.at) < from || tOf(s, m.at) > to) continue;
+      const X = x(tOf(s, m.at));
+      svg("line", { class: "cmark " + s.cls, x1: X, x2: X, y1: P.t, y2: P.t + H1 }, root);
+      svgText({ class: "axis", x: X + 3, y: P.t + 9 }, "compacted", root);
+    }
+  }
+  // The lower plot: the first agent's growth per call.
+  const s0 = ser[0];
+  const grows = s0.calls.filter((c) => c.grow > 0 && tOf(s0, c.at) >= from && tOf(s0, c.at) <= to);
+  const gMax = niceMax(Math.max(1, ...grows.map((c) => c.grow)));
+  const base = P.t + H1 + GAP + H2;
+  const gy = (v) => base - v / gMax * H2;
+  svg("line", { class: "grid", x1: P.l, x2: W - P.r, y1: gy(gMax), y2: gy(gMax) }, root);
+  svgText({ class: "axis", x: P.l - 6, y: gy(gMax) + 4, "text-anchor": "end" }, "+" + fmtTok(gMax), root);
+  svg("line", { class: "base", x1: P.l, x2: W - P.r, y1: base, y2: base }, root);
+  for (const c of grows) {
+    const X = x(tOf(s0, c.at));
+    svg("rect", { class: "grow " + s0.cls, x: X - 1, y: gy(c.grow), width: 2, height: Math.max(1, base - gy(c.grow)) }, root);
+  }
+  const largest = grows.slice().sort((a, b) => b.grow - a.grow).slice(0, 2);
+  for (const c of largest) {
+    const X = x(tOf(s0, c.at)), right = X > W - 200;
+    svgText({ class: "glabel", x: right ? X - 4 : X + 4, y: Math.max(gy(c.grow) + 9, P.t + H1 + GAP), "text-anchor": right ? "end" : "start" },
+      "+" + fmtTok(c.grow) + (c.cause ? " " + fit(c.cause, 28) : ""), root);
+  }
+  for (const e of s0.events) {
+    const glyph = e.kind === "refused" ? "✕" : e.kind === "ready" ? "▲" : "";
+    if (!glyph || tOf(s0, e.at) < from || tOf(s0, e.at) > to) continue;
+    const m = svgText({ class: "tick " + e.kind, x: x(tOf(s0, e.at)), y: base + 11, "text-anchor": "middle" }, glyph, root);
+    hover(m, () => md(e.at) + " " + hm(e.at) + "  " + (e.kind === "refused" ? "land refused" : e.kind) + (e.text ? "\n" + e.text : ""));
+  }
+  // The tip: the call nearest the pointer, of each agent.
+  crosshair(root, P, W, base + P.b, (px) => {
+    const t = from + (px - P.l) / (W - P.l - P.r) * (to - from);
+    const parts = [];
+    let cx = null;
+    for (const s of ser) {
+      let best = null;
+      for (const c of s.calls) if (!best || Math.abs(tOf(s, c.at) - t) < Math.abs(tOf(s, best.at) - t)) best = c;
+      if (!best) continue;
+      if (cx === null) cx = x(tOf(s, best.at));
+      parts.push((mins ? agentName(s.a.agent) + "  " + (tOf(s, best.at) / 60).toFixed(1) + "m  " : md(best.at) + " " + hm(best.at) + "  ") +
+        "ctx " + fmtTok(best.ctx) + (best.grow !== null ? "  " + (best.grow >= 0 ? "+" : "") + fmtTok(best.grow) : "") +
+        "  out " + fmtTok(best.out) + (best.cause ? "\n" + best.cause : ""));
+    }
+    return cx === null ? null : { x: cx, text: parts.join("\n") };
+  });
+  const items = mins ? ser.map((s) => [s.cls, agentName(s.a.agent) + " · " + fmtTok(s.a.read) + (s.a.size ? " · " + s.a.size : "")]) : [];
+  box.replaceChildren(...(items.length ? [legendOf(items)] : []), root,
+    el("div", "note", "Lower: what each call added to " + agentName(d.agent.agent) + "'s context, named by the tool use before it" +
+      (s0.events.length ? " · ✕ land refused · ▲ ready" : "") + "."));
+  return points;
+}
+
+// drawCtxPanel draws the overview's context panel for ctxAgent().
+function drawCtxPanel() {
+  const box = $("ctx-map");
+  if (!box || pages.view !== "map") return;
+  const agent = ctxAgent();
+  const a = usageNow() && tok.data.agents.find((x) => x.agent === agent);
+  $("ctx-sub").textContent = a ? agentName(agent) + " · " + (a.role || "") + (a.size ? " " + a.size : "") + " · peak " + fmtTok(a.peak) +
+    " · pick another in Agents" : "the main thread's context after each model call";
+  const d = tok.ctx && tok.ctx.agent === agent ? tok.ctx.data : null;
+  const n = !usageNow() ? 0 : ctxChart(box, d, { from: tok.data.from, to: tok.data.to, empty: agent ? "loading…" : "No model calls in this window." });
+  tally(box, "ctx", n);
+}
+
+// drawQuota draws each provider's 5h (dashed) and week (solid) percent over
+// the window on one percent axis, each reset a faint line.
+function drawQuota(box) {
+  if (!box) return;
+  const d = usageNow();
+  if (!d) return box.replaceChildren(el("p", "empty", "loading…"));
+  const by = new Map();
+  for (const r of d.quota) {
+    const at = Date.parse(r.read_at) / 1000;
+    if (isNaN(at)) continue;
+    if (!by.has(r.provider)) by.set(r.provider, []);
+    by.get(r.provider).push(Object.assign({ at }, r));
+  }
+  const provs = [...by.keys()].sort((a, b) => slot(a) - slot(b) || (a < b ? -1 : 1));
+  tally(box, "quota", d.quota.length);
+  const leg = legendOf(provs.flatMap((p) => [["q" + slot(p) + " wk", p + " week"], ["q" + slot(p) + " fh", p + " 5h"]]));
+  if (!provs.length) return box.replaceChildren(el("p", "empty", "No quota readings in this window."));
+  const W = Math.max(box.clientWidth, 240), H = 180, P = { l: 40, r: 8, t: 8, b: 20 };
+  const from = d.from, to = d.to;
+  const x = (t) => P.l + (Math.max(from, Math.min(to, t)) - from) / Math.max(1, to - from) * (W - P.l - P.r);
+  const y = (v) => H - P.b - Math.max(0, Math.min(100, v)) / 100 * (H - P.t - P.b);
+  const root = chartRoot(W, H, "quota used");
+  yAxis(root, y, 100, P, W, (v) => Math.round(v) + "%");
+  timeAxis(root, x, from, to, P.t, H - P.b, H);
+  const resets = new Set();
+  for (const rs of by.values()) for (const r of rs) for (const s of [r.five_reset, r.week_reset]) {
+    const t = Date.parse(s || "") / 1000;
+    if (t >= from && t <= to) resets.add(t);
+  }
+  for (const t of resets) svg("line", { class: "reset", x1: x(t), x2: x(t), y1: P.t, y2: H - P.b }, root);
+  for (const p of provs) {
+    for (const [key, cls] of [["five_hour", "fh"], ["week", "wk"]]) {
+      // A gap of over 15 minutes between readings breaks the line.
+      let path = "", last = -Infinity;
+      for (const r of by.get(p)) {
+        path += (r.at - last > 900 ? "M" : "L") + x(r.at).toFixed(1) + "," + y(+r[key] || 0).toFixed(1);
+        last = r.at;
+      }
+      svg("path", { class: "qline q" + slot(p) + " " + cls, d: path }, root);
+    }
+  }
+  crosshair(root, P, W, H, (px) => {
+    const t = from + (px - P.l) / (W - P.l - P.r) * (to - from);
+    let cx = null;
+    const lines = [];
+    for (const p of provs) {
+      let best = null;
+      for (const r of by.get(p)) if (!best || Math.abs(r.at - t) < Math.abs(best.at - t)) best = r;
+      if (!best) continue;
+      if (cx === null) cx = x(best.at);
+      lines.push(p + "  5h " + pct(best.five_hour) + " · wk " + pct(best.week) + "  " + hm(best.at));
+    }
+    return cx === null ? null : { x: cx, text: lines.join("\n") };
+  });
+  box.replaceChildren(leg, root);
+}
+
+function slot(provider) {
+  const i = PROVIDERS.indexOf(provider);
+  return i < 0 ? PROVIDERS.length + 1 : i + 1;
+}
+
+// tokensCard is the lead page's tokens card: the four kinds, main and
+// sub, and each subagent with its description.
+function tokensCard(d) {
+  if (!d || !d.agent) return bare("tokens", "no model calls on the mesh");
+  const a = d.agent;
+  const head = el("tr", null, null, ...["", "input", "cache read", "cache write", "out", "read"].map((h, i) => el("th", i ? "r" : "", h)));
+  const row = (name, k) => el("tr", null, null, el("td", null, name), el("td", "r", fmtTok(k.in)), el("td", "r", fmtTok(k.cr)),
+    el("td", "r", fmtTok(k.cw)), el("td", "r", fmtTok(k.out)), el("td", "r", fmtTok(kindsRead(k))));
+  const kinds = el("div", "tw", null, el("table", "ag", null, el("thead", null, null, head),
+    el("tbody", null, null, row("main", a.main || {}), row("sub", a.sub || {}))));
+  const subs = (d.subs || []).map((s) => el("li", null, null, el("span", "x", s.desc || s.id),
+    el("span", "t", fmtTok(s.read) + " read · " + fmtTok(s.out) + " out · " + s.calls + " calls")));
+  return card("tokens", el("p", "muted", fmtTok(a.read) + " read · peak " + fmtTok(a.peak) + " · " + a.calls + " calls" +
+    (a.compactions ? " · " + a.compactions + " compacted" : "")), kinds,
+  ...(subs.length ? [el("h4", null, "subagents"), el("ol", "rows", null, ...subs)] : []));
+}
+
+// comparePeers fills the lead page's compare select with the done leads of
+// its spec size that read in the last week.
+async function comparePeers(path) {
+  const sel = $("lead-vs");
+  const me = tok.lead && tok.lead.data && tok.lead.data.agent;
+  if (!tok.peers || Date.now() - tok.peers.at > PEERS_MS) {
+    const r = await fetchJSON("/api/usage?since=7d").catch(() => ({ body: null }));
+    if (r.body) tok.peers = { at: Date.now(), agents: r.body.agents || [] };
+  }
+  if (pages.lead !== path) return;
+  const size = me ? me.size : "";
+  const peers = (tok.peers ? tok.peers.agents : []).filter((a) => size && a.size === size && a.role === "lead" && a.state === "done" && a.agent !== path);
+  const opts = [el("option", null, peers.length ? "compare with a done " + size + " lead…" : "no done " + (size || "sized") + " lead to compare")];
+  opts[0].value = "";
+  for (const a of peers) {
+    const o = el("option", null, a.agent + " · " + fmtTok(a.read));
+    o.value = a.agent;
+    opts.push(o);
+  }
+  sel.replaceChildren(...opts);
+  sel.value = tok.lead && tok.lead.vs || "";
+  sel.disabled = !peers.length;
+}
+
+// --- the session page
+
+const sessionPage = loader(async () => {
+  const agent = pages.session;
+  if (!agent) return;
+  const r = await fetchJSON("/api/usage/agent?agent=" + encodeURIComponent(agent));
+  if (pages.session !== agent) return;
+  tok.session = { agent, data: r.body, status: r.status };
+  drawSession();
+});
+
+// drawSession draws a coordinator session's page: its head, busy lane,
+// context chart and subagents.
+function drawSession() {
+  const s = tok.session;
+  if (!s || s.agent !== pages.session) return;
+  const d = s.data, head = $("session-head");
+  if (!d || !d.agent) {
+    head.replaceChildren(el("p", "empty", s.status === 404 ? "no model calls of " + s.agent + " in the last 30 days" : "could not load " + s.agent));
+    for (const id of ["session-lane", "session-ctx", "session-subs"]) $(id).replaceChildren();
+    return;
+  }
+  const a = d.agent, design = +a.design || 0, exec = +a.exec || 0;
+  head.replaceChildren(
+    el("span", "mono", a.repo || "no repo"), el("span", "mono muted", a.host || ""),
+    el("span", "mono muted", md(a.first) + " " + hm(a.first) + "Z – " + md(a.last) + " " + hm(a.last) + "Z"),
+    el("span", "mono", fmtTok(a.read) + " read · " + fmtTok(a.out) + " out"),
+    phaseBar(design, exec, Math.max(1, design + exec)),
+    el("span", "mono", "design " + fmtTok(design) + " · exec " + fmtTok(exec) + " · " + share(design, exec) + " design"));
+  drawSpans($("session-lane"), d.spans || [], a.first, Math.max(a.last, a.first + 600), a.agent);
+  ctxChart($("session-ctx"), d, {});
+  const subs = d.subs || [];
+  const rows = subs.map((x) => el("tr", null, null, el("td", "desc", x.desc || x.id),
+    el("td", null, null, el("i", "sw r-" + (x.phase === "exec" ? "exec" : "design")), x.phase || "design"),
+    el("td", "r", fmtTok(x.read)), el("td", "r", fmtTok(x.out)), el("td", "r hide-n", String(x.calls))));
+  $("session-subs").replaceChildren(subs.length ? el("div", "tw", null, el("table", "ag", null,
+    el("thead", null, null, el("tr", null, null, el("th", null, "description"), el("th", null, "phase"), el("th", "r", "read"),
+      el("th", "r", "out"), el("th", "r hide-n", "calls"))), el("tbody", null, null, ...rows))) : el("p", "empty", "No subagents."));
+}
+
+// drawSpans draws one session's busy spans over [from, to].
+function drawSpans(box, spans, from, to, agent) {
+  const W = Math.max(box.clientWidth, 240), H = 44, P = { l: 8, r: 8 };
+  const x = (t) => P.l + (Math.max(from, Math.min(to, t)) - from) / Math.max(1, to - from) * (W - P.l - P.r);
+  const root = chartRoot(W, H, "busy spans");
+  timeAxis(root, x, from, to, 4, 24, H);
+  for (const [a, b, ph] of spans) {
+    const r = svg("rect", { class: "seg ph-" + (ph === "exec" ? "exec" : "design"), x: x(a), y: 6, width: Math.max(2, x(b) - x(a)), height: LANE.bar, rx: 3 }, root);
+    hover(r, () => agentName(agent) + "\n" + (ph || "design") + "  " + spanText(a, b));
+  }
+  box.replaceChildren(legendOf([["r-design", "design"], ["r-exec", "exec"]]), root);
+}
+
 // --- events, routes, start ------------------------------------------------
 
 function parseFrame(data) {
@@ -1482,6 +2202,7 @@ function connect() {
     setConn("live");
     loadTree();
     timeline.run();
+    usage.run();
     if (pages.view === "lead") lead.run();
     if (pages.view === "routines") routines.run();
   };
@@ -1537,6 +2258,7 @@ function selfCheck() {
   document.title = `bmesh ${sw <= iw ? "ok" : "SCROLLS"} view=${pages.view} scrollWidth=${sw} innerWidth=${iw} minTap=${Math.round(tap)}` +
     (pages.view === "lead" ? ` firstCard=${firstCard()}` : "") +
     ` window=${tl.win} trees=${c.trees} lanes=${c.lanes} segs=${segs} ticks=${c.ticks} kpis=${n("#kpis .tile")}` +
+    ` roles=${c.roles} agents=${c.agents} ctx=${c.ctx} quota=${c.quota}` +
     ` conn=${c.conn.join(">")} replay=${c.replay} live=${c.live}` +
     ` band=${$("needs").hidden ? "hidden" : $("needs").children.length}` +
     ` bandHeld=${n("#needs .need.st-held")} bandLanding=${n("#needs .need.st-landing")}` +
@@ -1583,19 +2305,30 @@ function route() {
       $("lead-panel").replaceChildren();
       pages.leadShown = "";
     }
-  } else if (h === "routines" || h === "timeline") {
+  } else if (h.startsWith("session/")) {
+    view = "session";
+    const [host, id] = h.slice(8).split("/").map((x) => { try { return decodeURIComponent(x || ""); } catch (e) { return x || ""; } });
+    pages.session = "session." + host + "." + id;
+    $("session-title").textContent = "session " + id.slice(0, 8) + " on " + host;
+    if (!tok.session || tok.session.agent !== pages.session) {
+      for (const b of ["session-head", "session-lane", "session-ctx", "session-subs"]) $(b).replaceChildren();
+    }
+  } else if (h === "routines" || h === "timeline" || h === "tokens") {
     view = h;
   }
   pages.view = view;
   pages.lead = path;
-  for (const v of ["map", "timeline", "lead", "routines"]) $("view-" + v).hidden = v !== view;
-  $("windows").hidden = view === "lead" || view === "routines";
+  if (view !== "session") pages.session = "";
+  for (const v of ["map", "timeline", "tokens", "lead", "session", "routines"]) $("view-" + v).hidden = v !== view;
+  $("windows").hidden = view === "lead" || view === "session" || view === "routines";
   showWindow();
   if (view === "lead") lead.run();
+  if (view === "session") sessionPage.run();
   if (view === "routines") routines.run();
-  if (view === "map" || view === "timeline") {
+  if (view === "map" || view === "timeline" || view === "tokens") {
     drawAll(); // the width may have changed while hidden
     timeline.run();
+    usage.run();
   }
   for (const a of document.querySelectorAll("nav a[data-route]")) a.classList.toggle("on", a.dataset.route === view);
 }
@@ -1614,6 +2347,11 @@ window.addEventListener("resize", () => {
 });
 
 for (const id of ["needs", "recent", "lead-panel"]) $(id).addEventListener("click", toggleRows);
+$("lead-vs").addEventListener("change", (ev) => {
+  if (!tok.lead || tok.lead.path !== pages.lead) return;
+  tok.lead.vs = ev.target.value;
+  lead.run();
+});
 $("recent").addEventListener("click", pinChip);
 $("recent").addEventListener("pointermove", (ev) => { if (ev.pointerType === "mouse") setHover(hoverPath(ev)); });
 $("recent").addEventListener("pointerleave", () => setHover(""));
@@ -1631,7 +2369,11 @@ connect();
 loadStrip();
 setInterval(loadTree, POLL_MS);
 setInterval(loadStrip, STRIP_MS);
-setInterval(() => { if (!document.hidden) timeline.run(); }, 2 * POLL_MS);
+setInterval(() => {
+  if (document.hidden) return;
+  timeline.run();
+  usage.run();
+}, 2 * POLL_MS);
 setInterval(() => { if (pages.view === "routines" && !document.hidden) routines.run(); }, ROUTINES_MS);
 setInterval(drawAll, NOW_MS);
 setInterval(() => { tick(); showClock(); }, 1000);
