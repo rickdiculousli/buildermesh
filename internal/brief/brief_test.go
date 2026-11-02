@@ -29,7 +29,7 @@ func partValues(nextID string, part RoundPart, r config.Repo) map[string]string 
 }
 
 func TestNames(t *testing.T) {
-	if got := strings.Join(Names(), ","); got != "build,engineer,executor,fix,half-pager" {
+	if got := strings.Join(Names(), ","); got != "build,engineer,executor,fix,half-pager,review" {
 		t.Fatal(got)
 	}
 }
@@ -227,7 +227,7 @@ func TestHalfPagerHasPlaceholdersAndHeadings(t *testing.T) {
 			t.Errorf("missing {{%s}}", ph)
 		}
 	}
-	for _, h := range []string{"Opportunity", "Proposal", "What you'll see", "Verification", "Risks and the alternative considered", "Needs from the operator"} {
+	for _, h := range []string{"Opportunity", "Proposal", "What you'll see", "Verification", "Shown", "Risks and the alternative considered", "Needs from the operator"} {
 		if !strings.Contains(text, "## "+h+"\n") {
 			t.Errorf("missing heading %s", h)
 		}
@@ -288,5 +288,17 @@ func TestWithSetupOpensTheBrief(t *testing.T) {
 	}
 	if got := WithSetup("# mine\n", step); got != "# mine\n\n"+strings.TrimRight(step, "\n")+"\n" {
 		t.Fatalf("no heading: %q", got)
+	}
+}
+
+func TestReviewBriefNamesBaseAndSpec(t *testing.T) {
+	out, err := Review("0123abcd", "docs/proposals/007-x.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, "base: 0123abcd\nspec: docs/proposals/007-x.md\n") || strings.Contains(out, "{{") ||
+		!strings.Contains(out, "git diff -U100000 0123abcd..HEAD -- docs/proposals/007-x.md") ||
+		!strings.Contains(out, "## What you'll see") || !strings.Contains(out, "Not shown:") {
+		t.Fatal(out)
 	}
 }

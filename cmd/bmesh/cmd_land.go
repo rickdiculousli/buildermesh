@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh"
+	"github.com/rickdiculousli/buildermesh/internal/brief"
 	"github.com/rickdiculousli/buildermesh/internal/checkout"
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/daemon"
@@ -729,7 +730,7 @@ func (l *lander) review(ctx context.Context) ([]waitJob, error) {
 
 // queueReview queues the review kind on HEAD at the effort the change's size
 // calls for, on the kind's first model, started at once, its text the
-// branch's base, after pushing the branch so a daemon on any box can fetch
+// review brief for the branch's base and spec, after pushing the branch so a daemon on any box can fetch
 // the commit; again is the second pass after land's rebase changed the
 // diff.
 func (l *lander) queueReview(ctx context.Context, again bool) (waitJob, error) {
@@ -761,8 +762,12 @@ func (l *lander) queueReview(ctx context.Context, again bool) (waitJob, error) {
 	if k.IsModel() {
 		model = k.ModelsList()[0]
 	}
+	text, err := l.reviewText(base)
+	if err != nil {
+		return waitJob{}, err
+	}
 	j := mesh.Job{ID: newID(), Kind: reviewKind, Repo: l.repo, Commit: head, Model: model, Effort: effort,
-		Text: "base: " + base, Go: true}
+		Text: text, Go: true}
 	if _, err := mesh.Queue(ctx, l.a.client, l.node, j, l.top); err != nil {
 		return waitJob{}, err
 	}
@@ -772,6 +777,24 @@ func (l *lander) queueReview(ctx context.Context, again bool) (waitJob, error) {
 		fmt.Fprintf(l.a.stdout, "review: queued %s (%s, size %s)\n", j.ID, effort, size)
 	}
 	return waitJob{reviewKind, mesh.QueuedJob{ID: j.ID, From: l.node.String(), Commit: head, State: "waiting"}}, nil
+}
+
+// reviewText is the review job's text for the branch's base: the review
+// brief, naming the spec's path in the worktree.
+func (l *lander) reviewText(base string) (string, error) {
+	specs, err := spec.Scan(l.top, l.a.cfg.Spec.Glob)
+	if err != nil {
+		return "", landFail(err)
+	}
+	s, ok := spec.Find(specs, l.id)
+	if !ok {
+		return "", noSpec(l.id, l.top, "bmesh land")
+	}
+	rel, err := filepath.Rel(l.top, s.Path)
+	if err != nil {
+		return "", err
+	}
+	return brief.Review(base, rel)
 }
 
 // onBranch reports whether commit is one of the branch's: an ancestor of
