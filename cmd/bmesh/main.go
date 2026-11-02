@@ -459,8 +459,7 @@ func (a *app) dispatch(args []string) error {
 	case "setup":
 		return a.cmdSetup(rest)
 	case "help":
-		fmt.Fprint(a.stdout, usage)
-		return nil
+		return a.cmdHelp(rest)
 	}
 	return fail(exitUsage, "unknown command %q (run `bmesh help`)", cmd)
 }
@@ -485,7 +484,7 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 	for {
 		if err := fs.Parse(args); err != nil {
 			if errors.Is(err, flag.ErrHelp) {
-				return nil, fail(exitUsage, "usage: bmesh %s%s (see `bmesh help`)", fs.Name(), ownFlags(fs))
+				return nil, fail(exitUsage, "usage: bmesh %s%s (see `bmesh help`)%s", fs.Name(), ownFlags(fs), flagMeanings(fs))
 			}
 			return nil, fail(exitUsage, "%s: %v", fs.Name(), err)
 		}
@@ -505,6 +504,45 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 		pos = append(pos, args[0])
 		args = args[1:]
 	}
+}
+
+// cmdHelp prints the usage text, or with words only the entries of the
+// command they begin (`help executor` prints every executor entry).
+func (a *app) cmdHelp(words []string) error {
+	if len(words) == 0 {
+		fmt.Fprint(a.stdout, usage)
+		return nil
+	}
+	var b strings.Builder
+	in := false
+	for _, line := range strings.SplitAfter(usage, "\n") {
+		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "   ") {
+			f := strings.Fields(line)
+			in = len(f) >= len(words) && slices.Contains(strings.Split(f[0], "|"), words[0]) && slices.Equal(f[1:len(words)], words[1:])
+		} else if !strings.HasPrefix(line, "   ") {
+			in = false
+		}
+		if in {
+			b.WriteString(line)
+		}
+	}
+	if b.Len() == 0 {
+		return fail(exitUsage, "unknown command %q (run `bmesh help`)", strings.Join(words, " "))
+	}
+	fmt.Fprint(a.stdout, b.String())
+	return nil
+}
+
+// flagMeanings lists a subcommand's own flags with their meanings, one per
+// line, each line starting with a newline.
+func flagMeanings(fs *flag.FlagSet) string {
+	var b strings.Builder
+	fs.VisitAll(func(f *flag.Flag) {
+		if f.Name != "config" && f.Name != "node" && f.Name != "json" {
+			fmt.Fprintf(&b, "\n  --%s\t%s", f.Name, f.Usage)
+		}
+	})
+	return b.String()
 }
 
 // ownFlags names the flags a subcommand adds to the global ones, as

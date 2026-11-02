@@ -372,6 +372,20 @@ func TestStatusAndUnreachable(t *testing.T) {
 	if out, _, _ := runCLI(t, nil, "help"); strings.Contains(out, "choose-ideas") || strings.Contains(out, "--accepted") {
 		t.Fatal("help still names choose-ideas or build --accepted")
 	}
+	// A subcommand's --help says what each of its flags means.
+	if _, errs, code := runCLI(t, nil, "executor", "new", "--help"); code != 2 || !strings.Contains(errs, "\n  --base\tcommit to branch from") {
+		t.Fatalf("executor new --help: %d %q", code, errs)
+	}
+	// help <command> prints only that command's entries.
+	if out, _, code := runCLI(t, nil, "help", "executor"); code != 0 || !strings.HasPrefix(out, "  executor new --name N") || !strings.Contains(out, "\n  executor remove") || strings.Contains(out, "serve") {
+		t.Fatalf("help executor: %d %q", code, out)
+	}
+	if out, _, code := runCLI(t, nil, "help", "progress"); code != 0 || !strings.HasPrefix(out, "  started|progress|blocked|ask") {
+		t.Fatalf("help progress: %d %q", code, out)
+	}
+	if _, errs, code := runCLI(t, nil, "help", "bogus"); code != 2 || errs != "bmesh: unknown command \"bogus\" (run `bmesh help`)\n" {
+		t.Fatalf("help bogus: %d %q", code, errs)
+	}
 }
 
 func TestExecutorAskGoesToParent(t *testing.T) {

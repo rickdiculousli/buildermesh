@@ -244,7 +244,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 | [`bmesh config check`](docs/manual.md#bmesh-config-check) |  |
 | [`bmesh t3 login`](docs/manual.md#bmesh-t3-login) | `[--server URL] [--callback-port 52299] [--timeout D] · --status` |
 | [`bmesh version`](docs/manual.md#bmesh-version) |  |
-| [`bmesh help`](docs/manual.md#synopsis) |  |
+| [`bmesh help`](docs/manual.md#synopsis) | `[<command> [<subcommand>]]` |
 | [`bmesh update`](docs/manual.md#bmesh-update) | `[--repo R] [--latest] [--answer KEY=VALUE]... [--defaults] [--apply [--yes]]` |
 | [`bmesh update --plan`](docs/manual.md#bmesh-update) | `[--json]` |
 | [`bmesh update --walk`](docs/manual.md#bmesh-update) | `--from REV [--to REV] [--dir D] [--before-swap]` |

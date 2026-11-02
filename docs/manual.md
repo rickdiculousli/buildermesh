@@ -21,7 +21,7 @@ Every `bmesh` command with its flags, output and refusals, then the model behind
 bmesh [--config FILE] [--node PATH] [--json] <command> [args]
 ```
 
-`bmesh help` (or `-h`) prints the usage text, one line per command, on stdout. `bmesh` with no command prints it on stderr and exits 2. An unknown command exits 2 with ``unknown command "<name>" (run `bmesh help`)``.
+`bmesh help` (or `-h`) prints the usage text, one line per command, on stdout; `bmesh help <command> [<subcommand>]` prints only the entries that command begins (`bmesh help executor` every `executor` entry), and an unknown one exits 2 as below. `--help` (or `-h`) on a subcommand exits 2 printing its usage line, ``usage: bmesh <command> [--flag] ... (see `bmesh help`)``, then each of its flags with what it means, one per line. `bmesh` with no command prints it on stderr and exits 2. An unknown command exits 2 with ``unknown command "<name>" (run `bmesh help`)``.
 
 | Flag | Default | Meaning |
 |---|---|---|
