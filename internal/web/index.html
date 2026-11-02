@@ -16,6 +16,7 @@
     <a href="#/" data-route="map">overview</a>
     <a href="#/timeline" data-route="timeline">timeline</a>
     <a href="#/tokens" data-route="tokens">tokens</a>
+    <a href="#/specs" data-route="specs">specs</a>
     <a href="#/routines" data-route="routines">routines</a>
   </nav>
   <span id="windows" class="windows" role="group" aria-label="window">
@@ -30,7 +31,7 @@
     <div id="needs" class="needs" hidden></div>
     <div class="g2">
     <section class="tpanel">
-      <h2>Fleet timeline<small>a lane per lead, its state over time, its tokens read in the gutter · ▲ ready · ✕ land refused · ◆ job · ✓ done · bar: progress; then each coordinator session's busy spans</small></h2>
+      <h2>Fleet timeline<small>a lane per lead, its state over time, its tokens read in the gutter · ▲ ready · ✕ land refused · ◆ job · ✓ done · bar: progress · ▲ after a name: flagged; then each coordinator session's busy spans</small></h2>
       <div class="legend" aria-hidden="true"><span><i class="st-working"></i>working</span><span><i class="st-landing"></i>landing</span><span><i class="st-silent"></i>silent</span><span><i class="st-held"></i>held</span><span><i class="st-asking"></i>asking / blocked</span><span><i class="st-idle"></i>idle</span><span class="phase-leg">coordinator: <i class="r-design"></i>design <i class="r-exec"></i>exec</span></div>
       <div id="tl-map" class="tl"></div>
     </section>
@@ -41,13 +42,19 @@
     </div>
     <div class="g2">
     <section class="tpanel">
-      <h2>Agents<small>every agent with model calls in the window, most read first · click a row for its context below</small></h2>
+      <h2>Agents<small>every agent with model calls in the window, most read first · watch: the rules it trips · click a row for its context below</small></h2>
       <div id="agents-map"></div>
+    </section>
+    <div class="col">
+    <section class="tpanel">
+      <h2>Outliers<small>every lead and fixer with model calls in 30 days: read against wall time, by spec size · ringed: flagged · click for its page, compared with a done run of its size</small></h2>
+      <div id="outliers-map" class="chart"></div>
     </section>
     <section class="tpanel">
       <h2>Coordinators: design and execution<small>each session's read by phase</small></h2>
       <div id="coords-map"></div>
     </section>
+    </div>
     </div>
     <div class="g2">
     <section class="tpanel">
@@ -57,6 +64,16 @@
     <section class="tpanel">
       <h2>Quota<small>each provider's 5h and week used, every 5 minutes · faint lines: resets</small></h2>
       <div id="quota-map" class="chart"></div>
+    </section>
+    </div>
+    <div class="g2">
+    <section class="tpanel">
+      <h2>Spec burndown<small id="fam-sub">the newest build family's specs still open</small></h2>
+      <div id="fam-map" class="chart"></div>
+    </section>
+    <section class="tpanel">
+      <h2>Specs, 30 days<small id="repo-sub">the busiest repo's specs landed per day and open at each day's end</small></h2>
+      <div id="repo-map" class="chart"></div>
     </section>
     </div>
   </section>
@@ -73,6 +90,10 @@
       <h2>Quota<small>each provider's 5h and week used, every 5 minutes · faint lines: resets</small></h2>
       <div id="quota-tok" class="chart"></div>
     </section>
+  </section>
+  <section id="view-specs" class="view" hidden>
+    <div id="specs-repos" class="cards"></div>
+    <div id="specs-families" class="cards"></div>
   </section>
   <section id="view-timeline" class="view" hidden>
     <section class="tpanel">
