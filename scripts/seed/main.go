@@ -16,7 +16,12 @@
 // app-0041, app-0039, app-0040, app-0042.api and routine.review.opus-5-5-1,
 // two coordinator sessions of runs split by design and exec (one with a
 // subagent, one peaking at 420k), and a day of claude and codex quota
-// readings every five minutes. -leads N (default 2)
+// readings every five minutes. For the flags (108) it adds app-batch-1, four
+// S leads done three days ago that with app-0039 make the S baseline;
+// app-0041 (S) reads past 2.5x that median and is refused three times
+// (overworking), and app-0045's four subagents read 140M in the last 40
+// minutes (runaway); app-0039, app-0041, app-0042 and app-0045 are the live
+// family app-batch-2. -leads N (default 2)
 // adds N-2 working leads, each with one working executor, to look at a
 // crowded map (and long names) on a phone. -again PATH seeds nothing: it
 // publishes a new ask on the seeded mesh's PATH (one asking or silent, such
@@ -70,6 +75,10 @@ func main() {
 	fmt.Println("map:", *mapURL)
 }
 
+// batch1 is app-batch-1's first start in minutes ago: three days and five
+// hours.
+const batch1 = 3*24*60 + 300
+
 func seed(ctx context.Context, url string, leads int) error {
 	c, err := mesh.Connect(ctx, url, "", "hub", "bmesh/seed", false)
 	if err != nil {
@@ -79,12 +88,17 @@ func seed(ctx context.Context, url string, leads int) error {
 	ago := func(m int) string { return time.Now().UTC().Add(-time.Duration(m) * time.Minute).Format(time.RFC3339) }
 	for _, n := range []mesh.Node{
 		{Path: "app-0042", Role: "lead", Repo: "app", Spec: "0042", StartedAt: ago(330), Branch: "bmesh/app-0042",
-			Runner: mesh.NodeRunner{Kind: "t3", Thread: "thread-0042"}, Model: "claude-opus-5-5"},
+			Runner: mesh.NodeRunner{Kind: "t3", Thread: "thread-0042"}, Model: "claude-opus-5-5", Family: "app-batch-2"},
 		{Path: "app-0042.api", Role: "executor", Repo: "app", Parent: "app-0042", StartedAt: ago(305)},
 		{Path: "app-0042.web", Role: "executor", Repo: "app", Parent: "app-0042", StartedAt: ago(285)},
 		{Path: "app-0042.e2e", Role: "executor", Repo: "app", Parent: "app-0042", StartedAt: ago(5)},
-		{Path: "app-0039", Role: "lead", Repo: "app", Spec: "0039", StartedAt: ago(245), Branch: "bmesh/app-0039"},
-		{Path: "app-0041", Role: "lead", Repo: "app", Spec: "0041", StartedAt: ago(300), Branch: "bmesh/app-0041"},
+		{Path: "app-0039", Role: "lead", Repo: "app", Spec: "0039", StartedAt: ago(245), Branch: "bmesh/app-0039", Family: "app-batch-2"},
+		{Path: "app-0041", Role: "lead", Repo: "app", Spec: "0041", StartedAt: ago(300), Branch: "bmesh/app-0041", Family: "app-batch-2"},
+		{Path: "app-0045", Role: "lead", Repo: "app", Spec: "0045", StartedAt: ago(70), Branch: "bmesh/app-0045", Family: "app-batch-2"},
+		{Path: "app-0030", Role: "lead", Repo: "app", Spec: "0030", StartedAt: ago(batch1), Family: "app-batch-1"},
+		{Path: "app-0031", Role: "lead", Repo: "app", Spec: "0031", StartedAt: ago(batch1 - 10), Family: "app-batch-1"},
+		{Path: "app-0032", Role: "lead", Repo: "app", Spec: "0032", StartedAt: ago(batch1 - 20), Family: "app-batch-1"},
+		{Path: "app-0033", Role: "lead", Repo: "app", Spec: "0033", StartedAt: ago(batch1 - 30), Family: "app-batch-1"},
 		{Path: "app-0040", Role: "lead", Repo: "app", Spec: "0040", StartedAt: ago(275), Branch: "bmesh/app-0040"},
 		{Path: "app-0038", Role: "lead", Repo: "app", Spec: "0038", StartedAt: ago(26 * 60), Branch: "bmesh/app-0038"},
 		{Path: "docs-0007", Role: "lead", Repo: "docs", Spec: "0007", StartedAt: ago(205)},
@@ -116,6 +130,16 @@ func seed(ctx context.Context, url string, leads int) error {
 		ago                          int
 	}
 	for _, s := range []step{
+		// app-batch-1: four S leads, finished three days ago (the size rule's baseline).
+		{"app-0030", "started", "", "working", "", batch1},
+		{"app-0031", "started", "", "working", "", batch1 - 10},
+		{"app-0032", "started", "", "working", "", batch1 - 20},
+		{"app-0033", "started", "", "working", "", batch1 - 30},
+		{"app-0030", "done", "landed spec-30", "done", "", batch1 - 95},
+		{"app-0031", "done", "landed spec-31", "done", "", batch1 - 130},
+		{"daemon.seed", "land-refused", "refused: review failed at t:3a1b2c3d", "working", "app-0032", batch1 - 150},
+		{"app-0032", "done", "landed spec-32", "done", "", batch1 - 190},
+		{"app-0033", "done", "landed spec-33", "done", "", batch1 - 240},
 		{"app-0038", "started", "", "working", "", 25 * 60},
 		{"app-0038", "blocked", "the branches already exist", "blocked", "", 24 * 60},
 		{"app-0042", "started", "planning the endpoints", "working", "", 320},
@@ -139,6 +163,8 @@ func seed(ctx context.Context, url string, leads int) error {
 		{"routine.review.opus-5-5-1", "started", "", "working", "", 160},
 		{"routine.review.opus-5-5-1", "progress", "job seed-j0 started", "working", "", 150},
 		{"routine.review.opus-5-5-1", "progress", "job seed-j0 ok 300000 ctx 42000", "working", "", 145},
+		{"app-0041", "ready", "ready to land", "landing", "", 135},
+		{"daemon.seed", "land-refused", "refused: verify failed at t:1c2d3e4f", "working", "app-0041", 130},
 		{"app-0041", "ready", "ready to land", "landing", "", 120},
 		{"docs-0007", "progress", "outline agreed", "working", "", 120},
 		{"daemon.seed", "landing", "review job 7h3kQ running on seed", "landing", "app-0041", 118},
@@ -159,6 +185,7 @@ func seed(ctx context.Context, url string, leads int) error {
 		{"routine.review.f5e6f7a8b", "progress", "job seed-f5 fail 900000", "working", "", 62},
 		{"routine.review.f5e6f7a8b", "done", "", "done", "", 62},
 		{"daemon.seed", "land-refused", "refused: review failed at t:8a638215", "working", "app-0041", 60},
+		{"app-0045", "started", "fanning out four readers", "working", "", 68},
 		{"app-0042", "progress", "lead page done, strip next", "working", "", 60},
 		{"app-round-1.eng", "progress", "043 landed, writing 044", "working", "", 60},
 		{"app-0040", "held", "before land by operator: hub move first", "held", "", 40},
@@ -166,6 +193,7 @@ func seed(ctx context.Context, url string, leads int) error {
 		{"routine.review.opus-5-5-1", "progress", "job seed-j1 started", "working", "", 32},
 		{"app-0042.web", "ask", "which chart library?", "asking", "", 30},
 		{"routine.review.opus-5-5-1", "progress", "job seed-j1 ok 4200 ctx 51000", "working", "", 28},
+		{"app-0045", "progress", "four subagents reading the corpus", "working", "", 35},
 		{"daemon.seed", "silent", "quiet for 25m", "silent", "docs-0007", 25},
 		{"routine.review.f9c0d1e2f", "started", "", "working", "", 24},
 		{"routine.review.f9c0d1e2f", "progress", "job seed-f9 started", "working", "", 23},
@@ -410,13 +438,30 @@ func seedUsage(ctx context.Context, c *mesh.Client, now time.Time) error {
 		from, to    float64
 		first, peak int64
 	}{
-		{"app-0041", "lead", 60, 288, 20, 18000, 250000},
+		{"app-0041", "lead", 110, 288, 20, 18000, 250000}, // past 2.5x the S median: overworking
 		{"app-0039", "lead", 40, 238, 90, 15000, 150000},
 		{"app-0040", "lead", 30, 268, 40, 12000, 110000},
 		{"app-0042.api", "executor", 30, 298, 200, 10000, 90000},
+		// app-batch-1, done three days ago: with app-0039, five S runs, the S baseline.
+		{"app-0030", "lead", 35, batch1 - 2, batch1 - 90, 15000, 190000},
+		{"app-0031", "lead", 40, batch1 - 12, batch1 - 125, 15000, 210000},
+		{"app-0032", "lead", 45, batch1 - 22, batch1 - 185, 15000, 210000},
+		{"app-0033", "lead", 50, batch1 - 32, batch1 - 235, 15000, 230000},
+		// app-0045's own thread; its subagents below read the most.
+		{"app-0045", "lead", 40, 66, 3, 30000, 130000},
 	} {
 		t := node(n.path, n.role)
 		t.calls = calls(r, n.path, "", spread(r, n.n, ago(n.from), ago(n.to)), ctxPath(r, n.n, n.first, n.peak, 0, 0), nil)
+		all = append(all, t)
+	}
+	// app-0045's four subagents, 100 calls each at 300k to 400k in the
+	// last 40 minutes: 140M, past burn's 100M in an hour (runaway) for the
+	// next 20 minutes.
+	for k := range 4 {
+		id := fmt.Sprintf("agent-f%d0045", k)
+		t := node("app-0045", "lead")
+		t.file, t.sub, t.desc = "-home-seed-app/app-0045/subagents/"+id+".jsonl", id, fmt.Sprintf("Read corpus part %d", k+1)
+		t.calls = calls(r, "0045"+id, id, spread(r, 100, ago(40), ago(2)), ctxPath(r, 100, 300000, 400000, 0, 0), nil)
 		all = append(all, t)
 	}
 	// The routine instance: five calls around each of its two jobs.
