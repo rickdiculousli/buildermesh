@@ -128,24 +128,6 @@ func stampOf(at string) string {
 	return dayMinute(t)
 }
 
-// tokens writes a count in three figures: 845, 18.8k, 303k, 42.2M, 416M.
-func tokens(n int64) string {
-	v, unit := float64(n), ""
-	for _, u := range []string{"k", "M", "G"} {
-		if v < 999.5 {
-			break
-		}
-		v, unit = v/1000, u
-	}
-	if unit == "" {
-		return strconv.FormatInt(n, 10)
-	}
-	if v >= 99.95 {
-		return fmt.Sprintf("%.0f%s", v, unit)
-	}
-	return fmt.Sprintf("%.1f%s", v, unit)
-}
-
 // share is part's share of whole, as a whole percent.
 func share(part, whole int64) string {
 	if whole == 0 {
@@ -164,12 +146,12 @@ func printUsageTable(a *app, rep tokenuse.Report) {
 			design, exec = share(ag.Design.Read(), ag.Read()), share(ag.Exec.Read(), ag.Read())
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", tokenuse.Short(ag.Agent), ag.Role, ag.Host,
-			tokens(ag.Read()), tokens(ag.Main.Out+ag.Sub.Out), tokens(ag.Sub.Read()), tokens(ag.Peak), design, exec)
+			tokenuse.Tokens(ag.Read()), tokenuse.Tokens(ag.Main.Out+ag.Sub.Out), tokenuse.Tokens(ag.Sub.Read()), tokenuse.Tokens(ag.Peak), design, exec)
 		read += ag.Read()
 		out += ag.Main.Out + ag.Sub.Out
 	}
 	tw.Flush()
-	fmt.Fprintf(a.stdout, "total %s read, %s out, %d agents since %s\n", tokens(read), tokens(out), len(rep.Agents), dayMinute(rep.Since))
+	fmt.Fprintf(a.stdout, "total %s read, %s out, %d agents since %s\n", tokenuse.Tokens(read), tokenuse.Tokens(out), len(rep.Agents), dayMinute(rep.Since))
 }
 
 func printUsageAgent(a *app, ag tokenuse.Agent) {
@@ -183,26 +165,26 @@ func printUsageAgent(a *app, ag tokenuse.Agent) {
 		head += ", " + strings.Join(ag.Models, " ")
 	}
 	fmt.Fprintf(w, "%s  %s, %s to %s, %d calls\n", tokenuse.Short(ag.Agent), head, stampOf(ag.First), stampOf(ag.Last), ag.Calls)
-	fmt.Fprintf(w, "read     %s: input %s, cache read %s, cache write %s\n", tokens(all.Read()), tokens(all.In), tokens(all.CR), tokens(all.CW))
-	fmt.Fprintf(w, "out      %s\n", tokens(all.Out))
+	fmt.Fprintf(w, "read     %s: input %s, cache read %s, cache write %s\n", tokenuse.Tokens(all.Read()), tokenuse.Tokens(all.In), tokenuse.Tokens(all.CR), tokenuse.Tokens(all.CW))
+	fmt.Fprintf(w, "out      %s\n", tokenuse.Tokens(all.Out))
 	subCalls := 0
 	for _, s := range ag.Subs {
 		subCalls += s.Calls
 	}
-	fmt.Fprintf(w, "main     %s read, %s out, %d calls\n", tokens(ag.Main.Read()), tokens(ag.Main.Out), ag.Calls-subCalls)
-	fmt.Fprintf(w, "sub      %s read, %s out, %d calls in %d subagents\n", tokens(ag.Sub.Read()), tokens(ag.Sub.Out), subCalls, len(ag.Subs))
+	fmt.Fprintf(w, "main     %s read, %s out, %d calls\n", tokenuse.Tokens(ag.Main.Read()), tokenuse.Tokens(ag.Main.Out), ag.Calls-subCalls)
+	fmt.Fprintf(w, "sub      %s read, %s out, %d calls in %d subagents\n", tokenuse.Tokens(ag.Sub.Read()), tokenuse.Tokens(ag.Sub.Out), subCalls, len(ag.Subs))
 	for _, s := range ag.Subs {
 		desc := s.ID
 		if s.Desc != "" {
 			desc += " " + s.Desc
 		}
-		fmt.Fprintf(w, "  %s: %s read, %s out, %d calls\n", desc, tokens(s.Read()), tokens(s.Out), s.Calls)
+		fmt.Fprintf(w, "  %s: %s read, %s out, %d calls\n", desc, tokenuse.Tokens(s.Read()), tokenuse.Tokens(s.Out), s.Calls)
 	}
 	if ag.Design != nil && ag.Exec != nil {
-		fmt.Fprintf(w, "design   %s: %s read, %s out\n", share(ag.Design.Read(), ag.Read()), tokens(ag.Design.Read()), tokens(ag.Design.Out))
-		fmt.Fprintf(w, "exec     %s: %s read, %s out\n", share(ag.Exec.Read(), ag.Read()), tokens(ag.Exec.Read()), tokens(ag.Exec.Out))
+		fmt.Fprintf(w, "design   %s: %s read, %s out\n", share(ag.Design.Read(), ag.Read()), tokenuse.Tokens(ag.Design.Read()), tokenuse.Tokens(ag.Design.Out))
+		fmt.Fprintf(w, "exec     %s: %s read, %s out\n", share(ag.Exec.Read(), ag.Read()), tokenuse.Tokens(ag.Exec.Read()), tokenuse.Tokens(ag.Exec.Out))
 	}
-	fmt.Fprintf(w, "context  peak %s, last %s, %d compactions\n", tokens(ag.Peak), tokens(ag.LastCtx), ag.Compactions)
+	fmt.Fprintf(w, "context  peak %s, last %s, %d compactions\n", tokenuse.Tokens(ag.Peak), tokenuse.Tokens(ag.LastCtx), ag.Compactions)
 }
 
 // printUsageCalls prints each call, a subagent's after its id, with the
@@ -236,7 +218,7 @@ func printUsageCalls(a *app, rep tokenuse.Report) {
 		if growth < 0 {
 			sign, growth = "-", -growth
 		}
-		line := fmt.Sprintf("%s%s  ctx %s  %s%s  out %s", who(c.Sub), clock(c.At), tokens(c.Ctx), sign, tokens(growth), tokens(c.Out))
+		line := fmt.Sprintf("%s%s  ctx %s  %s%s  out %s", who(c.Sub), clock(c.At), tokenuse.Tokens(c.Ctx), sign, tokenuse.Tokens(growth), tokenuse.Tokens(c.Out))
 		if c.Phase != "" {
 			line += "  " + c.Phase
 		}

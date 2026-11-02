@@ -7,7 +7,9 @@
 package usage
 
 import (
+	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -92,4 +94,22 @@ type QuotaReading struct {
 	FiveReset string  `json:"five_reset"`
 	WeekReset string  `json:"week_reset"`
 	ReadAt    string  `json:"read_at"`
+}
+
+// Tokens writes a count in three figures: 845, 18.8k, 303k, 42.2M, 416M.
+func Tokens(n int64) string {
+	v, unit := float64(n), ""
+	for _, u := range []string{"k", "M", "G"} {
+		if v < 999.5 {
+			break
+		}
+		v, unit = v/1000, u
+	}
+	if unit == "" {
+		return strconv.FormatInt(n, 10)
+	}
+	if v >= 99.95 {
+		return fmt.Sprintf("%.0f%s", v, unit)
+	}
+	return fmt.Sprintf("%.1f%s", v, unit)
 }

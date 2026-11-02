@@ -210,7 +210,8 @@ func Run(ctx context.Context, d Deps) error {
 		start(func() { every(ctx, remindEvery, func() { remindOnce(ctx, d, q) }) })
 	}
 	if d.ClaudeDir != "" && d.StateDir != "" {
-		start(func() { every(ctx, usageEvery, func() { usageOnce(ctx, d) }) })
+		f := &flagger{}
+		start(func() { every(ctx, usageEvery, func() { usageOnce(ctx, d, f) }) })
 	}
 	if pushEnabled(d.Cfg) {
 		start(func() { pushLoop(ctx, d) })
