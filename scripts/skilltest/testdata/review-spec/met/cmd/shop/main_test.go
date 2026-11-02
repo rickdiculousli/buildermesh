@@ -44,7 +44,9 @@ func TestReportSince(t *testing.T) {
 	if code, out := shop(t, "report", "--since", "2999-01-01"); code != 0 || !strings.Contains(out, "revenue  0.00") {
 		t.Fatalf("report --since 2999-01-01 exit %d:\n%s", code, out)
 	}
-	if code, _ := shop(t, "report", "--since", "10/21"); code != 2 {
-		t.Fatalf("a bad date: exit %d, want 2", code)
+	for _, bad := range [][]string{{"--since", "10/21"}, {"--since", ""}, {"week", "--since", "2000-01-01"}} {
+		if code, _ := shop(t, append([]string{"report"}, bad...)...); code != 2 {
+			t.Fatalf("report %q: exit %d, want 2", bad, code)
+		}
 	}
 }
