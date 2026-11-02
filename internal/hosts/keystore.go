@@ -3,6 +3,7 @@ package hosts
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/cipher"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -18,6 +19,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/scrypt"
@@ -38,7 +40,7 @@ type Store interface {
 	Kind() string // "keychain" or "file"
 	Exists(name string) (bool, error)
 	Put(name string, key ed25519.PrivateKey) error
-	Get(name, action string) (ed25519.PrivateKey, error) // action names what the key is read for
+	Get(name string, req Request) (ed25519.PrivateKey, error) // shows req, then reads the key
 }
 
 // DefaultKeyStore is [hosts] key_store's default: "keychain" on darwin,
@@ -50,20 +52,20 @@ func DefaultKeyStore(goos string) string {
 	return "file"
 }
 
-// NewStore is the store of kind ("keychain" | "file"); out receives the
-// dialog announcement; pass is used by the file store.
+// NewStore is the store of kind ("keychain" | "file"); out receives each
+// request as the terminal shows it; pass is used by the file store.
 func NewStore(kind, configDir string, out io.Writer, pass Passphrase) (Store, error) {
+	if out == nil {
+		out = io.Discard
+	}
 	switch kind {
 	case "keychain":
-		if out == nil {
-			out = io.Discard
-		}
 		return &keychainStore{out: out}, nil
 	case "file":
 		if pass == nil {
 			return nil, errors.New("file key store: no way to ask for a passphrase")
 		}
-		return &fileStore{dir: configDir, pass: pass}, nil
+		return &fileStore{dir: configDir, pass: pass, out: out}, nil
 	}
 	return nil, fmt.Errorf("key_store %q: want \"keychain\" or \"file\"", kind)
 }
@@ -153,8 +155,14 @@ func (k *keychainStore) Put(name string, key ed25519.PrivateKey) error {
 	return nil
 }
 
-func (k *keychainStore) Get(name, action string) (ed25519.PrivateKey, error) {
+// Get shows req in the terminal and in a bmesh dialog, and reads the key
+// (behind the Keychain's own prompt) only when the operator continues.
+func (k *keychainStore) Get(name string, req Request) (ed25519.PrivateKey, error) {
 	if err := checkKeyName(name); err != nil {
+		return nil, err
+	}
+	req.Print(k.out)
+	if err := dialog(req); err != nil {
 		return nil, err
 	}
 	dump, _, err := k.security("", "dump-keychain", "-a")
@@ -164,7 +172,6 @@ func (k *keychainStore) Get(name, action string) (ed25519.PrivateKey, error) {
 	if err := checkKeychainACL(dump, name); err != nil {
 		return nil, err
 	}
-	fmt.Fprintf(k.out, "Keychain dialog follows for: %s\n", action)
 	out, _, err := k.security("", "find-generic-password", "-s", keychainService, "-a", name, "-w")
 	if err != nil {
 		return nil, fmt.Errorf("reading the %s key from the Keychain failed (%v); admin and approve commands run at the Mac's own screen, where its dialog can be answered", name, err)
@@ -174,6 +181,49 @@ func (k *keychainStore) Get(name, action string) (ed25519.PrivateKey, error) {
 		return nil, fmt.Errorf("the %s key's Keychain item: %w", name, err)
 	}
 	return ed25519.NewKeyFromSeed(seed), nil
+}
+
+// DialogWait is how long the bmesh dialog waits for an answer.
+const DialogWait = 2 * time.Minute
+
+// dialogScript shows argv's title and body with Cancel the default, and
+// gives up after DialogWait.
+var dialogScript = []string{
+	"on run argv",
+	fmt.Sprintf(`display dialog (item 2 of argv) with title (item 1 of argv) with icon caution buttons {"Cancel", "Continue to Keychain"} default button "Cancel" cancel button "Cancel" giving up after %d`, int(DialogWait/time.Second)),
+	"end run",
+}
+
+// dialog shows req in a native dialog through osascript
+// ($BMESH_OSASCRIPT_COMMAND split on spaces, else "osascript"): nil only
+// when the operator chose Continue to Keychain.
+func dialog(req Request) error {
+	argv := strings.Fields(os.Getenv("BMESH_OSASCRIPT_COMMAND"))
+	if len(argv) == 0 {
+		argv = []string{"osascript"}
+	}
+	for _, l := range dialogScript {
+		argv = append(argv, "-e", l)
+	}
+	argv = append(argv, "bmesh: "+req.Title, strings.Join(req.Lines(), "\n"))
+	ctx, cancel := context.WithTimeout(context.Background(), DialogWait+30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	var errb bytes.Buffer
+	cmd.Stderr = &errb
+	out, err := cmd.Output()
+	switch {
+	case ctx.Err() != nil || strings.Contains(string(out), "gave up:true"):
+		return fmt.Errorf("%w (no answer in %s)", ErrCancelled, DialogWait)
+	case err != nil && strings.Contains(errb.String(), "(-128)"): // userCanceledErr
+		return ErrCancelled
+	case err != nil:
+		return fmt.Errorf("the bmesh dialog couldn't be shown (%v: %s): nothing signed; admin and approve commands run at the Mac's own screen",
+			err, strings.TrimSpace(errb.String()))
+	case !strings.Contains(string(out), "button returned:Continue to Keychain"):
+		return fmt.Errorf("%w (the dialog answered %q)", ErrCancelled, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 var (
@@ -274,6 +324,7 @@ const (
 type fileStore struct {
 	dir  string
 	pass Passphrase
+	out  io.Writer
 }
 
 type sealedKey struct {
@@ -349,7 +400,8 @@ func (f *fileStore) Put(name string, key ed25519.PrivateKey) error {
 	return nil
 }
 
-func (f *fileStore) Get(name, action string) (ed25519.PrivateKey, error) {
+// Get shows req in the terminal, then asks for the passphrase.
+func (f *fileStore) Get(name string, req Request) (ed25519.PrivateKey, error) {
 	if err := checkKeyName(name); err != nil {
 		return nil, err
 	}
@@ -377,7 +429,8 @@ func (f *fileStore) Get(name, action string) (ed25519.PrivateKey, error) {
 	if err := errors.Join(err1, err2, err3); err != nil || len(nonce) != chacha20poly1305.NonceSizeX || len(salt) == 0 {
 		return nil, fmt.Errorf("%s: malformed salt, nonce or sealed key", path)
 	}
-	pass, err := f.pass(fmt.Sprintf("Passphrase for %s (%s)", path, action), false)
+	req.Print(f.out)
+	pass, err := f.pass("Passphrase for "+path, false)
 	if err != nil {
 		return nil, err
 	}

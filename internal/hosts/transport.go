@@ -62,13 +62,19 @@ func NewSalt() string {
 // NewJob is a signed job from by to to, living ttl (at most MaxLifetime).
 func NewJob(key ed25519.PrivateKey, by, to, op, repo string, args []string, rosterVersion int64,
 	now time.Time, ttl time.Duration) Job {
+	j := ComposeJob(by, to, op, repo, args, rosterVersion, now, ttl)
+	j.Sign(key)
+	return j
+}
+
+// ComposeJob is NewJob's job unsigned, Type set: Bytes is what a protected
+// key's request shows and then signs.
+func ComposeJob(by, to, op, repo string, args []string, rosterVersion int64, now time.Time, ttl time.Duration) Job {
 	if args == nil {
 		args = []string{}
 	}
-	j := Job{ID: nuid.Next(), By: by, To: to, Op: op, Repo: repo, Args: args, RosterVersion: rosterVersion,
+	return Job{Type: TagJob, ID: nuid.Next(), By: by, To: to, Op: op, Repo: repo, Args: args, RosterVersion: rosterVersion,
 		TS: Stamp(now), Expires: Stamp(now.Add(min(ttl, MaxLifetime))), Salt: NewSalt()}
-	j.Sign(key)
-	return j
 }
 
 // SendJob puts j on its box's job subject.

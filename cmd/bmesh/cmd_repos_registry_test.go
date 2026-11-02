@@ -31,6 +31,22 @@ func registryVersion(b box) int64 {
 	return r.Version
 }
 
+// registryOf is the registry box b holds.
+func registryOf(t *testing.T, b box) hosts.Registry {
+	t.Helper()
+	r, _, err := hosts.LoadRegistry(filepath.Join(b.state, "bmesh"), rosterOf(t, b).AdminKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+// registrySum is the sum of the bytes of the registry box b holds.
+func registrySum(t *testing.T, b box) string {
+	r := registryOf(t, b)
+	return sum8(r.Bytes())
+}
+
 func TestRegistryPublishProposeAndRemoveWithCheckouts(t *testing.T) {
 	atScreenForTest(t)
 	serveHostsEvery = 300 * time.Millisecond
@@ -81,6 +97,8 @@ func TestRegistryPublishProposeAndRemoveWithCheckouts(t *testing.T) {
 		!strings.Contains(out, "registry v1 published") {
 		t.Fatalf("publish: %d %s %s", code, out, errs)
 	}
+	wantRequest(t, requestBlock(t, out, "Publish registry v1"), "+ nixrepo: path nixrepo, mode ship, remote "+origin,
+		"signs "+registrySum(t, mac))
 	if out, _, _ := mac.run(t, "", "repos", "publish"); !strings.Contains(out, "registry v1: no change") {
 		t.Fatalf("publish again: %s", out)
 	}
@@ -136,6 +154,8 @@ func TestRegistryPublishProposeAndRemoveWithCheckouts(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "registry v2 published: proposal from k16 approved") {
 		t.Fatalf("approve: %d %s %s", code, out, errs)
 	}
+	wantRequest(t, requestBlock(t, out, "Publish registry v2 (proposal from k16)"), `~ nixrepo: verify: (none) -> ["make check"]`,
+		"signs "+registrySum(t, mac))
 	if readFile(t, repos(mac)) != reg2 || readFile(t, repos(mac)+".prev") != reg1 {
 		t.Fatalf("mac's repos.toml after approval:\n%s", readFile(t, repos(mac)))
 	}
@@ -167,6 +187,9 @@ func TestRegistryPublishProposeAndRemoveWithCheckouts(t *testing.T) {
 		!strings.Contains(out, "pending: k16;") {
 		t.Fatalf("remove with k16 dirty: %d %s %s", code, out, errs)
 	}
+	// One request for the batch: both boxes' nix, then the registry.
+	wantRequest(t, requestBlock(t, out, "Send nix to 2 boxes, then publish registry v3"), "nix nixrepo on k16, mac (origin "+origin+")",
+		"then registry v3: - nixrepo, once every box answers removed or absent")
 	if registryVersion(mac) != 2 || dirExists(dir(mac)) || !dirExists(dir(k16)) {
 		t.Fatalf("after a refusal: registry v%d, mac %v, k16 %v", registryVersion(mac), dirExists(dir(mac)), dirExists(dir(k16)))
 	}
@@ -179,6 +202,7 @@ func TestRegistryPublishProposeAndRemoveWithCheckouts(t *testing.T) {
 		registryVersion(mac) != 2 {
 		t.Fatalf("remove with k16 asleep: %s", out)
 	}
+	wantRequest(t, requestBlock(t, out, "Send nix to 1 box, then publish registry v3"), "nix nixrepo on k16 (origin "+origin+")")
 	serveBox(t, k16)
 	waitFor(t, "k16 nixes its checkout", func() bool { return !dirExists(dir(k16)) })
 
@@ -187,6 +211,7 @@ func TestRegistryPublishProposeAndRemoveWithCheckouts(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "registry v3: nixrepo removed") {
 		t.Fatalf("remove after k16 answered: %d %s %s", code, out, errs)
 	}
+	wantRequest(t, requestBlock(t, out, "Publish registry v3"), "- nixrepo", "signs "+registrySum(t, mac))
 	if got := readFile(t, repos(mac)); got != "# the fleet's registry\n\n" {
 		t.Fatalf("mac's repos.toml without the row: %q", got)
 	}

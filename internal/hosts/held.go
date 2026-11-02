@@ -249,8 +249,14 @@ type ApproveAnswer struct {
 // NewApprove is the operator's approval of h, signed with the box's
 // approve key.
 func NewApprove(key ed25519.PrivateKey, h Held, by string, now time.Time) Approve {
-	a := Approve{JobID: h.ID, JobSalt: h.Job.Salt, JobSHA256: h.Job.Digest(), By: by, Decision: h.Decision(),
-		TS: Stamp(now), Salt: NewSalt()}
+	a := ComposeApprove(h, by, now)
 	a.Sign(key)
 	return a
+}
+
+// ComposeApprove is NewApprove's approval unsigned, Type set: Bytes is
+// what the approve key's request shows and then signs.
+func ComposeApprove(h Held, by string, now time.Time) Approve {
+	return Approve{Type: TagApprove, JobID: h.ID, JobSalt: h.Job.Salt, JobSHA256: h.Job.Digest(), By: by, Decision: h.Decision(),
+		TS: Stamp(now), Salt: NewSalt()}
 }

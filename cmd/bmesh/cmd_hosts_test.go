@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"os"
@@ -231,6 +233,47 @@ func answerPings(t *testing.T, ctx context.Context, c *mesh.Client, b box) {
 	}()
 }
 
+// requestBlock is the request titled title as out printed it, before the
+// key was read: its title line and its indented lines.
+func requestBlock(t *testing.T, out, title string) string {
+	t.Helper()
+	m := regexp.MustCompile(`(?m)^bmesh: ` + regexp.QuoteMeta(title) + `\n(  .*\n)*`).FindString(out)
+	if m == "" {
+		t.Fatalf("no request %q in:\n%s", title, out)
+	}
+	return m
+}
+
+// sum8 is the first 8 hex of the SHA-256 of b: what a request shows of
+// the bytes it signs.
+func sum8(b ...[]byte) string {
+	h := sha256.New()
+	for _, x := range b {
+		h.Write(x)
+	}
+	return hex.EncodeToString(h.Sum(nil))[:8]
+}
+
+// rosterOf is the roster box b holds.
+func rosterOf(t *testing.T, b box) hosts.Roster {
+	t.Helper()
+	l, _, err := hosts.LoadLocal(filepath.Join(b.state, "bmesh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return l.Roster
+}
+
+// wantRequest fails unless block shows a line starting with each of want.
+func wantRequest(t *testing.T, block string, want ...string) {
+	t.Helper()
+	for _, w := range want {
+		if !strings.Contains(block, "\n  "+w) {
+			t.Errorf("request lacks %q:\n%s", w, block)
+		}
+	}
+}
+
 func TestHostsAdminInviteJoinPingSetRevoke(t *testing.T) {
 	atScreenForTest(t)
 	url := meshtest.Start(t)
@@ -314,6 +357,9 @@ func TestHostsAdminInviteJoinPingSetRevoke(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "roster v3: k16 not secure, accept ping,prune") {
 		t.Fatalf("set: %d %s %s", code, out, errs)
 	}
+	// The request named the row's change and the sum of the roster signed.
+	r3 := rosterOf(t, mac)
+	wantRequest(t, requestBlock(t, out, "Sign roster v3"), "k16: accept level,ping -> ping,prune", "signs "+sum8(r3.Bytes()))
 	if _, errs, code := mac.run(t, "pw\n", "hosts", "set", "k16", "--secure"); code != exitRefused || !strings.Contains(errs, "no approve key") {
 		t.Fatalf("set secure without an approve key: %d %s", code, errs)
 	}
@@ -324,6 +370,8 @@ func TestHostsAdminInviteJoinPingSetRevoke(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "roster v4: k16 revoked") {
 		t.Fatalf("revoke: %d %s %s", code, out, errs)
 	}
+	r4 := rosterOf(t, mac)
+	wantRequest(t, requestBlock(t, out, "Sign roster v4"), "- k16", "signs "+sum8(r4.Bytes()))
 	// k16 takes the newer roster from the hub, and isn't in it.
 	t.Setenv("XDG_STATE_HOME", k16.state)
 	kv, _ := hosts.Bucket(ctx, c.JS, hosts.BucketRoster)
@@ -352,8 +400,42 @@ func TestHostsAdminInviteJoinPingSetRevoke(t *testing.T) {
 
 	// Run again, init keeps the answers as defaults and the roster as is.
 	out, errs, code = mac.run(t, "\n\n", "init", "--hosts")
-	if code != 0 || !strings.Contains(out, "roster v5") || strings.Contains(out, "Keychain") {
+	if code != 0 || !strings.Contains(out, "roster v5") || strings.Contains(out, "bmesh: ") {
 		t.Fatalf("admin re-run: %d %s %s", code, out, errs)
+	}
+	// Answer not secure: init signs the changed row, behind its request.
+	out, errs, code = mac.run(t, "\nn\n\npw\n", "init", "--hosts")
+	if code != 0 || !strings.Contains(out, "roster v6") {
+		t.Fatalf("admin re-run, not secure: %d %s %s", code, out, errs)
+	}
+	r6 := rosterOf(t, mac)
+	wantRequest(t, requestBlock(t, out, "Sign roster v6"), "mac: secure -> not secure", "signs "+sum8(r6.Bytes()))
+}
+
+// A cancelled dialog signs nothing: the roster stays at its version.
+func TestHostsSetCancelledAtTheDialogSignsNothing(t *testing.T) {
+	atScreenForTest(t)
+	t.Setenv("BMESH_KEY_STORE", "keychain")
+	t.Setenv("FAKE_SECURITY_DIR", filepath.Join(t.TempDir(), "items"))
+	t.Setenv("FAKE_OSASCRIPT_ANSWER", "")
+	url := meshtest.Start(t)
+	mac := newBox(t, "mac", url)
+	if out, errs, code := mac.run(t, "y\nn\n", "init", "--hosts", "--admin"); code != 0 || !strings.Contains(out, "roster v1") {
+		t.Fatalf("admin init: %d %s %s", code, out, errs)
+	}
+	accept := strings.Join(rosterOf(t, mac).Hosts[0].Accept, ",")
+	t.Setenv("FAKE_OSASCRIPT_ANSWER", "cancel")
+	out, errs, code := mac.run(t, "", "hosts", "set", "mac", "--accept", accept)
+	if code != exitRefused || !strings.Contains(errs, "cancelled at the dialog: nothing signed") {
+		t.Fatalf("cancelled set: %d %s %s", code, out, errs)
+	}
+	wantRequest(t, requestBlock(t, out, "Sign roster v2"), "no row changes")
+	if v := rosterOf(t, mac).Version; v != 1 {
+		t.Fatalf("roster v%d after a cancelled dialog", v)
+	}
+	t.Setenv("FAKE_OSASCRIPT_ANSWER", "continue")
+	if out, errs, code := mac.run(t, "", "hosts", "set", "mac", "--accept", accept); code != 0 || !strings.Contains(out, "roster v2") {
+		t.Fatalf("continued set: %d %s %s", code, out, errs)
 	}
 }
 
