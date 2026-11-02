@@ -458,6 +458,9 @@ func reviewSpecCase(name, part string) *Case {
 		{Name: "named it, and a nice-to-have on a kept promise", Play: func(r *Rehearsal) {
 			r.Reply(strings.Replace(specMissReply, "Not checked:", "### 2. Nice to have: Since could say UTC\n\nreport/report.go, `Since`: the day is a UTC day.\n\nNot checked:", 1))
 		}},
+		{Name: "named it, and its missing test", Play: func(r *Rehearsal) {
+			r.Reply(strings.Replace(specMissReply, "Not checked:", "### 2. Must fix: the test of the summary's first line that Verification asks for doesn't exist\n\nreport/report_test.go:53-61, `TestWriteSinceListsOnlyThoseOrders` checks only the order lines and `revenue  4.70`; nothing checks `orders since 2026-10-21   1`.\n\nNot checked:", 1))
+		}},
 		{Name: "named only kept promises", Fails: plantedPrefix + "window-label", Play: func(r *Rehearsal) {
 			r.Reply("### 1. Should fix: no test of an order at midnight\n\nreport/report.go, `Since`: `TestSinceCountsTheDayItNames` has no order at 00:00 on the day.\n\nVERDICT: fail")
 		}},
