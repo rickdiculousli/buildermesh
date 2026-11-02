@@ -1215,11 +1215,13 @@ func TestRun(t *testing.T) {
 
 const fakeLeadClaude = `#!/bin/sh
 # A fake lead: in its worktree it starts, fixes the receipt, sets its spec
-# done, commits, reads its inbox and readies, all through the fake bmesh.
+# done with its Shown section, commits, reads its inbox and readies, all through the fake bmesh.
 pwd >"$FAKE_CLAUDE_DIR/cwd"
 bmesh started --text "012" >/dev/null
 sed 's/"Totl"/"Total"/' cart/receipt.go >cart/receipt.go.new && mv cart/receipt.go.new cart/receipt.go
 bmesh spec set --id 012 --status done >/dev/null
+spec=docs/proposals/012-the-receipt-says-total.md
+awk '/^## Risks/{print "## Shown\n- the receipt says Total: TestReceiptSaysTotal in cart/cart_test.go\n- Easy to miss: only the label: cart/receipt.go\n"}1' $spec >$spec.new && mv $spec.new $spec
 git commit -qam "The receipt says Total" && bmesh routine run verify >/dev/null && bmesh inbox >/dev/null && bmesh ready --text "012 ready" >/dev/null
 printf '{"type":"result","subtype":"success","is_error":false,"result":"Ready: the daemon lands it.","session_id":"fake-lead","num_turns":5,"duration_ms":1000,"total_cost_usd":0.01}\n'
 `

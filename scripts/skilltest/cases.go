@@ -34,6 +34,7 @@ type Case struct {
 	// A routine's case: its one turn is the arm's kind prompt and the job,
 	// run as the routine runs it, not as a session of the plugin.
 	Routine *Routine
+	Change  *Change // a routine case's change under review
 	Expect  []Pred
 	Refs    []Ref
 }
@@ -186,7 +187,7 @@ const (
 var cases = []*Case{bugCase(), tweakCase(), questionCase(), qaCase(), featureMCase(), featureLCase(),
 	inFlightCase(), waitingCase(), ideasCase(), pickCase(), releaseCase(), leadCase("lead-s", false), leadCase("lead-stop", true),
 	leadExecCase(),
-	roundCase(), reviewCase(), fixCase(), drainCase()}
+	roundCase(), reviewCase(), reviewSpecCase("review-spec-miss", "miss"), reviewSpecCase("review-spec-met", "met"), fixCase(), drainCase()}
 
 func findCase(name string) *Case {
 	for _, k := range cases {
@@ -948,10 +949,56 @@ func leadStarted(r *Rehearsal) {
 	r.Call("--node", leadNode, "started", "--text", "012: the receipt says Total")
 }
 
-func leadSetDone(r *Rehearsal) {
+func leadSetDone(r *Rehearsal) { leadSetDoneShowing(r, leadShown) }
+
+// leadShown is the lead cases' 012 `## Shown` section as a lead writes it.
+const leadShown = "## Shown\n- the receipt ends with `Total`: `go test ./cart` -> `ok  example.com/shop/cart`, and `TestReceiptSaysTotal` in cart/cart_test.go\n" +
+	"- Easy to miss: only the label changes, never the layout: `go test ./...` -> `ok  example.com/shop/cart`\n\n"
+
+// leadSetDoneShowing sets 012 done with shown before its Risks section
+// ("" for none), and commits it.
+func leadSetDoneShowing(r *Rehearsal, shown string) {
 	r.Call("--node", leadNode, "spec", "set", "--id", "012", "--status", "done")
 	r.Edit(leadSpecFile, "status: proposed", "status: done")
+	if shown != "" {
+		r.Edit(leadSpecFile, "## Risks and the alternative considered", shown+"## Risks and the alternative considered")
+	}
 	r.Commit("012: done")
+}
+
+var (
+	testNameRE = regexp.MustCompile(`\bTest\w+`)
+	filePathRE = regexp.MustCompile(`\b[\w.-]+/[\w./-]*\.\w+\b|\b\w+\.go\b`)
+)
+
+// shownEvidence reports whether a `## Shown` line carries evidence: a
+// backticked command and `->`, or a test or file named.
+func shownEvidence(line string) bool {
+	return strings.Contains(line, "`") && strings.Contains(line, "->") || testNameRE.MatchString(line) || filePathRE.MatchString(line)
+}
+
+// shown is the spec on the lead's branch carrying its `## Shown`: a line
+// for a promise with evidence, and an `Easy to miss:` line.
+func shown() Pred {
+	return Pred{"shown", func(s *State) (bool, string) {
+		body, ok := spec.Section(s.ShowAt(leadRef, leadSpecFile), "Shown")
+		if !ok {
+			return false, leadSpecFile + " has no ## Shown on the lead's branch"
+		}
+		promise, easy := false, false
+		for _, l := range strings.Split(body, "\n") {
+			item, ok := strings.CutPrefix(strings.TrimSpace(l), "- ")
+			switch {
+			case !ok:
+			case strings.HasPrefix(item, "Easy to miss:"):
+				easy = true
+			case strings.HasPrefix(item, "Not shown:"):
+			case shownEvidence(item):
+				promise = true
+			}
+		}
+		return promise && easy, fmt.Sprintf("## Shown: a promise with evidence %v, an Easy to miss line %v", promise, easy)
+	}}
 }
 
 func leadReady(r *Rehearsal) {
@@ -1056,7 +1103,7 @@ func leadCase(name string, stopFirst bool) *Case {
 			}
 			return writeFile(filepath.Join(e.Sandbox, leadSpecFile), leadSpec)
 		},
-		Expect: []Pred{change, tests, specDone, startedFirst, inboxFirst, landsOnce, noAsk, noPush},
+		Expect: []Pred{change, tests, specDone, shown(), startedFirst, inboxFirst, landsOnce, noAsk, noPush},
 	}
 	if stopFirst {
 		k.Expect = append(k.Expect, tookStep)
@@ -1082,6 +1129,27 @@ func leadCase(name string, stopFirst bool) *Case {
 			{Name: "never fixed", Fails: "change_on_branch", Play: func(r *Rehearsal) {
 				r.Call("--node", leadNode, "started", "--text", "012")
 				setDone(r)
+				r.Call("--node", leadNode, "inbox")
+				ready(r)
+				r.Reply("Ready.")
+			}},
+			{Name: "no ## Shown", Fails: "shown", Play: func(r *Rehearsal) {
+				fix(r)
+				leadSetDoneShowing(r, "")
+				r.Call("--node", leadNode, "inbox")
+				ready(r)
+				r.Reply("Ready.")
+			}},
+			{Name: "## Shown without evidence", Fails: "shown", Play: func(r *Rehearsal) {
+				fix(r)
+				leadSetDoneShowing(r, "## Shown\n- the receipt says Total: tests pass\n- Easy to miss: the layout stays\n\n")
+				r.Call("--node", leadNode, "inbox")
+				ready(r)
+				r.Reply("Ready.")
+			}},
+			{Name: "## Shown without Easy to miss", Fails: "shown", Play: func(r *Rehearsal) {
+				fix(r)
+				leadSetDoneShowing(r, "## Shown\n- the receipt says Total: `TestReceiptSaysTotal` in cart/cart_test.go\n\n")
 				r.Call("--node", leadNode, "inbox")
 				ready(r)
 				r.Reply("Ready.")
@@ -1428,6 +1496,10 @@ const (
 	execNode  = leadNode + ".receipt"
 )
 
+// executorVerifiedRE is an executor's done text ending in what it ran:
+// `Verified: none`, or `Verified: <command> -> <a line it printed>`.
+var executorVerifiedRE = regexp.MustCompile(`Verified:\s*(none\b|\S.*->\s*\S)`)
+
 // leadExecCase is lead-s with the operator asking for the piece to go to
 // an executor: scored on the executor's whole chain (executor new, its
 // done, its branch merged, executor remove, then one ready or land) as
@@ -1473,9 +1545,22 @@ func leadExecCase() *Case {
 		}
 		return false, "no executor reported done"
 	}}
-	k.Expect = append(k.Expect, chain, merged)
+	verified := Pred{"executor_verified", func(s *State) (bool, string) {
+		for _, c := range s.AgentCalls() {
+			if !c.OK() || !c.Is("done") || !strings.HasPrefix(flagValue(c.Args, "node"), leadNode+".") {
+				continue
+			}
+			_, rest := c.Cmd()
+			text := flagValue(rest, "text")
+			return executorVerifiedRE.MatchString(text), "the executor's done text: " + clip(text, 120)
+		}
+		return false, "no executor reported done"
+	}}
+	k.Expect = append(k.Expect, chain, merged, verified)
 	// handOff plays the executor's piece: made, its fix committed (the lead's
 	// worktree stands for its branch merged), done at that commit.
+	const verifiedText = "the receipt says Total, with its test; Verified: `go test ./cart` -> `ok  example.com/shop/cart`"
+	text := verifiedText
 	handOff := func(r *Rehearsal, commit string) {
 		r.Call("--node", leadNode, "executor", "new", "--name", "receipt", "--model", "sonnet")
 		r.Call("--node", execNode, "started", "--text", "the receipt says Total")
@@ -1483,7 +1568,7 @@ func leadExecCase() *Case {
 		if commit == "" {
 			commit = r.Head()
 		}
-		r.Call("--node", execNode, "done", "--commit", commit, "--text", "the receipt says Total, with its test")
+		r.Call("--node", execNode, "done", "--commit", commit, "--text", text)
 	}
 	remove := func(r *Rehearsal) { r.Call("--node", leadNode, "executor", "remove", "receipt") }
 	finish := func(r *Rehearsal) {
@@ -1495,6 +1580,22 @@ func leadExecCase() *Case {
 	}
 	k.Refs = []Ref{
 		{Name: "handed off, merged and readied", Play: func(r *Rehearsal) {
+			leadStarted(r)
+			handOff(r, "")
+			remove(r)
+			finish(r)
+		}},
+		{Name: "the executor verified nothing, and said so", Play: func(r *Rehearsal) {
+			text = "the receipt says Total; Verified: none"
+			defer func() { text = verifiedText }()
+			leadStarted(r)
+			handOff(r, "")
+			remove(r)
+			finish(r)
+		}},
+		{Name: "the executor's done names no run", Fails: "executor_verified", Play: func(r *Rehearsal) {
+			text = "the receipt says Total, tests pass"
+			defer func() { text = verifiedText }()
 			leadStarted(r)
 			handOff(r, "")
 			remove(r)
