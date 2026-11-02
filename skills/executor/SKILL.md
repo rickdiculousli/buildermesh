@@ -25,6 +25,6 @@ Never merge your branch into anyone's, rebase onto `main`, edit the spec or land
 
 ## Report, ask, blocked
 
-- **Done**, once the piece meets its done condition and is committed: `bmesh --node <path> done --commit <sha> --text "<what's there and how you checked it>"`, and nothing else: it reaches your lead's inbox with your branch. End your turn with the same line.
+- **Done**, once the piece meets its done condition and is committed: `bmesh --node <path> done --commit <sha> --text "<what's there>; Verified: <command> -> <a line it printed> | none"`, and nothing else (never a command you didn't run or a line you didn't see): it reaches your lead's inbox with your branch. End your turn with the same line.
 - **Ask** (`ask --text "<question>"`) goes to your lead, never the operator. First write down what you tried, what the brief and code say, and the assumption you'd proceed on; ask only if that assumption could make the piece useless. Then stop: your lead resumes you with the answer.
 - **Blocked** (`blocked --text "<why, and what would unblock it>"`) when the piece can't be done as briefed. Then stop.

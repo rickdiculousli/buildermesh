@@ -24,7 +24,7 @@ Send it as your first `bmesh progress --text "shape: <the cut and why; what goes
 
 Every call re-reads your whole context: the session's setup, what you read to understand the change, and the output of everything since. Keep for yourself the reading that decides the shape, code whose pieces depend on each other, and the judgment calls. Hand an executor a run of settled work that needs only part of what you read (a separate file or concern, a browser check where the repo has no capture kind, the tests one area broke, a settled change carried through files you haven't needed to read), even runs that must go one after another, once you can write a done condition you can check. Never split one file between executors, and cut as few pieces as keep each narrow: each pays again for its share of the reading. Routines do review, verify and captures (`bmesh routine list`).
 
-`bmesh executor new --name <name> --model <m>` makes its worktree and branch from your HEAD and prints its brief, and how to start and when to resume it. Sonnet for a piece a careful junior could do from the brief; Opus where it needs judgment. When it reports done, `git merge` its branch into yours (its conflicts are yours), then `bmesh executor remove <name>`.
+`bmesh executor new --name <name> --model <m>` makes its worktree and branch from your HEAD and prints its brief, and how to start and when to resume it. Sonnet for a piece a careful junior could do from the brief; Opus where it needs judgment. When it reports done, `git merge` its branch into yours (its conflicts are yours), then `bmesh executor remove <name>`; a done that ends `Verified: none` is a piece you check yourself before merging.
 
 ## Checkpoints
 
@@ -36,11 +36,18 @@ While executors or routines run and you have nothing else to do, end your turn (
 
 When your brief opens with a setup command, run `bmesh setup` first, and again after you change dependencies. While building, run the tests you touch; the whole suite is the verify routine's. Once the code is final, commit and `bmesh routine run verify`: that run is the verify. Add what the spec's Verification asks for, and one `surface` job per UI surface you touched where the repo has that kind.
 
-Size the review by the change as built: none for XS or S, Opus at medium effort for M and high for L or larger, in a fresh session; landing queues it. A change whose scope grew is reviewed at the size it grew to (`--size <M|L>` on `ready` or `land`). One reviewer, one pass: fix its findings and land; a second pass only after a rebase changed the code; a taste finding goes in your final message. With no `review` kind, an Opus subagent at that effort gets the spec and `git diff main...HEAD`, and you record its verdict with `bmesh result record review --ok|--fail --model <its model>`. To read the findings before landing, `bmesh routine queue review --go --effort <medium|high> --text "base: $(git merge-base origin/main HEAD)"` and end your turn: its reply wakes you.
+Size the review by the change as built: none for XS or S, Opus at medium effort for M and high for L or larger, in a fresh session; landing queues it. A change whose scope grew is reviewed at the size it grew to (`--size <M|L>` on `ready` or `land`). One reviewer, one pass: fix its findings and land; a second pass only after a rebase changed the code; a taste finding goes in your final message. With no `review` kind, an Opus subagent at that effort gets the spec and `git diff main...HEAD`, and you record its verdict with `bmesh result record review --ok|--fail --model <its model>`. To read the findings before landing, fill `## Shown` (see Land) and commit, then `bmesh routine queue review --go --effort <medium|high> --text "base: $(git merge-base origin/main HEAD)"` and end your turn: its reply wakes you.
 
 ## Land
 
 Ask first: what does this diff touch or invalidate? List every caller, config key, document and test (`git diff main...HEAD --stat`, then grep each changed name) and check each is updated or unaffected. Make the spec's `## Needs from the operator` true as built, one `-` line per step (a box in brackets first when the step is one box's, `check: <command>` last when a command can tell it's done). Set the spec `done` on your branch (`bmesh spec set --id NNN --status done`, committed), so it lands with the code.
+
+In that commit, fill the spec's `## Shown` (add it after `## Verification` when the spec has none); the reviewer checks each line against the code:
+- `- <the promise, in a few words>: <evidence>`, one per promise of `What you'll see` and per `Verification` item past the verify run. Evidence is a command you ran and one line it printed, copied (`` `cmd` -> `line` ``), or a file in the tree (a test by name); never a command you didn't run or a line you didn't see.
+- `- Easy to miss: <the one rule of the spec the quickest finish would skip>: <evidence>`.
+- `- Not shown: <promise>: <why>` for what you couldn't show.
+
+Your done line ends `shown <n> of <m>` and names each `Not shown` promise; your closing message quotes the section.
 
 Friction outside your spec that another build would hit (a `bmesh` command, a skill, a brief, the repo's tooling) gets one `bmesh feedback "<what you hit and what you did about it>" --repo <the repo it is in>` each (`buildermesh` for bmesh, a skill or a brief), once you've decided you're done.
 
