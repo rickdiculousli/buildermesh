@@ -29,25 +29,26 @@ var liveStates = map[string]bool{"working": true, "asking": true, "blocked": tru
 
 // UsageAgent is one agent's row on the map.
 type UsageAgent struct {
-	Agent       string      `json:"agent"`
-	Role        string      `json:"role"`
-	Host        string      `json:"host"`
-	Repo        string      `json:"repo"`
-	Size        string      `json:"size"`
-	State       string      `json:"state"`
-	Live        bool        `json:"live"`
-	Main        usage.Kinds `json:"main"`
-	Sub         usage.Kinds `json:"sub"`
-	Read        int64       `json:"read"`
-	Out         int64       `json:"out"`
-	Design      *int64      `json:"design,omitempty"` // a coordinator's read by phase
-	Exec        *int64      `json:"exec,omitempty"`
-	Peak        int64       `json:"peak"`
-	LastCtx     int64       `json:"last_ctx"`
-	First       int64       `json:"first"`
-	Last        int64       `json:"last"`
-	Calls       int         `json:"calls"`
-	Compactions int         `json:"compactions"`
+	Agent       string       `json:"agent"`
+	Role        string       `json:"role"`
+	Host        string       `json:"host"`
+	Repo        string       `json:"repo"`
+	Size        string       `json:"size"`
+	State       string       `json:"state"`
+	Live        bool         `json:"live"`
+	Main        usage.Kinds  `json:"main"`
+	Sub         usage.Kinds  `json:"sub"`
+	Read        int64        `json:"read"`
+	Out         int64        `json:"out"`
+	Design      *int64       `json:"design,omitempty"` // a coordinator's read by phase
+	Exec        *int64       `json:"exec,omitempty"`
+	Peak        int64        `json:"peak"`
+	LastCtx     int64        `json:"last_ctx"`
+	First       int64        `json:"first"`
+	Last        int64        `json:"last"`
+	Calls       int          `json:"calls"`
+	Compactions int          `json:"compactions"`
+	Flags       []usage.Flag `json:"flags"` // the rules it trips (108), the worst first
 }
 
 // Roles is the read per bucket of each role series.
@@ -90,6 +91,8 @@ type UsageView struct {
 	Sessions []UsageSession       `json:"sessions"`
 	Quota    []usage.QuotaReading `json:"quota"`
 	Context  Thresholds           `json:"context"`
+	Band     []BandRow            `json:"band"`     // the flagged live agents (108)
+	Outliers []Outlier            `json:"outliers"` // every lead and fixer with use in 30 days
 }
 
 // AgentCall is one call on the context chart; M is minutes since the
@@ -239,7 +242,7 @@ func (s *server) readUsage(ctx context.Context, since time.Time, f usage.Filter)
 func (s *server) agentRow(ctx context.Context, a usage.Agent, calls []usage.Call, h histEntry, to int64) UsageAgent {
 	u := UsageAgent{Agent: a.Agent, Role: a.Role, Host: a.Host, Repo: a.Repo, Main: a.Main, Sub: a.Sub,
 		Read: a.Read(), Out: a.Main.Out + a.Sub.Out, Peak: a.Peak, LastCtx: a.LastCtx,
-		First: unix(a.First), Last: unix(a.Last), Calls: a.Calls, Compactions: a.Compactions}
+		First: unix(a.First), Last: unix(a.Last), Calls: a.Calls, Compactions: a.Compactions, Flags: []usage.Flag{}}
 	if a.Role == usage.Coordinator {
 		var d, e int64
 		for _, c := range calls {
@@ -360,6 +363,9 @@ func (s *server) usageView(r *http.Request, now time.Time, span time.Duration, s
 		}
 	}
 	sort.SliceStable(v.Sessions, func(i, j int) bool { return v.Sessions[i].First < v.Sessions[j].First })
+	if v.Band, v.Outliers, err = s.flagView(ctx, h, rep, v.Agents, now); err != nil {
+		return UsageView{}, err
+	}
 	return v, nil
 }
 

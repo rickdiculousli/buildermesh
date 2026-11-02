@@ -48,6 +48,9 @@ type server struct {
 
 	usageMu    sync.Mutex            // held through a read of usageCache
 	usageCache map[string]usageEntry // /api/usage by window
+
+	baseMu sync.Mutex // held through a read of base
+	base   baseEntry  // the baselines and the 30 days' use (108)
 }
 
 type histEntry struct {
