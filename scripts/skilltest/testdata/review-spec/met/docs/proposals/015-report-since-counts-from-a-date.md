@@ -30,7 +30,7 @@ Judge: opus, because the summary must never pass a partial count off as the whol
 - counts from the day, the day itself included: `TestSinceCountsTheDayItNames` in report/report_test.go
 - `--verbose --since` lists only those orders: `TestWriteSinceNamesTheWindow` in report/report_test.go
 - the summary's first line names the window: `go run ./cmd/shop report --since 2026-10-21` -> `orders since 2026-10-21   1`, and `TestWriteSinceNamesTheWindow`
-- Easy to miss: a bad date is refused, never read as no filter: `go run ./cmd/shop report --since 10/21` -> `shop: --since "10/21" is not a date (YYYY-MM-DD)`
+- Easy to miss: a bad date is refused, never read as no filter: `go run ./cmd/shop report --since ""` -> `invalid value "" for flag -since: "" is not a date (YYYY-MM-DD)`, and `TestReportSince` refuses `10/21`, `""` and a stray argument
 
 ## Risks and the alternative considered
 A bad date is refused (exit 2), never read as no filter. Considered: a separate `shop week` command, a second report to keep in step.

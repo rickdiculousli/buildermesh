@@ -81,28 +81,31 @@ func reportCmd(st *store.Store, args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("report", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	verbose := fs.Bool("verbose", false, "list each order before the summary")
-	since := fs.String("since", "", "count only the orders placed on this day (YYYY-MM-DD) or later")
+	var since *time.Time
+	fs.Func("since", "count only the orders placed on this day (YYYY-MM-DD) or later", func(s string) error {
+		d, err := time.Parse("2006-01-02", s)
+		if err != nil {
+			return fmt.Errorf("%q is not a date (YYYY-MM-DD)", s)
+		}
+		since = &d
+		return nil
+	})
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	var day time.Time
-	if *since != "" {
-		d, err := time.Parse("2006-01-02", *since)
-		if err != nil {
-			fmt.Fprintf(stderr, "shop: --since %q is not a date (YYYY-MM-DD)\n", *since)
-			return 2
-		}
-		day = d
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "shop: report takes no arguments, got %q\n%s\n", fs.Args(), usage)
+		return 2
 	}
 	orders, err := st.Orders()
 	if err != nil {
 		fmt.Fprintln(stderr, "shop:", err)
 		return 1
 	}
-	if *since == "" {
+	if since == nil {
 		err = report.Write(stdout, orders, *verbose)
 	} else {
-		err = report.WriteSince(stdout, orders, *verbose, day)
+		err = report.WriteSince(stdout, orders, *verbose, *since)
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, "shop:", err)
