@@ -75,7 +75,7 @@ func TestTimelineStateTransitions(t *testing.T) {
 		ev(120, "app-001", "ready", "third", ""),
 		ev(130, "app-001", "done", "landed", ""),
 	}
-	l := lane(t, Timeline(nodes, hist, min0(0), min0(200), 0), "app-001")
+	l := lane(t, Timeline(nodes, nil, hist, min0(0), min0(200), 0), "app-001")
 	want := []Seg{seg(0, 10, "idle"), seg(10, 30, "working"), seg(30, 40, "asking"), seg(40, 50, "working"),
 		seg(50, 60, "blocked"), seg(60, 70, "working"), seg(70, 80, "held"), seg(80, 90, "working"),
 		seg(90, 100, "silent"), seg(100, 110, "landing"), seg(110, 115, "working"), seg(115, 118, "landing"),
@@ -103,7 +103,7 @@ func TestTimelineLaneWorkingAtWindowStart(t *testing.T) {
 	nodes := []mesh.Node{node("app-001", "lead", "", 0)}
 	hist := []mesh.Stored{ev(1, "app-001", "started", "", ""), ev(2, "app-001", "progress", "early", ""),
 		ev(100, "app-001", "ask", "late", "")}
-	v := Timeline(nodes, hist, min0(60), min0(120), 0)
+	v := Timeline(nodes, nil, hist, min0(60), min0(120), 0)
 	l := lane(t, v, "app-001")
 	if want := []Seg{seg(60, 100, "working"), seg(100, 120, "asking")}; !reflect.DeepEqual(l.Segs, want) {
 		t.Fatalf("segs %v, want %v", l.Segs, want)
@@ -120,7 +120,7 @@ func TestTimelineDaemonEventSetsItsTo(t *testing.T) {
 	nodes := []mesh.Node{node("app-001", "lead", "", 0), node("app-002", "lead", "", 0)}
 	hist := []mesh.Stored{ev(1, "app-001", "started", "", ""), ev(1, "app-002", "started", "", ""),
 		ev(5, "daemon.k16", "silent", "quiet", "app-002"), ev(6, "daemon.k16", "wake", "nudged", "app-001")}
-	v := Timeline(nodes, hist, min0(0), min0(10), 0)
+	v := Timeline(nodes, nil, hist, min0(0), min0(10), 0)
 	if l := lane(t, v, "app-002"); l.State != "silent" || l.Segs[len(l.Segs)-1] != seg(5, 10, "silent") {
 		t.Fatalf("app-002 %+v", l)
 	}
@@ -138,12 +138,35 @@ func TestTimelineDoneEndsLaneAndHidesOlderDone(t *testing.T) {
 	nodes := []mesh.Node{node("app-001", "lead", "", 0), node("app-002", "lead", "", 0)}
 	hist := []mesh.Stored{ev(1, "app-001", "started", "", ""), ev(5, "app-001", "done", "landed", ""),
 		ev(1, "app-002", "started", "", ""), ev(50, "app-002", "done", "landed", "")}
-	v := Timeline(nodes, hist, min0(30), min0(60), 0)
+	v := Timeline(nodes, nil, hist, min0(30), min0(60), 0)
 	if got := lanePaths(v); !reflect.DeepEqual(got, []string{"app-002"}) {
 		t.Fatalf("lanes %v, want only app-002 (app-001 was done before the window)", got)
 	}
 	if l := v.Lanes[0]; !reflect.DeepEqual(l.Segs, []Seg{seg(30, 50, "working")}) || l.State != "done" {
 		t.Fatalf("app-002 %+v", l)
+	}
+}
+
+func TestTimelineNodeWhoseEventsAgedOutStartsFromItsStoredState(t *testing.T) {
+	// app-020 and app-021 started and their events left the stream: only
+	// their records and stored states remain; app-022 never started.
+	nodes := []mesh.Node{node("app-020", "lead", "", -60*24*31), node("app-021", "lead", "", -60*24*40),
+		node("app-022", "lead", "", -60*24*40), node("app-001", "lead", "", 0)}
+	states := map[string]mesh.State{
+		"app-020": {State: "done", At: min0(-60 * 24 * 30).Format(time.RFC3339)},
+		"app-021": {State: "blocked", At: min0(-60 * 24 * 39).Format(time.RFC3339)},
+		"app-001": {State: "working", At: min0(1).Format(time.RFC3339)},
+	}
+	hist := []mesh.Stored{ev(1, "app-001", "started", "", "")}
+	v := Timeline(nodes, states, hist, min0(0), min0(60), 0)
+	if got := lanePaths(v); !reflect.DeepEqual(got, []string{"app-021", "app-001", "app-022"}) {
+		t.Fatalf("lanes %v, want no lane for the done app-020", got)
+	}
+	if l := lane(t, v, "app-021"); !reflect.DeepEqual(l.Segs, []Seg{seg(0, 60, "blocked")}) {
+		t.Fatalf("app-021 %+v", l)
+	}
+	if l := lane(t, v, "app-001"); !reflect.DeepEqual(l.Segs, []Seg{seg(0, 1, "idle"), seg(1, 60, "working")}) {
+		t.Fatalf("a node with events keeps its replay: %+v", l)
 	}
 }
 
@@ -157,13 +180,13 @@ func TestTimelineChildrenFollowTheirLeadInNeedOrder(t *testing.T) {
 		ev(5, "old-9.fix", "started", "", ""),
 		// app-003 is registered and never started: idle.
 	}
-	v := Timeline(nodes, hist, min0(0), min0(10), 0)
+	v := Timeline(nodes, nil, hist, min0(0), min0(10), 0)
 	want := []string{"app-002", "app-001", "app-001.web", "app-001.api", "old-9.fix", "app-003"}
 	if got := lanePaths(v); !reflect.DeepEqual(got, want) {
 		t.Fatalf("order %v, want %v", got, want)
 	}
 	// Blocked for longer than stale_after: after held, ahead of idle.
-	if got := lanePaths(Timeline(nodes, hist, min0(0), min0(10), time.Minute)); !reflect.DeepEqual(got,
+	if got := lanePaths(Timeline(nodes, nil, hist, min0(0), min0(10), time.Minute)); !reflect.DeepEqual(got,
 		[]string{"app-001", "app-001.api", "app-001.web", "old-9.fix", "app-002", "app-003"}) {
 		t.Fatalf("stale order %v", got)
 	}
@@ -186,7 +209,7 @@ func TestTimelineRoutineJobsAndJobTicks(t *testing.T) {
 		ev(13, "routine.review.b", "progress", "job j3 started", ""),
 		ev(14, "routine.review.b", "progress", "job j3 fail 1000", ""),
 	}
-	v := Timeline(nodes, hist, min0(0), min0(20), 0)
+	v := Timeline(nodes, nil, hist, min0(0), min0(20), 0)
 	if got := lanePaths(v); !reflect.DeepEqual(got, []string{"app-001", "routine.review.a", "routine.review.b"}) {
 		t.Fatalf("lanes %v", got)
 	}
@@ -202,10 +225,10 @@ func TestTimelineRoutineJobsAndJobTicks(t *testing.T) {
 		t.Fatalf("job tick %+v", l.Ticks)
 	}
 	// Window bounds: a job is clipped to the window, one wholly outside draws nothing.
-	if v := Timeline(nodes, hist, min0(5), min0(6), 0); len(lane(t, v, "routine.review.a").Segs) != 1 {
+	if v := Timeline(nodes, nil, hist, min0(5), min0(6), 0); len(lane(t, v, "routine.review.a").Segs) != 1 {
 		t.Fatalf("clipped %+v", v.Lanes)
 	}
-	if v := Timeline(nodes, hist, min0(15), min0(16), 0); len(v.Lanes) != 2 {
+	if v := Timeline(nodes, nil, hist, min0(15), min0(16), 0); len(v.Lanes) != 2 {
 		t.Fatalf("lanes %v, want app-001 and the open job only", lanePaths(v))
 	}
 }
@@ -214,7 +237,7 @@ func TestTimelineWindowBoundsClipSegmentsAndTicks(t *testing.T) {
 	nodes := []mesh.Node{node("app-001", "lead", "", 0)}
 	hist := []mesh.Stored{ev(1, "app-001", "started", "", ""), ev(5, "app-001", "progress", "in", ""),
 		ev(15, "app-001", "progress", "after", "")}
-	v := Timeline(nodes, hist, min0(2), min0(10), 0)
+	v := Timeline(nodes, nil, hist, min0(2), min0(10), 0)
 	l := lane(t, v, "app-001")
 	if !reflect.DeepEqual(l.Segs, []Seg{seg(2, 10, "working")}) {
 		t.Fatalf("segs %v", l.Segs)
@@ -223,7 +246,7 @@ func TestTimelineWindowBoundsClipSegmentsAndTicks(t *testing.T) {
 		t.Fatalf("ticks %v", l.Ticks)
 	}
 	// A node registered after the window has no lane.
-	if v := Timeline([]mesh.Node{node("app-009", "lead", "", 30)}, nil, min0(0), min0(10), 0); len(v.Lanes) != 0 {
+	if v := Timeline([]mesh.Node{node("app-009", "lead", "", 30)}, nil, nil, min0(0), min0(10), 0); len(v.Lanes) != 0 {
 		t.Fatalf("lanes %v", lanePaths(v))
 	}
 }
@@ -232,7 +255,7 @@ func TestLeadTimelineSpansItsLife(t *testing.T) {
 	nodes := []mesh.Node{node("app-001", "lead", "", 0), node("app-001.api", "executor", "app-001", 2), node("app-002", "lead", "", 0)}
 	hist := []mesh.Stored{ev(1, "app-001", "started", "", ""), ev(3, "app-001.api", "started", "", ""),
 		ev(1, "app-002", "started", "", ""), ev(300, "app-001", "done", "", "")}
-	v := LeadTimeline(nodes, hist, "app-001", min0(600))
+	v := LeadTimeline(nodes, nil, hist, "app-001", min0(600))
 	if got := lanePaths(v); !reflect.DeepEqual(got, []string{"app-001", "app-001.api"}) {
 		t.Fatalf("lanes %v", got)
 	}
@@ -241,7 +264,7 @@ func TestLeadTimelineSpansItsLife(t *testing.T) {
 	}
 	// Once all are done, the life ends at the last event.
 	hist = append(hist, ev(200, "app-001.api", "done", "", ""))
-	if v := LeadTimeline(nodes, hist, "app-001", min0(600)); v.To != min0(300).Unix() {
+	if v := LeadTimeline(nodes, nil, hist, "app-001", min0(600)); v.To != min0(300).Unix() {
 		t.Fatalf("done lead's window ends %d, want %d", v.To, min0(300).Unix())
 	}
 }
