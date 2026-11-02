@@ -302,3 +302,61 @@ func TestReviewBriefNamesBaseAndSpec(t *testing.T) {
 		t.Fatal(out)
 	}
 }
+
+// The rulings live in their own file and fill the fix brief, which renders
+// as it did when they were written into it (testdata/fix.golden); a repo's
+// .bmesh/briefs/rulings.md is no template and changes neither.
+func TestFixBriefCarriesTheRulingsAsBefore(t *testing.T) {
+	golden, err := os.ReadFile(filepath.Join("testdata", "fix.golden"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := t.TempDir()
+	dir := filepath.Join(repo, OverrideDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "rulings.md"), []byte("1. `ours`: anything goes.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := RowValues(pb, "/home/x/repos/pb")
+	v["node"], v["date"], v["plain_words"], v["rulings"] = "pb-fix-1", "2026-10-15", PlainWords, Rulings
+	for _, at := range []string{"", repo} {
+		out, err := Render(at, "fix", v)
+		if err != nil || out != string(golden) {
+			t.Fatalf("at %q: %v\n%s", at, err, out)
+		}
+	}
+	if !strings.HasPrefix(Rulings, "1. `root`:") || !strings.Contains(Rulings, "\n8. `drop`:") || strings.HasSuffix(Rulings, "\n") {
+		t.Fatalf("%q", Rulings)
+	}
+}
+
+// The manual quotes the rulings exactly, so its copy can't drift.
+func TestManualQuotesTheRulings(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "docs", "manual.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), Rulings) {
+		t.Fatal("docs/manual.md doesn't carry brief.Rulings word for word")
+	}
+}
+
+// An idea's writer checks its spec before landing; a round's threads don't.
+func TestIdeaBriefSendsItsSpecToTheCheck(t *testing.T) {
+	v := partValues("007", RoundIdea, pb)
+	v["operator_context"] = OperatorIdea("orders numbered under a lock")
+	idea, err := Render("", "engineer", v)
+	if err != nil || !strings.Contains(idea, CheckSpec) {
+		t.Fatalf("%v\n%s", err, idea)
+	}
+	for _, part := range []RoundPart{RoundAll, RoundEng, RoundUX} {
+		v := partValues("007", part, pb)
+		v["operator_context"] = OperatorContext("orders numbered under a lock")
+		out, err := Render("", "engineer", v)
+		if err != nil || strings.Contains(out, "Check the spec") {
+			t.Fatalf("%s: %v\n%s", part, err, out)
+		}
+	}
+}

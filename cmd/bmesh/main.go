@@ -262,6 +262,7 @@ commands:
                                            set specs' status and fields (--from refuses another status); --land
                                            lands the edit on main in one commit, from a bmesh worktree
   spec template [--repo R]                 print the half-pager (the repo's .bmesh/briefs/half-pager.md, else embedded)
+  spec rulings                             print the fixer's rulings, which a spec's review holds it to
   spec steps [<NNN>] [--repo R] [--tick N,N [--note W] | --check [--wait D]]
                                            a landed spec's steps for the operator, or with no id every open one;
                                            --tick records steps done on the hub, --check runs their checks

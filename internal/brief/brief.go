@@ -22,6 +22,14 @@ import (
 //go:embed templates/*.md
 var templates embed.FS
 
+//go:embed rulings.md
+var rulingsFile string
+
+// Rulings is the fixer's eight rulings, the numbered list the fix brief
+// carries and `bmesh spec rulings` prints, less the file's last newline.
+// It is no template, so no repo overrides it.
+var Rulings = strings.TrimSuffix(rulingsFile, "\n")
+
 // OverrideDir is where a repo keeps its own templates, under its root.
 const OverrideDir = ".bmesh/briefs"
 
@@ -167,6 +175,10 @@ func OperatorWords(text string) string {
 		text + "\n\n"
 }
 
+// CheckSpec is the line that sends a spec's writer to the check before it
+// lands; an idea's brief carries it, a round's never does.
+const CheckSpec = "Before landing, check the spec as the `ideate-engineer` skill's Check the spec section says."
+
 // OperatorIdea is the section an idea round's engineer gets instead of
 // OperatorContext: the round is the operator's one idea, so the engineer
 // writes that idea's spec, not a ranked list of its own.
@@ -175,7 +187,7 @@ func OperatorIdea(text string) string {
 		"It replaces the three to five specs of your own: read the repo and its ledger, measure, widen and attack this idea, " +
 		"then write its spec, one half-pager, or two or three in build order when it is too big for one lead, each naming the one before; " +
 		"sized XS or S, it is one pitch line instead, as What you pitch says. " +
-		"Propose nothing else. Your ranked list is those specs.\n\n" + strings.TrimSpace(text) + "\n\n"
+		"Propose nothing else. Your ranked list is those specs. " + CheckSpec + "\n\n" + strings.TrimSpace(text) + "\n\n"
 }
 
 // A RoundPart is the parts of the ideate method a round's thread runs:

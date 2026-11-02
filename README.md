@@ -260,6 +260,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 | [`bmesh spec next-id`](docs/manual.md#bmesh-spec-next-id) | `[--repo R] [--count N] [--peek]` |
 | [`bmesh spec set`](docs/manual.md#bmesh-spec-set) | `--id NNN[,NNN...] --status S [--repo R] [--from A,B] [--field K=V]... [--land]` |
 | [`bmesh spec template`](docs/manual.md#bmesh-spec-template) | `[--repo R]` |
+| [`bmesh spec rulings`](docs/manual.md#bmesh-spec-rulings) | |
 | [`bmesh spec steps [<NNN>]`](docs/manual.md#bmesh-spec-steps) | `[--repo R] [--tick N,N [--note W] \| --check [--wait D]]` |
 | [`bmesh spec verified`](docs/manual.md#bmesh-spec-verified) | `[--commit C]` |
 | [`bmesh build <repo> <NNN> [<NNN>...]`](docs/manual.md#bmesh-build) | `[--model M] [--effort E] [--path P] [--family F] [--hold land\|now] [--context <text\|->] [--force]` |

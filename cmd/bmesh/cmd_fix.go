@@ -85,7 +85,7 @@ func (a *app) cmdFix(args []string) error {
 	}
 	path := fmt.Sprintf("%s-fix-%d", mesh.RepoToken(own), n)
 	values := brief.RowValues(row, repoPath)
-	values["node"], values["date"], values["plain_words"] = path, time.Now().UTC().Format("2006-01-02"), brief.PlainWords
+	values["node"], values["date"], values["plain_words"], values["rulings"] = path, time.Now().UTC().Format("2006-01-02"), brief.PlainWords, brief.Rulings
 	text, err := brief.Render("", "fix", values) // the rulings are bmesh's: no repo overrides them
 	if err != nil {
 		return err

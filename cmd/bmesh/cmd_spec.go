@@ -19,7 +19,7 @@ import (
 )
 
 const specUsage = "usage: bmesh spec list [--repo R] [--status S] [--json] | next-id [--repo R] [--count N] [--peek] | " +
-	"set --id NNN[,NNN...] --status S [--repo R] [--from A,B] [--field K=V]... [--land] | template [--repo R] | " +
+	"set --id NNN[,NNN...] --status S [--repo R] [--from A,B] [--field K=V]... [--land] | template [--repo R] | rulings | " +
 	"verified [--commit C] | steps [<NNN>] [--repo R] [--tick N,N [--note W] | --check [--wait D]]"
 
 func (a *app) cmdSpec(args []string) error {
@@ -35,6 +35,8 @@ func (a *app) cmdSpec(args []string) error {
 			return a.cmdSpecSet(args[1:])
 		case "template":
 			return a.cmdSpecTemplate(args[1:])
+		case "rulings":
+			return a.cmdSpecRulings(args[1:])
 		case "steps":
 			return a.cmdSpecSteps(args[1:])
 		}
@@ -379,6 +381,20 @@ func (a *app) setSpecs(dir, where string, ids []int, status string, allowed []st
 // cmdSpecTemplate prints the half-pager: the repo's override when it has
 // one, else the embedded template. In bmesh's own repo (ownModuleRepo) it
 // carries an `## Upgrading` section before `## Needs from the operator`.
+// cmdSpecRulings prints the fixer's rulings, the text a spec's reviewer
+// holds it to; it reads no config or repo.
+func (a *app) cmdSpecRulings(args []string) error {
+	pos, err := parse(a.flags("spec rulings"), args)
+	if err != nil {
+		return err
+	}
+	if len(pos) != 0 {
+		return fail(exitUsage, specUsage)
+	}
+	fmt.Fprintln(a.stdout, brief.Rulings)
+	return nil
+}
+
 func (a *app) cmdSpecTemplate(args []string) error {
 	fs := a.flags("spec template")
 	repo := fs.String("repo", "", "repo whose override to prefer (default the current directory)")

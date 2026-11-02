@@ -341,3 +341,21 @@ func TestSpecTemplateUpgradingOnlyInOwnRepo(t *testing.T) {
 		t.Fatalf("override: %d %q", exit, out)
 	}
 }
+
+// spec rulings prints the rulings from anywhere: outside any repo, and
+// inside a repo whose .bmesh/briefs/rulings.md says otherwise.
+func TestSpecRulingsPrintsTheEmbeddedRulings(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if out, errs, exit := runCLI(t, nil, "spec", "rulings"); exit != 0 || out != brief.Rulings+"\n" {
+		t.Fatalf("anywhere: %d %q %q", exit, out, errs)
+	}
+	_, repo, _ := proposeSetup(t, "")
+	commitFile(t, repo, ".bmesh/briefs/rulings.md", "1. `ours`: anything goes.\n", "override")
+	t.Chdir(repo)
+	if out, errs, exit := runCLI(t, nil, "spec", "rulings"); exit != 0 || out != brief.Rulings+"\n" {
+		t.Fatalf("in a repo: %d %q %q", exit, out, errs)
+	}
+	if _, errs, exit := runCLI(t, nil, "spec", "rulings", "--repo", "demo"); exit != 2 || !strings.Contains(errs, "-repo") {
+		t.Fatalf("a flag: %d %q", exit, errs)
+	}
+}

@@ -62,7 +62,7 @@ func (l *Lead) branch() string   { return "bmesh/" + l.Node }
 func (l *Lead) brief(a Arm, sandbox, host string, now time.Time) (string, error) {
 	if l.Brief == "fix" {
 		values := brief.RowValues(row(sandbox, host), sandbox)
-		values["node"], values["date"], values["plain_words"] = l.Node, now.UTC().Format("2006-01-02"), brief.PlainWords
+		values["node"], values["date"], values["plain_words"], values["rulings"] = l.Node, now.UTC().Format("2006-01-02"), brief.PlainWords, brief.Rulings
 		text, err := brief.Render("", "fix", values)
 		if err != nil {
 			return "", err

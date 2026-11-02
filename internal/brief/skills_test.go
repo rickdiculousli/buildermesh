@@ -131,3 +131,31 @@ func ponytailCopies(t *testing.T) map[string]bool {
 	}
 	return copies
 }
+
+// The check of an idea's spec is written once, in ideate-engineer, and the
+// work skill's spec-writing step points at it; the idea brief names it.
+func TestSpecCheckIsWrittenOnce(t *testing.T) {
+	read := func(p ...string) string {
+		b, err := os.ReadFile(filepath.Join(append([]string{"..", "..", "skills"}, p...)...))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	eng := read("ideate-engineer", "SKILL.md")
+	for _, w := range []string{"\n## Check the spec\n", "`bmesh spec rulings`", "**load-bearing**", "**security**", "**cross-cutting**",
+		"`qa: none (<why>)`", "`qa: opus (<why>): N fixed, M notes`", "`qa: skipped by the operator (<why>)`", "`qa: not run (<why>)`"} {
+		if !strings.Contains(eng, w) {
+			t.Errorf("ideate-engineer lacks %q", w)
+		}
+	}
+	if i, j := strings.Index(eng, "\n## Check the spec\n"), strings.Index(eng, "\n## Land on main\n"); i < 0 || j < i {
+		t.Error("Check the spec isn't before Land on main")
+	}
+	if !strings.Contains(read("work", "references", "leads.md"), "(../../ideate-engineer/SKILL.md#check-the-spec)") {
+		t.Error("the work skill's spec step doesn't point at the check")
+	}
+	if !strings.Contains(CheckSpec, "`ideate-engineer` skill's Check the spec section") {
+		t.Errorf("%q", CheckSpec)
+	}
+}

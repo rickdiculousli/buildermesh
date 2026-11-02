@@ -37,6 +37,20 @@ Rank as many as your brief asks, best first, in one list across both parts: what
 - Half a page each, evidence over adjectives. "Needs from the operator" stays empty unless a taste call really is theirs, or some box must set a config key to turn the change on (name the key and its file).
 - No product code changes. `bmesh spec list --repo .` must list each with no error.
 
+## Check the spec
+
+Only for a spec of the operator's own idea (your brief or the `work` skill sends you here); a round's own specs skip it. You wrote it and read the code it touches, so judge, against the repo's `AGENTS.md`, whether a mistake in it would be costly:
+
+- **load-bearing**: it changes what other parts trust or keep: stored records, data or wire formats, keys or IDs, a migration, the merge, release or deploy path, or the checks that gate them;
+- **security**: auth, permissions, secrets or keys, signing, sensitive or personal data, network exposure, or acting on input from outside the trust boundary;
+- **cross-cutting**: it reaches across most of the codebase, or changes an interface other code or repos depend on, or config or text loaded everywhere.
+
+None applies: land it. One does: in the operator's chat, ask in one line before landing, `<which, one clause why>: an Opus review of the spec first? (minutes; yes/no)`, and a no lands it; an idea thread asks nothing (an ask costs hours) and reviews.
+
+The review: run `bmesh spec rulings`; if it fails, land without one. Start one fresh Opus subagent, of a read-only agent type where the harness has one, with nothing of your reasoning. Its prompt: the spec's path and repo; "read the code and specs it names"; "read 'fix' as this spec's change and 'issue' as the gap its Opportunity names"; the rulings verbatim; to start no thread or job, write no record (no `ideate`, `build`, `fix`, `lead start`, `executor new`, `routine queue` or `run`, `spec set`, `land`, `done`) and edit, commit or push nothing; to return its findings ranked, each with evidence and a fix to the spec's text. A break of `root`, `failing-first`, `smallest`, `structure` or `drop` is a defect: fix each. A break of `premise`, `no-new-surface` or `reversible` is a note for the operator. No second pass.
+
+The Propose commit's message and the spec's report line carry one of `qa: none (<why>)`, `qa: opus (<why>): N fixed, M notes`, `qa: skipped by the operator (<why>)` or `qa: not run (<why>)`, the notes and taste notes listed under the line.
+
 ## Land on main
 
 Change nothing outside `docs/proposals/`. Commit on your branch, then:

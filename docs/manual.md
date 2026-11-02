@@ -599,7 +599,7 @@ To level `main`, `ideate` runs `fetch origin +refs/heads/main:refs/remotes/origi
 **`--idea`** makes the round your one idea, given in `--context` (refused without it, exit 2):
 
 - Only the engineer starts (`ux_host` is neither checked nor prompted for), on the engineering part.
-- Its brief gets `## The operator's idea` instead of the focus section: write that idea's spec, one half-pager or two or three in build order (an idea sized XS or S is a pitch line instead), and nothing else. Its opening, partner and numbering lines match (`{{round_ask}}`, `{{round_partner}}`, `{{ux_ids}}` for a repo's own engineer template).
+- Its brief gets `## The operator's idea` instead of the focus section: write that idea's spec, one half-pager or two or three in build order (an idea sized XS or S is a pitch line instead), and nothing else, and check it before landing as the `ideate-engineer` skill's Check the spec section says (a round's own specs skip it; see [The plugin](#the-plugin)). Its opening, partner and numbering lines match (`{{round_ask}}`, `{{round_partner}}`, `{{ux_ids}}` for a repo's own engineer template).
 - The `started` text reads `round <N> on <repo>: one idea, eng on <host>` (a round's reads `round <N> on <repo>: eng on <host>[, ux on <ux_host>]`).
 - The round settles on the engineer alone; its pitch is the engineer's line.
 
@@ -625,6 +625,7 @@ bmesh spec list [--repo R] [--status S] [--json]
 bmesh spec next-id [--repo R] [--count N] [--peek]
 bmesh spec set --id NNN[,NNN...] --status S [--repo R] [--from A,B] [--field K=V]... [--land]
 bmesh spec template [--repo R]
+bmesh spec rulings
 bmesh spec verified [--commit C]
 bmesh spec steps [<NNN>] [--repo R] [--tick N,N [--note W] | --check [--wait D]]
 ```
@@ -725,6 +726,14 @@ bmesh spec template [--repo R]
 Prints the half-pager: the repo's `.bmesh/briefs/half-pager.md`, else the embedded one. The embedded one's sections are `## Opportunity`, `## Proposal`, `## What you'll see`, `## Verification`, `## Shown`, `## Risks and the alternative considered` and `## Needs from the operator`. `## Shown` is empty when proposed: the lead fills it in the commit that sets the spec done, one `- <promise>: <evidence>` line per promise of What you'll see and per Verification item past the repo's verify (the evidence a command it ran and a line it printed, `` `cmd` -> `line` ``, or a file in the tree), one `- Easy to miss: <rule>: <evidence>` line, and `- Not shown: <promise>: <why>` for what it couldn't show. The review reads it (see [`bmesh land`](#bmesh-land)).
 
 **Details.** In bmesh's own repo (its `go.mod` declares this binary's module), it adds an `## Upgrading` section before `## Needs from the operator` unless the text has one. The section holds the steps an install from the previous release needs, for any fleet, or `nothing`; a new config key is written as an ask (what changed, question, choices, default). `release` reads the section (see [`bmesh release`](#bmesh-release)).
+
+#### `bmesh spec rulings`
+
+```
+bmesh spec rulings
+```
+
+Prints the fixer's eight rulings (see [The fixer](#the-fixer)), the numbered list the fix brief carries, from any directory. It takes no flags and reads no config or repo: the rulings are embedded in the binary (`internal/brief/rulings.md`) and no repo overrides them. A spec's review quotes them (see [The plugin](#the-plugin)).
 
 #### `bmesh spec steps`
 
@@ -3107,7 +3116,7 @@ Internals: [internals](internals.md#holds)
 
 ### Briefs
 
-A brief is a thread's first prompt. The engineer (every thread of a round), build, fix, executor, review and half-pager templates are embedded in the binary (`internal/brief/templates/`). A repo overrides any but `fix`, `executor` and `review` with `.bmesh/briefs/<name>.md` (`engineer`, `build`, `half-pager`). The fix brief carries bmesh's rulings, which no repo sets; the executor brief, which [`bmesh executor new`](#bmesh-executor-new) prints, is filled from the executor alone (`path`, `worktree`, `branch`, `model`, `setup_step`) and gets none of the values below; the review brief (see [`bmesh land`](#bmesh-land)) is filled from `base` and `spec_path` alone, and no brief is kept for it. Rendered briefs are kept under `<user cache dir>/bmesh/briefs/<node>.md`.
+A brief is a thread's first prompt. The engineer (every thread of a round), build, fix, executor, review and half-pager templates are embedded in the binary (`internal/brief/templates/`). A repo overrides any but `fix`, `executor` and `review` with `.bmesh/briefs/<name>.md` (`engineer`, `build`, `half-pager`). The fix brief carries bmesh's rulings (`rulings`, from `internal/brief/rulings.md`, embedded on its own: it is no template, so `.bmesh/briefs/rulings.md` changes nothing); the executor brief, which [`bmesh executor new`](#bmesh-executor-new) prints, is filled from the executor alone (`path`, `worktree`, `branch`, `model`, `setup_step`) and gets none of the values below; the review brief (see [`bmesh land`](#bmesh-land)) is filled from `base` and `spec_path` alone, and no brief is kept for it. Rendered briefs are kept under `<user cache dir>/bmesh/briefs/<node>.md`.
 
 A template is filled in one pass: `{{name}}` placeholders take values, and braces inside a value stay as written. A placeholder with no value is an error naming the template and the placeholder.
 
@@ -3124,7 +3133,7 @@ Each kind of brief also gets its own values:
 | Brief | Values |
 |---|---|
 | A round's | `node`, `round`, `round_n`, `worktree`, `branch`, `thread_id`, `next_id`, `date`, `operator_context` (the operator's focus section, or empty), and the lines that differ by the thread's part (one thread, the engineering part beside a UI/UX thread, the UI/UX part only, an idea): `title` (`Engineer` or `UI/UX engineer`), `role`, `round_ask` (what to bring back), `round_partner` (who runs beside it), `ux_ids` (the gap line, or empty) and `surfaces_line` (a line listing the surfaces to screenshot, or empty for a thread with no UI/UX part) |
-| The fix brief | `node`, `date` and `plain_words` (the plain-words rule every closing ends with) |
+| The fix brief | `node`, `date`, `plain_words` (the plain-words rule every closing ends with) and `rulings` (the rulings, never overridden) |
 | A build brief | `spec`, `spec_path`, `spec_id`, `node`, `date`, `operator_words` (the `## The operator's words` section `build --context` gives, or empty) and `upgrading` (empty, except in bmesh's own repo: a bullet asking the lead to fill the spec's `## Upgrading` section as built, with the template's rule) |
 
 **Setup first.** When the repo names a `[setup]` (see [Setup](#setup)), a build, fix or round brief gets a section `## First: bmesh setup` before its first `## ` heading (at its end when it has none), a repo's own template included: run `bmesh setup` before anything else (`cd <worktree> && bmesh setup` in a round's brief, whose shell doesn't start there), read its output if it fails, and run it again after changing dependencies. A build or fix brief reads `[setup]` from `main`, which the lead's worktree is made from; a round's, from its worktree. The executor brief's header has the same first step (see [`bmesh executor new`](#bmesh-executor-new)). The runner makes a T3 lead's worktree after the brief is written, so bmesh can't run the setup there itself; a T3 project setup that already runs `bmesh setup` makes the step a no-op.
@@ -3147,16 +3156,16 @@ An issue a fixer had when it started and left is not started on again. The daemo
 
 **Who reaches the operator.** Only the fixer does. A lead in a `<repo>-fix-<N>` family (a fix lead) pushes nothing: its `ask`, `blocked` and `done` go to the fixer's inbox in the shapes an executor's take to its lead (see [`bmesh executor`](#bmesh-executor)). The fixer answers or relays them under the rulings, and reports them. The fixer's own `ask`, `blocked` and `done` push as a lead's do (see [Pushes](#pushes)). `mesh-status` shows the open issues on its `fixes:` line, with the fixer's state (see [`bmesh mesh-status`](#bmesh-mesh-status)).
 
-**The rulings.** The fixer's brief, the embedded `fix` template, carries these rulings. Each fix and spec it writes cites by slug the ones it rests on.
+**The rulings.** The fixer's brief, the embedded `fix` template, carries these rulings, which [`bmesh spec rulings`](#bmesh-spec-rulings) prints. Each fix and spec it writes cites by slug the ones it rests on.
 
-1. `root`: fix the first wrong decision, not the place it showed, then every other place with the same fault. A guard is a fix only when the state it handles is legitimate.
+1. `root`: fix the first wrong decision, not the place it showed. Then fix every other place with the same fault. A guard is a fix only when the state it handles is legitimate.
 2. `failing-first`: name what fails before the fix and passes after: a test through the real command or package, or a run with its output. A rate or timing the fix rests on carries its run count. An issue that can't be made to fail is dropped, saying what was tried.
-3. `smallest`: the smallest change that removes the cause, deleting before adding. A sentence added to a skill or brief every session loads names the sentence it replaces, or why none can go.
+3. `smallest`: make the smallest change that removes the cause, deleting before adding. A sentence added to a skill or brief that every session loads names the sentence it replaces, or why none can go.
 4. `structure`: a lesson met twice becomes a check. When a skill sentence already warns about the issue, the fix is a refusal, warning or test in the binary, and the sentence goes.
 5. `premise`: no third fix on one premise. When two fixes of the same thing haven't held, write down the belief both assumed, test it, and propose it to the operator with the evidence.
 6. `no-new-surface`: a fix adds no command, flag, config or registry key, frontmatter field, bucket, subject or event. Anything new the operator would have to learn is product direction, and is proposed.
 7. `reversible`: build what can be undone inside the repo without asking, then report it. Proposed, never built: taste, product direction, anything sized L, and anything outside the repo's `main` (a step on another box, deleted records, the registry or a box's config).
-8. `drop`: dropping is an outcome: what a spec on `main` already covers (any status), what a `--fixed` commit settled, and the reporting lead's own spec's work.
+8. `drop`: dropping is an outcome. That covers what a spec on `main` already covers (any status), what a `--fixed` commit settled, and the reporting lead's own spec's work.
 
 Code-design principles (types, boundaries, domain modelling, reader load) are left to the repo's `AGENTS.md` and its review. A migration is sized L and goes to the operator. What is proposed is designed by the ideate method. `build` checks the two rulings it can on the M fixes it builds (see [`bmesh build`](#bmesh-build)); an XS or S fix the fixer makes has no lead, so it leaves no feedback for a `fix_of` chain to grow from. `list --repo` hides what a spec or a fix commit already names.
 
@@ -3699,7 +3708,7 @@ The repo is a Claude Code plugin, `buildermesh`, with nine skills. The binary re
 | `fix` | the fixer | the fixer's pass (see [The fixer](#the-fixer)) |
 | `lead` | a lead | one spec, its executors, one `review` pass, landing, feedback |
 | `executor` | an executor | its own worktree and branch only; it reports and asks through the lead and never merges or pushes, except its own branch to queue a kind of another OS |
-| `ideate-engineer` | a round's threads | a round's method, from reading the repo to the pitch the operator answers: its engineering part, and its UI/UX part (running the app, a screenshot of each surface) where the brief lists surfaces |
+| `ideate-engineer` | a round's threads | a round's method, from reading the repo to the pitch the operator answers: its engineering part, and its UI/UX part (running the app, a screenshot of each surface) where the brief lists surfaces; and the check of a spec written for the operator's one idea, below |
 
 Five are the operator's chat entry points: `work` for the work itself, `scaffold` for a repo's shared sections and rules, `ponytail-review` for a review of a change, and `sync` and `prune` across boxes. The nodes the work starts follow the other four.
 
@@ -3727,6 +3736,8 @@ Each skill ends with one line: what is started or landed and what waits on the o
 **`buildermesh:prune`** ("clean up worktrees") runs `bmesh prune` dry first, shows the keep and remove rows per box, runs it with `--apply` and reports per box; on a bmesh without `prune` it says so. See [`bmesh prune`](#bmesh-prune).
 
 Both stop, saying so, on a box with `[hosts]` off.
+
+**Checking an idea's spec.** A spec the operator's chat writes for a lead (`work`'s rung 5) or an idea thread writes (`ideate --idea`; its brief says so) is checked before it lands, as `ideate-engineer`'s Check the spec section says; a round's own specs are not. The session that wrote it judges, in context and against the repo's `AGENTS.md`, whether a mistake in it would be costly: **load-bearing** (stored records, data or wire formats, keys or IDs, a migration, the merge, release or deploy path, or the checks that gate them), **security** (auth, permissions, secrets or keys, signing, sensitive or personal data, network exposure, input from outside the trust boundary) or **cross-cutting** (most of the codebase, an interface other code or repos depend on, config or text loaded everywhere). When one applies, the operator's chat asks before landing (`<which, one clause why>: an Opus review of the spec first? (minutes; yes/no)`), and an idea thread, with no one watching, reviews without asking. The review is one fresh Opus subagent, read-only where the harness has such a type, that starts and records nothing; its prompt is the spec's path and repo, the output of [`bmesh spec rulings`](#bmesh-spec-rulings) verbatim, and to read "fix" as the spec's change and "issue" as its Opportunity's gap. A break of `root`, `failing-first`, `smallest`, `structure` or `drop` is a defect the writer fixes; one of `premise`, `no-new-surface` or `reversible` is a note for the operator; there is no second pass. The outcome is words only, in the Propose commit's message and the spec's report line: `qa: none (<why>)`, `qa: opus (<why>): N fixed, M notes`, `qa: skipped by the operator (<why>)`, or `qa: not run (<why>)` (a binary without `spec rulings`). Nothing is recorded on the mesh.
 
 **The optional `method` skill.** The lead skill runs `method:writing-plans` on an L or larger spec when it is in the session's skill list, and otherwise writes the plan itself; the binary doesn't read the `method` plugin. Engineering principles come from the repo's `AGENTS.md`, its [rule sets](#rule-sets) included, which every node works by.
 

@@ -1,0 +1,8 @@
+1. `root`: fix the first wrong decision, not the place it showed. Then fix every other place with the same fault. A guard is a fix only when the state it handles is legitimate.
+2. `failing-first`: name what fails before the fix and passes after: a test through the real command or package, or a run with its output. A rate or timing the fix rests on carries its run count. An issue that can't be made to fail is dropped, saying what was tried.
+3. `smallest`: make the smallest change that removes the cause, deleting before adding. A sentence added to a skill or brief that every session loads names the sentence it replaces, or why none can go.
+4. `structure`: a lesson met twice becomes a check. When a skill sentence already warns about the issue, the fix is a refusal, warning or test in the binary, and the sentence goes.
+5. `premise`: no third fix on one premise. When two fixes of the same thing haven't held, write down the belief both assumed, test it, and propose it to the operator with the evidence.
+6. `no-new-surface`: a fix adds no command, flag, config or registry key, frontmatter field, bucket, subject or event. Anything new the operator would have to learn is product direction, and is proposed.
+7. `reversible`: build what can be undone inside the repo without asking, then report it. Proposed, never built: taste, product direction, anything sized L, and anything outside the repo's `main` (a step on another box, deleted records, the registry or a box's config).
+8. `drop`: dropping is an outcome. That covers what a spec on `main` already covers (any status), what a `--fixed` commit settled, and the reporting lead's own spec's work.
