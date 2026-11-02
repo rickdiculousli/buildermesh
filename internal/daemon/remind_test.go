@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/usage"
 	"github.com/rickdiculousli/buildermesh/internal/web"
 )
 
@@ -109,7 +110,7 @@ func TestRemindFailedPostGivesClaimBack(t *testing.T) {
 
 func TestRemindersWeekMarks(t *testing.T) {
 	now := time.Date(2026, 10, 16, 11, 0, 0, 0, time.UTC)
-	rs := Reminders([]web.Reading{
+	rs := Reminders([]usage.QuotaReading{
 		{Provider: "claude", Week: 99, WeekReset: "2026-10-16T10:59:40Z"},  // rounds to now: past
 		{Provider: "codex", Week: 49.9, WeekReset: "2026-10-18T13:00:00Z"}, // under every mark
 		{Provider: "bad.name", Week: 80, WeekReset: "2026-10-18T13:00:00Z"},

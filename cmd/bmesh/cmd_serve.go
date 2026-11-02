@@ -205,7 +205,7 @@ func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Wri
 	defer stopDaemon()
 	daemonDone := make(chan error, 1)
 	log := slog.New(slog.NewTextHandler(stderr, nil))
-	quota := &web.Quota{Command: cfg.Quota.Command} // one gate for the map's strip and the daemon's reminders
+	quota := &web.Quota{Command: cfg.Quota.Command, Client: c, Host: host} // one gate for the map's strip and the daemon's reminders
 	claudeDir, _ := session.ClaudeDir(os.Getenv)
 	go func() {
 		t3Token := ""

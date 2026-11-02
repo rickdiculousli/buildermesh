@@ -205,7 +205,7 @@ func Run(ctx context.Context, d Deps) error {
 	if d.Cfg.Quota.RemindTopic != "" {
 		q := d.Quota
 		if q == nil {
-			q = &web.Quota{Command: d.Cfg.Quota.Command}
+			q = &web.Quota{Command: d.Cfg.Quota.Command, Client: d.Client, Host: d.Host}
 		}
 		start(func() { every(ctx, remindEvery, func() { remindOnce(ctx, d, q) }) })
 	}

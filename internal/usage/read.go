@@ -74,6 +74,8 @@ type Report struct {
 	Agents []Agent   `json:"agents"`
 	Calls  []Call    `json:"calls,omitempty"`
 	Marks  []Mark    `json:"marks,omitempty"`
+	// ByAgent is every agent's calls in order, main and subagents, for the map.
+	ByAgent map[string][]Call `json:"-"`
 }
 
 // ErrNoStream is a hub with no bm-usage: no daemon of 105 or later serves it.
@@ -83,8 +85,21 @@ var ErrNoStream = errors.New("the hub has no " + mesh.StreamUsage + " stream: it
 // A call is published after it happened, so reading the stream from since
 // misses nothing. Node roles come from bm-nodes.
 func Read(ctx context.Context, c *mesh.Client, since time.Time, f Filter) (Report, error) {
-	rep := Report{Since: since, Agents: []Agent{}}
-	msgs, err := fetch(ctx, c, since, f)
+	rep := Report{Since: since, Agents: []Agent{}, ByAgent: map[string][]Call{}}
+	filters := []string{"bmusage.node.>", "bmusage.session.>"}
+	switch {
+	case strings.HasPrefix(f.Agent, "session."):
+		filters = filters[1:]
+	case f.Agent != "":
+		filters = []string{subject(f.Agent)}
+	}
+	var msgs []Message
+	err := fetch(ctx, c, since, filters, func(data []byte) {
+		var m Message
+		if json.Unmarshal(data, &m) == nil { // a message it can't read counts as nothing
+			msgs = append(msgs, m)
+		}
+	})
 	if err != nil {
 		return rep, err
 	}
@@ -184,6 +199,7 @@ func Read(ctx context.Context, c *mesh.Client, since time.Time, f Filter) (Repor
 		sort.Slice(a.Subs, func(i, j int) bool { return a.Subs[i].Read() > a.Subs[j].Read() })
 		if a.Calls > 0 {
 			rep.Agents = append(rep.Agents, *a)
+			rep.ByAgent[a.Agent] = x.calls
 		}
 		if f.Agent != "" {
 			rep.Calls = append(rep.Calls, x.calls...)
@@ -233,59 +249,107 @@ func named(filter, agent string) bool {
 	return len(want) >= 8 && strings.HasPrefix(id, want)
 }
 
-// fetch reads the stream's node and session messages from since, oldest
-// first, up to what it held when the read began.
-func fetch(ctx context.Context, c *mesh.Client, since time.Time, f Filter) ([]Message, error) {
+// fetch hands each of the stream's messages on filters from since to each,
+// oldest first, up to what the stream held when the read began.
+func fetch(ctx context.Context, c *mesh.Client, since time.Time, filters []string, each func([]byte)) error {
 	st, err := c.JS.Stream(ctx, mesh.StreamUsage)
 	if errors.Is(err, jetstream.ErrStreamNotFound) {
-		return nil, ErrNoStream
+		return ErrNoStream
 	}
 	if err != nil {
-		return nil, err
-	}
-	filters := []string{"bmusage.node.>", "bmusage.session.>"}
-	switch {
-	case strings.HasPrefix(f.Agent, "session."):
-		filters = filters[1:]
-	case f.Agent != "":
-		filters = []string{subject(f.Agent)}
+		return err
 	}
 	info, err := st.Info(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if info.State.Msgs == 0 || info.State.LastTime.Before(since) {
-		return nil, nil
+		return nil
 	}
 	last := info.State.LastSeq
 	cons, err := c.JS.OrderedConsumer(ctx, mesh.StreamUsage, jetstream.OrderedConsumerConfig{
 		FilterSubjects: filters, DeliverPolicy: jetstream.DeliverByStartTimePolicy, OptStartTime: &since,
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	var out []Message
 	for {
 		m, err := cons.Next(jetstream.FetchMaxWait(2 * time.Second))
 		if err != nil {
 			if ctx.Err() != nil {
-				return out, ctx.Err()
+				return ctx.Err()
 			}
 			if errors.Is(err, jetstream.ErrNoMessages) || errors.Is(err, nats.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-				return out, nil
+				return nil
 			}
-			return out, err
+			return err
 		}
 		meta, err := m.Metadata()
 		if err != nil {
-			return out, err
+			return err
 		}
-		var msg Message
-		if json.Unmarshal(m.Data(), &msg) == nil { // a message it can't read counts as nothing
-			out = append(out, msg)
-		}
+		each(m.Data())
 		if meta.NumPending == 0 || meta.Sequence.Stream >= last {
-			return out, nil
+			return nil
 		}
 	}
+}
+
+// quotaSlot is the span ReadQuota keeps one reading per provider in: the
+// strip's poll period, so two boxes polling count once.
+const quotaSlot = 5 * 60
+
+// ReadQuota reads the quota readings from since, keeping each provider's
+// newest per 5-minute slot across boxes, ordered by read_at.
+func ReadQuota(ctx context.Context, c *mesh.Client, since time.Time) ([]QuotaReading, error) {
+	type key struct {
+		provider string
+		slot     int64
+	}
+	newest := map[key]QuotaReading{}
+	at := map[key]time.Time{}
+	err := fetch(ctx, c, since, []string{"bmusage.quota.>"}, func(data []byte) {
+		var r QuotaReading
+		if json.Unmarshal(data, &r) != nil {
+			return
+		}
+		t, err := time.Parse(time.RFC3339, r.ReadAt)
+		if err != nil || t.Before(since) {
+			return
+		}
+		k := key{r.Provider, t.Unix() / quotaSlot}
+		if old, ok := at[k]; !ok || !t.Before(old) {
+			newest[k], at[k] = r, t
+		}
+	})
+	out := make([]QuotaReading, 0, len(newest))
+	for _, r := range newest {
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ReadAt != out[j].ReadAt {
+			return out[i].ReadAt < out[j].ReadAt
+		}
+		return out[i].Provider < out[j].Provider
+	})
+	return out, err
+}
+
+// PublishQuota puts rs on bmusage.quota.<host>, each once per provider and
+// read_at; a host that is no subject token publishes nothing.
+func PublishQuota(ctx context.Context, c *mesh.Client, host string, rs []QuotaReading) error {
+	if !token.MatchString(host) {
+		return nil
+	}
+	for _, r := range rs {
+		data, err := json.Marshal(r)
+		if err != nil {
+			return err
+		}
+		if _, err := c.JS.Publish(ctx, "bmusage.quota."+host, data,
+			jetstream.WithMsgID(host+"/quota/"+r.Provider+"/"+r.ReadAt), jetstream.WithExpectStream(mesh.StreamUsage)); err != nil {
+			return err
+		}
+	}
+	return nil
 }

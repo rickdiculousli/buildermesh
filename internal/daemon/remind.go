@@ -12,6 +12,7 @@ import (
 
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/notify"
+	"github.com/rickdiculousli/buildermesh/internal/usage"
 	"github.com/rickdiculousli/buildermesh/internal/web"
 )
 
@@ -50,7 +51,7 @@ func (r Reminder) Key() string {
 // ahead of now: `🔋 50% left • Claude weekly`, body `resets in 2d 4h`. A
 // reading without a parseable weekly reset, or whose provider can't name a
 // key, is skipped.
-func Reminders(rs []web.Reading, now time.Time) []Reminder {
+func Reminders(rs []usage.QuotaReading, now time.Time) []Reminder {
 	var out []Reminder
 	for _, r := range rs {
 		if !providerRE.MatchString(r.Provider) {
