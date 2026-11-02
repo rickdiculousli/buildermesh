@@ -448,11 +448,13 @@ Roster, signature, `to` and replay failures are published as `bm.daemon.<host>.r
 
 [Manual: Names](manual.md#names)
 
-The stream, subjects and buckets built on node paths:
+The streams, subjects and buckets built on node paths:
 
 | Kind | Name | Subjects / keys |
 |---|---|---|
 | stream | `bm-mesh` | `bm.>` (30 days, file store, 2m duplicate window) |
+| stream | `bm-usage` | `bmusage.>` (30 days, file store, 2m duplicate window; every agent's token use, see Usage) |
+| usage subject | | `bmusage.node.<path>` (a node's calls), `bmusage.session.<host>.<session id>` (a coordinator session's) |
 | event subject | | `bm.<path>.<event>` |
 | inbox subject | | `bm.inbox.<path>` |
 | daemon subject | | `bm.daemon.<host>.<event>` (`started`, `update`, `wake`, `silent`, `landing`, `land-refused`, `land-withdrawn`, `digest`, `push`, `push-failed`, `refused`, `held`, `level`, `registry`, `fixer`, `wiped`, `settled`) |
@@ -509,6 +511,38 @@ The reading is the main thread's when a model call was in flight, or when a `too
 Shell command lines are split by a small lexer (`shell.go`): single and double quotes, `\`, `#` comments, heredoc bodies (to the line that is the delimiter), redirects and their targets (`2>&1`, `>/dev/null`) dropped, `;`, `&&`, `||`, `|`, `&`, `(`, `)` and newlines ending a command; leading `VAR=value`, `env`, `nohup`, `time`, `exec` and `timeout <d>` dropped; `bash`/`sh`/`zsh -c`'s argument and `ssh`'s last word split again. A `bmesh` word's global flags (`--node`, `--config` with a value, `--json`) are skipped to find its command; the word after a command with subcommands is its subcommand. `$(...)` and backticks are not expanded.
 
 Token totals are summed over model calls, one per `message.id`: the main thread's, and its subagents' (`isSidechain` lines and `<id>/subagents/*.jsonl`) apart. A subagent's successful calls set facts as the main thread's do (step 3): an `isSidechain` line's for the turn it is read in, a subagent file's for the newest turn whose first line's `timestamp` is at or before the file's first, whose implied rung is then judged again. What a subagent read is not listed.
+
+## Usage
+
+[Manual: bmesh usage](manual.md#bmesh-usage)
+
+`internal/usage` holds the record, the transcript reader, the publisher and `Read`, which `bmesh usage` and the map share. It reads lines through `internal/audit` (`audit.Line`, `Line.Request` for the operator's request, `audit.Acts` for a call that changes something), never a copy of them.
+
+**The record.** A call is one model call, one `message.id` (a line with none is its own, by `uuid`), taken from the first `assistant` line that carries it, whose usage sums above 0 (Claude Code's made-up messages have all zeros): `{"at","id","model","in","cr","cw","out","ctx","sub","phase","cause"}`, `ctx` = `in + cr + cw`, `sub` the subagent's id (empty on the main thread), `phase` `design` or `exec` for a coordinator (empty for a node), `cause` as the manual says. A `{"type":"system","subtype":"compact_boundary"}` line is a mark `{"at","kind":"compact","sub"}`. A message is one file's calls and marks from one pass, at most 500 calls: `{"agent","role","host","repo","session","file","sub","desc","calls","marks"}`, `agent` a node's path or `session.<host token>.<session id>`, `file` the transcript's path under `projects/`, `sub` and `desc` a subagent file's id (its name less `agent-`) and the `description` of its `<name>.meta.json` (the Agent call's).
+
+**The stream.** `bm-usage`, subjects `bmusage.>`, 30 days, file store, 2-minute duplicate window, provisioned by `mesh.Provision` beside `bm-mesh`. A node's messages go to `bmusage.node.<path>`, a coordinator's to `bmusage.session.<host token>.<session id>`, each with `Nats-Msg-Id` `<host>/<file>/<offset>`, the offset the message read up to. The stream is outside `bm.>`, so the map's events, `watch`, the push loop and the activity reader never see it.
+
+**The pass** (`usage.Pass`, the daemon's `usageOnce`, every 30 seconds when serve knows the Claude Code config dir and a state dir):
+
+1. With no `<config dir>/projects/`, nothing; with no hub, nothing.
+2. The cursor is `<state dir>/usage/cursor.json`: per file under `projects/`, its offset, its agent (`agent`, `role`, `repo`, `session`, `sub`, `desc`, a coordinator's subagent's `fixed` phase), whether its skipped lines were logged, and its reader's state: the newest call's id (a later line of it is no new call), the phase, the newest message's tool uses and a pending cause (`message`, `wake`, `compact`), each Agent or Task call's `tool_use` id with the phase it was made in, and whether a subagent's first message was read. A file gone from disk leaves the cursor.
+3. The files are `projects/*/*.jsonl`, then `projects/*/*/subagents/*.jsonl`, each set oldest first; a file is read when its size passed its offset, and a file the cursor doesn't hold only when modified in the last 30 days. At most 64 MB are read a pass (more only to finish a line longer than what is left).
+4. A file is read from its offset to its last newline. An `{"type":"api-request...` line is only marked. When the file was written in the last minute, its newest call waits (the read stops before its first line) until a later line shows it finished: another call, an `api-request` line or a compaction. So a call's tool uses, which Claude Code writes one content block a line, interleaved with their results, are read whole.
+5. Each message is published, then the cursor is written through a temp file and a rename. A crash between the two reads the same bytes again into the same `Nats-Msg-Id`, which the stream drops inside its window; `Read` counts each `(agent, id)` once, so a later retry counts nothing twice. Calls and marks older than 30 days are dropped.
+6. A line that doesn't parse, or a model's message with no `usage`, counts as nothing, logged once per file.
+
+**Which agent a file is**, decided once and kept in the cursor, the first rule that holds (nodes are those in `bm-nodes` whose `host` is this box):
+
+1. A subagent file whose first user message starts `You are executor <path> in ` is that executor node, when it is on this box.
+2. A main file whose name (its session id) is a node's `session` (101) is that node.
+3. A main file whose first `cwd` is a node's `worktree` (symlinks resolved) is the newest such node whose `started_at` is at or before the file's first line.
+4. A first `cwd` that is `<[runner] checkouts>/<repo>/routine.<kind>.<model-short>-<n>` is the node `routine.<kind>.<host token>-<model-short>-<n>`; a fresh instance's `routine.<kind>.f<id8>` is its own path. Role `routine`, the repo the node's or the dir's.
+5. Any other main file is a coordinator session, `session.<host token>.<id>`, role `coordinator`, its repo the registry row whose checkout holds the `cwd`'s git common dir (`git rev-parse --git-common-dir`), else the row whose checkout holds the `cwd`, else `other`. A `cwd` in a linked git worktree (its git dir is not its common dir) waits, unread, up to 10 minutes from the file's first line, so a lead's `started` can name it first.
+6. Any other subagent file is a subagent of its main file's agent and waits until that is decided. A coordinator's subagent takes the phase its main file kept for the `toolUseId` its `.meta.json` names, and waits until its main file is read to its end when that holds none; then it takes the main file's phase.
+
+**The phase**, on a coordinator's main thread only: a `user` line `Line.Request` reads as a request sets `design`; a `user` line, not `isMeta`, whose text opens `<task-notification>` sets `exec`; a `tool_use` that changes something sets `exec` and makes the call holding it `exec`. An Edit, Write, NotebookEdit or MultiEdit changes something when `audit.Acts` names it and its path is outside `docs/proposals/` and `docs/design/` and either its dir is gone or `git -C <dir> rev-parse --is-inside-work-tree` succeeds and `git check-ignore -q` doesn't; any other tool when `audit.Acts` names it.
+
+**`Read(ctx, client, since, filter)`** reads `bmusage.node.>` and `bmusage.session.>` (one subject for a node named, the sessions for a session) with an ordered consumer from `since` (`DeliverByStartTime`: a message is published after its calls happened, so none is missed) up to the stream's last sequence when it began; a message it can't decode counts as nothing. It keeps calls and marks at or after `since`, each `(agent, id)` and each `(agent, sub, at)` mark once, and sums per agent: role (`bm-nodes`', else the message's), host, repo, models, first and last call, calls, the four kinds for the main thread and for subagents, a coordinator's four kinds per phase, peak and last main-thread `ctx`, main-thread compactions, and per subagent its `desc`, calls and kinds. With an agent named it also returns its calls and marks in time order. A filter `session.<id>` or `session.<host>.<id>` matches a session by its whole id or a prefix of at least 8 characters.
 
 ## Config
 

@@ -4,7 +4,7 @@ title: Every box puts each agent's token use on the mesh, per model call, with a
 kind: feature
 size: L
 judge: opus
-status: accepted
+status: done
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-24
@@ -178,6 +178,6 @@ On any box, `bmesh usage` lists every agent of the last 24 hours: leads, executo
 
 ## Upgrading
 
-nothing. A box's first pass after the update reads its last 30 days of transcripts (on k16, minutes of one core). A box not yet updated publishes nothing, so its agents show no usage until it is.
+nothing. A box's daemon provisions `bm-usage` and, on its first passes after the update, reads its last 30 days of transcripts, at most 64 MB a pass every 30 seconds (on a box with a gigabyte of them, about 20 passes of a second or two of one core). A box not yet updated publishes nothing, so its agents show no usage until it is.
 
 ## Needs from the operator

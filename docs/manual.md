@@ -7,7 +7,7 @@ Every `bmesh` command with its flags, output and refusals, then the model behind
 - [Synopsis](#synopsis)
 - [Setup and updates](#setup-and-updates): [`bmesh init`](#bmesh-init) · [`bmesh serve`](#bmesh-serve) · [`bmesh hub`](#bmesh-hub) · [`bmesh config check`](#bmesh-config-check) · [`bmesh t3 login`](#bmesh-t3-login) · [`bmesh version`](#bmesh-version) · [`bmesh update`](#bmesh-update) · [`bmesh plugin`](#bmesh-plugin)
 - [Proposals and builds](#proposals-and-builds): [`bmesh ideate`](#bmesh-ideate) · [`bmesh spec`](#bmesh-spec) · [`bmesh build`](#bmesh-build) · [`bmesh lead start`](#bmesh-lead-start) · [`bmesh hold`, `unhold`, `held`](#bmesh-hold-unhold-held) · [`bmesh feedback`](#bmesh-feedback) · [`bmesh fix`](#bmesh-fix) · [`bmesh release`](#bmesh-release) · [`bmesh scaffold`](#bmesh-scaffold)
-- [Nodes](#nodes): [`bmesh whoami`](#bmesh-whoami) · [`bmesh context`](#bmesh-context) · [`bmesh audit`](#bmesh-audit) · [`bmesh started`, `progress`, `blocked`, `ask`, `done`](#bmesh-started-progress-blocked-ask-done) · [`bmesh send`](#bmesh-send) · [`bmesh inbox`](#bmesh-inbox) · [`bmesh thread-status`](#bmesh-thread-status) · [`bmesh mesh-status`](#bmesh-mesh-status) · [`bmesh watch`](#bmesh-watch) · [`bmesh executor`](#bmesh-executor) · [`bmesh node`](#bmesh-node)
+- [Nodes](#nodes): [`bmesh whoami`](#bmesh-whoami) · [`bmesh context`](#bmesh-context) · [`bmesh audit`](#bmesh-audit) · [`bmesh usage`](#bmesh-usage) · [`bmesh started`, `progress`, `blocked`, `ask`, `done`](#bmesh-started-progress-blocked-ask-done) · [`bmesh send`](#bmesh-send) · [`bmesh inbox`](#bmesh-inbox) · [`bmesh thread-status`](#bmesh-thread-status) · [`bmesh mesh-status`](#bmesh-mesh-status) · [`bmesh watch`](#bmesh-watch) · [`bmesh executor`](#bmesh-executor) · [`bmesh node`](#bmesh-node)
 - [Checks and landing](#checks-and-landing): [`bmesh routine`](#bmesh-routine) · [`bmesh result`](#bmesh-result) · [`bmesh lock-lease`](#bmesh-lock-lease) · [`bmesh setup`](#bmesh-setup) · [`bmesh land`](#bmesh-land) · [`bmesh ready`](#bmesh-ready)
 - [Boxes](#boxes): [`bmesh hosts`](#bmesh-hosts) · [`bmesh sync`](#bmesh-sync) · [`bmesh prune`](#bmesh-prune) · [`bmesh repos`](#bmesh-repos)
 - [Concepts](#concepts): [Several boxes](#several-boxes) · [Updates](#updates) · [Upgrading](#upgrading) · [Runners](#runners) · [Build families](#build-families) · [Holds](#holds) · [Briefs](#briefs) · [The fixer](#the-fixer) · [The ledger](#the-ledger) · [Routines](#routines) ([Setup](#setup)) · [Hosts](#hosts) · [The plugin](#the-plugin) · [Names](#names)
@@ -1374,7 +1374,7 @@ Prints what a Claude Code session did, request by request, beside what it said: 
 
 Commands are read from the Bash calls the main thread made, and its subagents' (a change handed to a subagent is pushed from the subagent's transcript: its facts are the request's it started in, the newest that began before the subagent's first line), with quotes, heredocs, redirects, `bash -c` and `ssh`'s command line taken as a shell takes them; a call whose result is an error did nothing.
 
-**What it read before it acted.** A request's first action is its first call that changes something: an Edit or Write, a `git commit` or `git push`, or a `bmesh` command that starts or changes something (every command but one with `--help`, `-h`, `--dry-run` or `--check` (save `spec steps --check`, which ticks steps), the reports `started`, `progress`, `ask`, `blocked` and `held`, and the reads: `mesh-status`, `inbox`, `watch`, `context`, `audit`, `whoami`, `thread-status`, `version`, `help`, `plugin`, `repos` and `repos show`, `hosts`, `hosts replies`, `hosts held` and `hosts ping`, `spec list`, `show`, `steps` (not with `--check`), `template` and `next-id`, `routine list` and `wait`, `executor list`, `feedback list`, `config` and `config check`). Before it, each call's output, in words (whitespace-separated):
+**What it read before it acted.** A request's first action is its first call that changes something: an Edit or Write, a `git commit` or `git push`, or a `bmesh` command that starts or changes something (every command but one with `--help`, `-h`, `--dry-run` or `--check` (save `spec steps --check`, which ticks steps), the reports `started`, `progress`, `ask`, `blocked` and `held`, and the reads: `mesh-status`, `inbox`, `watch`, `context`, `audit`, `usage`, `whoami`, `thread-status`, `version`, `help`, `plugin`, `repos` and `repos show`, `hosts`, `hosts replies`, `hosts held` and `hosts ping`, `spec list`, `show`, `steps` (not with `--check`), `template` and `next-id`, `routine list` and `wait`, `executor list`, `feedback list`, `config` and `config check`). Before it, each call's output, in words (whitespace-separated):
 
 - a skill loaded: its name and the words of its text;
 - a file read: the Read tool's, or a Bash call that is only one `cat`, `sed -n 'a,bp'`, `head` or `tail` of one file: its path, `whole` or the lines, and its words;
@@ -1420,6 +1420,80 @@ With no argument and no session it can read: `audit: no session bmesh can read (
 | No transcript of the session on this box | 1 | `no transcript of session <id> on this box (projects/*/<id>.jsonl under CLAUDE_CONFIG_DIR, else ~/.claude)` |
 
 Internals: [internals](internals.md#audit)
+
+### `bmesh usage`
+
+```
+bmesh usage [<path> | --session <id>] [--since D] [--repo R] [--calls] [--json]
+```
+
+Prints the tokens every agent on the mesh read and wrote, per model call summed: leads, executors, fixers, rounds, routine instances, each box's coordinator sessions (a Claude Code session no node owns), and their subagents folded in. It reads the `bm-usage` stream, which every box's daemon fills from its own transcripts (below), so it runs from any box on the mesh.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `<path>` | none | One node's use in full. `session.<host>.<id>` (as the table prints it) names a session. |
+| `--session <id>` | none | One coordinator session's, by its whole id or its first 8 characters. |
+| `--since D` | `24h` | The window: a duration (`90m`, `24h`) or whole days (`7d`), at most `720h` (the stream keeps 30 days). |
+| `--repo R` | all | Only agents of registry repo `R` (a session's is the row whose checkout its first `cwd` is in, a worktree counting as its repo; else `other`). |
+| `--calls` | off | With an agent: one line per model call. |
+| `--json` | off | The aggregates, and with `--calls` the calls and compactions. |
+
+**The four kinds.** Each model call's `input_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` and `output_tokens`. What a call **read** is its input, cache read and cache write together: the context it read. Cache reads are most of it, so the agent view splits them.
+
+**With no agent**, one line per agent with calls in the window, most read first, then a total:
+
+```
+AGENT                 ROLE         HOST  READ   OUT    SUB    PEAK  DESIGN  EXEC
+session.k16.ec03a02c  coordinator  k16   416M   2.0M   231M   537k  42%     58%
+buildermesh-096       lead         k16   38.9M  112k   0      345k  -       -
+total 455M read, 2.1M out, 2 agents since 10-24 00:00
+```
+
+READ is the agent's read, its subagents' included; OUT its output; SUB its subagents' read; PEAK the largest context of a main-thread call. DESIGN and EXEC are a coordinator's read by phase (below), `-` for a node. Counts print in three figures (`845`, `18.8k`, `303k`, `42.2M`); times are local.
+
+**With an agent:**
+
+```
+buildermesh-096  lead on k16, repo buildermesh, claude-opus-5-5, 10-24 17:22 to 10-24 18:26, 150 calls
+read     38.9M: input 332, cache read 38.5M, cache write 328k
+out      112k
+main     38.9M read, 112k out, 150 calls
+sub      0 read, 0 out, 0 calls in 0 subagents
+context  peak 345k, last 345k, 0 compactions
+```
+
+The head names its role, box, repo, models and its first and last call in the window. `sub` lists each subagent under it, by id and the description its Agent call gave: `  a5477136c7caca6cd Build the skill test harness: 72.5M read, 385k out, 192 calls`. A coordinator adds `design` and `exec`, each its share of the read, then its read and out. `context` is the main thread's: its peak, its newest call's, and its compactions.
+
+**`--calls`** adds a blank line, then one line per call in time order: `17:40:12  ctx 303k  +18.8k  out 845  Read cases.go`: its time, its context, its growth over the previous call of the same thread, its output, a coordinator's phase, and its cause. A subagent's calls start with its id; a compaction is its own line, `17:41:00  compact`.
+
+**The cause** is what fed the call: the tool uses of the message before it in the same file. A Read, Write, Edit or NotebookEdit is the tool and the file's base name (`Read cases.go`); a Bash call is `Bash: <its description>`, or `Bash` when it has none, never the command; a Skill `Skill <name>`; an Agent call `Agent <description>`; any other tool its name; several, the first and ` +N`. The first call of the operator's turn is `message`, after a background task's notice `wake`, after a compaction `compact`. It is cut to 60 characters.
+
+**A coordinator's phase.** Each call of a coordinator session is `design` or `exec`:
+
+1. A turn that is the operator's request (as [`bmesh audit`](#bmesh-audit) reads one) starts in `design`.
+2. A turn opened by a `<task-notification>` (a background command or Monitor waking the session) starts in `exec`.
+3. A turn moves to `exec` at its first tool call that changes something, and stays there until the next turn: a shell command that changes something as `audit` reads it (a `git commit`, a `git push`, a `bmesh` command that starts or changes something), or an Edit or Write of a file inside a git work tree that git doesn't ignore, outside `docs/proposals/` and `docs/design/`. Specs, design docs, files in a gitignored scratch dir, memory and config stay `design`; a path whose dir is gone counts as tracked.
+4. The call making the move is `exec`; the calls before it stay `design`.
+5. A subagent's calls take the phase its session was in when its Agent call was made.
+
+**The daemon's usage loop.** Every box's daemon reads, every 30 seconds and whatever `[routines]` says, the transcripts Claude Code wrote under `<CLAUDE_CONFIG_DIR, else ~/.claude>/projects/` (each session's `.jsonl` and its `subagents/`), each from where it last stopped to its last newline, and publishes the new calls. The first pass reads the files modified in the last 30 days, oldest first; every pass reads at most 64 MB, so a box catches up over a few passes (on a box with a gigabyte of transcripts, about 20 passes of about a second each). A box with no `projects/` dir publishes nothing. A line it can't read counts as nothing and is logged once per file: `usage: <file>: skipped N lines it does not read`. Which agent a file is, and how a crash or a restart never counts a call twice, is in [the internals](internals.md#usage).
+
+**What leaves the box:** counts, model names, times, repo names, subagent descriptions and the cause words. No other session text.
+
+With an agent that has no calls in the window: `no usage for <agent> since <time>`, exit 0.
+
+**Refusals.**
+
+| When | Exit | Message |
+|---|---|---|
+| Two agents, or a path and `--session`, or `--calls` with no agent | 2 | `usage: bmesh usage [<path> \| --session <id>] [--since D] [--repo R] [--calls] [--json]` |
+| `--since` past 720h | 2 | `--since <D> exceeds 720h: the usage stream keeps 30 days` |
+| `--session` shorter than 8 characters | 2 | `--session "<id>": give the whole id or its first 8 characters` |
+| A path that is no node | 3 | `refused: no node <path>` |
+| The hub has no `bm-usage` stream | 1 | `the hub has no bm-usage stream: its daemon predates bmesh usage` |
+| No hub | 1 | as [`bmesh mesh-status`](#bmesh-mesh-status) |
+
+Internals: [internals](internals.md#usage)
 
 ### `bmesh started`, `progress`, `blocked`, `ask`, `done`
 
