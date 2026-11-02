@@ -39,7 +39,7 @@ Rank as many as your brief asks, best first, in one list across both parts: what
 
 ## Check the spec
 
-Only for a spec of the operator's own idea (your brief or the `work` skill sends you here); a round's own specs skip it. You wrote it and read the code it touches, so judge, against the repo's `AGENTS.md`, whether a mistake in it would be costly:
+Only for a spec of the operator's own idea (your brief or the `work` skill sends you here); a round's own specs skip this whole section, its `qa:` line included. You wrote it and read the code it touches, so judge, against the repo's `AGENTS.md`, whether a mistake in it would be costly:
 
 - **load-bearing**: it changes what other parts trust or keep: stored records, data or wire formats, keys or IDs, a migration, the merge, release or deploy path, or the checks that gate them;
 - **security**: auth, permissions, secrets or keys, signing, sensitive or personal data, network exposure, or acting on input from outside the trust boundary;
