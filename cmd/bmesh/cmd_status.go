@@ -18,6 +18,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/runner/t3mcp"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
+	tokenuse "github.com/rickdiculousli/buildermesh/internal/usage"
 )
 
 func (a *app) cmdWhoami(args []string) error {
@@ -227,6 +228,9 @@ func (a *app) cmdMeshStatus(args []string) error {
 	for _, r := range readies {
 		fmt.Fprintf(a.stdout, "%s %s\n", r.Path, readyLine(r, states[r.Path], now))
 	}
+	for _, l := range flagLines(ctx, a.client, nodes, states, now) {
+		fmt.Fprintln(a.stdout, l)
+	}
 	for _, l := range a.boxHoldLines(ctx, now) {
 		fmt.Fprintln(a.stdout, l)
 	}
@@ -255,6 +259,62 @@ func (a *app) cmdMeshStatus(args []string) error {
 		fmt.Fprintln(a.stdout, o.Line())
 	}
 	return nil
+}
+
+// flagLines are each live node's open flags (108), from the daemons'
+// runaway events in the stream's last tokenuse.Keep: `<path> ▲ <level> <age>
+// ago: <words>`, the newest event of each rule, a runaway event of a rule
+// hiding its overworking one. A history it can't read prints nothing.
+func flagLines(ctx context.Context, c *mesh.Client, nodes []mesh.Node, states map[string]mesh.State, now time.Time) []string {
+	hist, err := mesh.History(ctx, c, "bm.daemon.*.runaway", now.Add(-tokenuse.Keep))
+	if err != nil {
+		return nil
+	}
+	type open struct {
+		level, words string
+		at           time.Time
+	}
+	byNode := map[string]map[string]open{}
+	for _, m := range hist {
+		var ev mesh.Event
+		if json.Unmarshal(m.Data, &ev) != nil || ev.To == "" {
+			continue
+		}
+		level, rest, _ := strings.Cut(ev.Text, " ")
+		_, words, ok := strings.Cut(rest, ": ")
+		rule := tokenuse.RuleOf(words)
+		if !ok || rule == "" {
+			continue
+		}
+		at := m.At
+		if t, err := time.Parse(time.RFC3339, ev.At); err == nil {
+			at = t
+		}
+		if byNode[ev.To] == nil {
+			byNode[ev.To] = map[string]open{}
+		}
+		if old, seen := byNode[ev.To][rule]; seen && old.level == tokenuse.Runaway && level != tokenuse.Runaway {
+			continue
+		}
+		byNode[ev.To][rule] = open{level, words, at}
+	}
+	var out []string
+	for _, n := range nodes {
+		if states[n.Path].State == "done" {
+			continue
+		}
+		var fs []open
+		for _, rule := range []string{"size", "refused", "context", "burn"} {
+			if f, ok := byNode[n.Path][rule]; ok {
+				fs = append(fs, f)
+			}
+		}
+		sort.SliceStable(fs, func(i, j int) bool { return fs[i].level == tokenuse.Runaway && fs[j].level != tokenuse.Runaway })
+		for _, f := range fs {
+			out = append(out, fmt.Sprintf("%s ▲ %s %s ago: %s", n.Path, f.level, mesh.HoldAge(now.Sub(f.at)), f.words))
+		}
+	}
+	return out
 }
 
 // settledLines are `settled <unit>: <n> threads`, one per unit
