@@ -353,7 +353,8 @@ func TestTreeEndpoint(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	srv := httptest.NewServer(Handler(c, time.Hour, Options{Cfg: cfg}))
+	now := time.Date(2026, 10, 24, 20, 35, 0, 0, time.UTC)
+	srv := httptest.NewServer(Handler(c, time.Hour, Options{Cfg: cfg, Host: "k16", Now: func() time.Time { return now }}))
 	defer srv.Close()
 	var v TreeView
 	body := getJSON(t, srv, "/api/tree", 200, &v)
@@ -366,6 +367,9 @@ func TestTreeEndpoint(t *testing.T) {
 	}
 	if v.StaleAfter != 6*3600 {
 		t.Fatalf("stale_after %d", v.StaleAfter)
+	}
+	if v.Host != "k16" || v.Now != "2026-10-24T20:35:00Z" {
+		t.Fatalf("host %q now %q", v.Host, v.Now)
 	}
 	// The needs-you band's specs: open steps only.
 	if !strings.Contains(body, `"operator":[{"repo":"app","id":"007","title":"Open steps","open":1,"total":2},{"repo":"app","id":"009","title":"Needs","open":2,"total":3}]`) {

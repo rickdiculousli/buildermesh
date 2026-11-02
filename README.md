@@ -221,11 +221,11 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/map-dark.png">
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/map-light.png">
-    <img alt="The bmesh map: leads with their executors, a proposal round, a held lead, the routines column and the needs-you band" src="docs/assets/map-light.png" width="100%">
+    <img alt="The bmesh console: the KPI tiles, the needs-you band and the fleet timeline of every lead's states" src="docs/assets/map-light.png" width="100%">
   </picture>
 </p>
 
-`bmesh serve` draws the mesh live at `http://127.0.0.1:3774/`: leads with their executors, rounds with their engineers, each check with its queue, and at the top what needs you: a session that is blocked, asking or silent. A need older than `[serve] stale_after` (6 hours), or one you dismiss with its `×`, folds into one `older` line under the rest. A lead its daemon is landing, or one held at a gate, is drawn calm and never in that band, and a quiet `working` lead is the only kind called silent.
+`bmesh serve` draws the mesh live at `http://127.0.0.1:3774/` as a console. It has a row of numbers (live agents, landed, land refused, asking or blocked, quota, routines), then what needs you: a session that is blocked, asking or silent. Under those is a fleet timeline, one lane per lead showing its states over the last 1h, 6h, 24h or 7d, with every `ready`, refused land and `done` marked on it. A need older than `[serve] stale_after` (6 hours), or one you dismiss with its `×`, folds into one `older` line under the rest. A lead its daemon is landing, or one held at a gate, shows on its lane and never in that band, and a quiet `working` lead is the only kind called silent. A `timeline` tab draws every executor and routine job too, and each lead's page draws its lanes over its whole life.
 
 ## All commands and flags
 

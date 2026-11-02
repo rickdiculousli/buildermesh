@@ -48,6 +48,10 @@ type TreeView struct {
 	// StaleAfter is [serve] stale_after in seconds: a needs-you state older
 	// than this folds away on the map (0 = never).
 	StaleAfter int64 `json:"stale_after"`
+	// Host is the serving daemon's host and Now its clock (RFC 3339), for
+	// the top bar's connection line and UTC clock.
+	Host string `json:"host"`
+	Now  string `json:"now"`
 }
 
 // OperatorSpec is a landed spec whose operator_steps are not all ticked,

@@ -41,6 +41,13 @@ type server struct {
 	ledgers map[string]ledgerEntry // by repo path
 	kinds   kindEntry
 	fetched map[string]time.Time // when each repo's last background fetch started
+	hist    histEntry            // bm-mesh read whole, for /api/timeline
+}
+
+type histEntry struct {
+	at    time.Time
+	nodes []mesh.Node
+	msgs  []mesh.Stored
 }
 
 type specEntry struct {
@@ -204,6 +211,7 @@ func (s *server) tree(w http.ResponseWriter, r *http.Request) {
 	v := Tree(nodes, states, x)
 	v.Operator = s.operator(ctx)
 	v.StaleAfter = int64(s.cfg.Serve.StaleAfter / time.Second)
+	v.Host, v.Now = s.host, s.now().UTC().Format(time.RFC3339)
 	writeJSON(w, v)
 }
 
