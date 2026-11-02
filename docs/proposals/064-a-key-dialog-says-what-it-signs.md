@@ -69,6 +69,18 @@ The repo's verify, plus:
 - One test per call site (`hosts set`, `hosts approve`, `repos publish`, `repos remove`, `init --hosts`) that the request names the change: the roster diff, the registry diff, the approve log, the nix boxes.
 - **Live, by the lead on the Mac:** one `hosts set` that changes nothing visible (re-setting a row's current accept list) shows the dialog, and `Cancel` leaves the roster version unchanged.
 
+## Shown
+- The `hosts set` dialog and `Cancel` leaving the roster: `TestHostsSetCancelledAtTheDialogSignsNothing` (keychain store, fake `osascript` answering cancel: exit 3, `cancelled at the dialog: nothing signed`, the request `Sign roster v2` with `no row changes`, roster still v1; continued, v2): `go test -run TestHostsSetCancelledAtTheDialogSignsNothing ./cmd/bmesh` -> `--- PASS: TestHostsSetCancelledAtTheDialogSignsNothing (0.08s)`
+- The dialog runs before `security`, terminal and dialog body show the title, details and `signs <sum>`: `TestKeychainStore` -> `--- PASS: TestKeychainStore (0.05s)`
+- `Cancel`, the timeout, or no dialog never reach `security`: `TestKeychainDialogNotContinued` -> `--- PASS: TestKeychainDialogNotContinued (0.03s)`
+- The sum shown is the bytes signed: `TestRequestSumIsTheSignedBytes` -> `--- PASS: TestRequestSumIsTheSignedBytes (0.00s)`
+- Details capped at 12 lines: `TestRequestDetailsCapped` -> `--- PASS: TestRequestDetailsCapped (0.00s)`
+- `hosts set`, `hosts revoke` and `init --hosts` name the roster diff and the sum of the roster published: `TestHostsAdminInviteJoinPingSetRevoke` -> `--- PASS: TestHostsAdminInviteJoinPingSetRevoke (5.87s)`
+- `repos publish`, a proposal's approval and `repos remove` name the registry diff, the nix boxes in one request, and the sum of the registry published: `TestRegistryPublishProposeAndRemoveWithCheckouts` -> `--- PASS: TestRegistryPublishProposeAndRemoveWithCheckouts (2.77s)`
+- `hosts approve` names the repo, `<head8> -> <target8>`, the commit count and the log: `TestSyncLevelsEveryBoxAndHoldsOnASecureOne` -> `--- PASS: TestSyncLevelsEveryBoxAndHoldsOnASecureOne (2.07s)`
+- Easy to miss: nothing is composed again after the answer; every call site composes the unsigned document first and signs exactly the request's bytes (`Request.Sign`), and `Publish`/`PublishRegistry` take the signed document and refuse a moved version: `TestPublishTakesTheVersionFromTheBoxNotTheHub`, `TestPublishRegistryTakesTheNextVersionFromTheBox`, and the call-site tests compare the shown sum with the published document's bytes.
+- Not shown: the real `osascript` dialog and Keychain prompt on the Mac: k16 can't reach the Mac; it is the operator's step below.
+
 ## Risks and the alternative considered
 - **Something else on the Mac can show a fake `bmesh:` dialog before its own Keychain prompt.** The dialog informs; it isn't the guard, and the Keychain prompt still is. What it adds is that a prompt without one stands out, and the operator is told to deny it.
 - **Dialog fatigue moves to the new dialog.** Details that name the change, rather than a fixed sentence, are what keep it read. A batch shows one dialog, not one per item.
