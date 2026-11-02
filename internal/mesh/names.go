@@ -9,6 +9,7 @@ import (
 
 const (
 	StreamMesh    = "bm-mesh"
+	StreamUsage   = "bm-usage" // bmusage.>: every agent's token use (105), outside bm.>
 	BucketNodes   = "bm-nodes"
 	BucketState   = "bm-state"
 	BucketRunner  = "bm-runner"

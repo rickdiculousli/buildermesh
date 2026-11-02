@@ -18,7 +18,8 @@ import (
 // are written for, and a test that names keychain gets
 // testdata/fake-security.sh. A level's plugin refresh runs claude, and
 // codex whenever it is on PATH: both are the plugin fakes, which list no
-// plugins. The state dir is a temp one, and the module's main is read from
+// plugins. The state dir and Claude Code's config dir (whose transcripts serve's
+// usage loop reads) are temp ones, and the module's main is read from
 // a path that does not exist, so no test reads or removes the box's notice
 // or reaches the network. No test runs in a Claude Code session. A test
 // that sets its own fake overrides these.
@@ -45,6 +46,7 @@ func TestMain(m *testing.M) {
 			"BMESH_KEY_STORE":        "file",
 			"BMESH_CACHE_DIR":        filepath.Join(dir, "cache"),
 			"XDG_STATE_HOME":         filepath.Join(dir, "state"),
+			"CLAUDE_CONFIG_DIR":      filepath.Join(dir, "claude"),
 			"BMESH_UPSTREAM_URL":     filepath.Join(dir, "no-upstream"),
 			"BMESH_SECURITY_COMMAND": "sh " + filepath.Join(testdata, "fake-security.sh"),
 			"BMESH_CLAUDE_COMMAND":   "sh " + filepath.Join(testdata, "fake-claude-plugin.sh"),

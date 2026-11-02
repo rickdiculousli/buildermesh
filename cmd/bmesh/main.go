@@ -100,6 +100,10 @@ commands:
                                            what a Claude Code session (this one, a node's, or --session's) read
                                            and did per request: its replies' first lines as written, the rung its
                                            actions imply, what it read before it acted
+  usage [<path> | --session <id>] [--since D] [--repo R] [--calls] [--json]
+                                           token use every box put on the mesh, per agent (most read first), or
+                                           one agent's: read by kind, main and subagents, a coordinator's design
+                                           and exec, its context; --calls one line per model call
   started|progress|blocked|ask [--text T]  report an event; print <event> <path> (started keeps the Claude Code
                                            session it ran from on the node's record)
   done --commit SHA [--text T]             report done (a lead's commit must be its landing on main, its trailers
@@ -381,6 +385,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdContext(rest)
 	case "audit":
 		return a.cmdAudit(rest)
+	case "usage":
+		return a.cmdUsage(rest)
 	case "started", "progress", "blocked", "ask", "done":
 		return a.cmdEvent(cmd, rest)
 	case "send":

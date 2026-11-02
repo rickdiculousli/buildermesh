@@ -238,7 +238,7 @@ var reports = []string{"started", "progress", "ask", "blocked", "held"}
 // subcommands that read ("" for none given); a command not here starts or
 // changes something.
 var reads = map[string][]string{
-	"mesh-status": nil, "inbox": nil, "watch": nil, "context": nil, "audit": nil,
+	"mesh-status": nil, "inbox": nil, "watch": nil, "context": nil, "audit": nil, "usage": nil,
 	"whoami": nil, "thread-status": nil, "version": nil, "help": nil, "plugin": nil,
 	"repos":    {"", "show"},
 	"hosts":    {"", "replies", "held", "ping"},

@@ -65,8 +65,9 @@ type Other struct {
 	Words int `json:"words"`
 }
 
-// line is what the reader takes of a transcript line.
-type line struct {
+// Line is what the reader takes of a transcript line; internal/usage reads
+// lines through it too.
+type Line struct {
 	Type             string          `json:"type"`
 	Subtype          string          `json:"subtype"`
 	IsSidechain      bool            `json:"isSidechain"`
@@ -80,16 +81,19 @@ type line struct {
 	ToolUseResult    json.RawMessage `json:"toolUseResult"`
 	Message          *struct {
 		ID      string          `json:"id"`
+		Model   string          `json:"model"`
 		Content json.RawMessage `json:"content"`
 		Usage   *struct {
 			Input       int `json:"input_tokens"`
 			CacheRead   int `json:"cache_read_input_tokens"`
 			CacheCreate int `json:"cache_creation_input_tokens"`
+			Output      int `json:"output_tokens"`
 		} `json:"usage"`
 	} `json:"message"`
 }
 
-type content struct {
+// Content is one block of a line's message content.
+type Content struct {
 	Type      string          `json:"type"`
 	Text      string          `json:"text"`
 	ID        string          `json:"id"`
@@ -100,7 +104,9 @@ type content struct {
 	IsError   bool            `json:"is_error"`
 }
 
-func (l line) blocks() ([]content, string) {
+// Blocks are the message's content blocks, or its text when the content is
+// a plain string.
+func (l Line) Blocks() ([]Content, string) {
 	if l.Message == nil || len(l.Message.Content) == 0 {
 		return nil, ""
 	}
@@ -109,12 +115,12 @@ func (l line) blocks() ([]content, string) {
 		json.Unmarshal(l.Message.Content, &s)
 		return nil, s
 	}
-	var b []content
+	var b []Content
 	json.Unmarshal(l.Message.Content, &b)
 	return b, ""
 }
 
-func (l line) context() int {
+func (l Line) context() int {
 	if l.Message == nil || l.Message.Usage == nil {
 		return 0
 	}
@@ -126,13 +132,13 @@ func (l line) context() int {
 // command's record, a background task's notice, an interrupt.
 var skipped = []string{"<command-name>", "<command-message>", "<local-command-", "<task-notification>", "[Request interrupted"}
 
-// request is the words of a message that starts a turn, ok false for any
-// other line.
-func (l line) request() (string, bool) {
+// Request is the words of a message that starts a turn (the operator's
+// request), ok false for any other line.
+func (l Line) Request() (string, bool) {
 	if l.Type != "user" || l.IsMeta || l.IsSidechain || l.IsCompactSummary {
 		return "", false
 	}
-	blocks, s := l.blocks()
+	blocks, s := l.Blocks()
 	for _, b := range blocks {
 		switch b.Type {
 		case "tool_result":
@@ -206,13 +212,13 @@ func File(path string) (*Audit, error) {
 
 // each calls f with each line of r that parses, once per uuid: a resumed
 // session's transcript writes earlier lines again.
-func each(r io.Reader, f func(line)) error {
+func each(r io.Reader, f func(Line)) error {
 	br := bufio.NewReaderSize(r, 1<<20)
 	seen := map[string]bool{}
 	for {
 		b, err := br.ReadBytes('\n')
 		if b = bytes.TrimSpace(b); len(b) > 0 {
-			var l line
+			var l Line
 			if json.Unmarshal(b, &l) == nil && !seen[l.UUID] {
 				seen[l.UUID] = l.UUID != ""
 				f(l)
@@ -240,7 +246,7 @@ func subagent(r io.Reader) sub {
 	var s sub
 	seen := map[string]bool{}
 	uses := map[string]*use{}
-	each(r, func(l line) {
+	each(r, func(l Line) {
 		if s.first == "" {
 			s.first = l.Timestamp
 		}
@@ -271,7 +277,7 @@ func Transcript(r io.Reader) (*Audit, error) {
 		a.Turns = append(a.Turns, *t)
 		t, texts = nil, nil
 	}
-	err := each(r, func(l line) {
+	err := each(r, func(l Line) {
 		if a.Cwd == "" && l.Cwd != "" {
 			a.Cwd = l.Cwd
 		}
@@ -299,7 +305,7 @@ func Transcript(r io.Reader) (*Audit, error) {
 		if l.Type == "assistant" && l.context() > 0 {
 			ctx = l.context()
 		}
-		if words, ok := l.request(); ok {
+		if words, ok := l.Request(); ok {
 			end()
 			first, _, _ := strings.Cut(words, "\n")
 			t = &Turn{N: len(a.Turns) + 1, At: l.Timestamp, Words: clip(first, 100), Read: []Read{}}
@@ -308,7 +314,7 @@ func Transcript(r io.Reader) (*Audit, error) {
 		if t == nil {
 			return
 		}
-		blocks, _ := l.blocks()
+		blocks, _ := l.Blocks()
 		switch l.Type {
 		case "assistant":
 			for _, b := range blocks {
@@ -328,7 +334,7 @@ func Transcript(r io.Reader) (*Audit, error) {
 			if l.IsMeta && l.SourceToolUseID != "" {
 				// A skill's text, sent after its call's result.
 				if u := uses[l.SourceToolUseID]; u != nil && u.skill > 0 && u.skill <= len(t.Read) {
-					_, s := l.blocks()
+					_, s := l.Blocks()
 					for _, b := range blocks {
 						s += b.Text
 					}
@@ -350,16 +356,18 @@ func Transcript(r io.Reader) (*Audit, error) {
 	return a, err
 }
 
-// acts is what a tool call changes, "" when it only reads: an Edit or
-// Write, a commit, a push, a bmesh command that starts or changes
-// something.
-func acts(u *use) string {
-	switch u.name {
+func acts(u *use) string { return Acts(u.name, u.input) }
+
+// Acts is what a call of tool name with input changes, "" when it only
+// reads: an Edit or Write, a commit, a push, a bmesh command that starts or
+// changes something.
+func Acts(name string, input map[string]any) string {
+	switch name {
 	case "Edit", "Write", "NotebookEdit", "MultiEdit":
-		p, _ := u.input["file_path"].(string)
-		return u.name + " " + p
+		p, _ := input["file_path"].(string)
+		return name + " " + p
 	case "Bash":
-		cmd, _ := u.input["command"].(string)
+		cmd, _ := input["command"].(string)
 		return shellActs(cmd)
 	}
 	return ""
@@ -368,7 +376,7 @@ func acts(u *use) string {
 // result takes a tool call's result into its turn: the first action, when
 // it is one that succeeded; the facts its success sets; and, for a call
 // before the first action, what it read.
-func result(t *Turn, u *use, b content, raw json.RawMessage) {
+func result(t *Turn, u *use, b Content, raw json.RawMessage) {
 	words := len(strings.Fields(resultText(b.Content)))
 	if u.acts != "" {
 		if !b.IsError && t.Acted == "" {
@@ -438,7 +446,7 @@ var specWrite = regexp.MustCompile(`>\s*['"]?[^\s'";&|]*docs/proposals/[^\s'";&|
 
 // takeFacts sets the facts a call that succeeded bears out: a bmesh build
 // or lead start, an ideate, a push to main, a new spec.
-func takeFacts(f *Facts, u *use, b content) {
+func takeFacts(f *Facts, u *use, b Content) {
 	cmd, _ := u.input["command"].(string)
 	if u.name == "Bash" {
 		for _, c := range bmeshCalls(cmd) {
@@ -462,8 +470,8 @@ func takeFacts(f *Facts, u *use, b content) {
 
 // toolFacts calls f with each tool call of l and each result of l with its
 // call: what a subagent's lines need, its facts and nothing it read.
-func toolFacts(l line, uses map[string]*use, f *Facts) {
-	blocks, _ := l.blocks()
+func toolFacts(l Line, uses map[string]*use, f *Facts) {
+	blocks, _ := l.Blocks()
 	for _, b := range blocks {
 		switch {
 		case l.Type == "assistant" && b.Type == "tool_use":
@@ -503,7 +511,7 @@ func resultText(raw json.RawMessage) string {
 		json.Unmarshal(raw, &s)
 		return s
 	}
-	var bs []content
+	var bs []Content
 	json.Unmarshal(raw, &bs)
 	var b strings.Builder
 	for _, c := range bs {

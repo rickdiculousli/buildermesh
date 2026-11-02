@@ -48,18 +48,24 @@ func ID(getenv func(string) string) (string, bool) {
 // Transcript is the path of Claude Code session id's transcript on this
 // box, under CLAUDE_CONFIG_DIR, else ~/.claude; false when it has none.
 func Transcript(getenv func(string) string, id string) (string, bool) {
-	if !sessionID.MatchString(id) {
+	dir, ok := ClaudeDir(getenv)
+	if !sessionID.MatchString(id) || !ok {
 		return "", false
 	}
-	dir := getenv("CLAUDE_CONFIG_DIR")
-	if dir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", false
-		}
-		dir = filepath.Join(home, ".claude")
-	}
 	return claudeTranscript(dir, id)
+}
+
+// ClaudeDir is Claude Code's config dir, whose projects/ hold its
+// transcripts: CLAUDE_CONFIG_DIR, else ~/.claude; false with no home.
+func ClaudeDir(getenv func(string) string) (string, bool) {
+	if dir := getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+		return dir, true
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", false
+	}
+	return filepath.Join(home, ".claude"), true
 }
 
 // Measure reads the context of the session this process runs in: Claude

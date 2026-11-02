@@ -22,6 +22,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/runner"
 	"github.com/rickdiculousli/buildermesh/internal/selfupdate"
+	"github.com/rickdiculousli/buildermesh/internal/session"
 	"github.com/rickdiculousli/buildermesh/internal/upgrade"
 	"github.com/rickdiculousli/buildermesh/internal/web"
 )
@@ -205,6 +206,7 @@ func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Wri
 	daemonDone := make(chan error, 1)
 	log := slog.New(slog.NewTextHandler(stderr, nil))
 	quota := &web.Quota{Command: cfg.Quota.Command} // one gate for the map's strip and the daemon's reminders
+	claudeDir, _ := session.ClaudeDir(os.Getenv)
 	go func() {
 		t3Token := ""
 		if cfg.Runner.Kind == "t3" {
@@ -214,7 +216,7 @@ func serve(ctx context.Context, cfg *config.Config, listen string, stderr io.Wri
 			Client: c, Cfg: cfg, Runner: r, Host: host,
 			T3Token: t3Token, StateDir: config.StateDir(), ConfigDir: cfg.ConfigDir(), HostsEvery: serveHostsEvery,
 			Log:       log,
-			Checkouts: cfg.Expand(cfg.Runner.Checkouts), ClaudeBin: claude,
+			Checkouts: cfg.Expand(cfg.Runner.Checkouts), ClaudeBin: claude, ClaudeDir: claudeDir,
 			Quota:    quota,
 			Revision: buildVersion().Revision, Release: buildVersion().Release, Tag: buildTag(), RevTime: buildVersion().Time, Label: buildVersion().String(), Module: buildModule(), Exe: exe,
 			Restart:    func() { restarting.Store(true); restart() },

@@ -8,7 +8,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-// Provision creates the stream and buckets; it is safe to run repeatedly.
+// Provision creates the streams and buckets; it is safe to run repeatedly.
 // keepResults is bm-results' age limit (0 = none): an older result is gone.
 func Provision(ctx context.Context, c *Client, keepResults time.Duration) error {
 	if _, err := c.JS.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
@@ -20,6 +20,16 @@ func Provision(ctx context.Context, c *Client, keepResults time.Duration) error 
 		Duplicates: 2 * time.Minute,
 	}); err != nil {
 		return fmt.Errorf("stream %s: %w", StreamMesh, err)
+	}
+	if _, err := c.JS.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
+		Name:       StreamUsage,
+		Subjects:   []string{"bmusage.>"},
+		Retention:  jetstream.LimitsPolicy,
+		Storage:    jetstream.FileStorage,
+		MaxAge:     30 * 24 * time.Hour,
+		Duplicates: 2 * time.Minute,
+	}); err != nil {
+		return fmt.Errorf("stream %s: %w", StreamUsage, err)
 	}
 	for _, b := range []struct {
 		name    string

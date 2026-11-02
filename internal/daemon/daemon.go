@@ -42,6 +42,7 @@ type Deps struct {
 
 	Checkouts string // routine instances' checkouts root ([runner] checkouts, expanded)
 	ClaudeBin string // the claude command for model routines, split on spaces
+	ClaudeDir string // Claude Code's config dir, whose transcripts the usage loop reads; "" = no usage loop
 
 	PushRetry []time.Duration // waits before each push retry; nil = 5s, 30s
 	PushGrace time.Duration   // how long a push in flight may finish at shutdown; 0 = 10s
@@ -152,7 +153,8 @@ func decodeEvent(data []byte) (mesh.Event, error) {
 }
 
 // Run publishes started (after pushing an update that never started), then
-// starts the activity follower, the poll+wake+rounds+settle and silence loops, the
+// starts the activity follower, the poll+wake+rounds+settle and silence loops,
+// with ClaudeDir and StateDir set the usage loop, the
 // digest and push loops when [notify] has somewhere to send, the quota
 // reset reminders when [quota] remind_topic is set, and, when
 // [repos] names any repo, the routine loop and (with this binary's module
@@ -206,6 +208,9 @@ func Run(ctx context.Context, d Deps) error {
 			q = &web.Quota{Command: d.Cfg.Quota.Command}
 		}
 		start(func() { every(ctx, remindEvery, func() { remindOnce(ctx, d, q) }) })
+	}
+	if d.ClaudeDir != "" && d.StateDir != "" {
+		start(func() { every(ctx, usageEvery, func() { usageOnce(ctx, d) }) })
 	}
 	if pushEnabled(d.Cfg) {
 		start(func() { pushLoop(ctx, d) })
