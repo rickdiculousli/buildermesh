@@ -266,14 +266,17 @@ func fetch(ctx context.Context, c *mesh.Client, since time.Time, filters []strin
 	if info.State.Msgs == 0 || info.State.LastTime.Before(since) {
 		return nil
 	}
-	// A consumer on subjects the stream lacks only ends at its wait.
+	// A consumer with nothing to deliver from since only ends at its wait.
 	held := false
 	for _, f := range filters {
-		fi, err := st.Info(ctx, jetstream.WithSubjectFilter(f))
+		m, err := st.GetLastMsgForSubject(ctx, f)
+		if errors.Is(err, jetstream.ErrMsgNotFound) {
+			continue
+		}
 		if err != nil {
 			return err
 		}
-		held = held || len(fi.State.Subjects) > 0
+		held = held || !m.Time.Before(since)
 	}
 	if !held {
 		return nil
