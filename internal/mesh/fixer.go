@@ -25,22 +25,27 @@ func FixFamily(f string) (base string, n int, ok bool) {
 // Fixers is what the registry, the states and the pending feedback say of
 // one repo's fixers.
 type Fixers struct {
-	Live      Node  // a fixer neither done nor blocked; Path "" when none
-	LiveState State // its state
-	Last      Node  // the fixer with the highest N; Path "" when none
-	LastState State // its state
-	Next      int   // the next fixer's N: one past the highest <repo>-fix-<N> registered (as a path or a family) or holding feedback
+	Live      Node            // a fixer neither done nor blocked; Path "" when none
+	LiveState State           // its state
+	Last      Node            // the fixer with the highest N; Path "" when none
+	LastState State           // its state
+	Next      int             // the next fixer's N: one past the highest <repo>-fix-<N> registered (as a path or a family) or holding feedback
+	Building  map[string]bool // the build families, of any repo, with a lead neither done nor blocked
 }
 
 // ReadFixers reads repo's fixers from nodes, their states and pending
-// (every family holding feedback): the live one, the newest, and the next
-// N, so a fixer's family is never joined by the next.
+// (every family holding feedback): the live one, the newest, the next N, so
+// a fixer's family is never joined by the next, and the families still
+// building.
 func ReadFixers(nodes []Node, states map[string]State, pending []FamilyPending, repo string) Fixers {
-	var f Fixers
+	f := Fixers{Building: map[string]bool{}}
 	base, last := RepoToken(repo), 0
 	names := make([]string, 0, 2*len(nodes)+len(pending))
 	for _, n := range nodes {
 		names = append(names, n.Path, n.Family)
+		if st := states[n.Path].State; n.Role == "lead" && n.Family != "" && st != "done" && st != "blocked" {
+			f.Building[n.Family] = true
+		}
 		if n.Role != "fixer" || n.Repo != repo {
 			continue
 		}

@@ -214,6 +214,32 @@ func TestPendingIssueStartsFixerOnThePass(t *testing.T) {
 	}
 }
 
+// Feedback from a build family with a lead still working waits for the
+// family: no fixer starts until its last lead is done (or blocked), then
+// one takes what the batch left.
+func TestFixerWaitsForTheBatch(t *testing.T) {
+	st := &starts{}
+	f := fixerSetup(t, testHost, st)
+	for _, p := range []string{"bm-030", "bm-031"} {
+		if err := mesh.PutNode(f.ctx, f.c, mesh.Node{Path: p, Role: "lead", Repo: "bm", Family: "bm-build-1",
+			StartedAt: time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	meshtest.ForceState(t, f.c, "bm-030", mesh.State{State: "done", By: "node"})
+	meshtest.ForceState(t, f.c, "bm-031", mesh.State{State: "working", By: "node"})
+	f.feedback(t, "bm", "")
+	fixerOnce(f.ctx, f.d)
+	if got := st.list(); len(got) != 0 {
+		t.Fatalf("started while bm-031 works: %v", got)
+	}
+	meshtest.ForceState(t, f.c, "bm-031", mesh.State{State: "blocked", By: "node", Text: "stuck"})
+	fixerOnce(f.ctx, f.d)
+	if got := st.list(); len(got) != 1 || got[0] != "bm-fix-1" {
+		t.Fatalf("once the batch is quiet: %v", got)
+	}
+}
+
 // A blocked fixer is never restarted; feedback naming another repo, a
 // registry with no own row, another box's row and a binary that doesn't
 // say its module start nothing.

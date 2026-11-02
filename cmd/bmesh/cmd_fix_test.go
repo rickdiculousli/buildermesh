@@ -306,7 +306,8 @@ func TestFixLeadReportsToItsFixer(t *testing.T) {
 }
 
 // mesh-status shows bmesh's own open issues as one fixes line, naming who
-// has them; other repos' feedback keeps its line per family.
+// has them or the batch they wait for; other repos' feedback keeps its line
+// per family.
 func TestMeshStatusFixesLine(t *testing.T) {
 	c, _ := ownSetup(t)
 	ctx := t.Context()
@@ -320,6 +321,10 @@ func TestMeshStatusFixesLine(t *testing.T) {
 			t.Fatalf("%d %q %q\nwant %q", code, out, errs, want)
 		}
 	}
+	putNode(t, c, ctx, mesh.Node{Path: "demo-002", Role: "lead", Repo: "demo", Family: "demo-build-1"})
+	meshtest.ForceState(t, c, "demo-002", mesh.State{State: "working", By: "node"})
+	tail("fixes: 2 pending for demo (starts once demo-build-1 is done)\n")
+	meshtest.ForceState(t, c, "demo-002", mesh.State{State: "done", By: "node"})
 	tail("fixes: 2 pending for demo (starts within a minute)\nfeedback: 1 pending in demo-build-1\n")
 	putNode(t, c, ctx, mesh.Node{Path: "demo-fix-1", Role: "fixer", Repo: "demo", Family: "demo-fix-1", StartedAt: "2026-10-17T11:00:00Z"})
 	meshtest.ForceState(t, c, "demo-fix-1", mesh.State{State: "working", By: "node"})

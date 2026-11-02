@@ -1698,7 +1698,7 @@ Then, in order:
 3. `<path> landing <age>: <text>` per ready request, its age since `bmesh ready` and the lead's `landing` text (`: held, waiting for the release` while held; `landed <sha8> (ready <age> ago); the final wake is pending` or `land refused (ready <age> ago): <refusal>; the wake carrying it is pending` while the daemon owes the lead its wake; see [`bmesh ready`](#bmesh-ready));
 4. `<path> ▲ <level> <age> ago: <words>` per open flag of a node not `done`: the newest `runaway` event of each rule the daemons announced for it since it started (at most the stream's 30 days), a `runaway` hiding the same rule's `overworking`, runaway first (see [Flags](#flags));
 5. `<host>: <repo> waits for your approval (+<N> commits): in a terminal on <host>, bmesh hosts approve <id> (expires <day hh:mm>)` per hold any box's presence carries (`<host>: a registry proposal from <box> waits for your approval (<N> row changes): ...` for a registry proposal), this box's own among them; none with `[hosts]` off (see [Hosts: The hold](#levelling));
-6. `fixes: N pending for <repo> (<fixer> <state>)`, the open issues naming bmesh's own repo (see [The fixer](#the-fixer)): the parentheses read `(<fixer> <state>)` while a fixer has them (`fixes: N pending for <repo> (<fixer> working)`), `(starts within a minute)` when the daemon starts one on its next pass, `(<fixer> blocked)` while the newest fixer's block waits on the operator, and `(<fixer> done; they wait on you)` when the fixer had them and left them;
+6. `fixes: N pending for <repo> (<fixer> <state>)`, the open issues naming bmesh's own repo (see [The fixer](#the-fixer)): the parentheses read `(<fixer> <state>)` while a fixer has them (`fixes: N pending for <repo> (<fixer> working)`), `(starts within a minute)` when the daemon starts one on its next pass, `(starts once <family> is done)` while an issue's build family still has a lead working, `(<fixer> blocked)` while the newest fixer's block waits on the operator, and `(<fixer> done; they wait on you)` when the fixer had them and left them;
 7. `feedback: N pending in <family>` per family with other feedback pending (see [`bmesh feedback`](#bmesh-feedback));
 8. `t3 sign-in on <host>: expires in N days (bmesh t3 login)` with the `t3` runner and this box's T3 sign-in under 7 days from expiry (`expires in 1 day` in the singular, and `t3 sign-in on <host>: expired (bmesh t3 login)` once it has expired; see [`bmesh t3 login`](#bmesh-t3-login));
 9. the behind-main notice (see [Updates](#updates));
@@ -2242,7 +2242,7 @@ Takes, renews and gives back leases on a repo's slots (see [Leases](#leases)). I
 
 **`release <key>`** gives back a held lease. It refuses a lease held by someone else (exit 3).
 
-**`run <slot> -- <cmd...>`** holds a lease while a command runs. It runs the command in its own process group, renews the lease every ttl/3, and exits with the command's code. On SIGINT or SIGTERM it kills the group, releases the lease and exits 1. When a renew fails, the lease is lost, the command is killed and `lock-lease run` exits 1.
+**`run <slot> -- <cmd...>`** holds a lease while a command runs. It runs the command in its own process group (on Unix, a session of its own, with no controlling terminal), renews the lease every ttl/3, and exits with the command's code. On SIGINT or SIGTERM it kills the group, releases the lease and exits 1. When a renew fails, the lease is lost, the command is killed and `lock-lease run` exits 1.
 
 **Refusals.**
 
@@ -3178,13 +3178,14 @@ See also: [`bmesh build`](#bmesh-build), [`bmesh spec template`](#bmesh-spec-tem
 
 The fixer is a fix lead whose builds neither hold nor are held by the repo's other builds (its own pipeline, see [Build families](#build-families)). On bmesh's own repo only (the registry row whose `go.mod` declares the module the binary was built from; the row `update` and `land` find), it rules on the feedback naming that repo under the rulings below. The fixes it rules are made or built without the operator reviewing them first. With no such row, nothing here is active. With no such row, or a binary that doesn't name its module, the daemon starts nothing. [`bmesh fix`](#bmesh-fix) starts one by hand.
 
-**When the daemon starts one.** The daemon of the row's `host` (any daemon when the row names none) starts a fixer while the row is `ship` and all three hold:
+**When the daemon starts one.** The daemon of the row's `host` (any daemon when the row names none) starts a fixer while the row is `ship` and all four hold:
 
 1. None is live.
 2. The newest isn't `blocked` (a block, a stop included, waits on the operator and is never restarted).
 3. An open issue (pending feedback naming the repo that no spec on its `main` names in `from_feedback` and no fix commit there names in its subject; what `list --repo` prints) was published at or after the newest fixer's start, or there has been no fixer.
+4. No such issue's build family has a lead still working (neither `done` nor `blocked`), so one fixer takes a batch's feedback once its last lead lands. A coordinator whose batch needs a fix now runs [`bmesh fix`](#bmesh-fix).
 
-An issue a fixer had when it started and left is not started on again. The daemon starts one within a minute of the issue, once across every box. Its output and any failure go to the daemon's log.
+An issue a fixer had when it started and left is not started on again. The daemon starts one within a minute of the issue, or of its family's last lead finishing, once across every box. Its output and any failure go to the daemon's log.
 
 **Who reaches the operator.** Only the fixer does. A lead in a `<repo>-fix-<N>` family (a fix lead) pushes nothing: its `ask`, `blocked` and `done` go to the fixer's inbox in the shapes an executor's take to its lead (see [`bmesh executor`](#bmesh-executor)). The fixer answers or relays them under the rulings, and reports them. The fixer's own `ask`, `blocked` and `done` push as a lead's do (see [Pushes](#pushes)). `mesh-status` shows the open issues on its `fixes:` line, with the fixer's state (see [`bmesh mesh-status`](#bmesh-mesh-status)).
 
@@ -3349,6 +3350,7 @@ Internals: [internals](internals.md#queueing)
 - A deterministic kind's job is answered from its recorded result, ok or failed, without a run, unless `--rerun`.
 - A command kind's job runs the checkout's `[setup]`, as the job's commit defines it, after the move and before its slots are leased, when its installs aren't current; with no `inputs`, on every job, since the move changed the commit under them (see [Setup](#setup)). A model kind's job runs none.
 - A job whose slot is busy goes back to the inbox for 30 s.
+- A run starts in a process group of its own, which on Unix is a session of its own with no controlling terminal: an interactive shell it starts (`bash -i`) can't take the terminal and stop the run when `build`, `land`, `release` or `routine run` was typed in one.
 
 The daemon answers `ok=false` with the reason (`routine wait` prints it and exits 1, as for any failed job) for:
 

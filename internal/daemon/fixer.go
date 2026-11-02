@@ -63,12 +63,13 @@ func fixerLoop(ctx context.Context, d Deps, interval time.Duration) {
 // nothing happens), a ship row, and only the daemon of its host acts (any
 // daemon when the row names none, as fix runs where it is run). A fixer is
 // due when none is live (neither done nor blocked), the newest isn't
-// blocked (its issues wait on the operator), and an open issue naming the
+// blocked (its issues wait on the operator), an open issue naming the
 // repo (spec.OpenIssues on its main) is newer than the newest fixer's
-// start: an issue a fixer had at its start and left is not started on
-// again. The start is claimed by a fixer daemon event with Nats-Msg-Id
-// fixer-<the next fixer's path>, so of two daemons one starts it; a start
-// that failed is tried again once the stream's duplicate window has passed.
+// start (an issue a fixer had at its start and left is not started on
+// again), and no such issue's build family has a lead still working. The
+// start is claimed by a fixer daemon event with Nats-Msg-Id fixer-<the next
+// fixer's path>, so of two daemons one starts it; a start that failed is
+// tried again once the stream's duplicate window has passed.
 func fixerOnce(ctx context.Context, d Deps) {
 	own := d.Cfg.ModuleRepo(d.Module)
 	if own == "" {
@@ -148,13 +149,26 @@ func readFixQueue(ctx context.Context, c *mesh.Client, repo, repoPath, glob stri
 }
 
 // FixerDue reports whether the daemon starts a fixer for open, the open
-// issues of fx's repo: none is live, the newest isn't blocked, and an
-// issue is newer than the newest fixer's start (or there was none).
+// issues of fx's repo: none is live, the newest isn't blocked, an issue is
+// newer than the newest fixer's start (or there was none), and no such
+// issue's family is still building (FixerWaitsOn).
 func FixerDue(fx mesh.Fixers, open []mesh.Feedback) bool {
 	if fx.Live.Path != "" || fx.LastState.State == "blocked" {
 		return false
 	}
-	return len(unseen(fx, open)) > 0
+	return len(unseen(fx, open)) > 0 && FixerWaitsOn(fx, open) == ""
+}
+
+// FixerWaitsOn names the build family, of the issues no fixer has had, that
+// still has a lead working, so one fixer takes a batch's feedback once the
+// batch is done; "" when none does.
+func FixerWaitsOn(fx mesh.Fixers, open []mesh.Feedback) string {
+	for _, f := range unseen(fx, open) {
+		if fx.Building[f.Family] {
+			return f.Family
+		}
+	}
+	return ""
 }
 
 // unseen is the issues in open no fixer has had: published at or after the

@@ -1,6 +1,7 @@
 // Package proc puts a command in its own process group and kills the group,
-// so no descendant outlives a run: Setpgid and kill(-pid) on Unix, a new
-// process group and taskkill /T on Windows.
+// so no descendant outlives a run: a new session (Setsid, so no controlling
+// terminal) and kill(-pid) on Unix, a new process group and taskkill /T on
+// Windows.
 package proc
 
 import "os/exec"

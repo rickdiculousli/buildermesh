@@ -712,6 +712,8 @@ func (a *app) feedbackLines(ctx context.Context, nodes []mesh.Node, states map[s
 				who = fx.Live.Path + " " + cmp.Or(fx.LiveState.State, "idle")
 			case fx.LastState.State == "blocked":
 				who = fx.Last.Path + " blocked"
+			case daemon.FixerWaitsOn(fx, open) != "":
+				who = "starts once " + daemon.FixerWaitsOn(fx, open) + " is done"
 			case !daemon.FixerDue(fx, open):
 				who = fx.Last.Path + " done; they wait on you"
 			}

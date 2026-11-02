@@ -223,7 +223,7 @@ The runner reads its token through one credential interface, so a self-renewing 
 
 [Manual: The fixer](manual.md#the-fixer)
 
-The daemon decides on every feedback message and on each minute's pass, from the issues and fixer nodes that exist, never from what an earlier pass meant to do.
+The daemon decides on every feedback message and on each minute's pass, from the issues and fixer nodes that exist, never from what an earlier pass meant to do. An issue no fixer has had waits while a lead of its `family` (any repo's, role `lead`) is neither `done` nor `blocked`, so the minute's pass after its last lead finishes starts the fixer.
 
 1. It claims the start by publishing `bm.daemon.<host>.fixer` (`to` the fixer's path, `<repo>-fix-<N>`; `text` `<N> open for <repo>`) with `Nats-Msg-Id` `fixer-<path>`, as a push is claimed. A duplicate reply means another daemon has it; a failed start is tried again once the stream's two-minute duplicate window has passed.
 2. It runs `bmesh fix` with its own binary; output and any failure go to the daemon's log.
@@ -324,7 +324,7 @@ A reply is an inbox message (`kind: "reply"`) to the requester carrying `{"job",
 
 **The marker** is `<git dir>/bmesh-setup` (`git rev-parse --path-format=absolute --git-dir`: a linked worktree's own `.git/worktrees/<name>`, so every worktree keeps its own), one line of hex: the sha256 of `command <command>\0`, then for each path `git ls-files -z -- <inputs>` lists, in byte order, `file <path> <sha256 of its working-tree content, or missing>\0`. No inputs, no `ls-files`. A run removes the marker first and writes it after it succeeds (and, where the tree must stay clean, after `git status --porcelain -z --untracked-files=all` came back empty), hashing the inputs as they stand after the run.
 
-**The run** goes through the platform shell in the worktree's root, its own process group killed at `timeout` and again after it exits, with the caller's environment and `BMESH_SETUP=1`. Its output is captured whole; a failure carries the last 30 lines. An inline run's setup is bounded by its own timeout, not the command's one-minute deadline. The daemon runs a job's setup under its loop's context, so a stopping daemon kills it and hands the job back.
+**The run** goes through the platform shell in the worktree's root, its own process group (`internal/proc`: `Setsid` on Unix, so no controlling terminal; a new process group on Windows) killed at `timeout` and again after it exits, with the caller's environment and `BMESH_SETUP=1`. Its output is captured whole; a failure carries the last 30 lines. An inline run's setup is bounded by its own timeout, not the command's one-minute deadline. The daemon runs a job's setup under its loop's context, so a stopping daemon kills it and hands the job back.
 
 ### Leases
 
