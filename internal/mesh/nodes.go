@@ -136,10 +136,13 @@ func GetNode(ctx context.Context, c *Client, path string) (Node, bool, error) {
 	return n, ok, err
 }
 
-// ForgetNode deletes path's node, state, runner sample, hold and ready
+// ForgetNode deletes path's state, runner sample and node, hold and ready
 // request and its inbox consumer; what is already gone is skipped. Its events stay in the stream.
 func ForgetNode(ctx context.Context, c *Client, path string) error {
-	for _, name := range []string{BucketNodes, BucketState, BucketRunner} {
+	// The node goes last of the three: a reader that sees it gone sees the
+	// state and runner sample gone, and a forget that fails part way leaves
+	// the node for the rescan to forget again.
+	for _, name := range []string{BucketState, BucketRunner, BucketNodes} {
 		kv, err := bucket(ctx, c, name)
 		if err != nil {
 			return err
