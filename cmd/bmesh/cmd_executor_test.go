@@ -82,7 +82,7 @@ func TestExecutorNewMakesWorktreeBranchNode(t *testing.T) {
 	if !strings.Contains(rest, "You are executor demo-012.alpha in buildermesh. Work only in "+wt+" on branch t3code/lead-alpha:") ||
 		!strings.Contains(rest, "Every bmesh command carries --node demo-012.alpha.") || !strings.Contains(rest, "starts with `cd "+wt+" &&`") ||
 		!strings.Contains(rest, "`cd "+wt+" && bmesh --node demo-012.alpha started --text") || !strings.Contains(rest, "`buildermesh:executor` skill") ||
-		!strings.Contains(rest, "`bmesh --node demo-012.alpha done --commit <sha> --text \"<one line>\"` alone") {
+		!strings.Contains(rest, "`bmesh --node demo-012.alpha done --commit <sha> --text \"<what's there>; Verified: <command> -> <a line it printed> | none\"` alone") {
 		t.Fatalf("header %q", rest)
 	}
 	// Then the rest of its brief: the piece to fill in, how it reports, and
