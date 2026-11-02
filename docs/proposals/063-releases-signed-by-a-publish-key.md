@@ -4,10 +4,11 @@ title: A bmesh release installs only when bmesh's publish key signed it, on ever
 kind: feature
 size: L
 judge: opus
-status: accepted
+status: rejected
 lens: eng
 proposed_by: dfdc9673-27b2-4f3f-9f17-95a5b436de66
 proposed_on: 2026-10-17
+reason: signed releases make bmesh harder for anyone else to run
 ---
 
 ## Opportunity
