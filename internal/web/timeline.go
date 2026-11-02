@@ -143,8 +143,9 @@ type transition struct {
 // in states at that state's at instead, so one done long ago has no lane;
 // routine
 // instances one working segment per job, from its "job <id> started" to its
-// "job <id> ok|fail". A path with events but no node record gets a lane
-// too, its parent the path less its last segment. Lanes come in need
+// "job <id> ok|fail". A path with events but no node record (a forgotten
+// node) gets a lane ending at its last event, its parent the path less its
+// last segment. Lanes come in need
 // order of their state at to (a blocked, asking or silent state older than
 // stale, when stale is set, after held and ahead of idle, as the band folds
 // it), then by start, then path, each followed by its children in the same
@@ -218,6 +219,11 @@ func Timeline(nodes []mesh.Node, states map[string]mesh.State, hist []mesh.Store
 
 	var lanes, routines []Lane
 	for path, tr := range trans {
+		if _, ok := byPath[path]; !ok {
+			// No record: the node was forgotten, which leaves its events but
+			// marks nothing, so its lane ends at its last event.
+			tr = append(tr, transition{tr[len(tr)-1].at, "done"})
+		}
 		l := newLane(path, byPath)
 		l.start = tr[0].at
 		for i, x := range tr {

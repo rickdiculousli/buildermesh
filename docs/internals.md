@@ -617,7 +617,7 @@ The start-of-read check runs `pragma_table_info` on each table and `json_type` o
   - a node with no events left in the stream (its 30 days have passed) starts from its `bm-state` state at that state's `at`, so a lead done long ago has no lane.
 - **Ticks**: `progress`, `job` (an inbox message of kind `job`, on its sender's lane), `refused` (`land-refused`, on its `to`), `ready` and `done`, within the window.
 - **Routine instances** get one `working` segment per job, from a `job <id> started` progress to the `job <id> ok|fail <ms>` that ends it; a job still open runs to `to`.
-- A path with events but no node record still gets a lane: a lead when it has one segment, else an executor under the path less its last segment.
+- A path with events but no node record (a node forgotten with `bmesh node forget`, which leaves its events) gets a lane that ends at its last event, read as `done`: a lead when its path has one segment, else an executor under the path less its last segment.
 - **Segments** are clipped to the window, and a lane with none in it is left out, so a lead done before the window has no lane.
 - **Order**: lanes come in need order of their state at `to`: `blocked`, `asking`, `silent`, `working`, `landing`, `held`, then a need state that began more than `[serve] stale_after` before `to`, then `idle`, then `done`. Ties go by the lane's first transition, then by path. Each lane is followed by its children (lanes whose `parent` is it) in the same order, and routine lanes come last, by path.
 - **`?lead=<path>`** serves that node's lane and the lanes under its path over its whole life: from the earliest segment to `to`, or, once every one of them is done, to their last segment or tick.

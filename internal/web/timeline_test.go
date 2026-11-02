@@ -170,6 +170,21 @@ func TestTimelineNodeWhoseEventsAgedOutStartsFromItsStoredState(t *testing.T) {
 	}
 }
 
+func TestTimelineForgottenNodeEndsAtItsLastEvent(t *testing.T) {
+	// app-007 was blocked, then forgotten: its record and state are gone,
+	// its events stay.
+	nodes := []mesh.Node{node("app-001", "lead", "", 0)}
+	hist := []mesh.Stored{ev(1, "app-001", "started", "", ""), ev(2, "app-007", "started", "", ""),
+		ev(5, "app-007", "blocked", "stuck", "")}
+	v := Timeline(nodes, nil, hist, min0(0), min0(60), 0)
+	if got := lanePaths(v); !reflect.DeepEqual(got, []string{"app-001", "app-007"}) {
+		t.Fatalf("order %v, want the forgotten app-007 after the working lead", got)
+	}
+	if l := lane(t, v, "app-007"); l.State != "done" || !reflect.DeepEqual(l.Segs, []Seg{seg(2, 5, "working")}) {
+		t.Fatalf("forgotten lane %+v, want it to end at its last event", l)
+	}
+}
+
 func TestTimelineChildrenFollowTheirLeadInNeedOrder(t *testing.T) {
 	nodes := []mesh.Node{node("app-001", "lead", "", 0), node("app-001.api", "executor", "app-001", 2),
 		node("app-001.web", "executor", "app-001", 3), node("app-002", "lead", "", 1), node("app-003", "lead", "", 5),
