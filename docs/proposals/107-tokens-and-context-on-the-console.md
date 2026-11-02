@@ -4,7 +4,7 @@ title: The console shows tokens by role over time, every agent's totals, a coord
 kind: feature
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: ux
 proposed_by: operator
 proposed_on: 2026-10-24

@@ -4,7 +4,7 @@ title: The console flags runaway and overworking agents by fixed rules against t
 kind: feature
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-24

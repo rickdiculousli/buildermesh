@@ -4,7 +4,7 @@ title: The map becomes a console, with KPI tiles, the needs-you band and a fleet
 kind: ux
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: ux
 proposed_by: operator
 proposed_on: 2026-10-24

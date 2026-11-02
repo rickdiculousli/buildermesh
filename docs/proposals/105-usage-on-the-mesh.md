@@ -4,7 +4,7 @@ title: Every box puts each agent's token use on the mesh, per model call, with a
 kind: feature
 size: L
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-24
