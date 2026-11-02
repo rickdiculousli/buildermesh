@@ -2,13 +2,16 @@
 // throwaway bmesh serve) with every state the map draws: two live leads and
 // their executors (working, asking, done and one idle), a held lead, a
 // landing lead (ready, its box's daemon landing it), a done lead for the
-// shelf, a silent lead, an orphan, a round and its two engineers (one
-// blocked), a pooled routine kind with instances in two repos and three
-// spent fresh runs, a queued job, a few events and messages, two leases, a
-// result and a daemon digest, and writes the quota fixture the seeded
-// config's quota command reads (-quota). -leads N (default 2) adds N-2
-// working leads, each with one working executor, to look at a crowded map
-// (and long names) on a phone.
+// shelf, a silent lead, a lead blocked for a day (stale: the band's older
+// fold), an orphan, a round and its two engineers (one blocked), a pooled
+// routine kind with instances in two repos and three spent fresh runs, a
+// queued job, a few events and messages, two leases, a result and a daemon
+// digest 16 hours old (too old for the strip), and writes the quota fixture
+// the seeded config's quota command reads (-quota). -leads N (default 2)
+// adds N-2 working leads, each with one working executor, to look at a
+// crowded map (and long names) on a phone. -again PATH seeds nothing: it
+// publishes a new ask on the seeded mesh's PATH (one asking or silent, such
+// as docs-0007), so a row dismissed on the map shows again.
 package main
 
 import (
@@ -27,7 +30,17 @@ func main() {
 	mapURL := flag.String("map", "http://127.0.0.1:3775/", "the map's URL, printed when done")
 	leads := flag.Int("leads", 2, "adds this many working leads less two")
 	quota := flag.String("quota", "", "where to write the quota fixture (none when empty)")
+	again := flag.String("again", "", "seed nothing: publish a new ask on this node")
 	flag.Parse()
+	if *again != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		if err := ask(ctx, *url, *again); err != nil {
+			fmt.Fprintln(os.Stderr, "seed:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if *quota != "" {
 		if err := writeQuota(*quota, time.Now()); err != nil {
 			fmt.Fprintln(os.Stderr, "seed:", err)
@@ -59,6 +72,7 @@ func seed(ctx context.Context, url string, leads int) error {
 		{Path: "app-0039", Role: "lead", Repo: "app", Spec: "0039", StartedAt: ago(80), Branch: "bmesh/app-0039"},
 		{Path: "app-0041", Role: "lead", Repo: "app", Spec: "0041", StartedAt: ago(55), Branch: "bmesh/app-0041"},
 		{Path: "app-0040", Role: "lead", Repo: "app", Spec: "0040", StartedAt: ago(60), Branch: "bmesh/app-0040"},
+		{Path: "app-0038", Role: "lead", Repo: "app", Spec: "0038", StartedAt: ago(26 * 60), Branch: "bmesh/app-0038"},
 		{Path: "docs-0007", Role: "lead", Repo: "docs", Spec: "0007", StartedAt: ago(30)},
 		{Path: "docs-0007.guide", Role: "executor", Repo: "docs", Parent: "docs-0007", StartedAt: ago(25)},
 		{Path: "old-0001.fix", Role: "executor", Repo: "app", Parent: "old-0001", StartedAt: ago(90)},
@@ -81,7 +95,9 @@ func seed(ctx context.Context, url string, leads int) error {
 	}
 	// Each step is an event and the state it sets; silent and landing are
 	// the daemon's, addressed to the node they move.
-	for _, s := range [][4]string{
+	for _, s := range [][5]string{
+		{"app-0038", "started", "", "working", ago(25 * 60)},
+		{"app-0038", "blocked", "the branches already exist", "blocked", ago(24 * 60)},
 		{"app-0042", "started", "planning the endpoints", "working"},
 		{"app-0042.api", "started", "", "working"},
 		{"app-0042.api", "progress", "handlers written, tests next", "working"},
@@ -113,7 +129,7 @@ func seed(ctx context.Context, url string, leads int) error {
 		{"routine.review.f9c0d1e2f", "started", "", "working"},
 		{"routine.review.f9c0d1e2f", "done", "", "done"},
 	} {
-		ev, path := mesh.Event{From: s[0], Event: s[1], Text: s[2]}, s[0]
+		ev, path := mesh.Event{From: s[0], Event: s[1], Text: s[2], At: s[4]}, s[0]
 		switch s[1] {
 		case "silent":
 			ev.To, path = "docs-0007", "docs-0007"
@@ -126,7 +142,7 @@ func seed(ctx context.Context, url string, leads int) error {
 		if err := mesh.PublishEvent(ctx, c, ev); err != nil {
 			return err
 		}
-		if _, err := mesh.WriteState(ctx, c, path, mesh.State{State: s[3], Text: s[2], By: "seed"}); err != nil {
+		if _, err := mesh.WriteState(ctx, c, path, mesh.State{State: s[3], Text: s[2], By: "seed", At: s[4]}); err != nil {
 			return fmt.Errorf("%s %s: %w", path, s[3], err)
 		}
 	}
@@ -180,13 +196,28 @@ func seed(ctx context.Context, url string, leads int) error {
 		Output: "looks good", By: "routine.review.opus-5-5-1"}); err != nil {
 		return err
 	}
-	if err := mesh.PublishEvent(ctx, c, mesh.Event{From: "daemon.seed", Event: "digest", At: ago(23),
+	if err := mesh.PublishEvent(ctx, c, mesh.Event{From: "daemon.seed", Event: "digest", At: ago(16 * 60),
 		Text: "1 asking, 1 done, 1 silent",
 		Body: "asking: app-0042.web: which chart library?\ndone: docs-0007.guide @0123abcd\nsilent: docs-0007 (quiet for 25m)"}); err != nil {
 		return err
 	}
 	return mesh.SendReply(ctx, c, mesh.Path{"routine", "review", "opus-5-5-1"}, mesh.Path{"app-0042"},
 		mesh.Reply{Job: "seed-j1", Kind: "review", OK: true, Output: "looks good", By: "routine.review.opus-5-5-1"})
+}
+
+// ask publishes a new ask on path and moves its state to asking.
+func ask(ctx context.Context, url, path string) error {
+	c, err := mesh.Connect(ctx, url, "", "hub", "bmesh/seed", false)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	const text = "asking again"
+	if err := mesh.PublishEvent(ctx, c, mesh.Event{From: path, Event: "ask", Text: text}); err != nil {
+		return err
+	}
+	_, err = mesh.WriteState(ctx, c, path, mesh.State{State: "asking", Text: text, By: "seed"})
+	return err
 }
 
 // writeQuota writes two providers' readings in the quota command's output

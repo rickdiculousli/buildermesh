@@ -45,6 +45,9 @@ type TreeView struct {
 	Routines []RoutineGroup `json:"routines"`
 	Orphans  []TreeNode     `json:"orphans"`
 	Operator []OperatorSpec `json:"operator,omitempty"` // landed specs with steps for the operator still open
+	// StaleAfter is [serve] stale_after in seconds: a needs-you state older
+	// than this folds away on the map (0 = never).
+	StaleAfter int64 `json:"stale_after"`
 }
 
 // OperatorSpec is a landed spec whose operator_steps are not all ticked,

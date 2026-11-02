@@ -80,7 +80,12 @@ func ParseSize(s string) (int64, error) {
 	return n * m, nil
 }
 
-type ServeConfig struct{ Listen string }
+// ServeConfig is the map's: where it listens, and StaleAfter, how old a
+// needs-you state grows before the map folds it away (0 = never).
+type ServeConfig struct {
+	Listen     string
+	StaleAfter time.Duration
+}
 
 type RunnerConfig struct {
 	Kind        string
@@ -104,6 +109,15 @@ type NotifyConfig struct {
 	Push        []string
 	MapURL      string
 	CatchUp     time.Duration
+}
+
+// DigestPeriod is how often the daemon writes a digest: DigestEvery, or an
+// hour when it is 0 or less.
+func (n NotifyConfig) DigestPeriod() time.Duration {
+	if n.DigestEvery <= 0 {
+		return time.Hour
+	}
+	return n.DigestEvery
 }
 
 type LivenessConfig struct {
@@ -316,10 +330,13 @@ func FormatDuration(d time.Duration) string {
 
 // file mirrors the TOML layout; durations use the text-decoding type.
 type file struct {
-	Mesh   MeshConfig `toml:"mesh"`
-	Host   HostConfig `toml:"host"`
-	Hub    HubConfig  `toml:"hub"`
-	Serve  ServeConfig
+	Mesh  MeshConfig `toml:"mesh"`
+	Host  HostConfig `toml:"host"`
+	Hub   HubConfig  `toml:"hub"`
+	Serve struct {
+		Listen     string
+		StaleAfter duration `toml:"stale_after"`
+	}
 	Runner RunnerConfig
 	Notify struct {
 		Ntfy        string
@@ -367,7 +384,7 @@ func defaults() *Config {
 	return &Config{
 		Mesh:  MeshConfig{Domain: "hub", Store: DefaultStore(), Listen: "127.0.0.1:4222"},
 		Hub:   HubConfig{MaxFileStore: "8GB", MaxMemoryStore: "256MB"},
-		Serve: ServeConfig{Listen: "127.0.0.1:3774"},
+		Serve: ServeConfig{Listen: "127.0.0.1:3774", StaleAfter: 6 * time.Hour},
 		Runner: RunnerConfig{Kind: "t3", T3Server: "http://127.0.0.1:3773", T3Runtime: "auto", TmuxSession: "bmesh",
 			Worktrees: "~/.bmesh/worktrees", Checkouts: "~/.bmesh/checkouts", Claude: "claude"},
 		Notify:   NotifyConfig{DigestEvery: time.Hour, Push: []string{"ask", "blocked", "done"}, CatchUp: time.Hour},
@@ -388,9 +405,10 @@ func defaults() *Config {
 // file is c in the TOML layout, the defaults a file is decoded over.
 func (c *Config) file() file {
 	f := file{
-		Mesh: c.Mesh, Host: c.Host, Hub: c.Hub, Serve: c.Serve, Runner: c.Runner, Spec: c.Spec, Models: c.Models,
+		Mesh: c.Mesh, Host: c.Host, Hub: c.Hub, Runner: c.Runner, Spec: c.Spec, Models: c.Models,
 		Quota: c.Quota, Console: c.Console, Hosts: c.Hosts, Context: c.Context,
 	}
+	f.Serve.Listen, f.Serve.StaleAfter = c.Serve.Listen, duration(c.Serve.StaleAfter)
 	f.Update.Repo, f.Update.CheckEvery, f.Update.Upstream, f.Update.Track = c.Update.Repo, duration(c.Update.CheckEvery), c.Update.Upstream, c.Update.Track
 	f.Notify.Ntfy, f.Notify.Command, f.Notify.MapURL = c.Notify.Ntfy, c.Notify.Command, c.Notify.MapURL
 	f.Notify.DigestEvery = duration(c.Notify.DigestEvery)
@@ -501,7 +519,8 @@ func Load(path string) (*Config, error) {
 			c.ignored = append(c.ignored, fmt.Sprintf("bmesh: [runner] %s is ignored (T3 0.1.0 needs no script); delete it from %s", key, path))
 		}
 	}
-	c.Mesh, c.Host, c.Hub, c.Serve, c.Runner, c.Spec, c.Models = f.Mesh, f.Host, f.Hub, f.Serve, f.Runner, f.Spec, f.Models
+	c.Mesh, c.Host, c.Hub, c.Runner, c.Spec, c.Models = f.Mesh, f.Host, f.Hub, f.Runner, f.Spec, f.Models
+	c.Serve = ServeConfig{Listen: f.Serve.Listen, StaleAfter: time.Duration(f.Serve.StaleAfter)}
 	if !slices.Contains(HubRoles, c.Hub.Role) {
 		return nil, fmt.Errorf("config %s: [hub] role %q: want \"\" (no hub here), hub or leaf", path, c.Hub.Role)
 	}
@@ -568,7 +587,7 @@ func Load(path string) (*Config, error) {
 		WakeEvery: time.Duration(f.Liveness.WakeEvery)}
 	c.Status = StatusConfig{KeepDone: time.Duration(f.Status.KeepDone)}
 	c.Routines = RoutinesConfig{KeepResults: time.Duration(f.Routines.KeepResults)}
-	for key, d := range map[string]time.Duration{"[status] keep_done": c.Status.KeepDone, "[routines] keep_results": c.Routines.KeepResults,
+	for key, d := range map[string]time.Duration{"[serve] stale_after": c.Serve.StaleAfter, "[status] keep_done": c.Status.KeepDone, "[routines] keep_results": c.Routines.KeepResults,
 		"[update] check_every": c.Update.CheckEvery} {
 		if d < 0 {
 			return nil, fmt.Errorf("config %s: %s: negative duration", path, key)

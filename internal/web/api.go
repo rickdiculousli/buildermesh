@@ -203,6 +203,7 @@ func (s *server) tree(w http.ResponseWriter, r *http.Request) {
 	}
 	v := Tree(nodes, states, x)
 	v.Operator = s.operator(ctx)
+	v.StaleAfter = int64(s.cfg.Serve.StaleAfter / time.Second)
 	writeJSON(w, v)
 }
 
@@ -649,14 +650,17 @@ type digest struct {
 	Body  string `json:"body"`
 }
 
+// stripView is /api/strip; DigestEvery is the daemon's digest period in
+// seconds, so the page drops a digest older than twice it.
 type stripView struct {
-	Quota  []Reading `json:"quota"`
-	Digest *digest   `json:"digest"`
+	Quota       []Reading `json:"quota"`
+	Digest      *digest   `json:"digest"`
+	DigestEvery int64     `json:"digest_every"`
 }
 
 func (s *server) strip(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	v := stripView{Quota: s.quota.Get(ctx, s.now())}
+	v := stripView{Quota: s.quota.Get(ctx, s.now()), DigestEvery: int64(s.cfg.Notify.DigestPeriod() / time.Second)}
 	hist, err := mesh.History(ctx, s.c, "bm.daemon.*.digest", time.Time{})
 	if err != nil {
 		fail(w, err)

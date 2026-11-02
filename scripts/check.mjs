@@ -4,10 +4,12 @@
 // tree on a live connection, prints the title, writes a screenshot of the
 // viewport to png when given, and exits: 0 once the title showed, 1 when it
 // did not within 20 s, its bandHeld= or bandLanding= is a non-zero number
-// (a held or landing node in the needs-you band) or its landing= is 0 or
-// missing (the seed always has one landing lead; the last title is printed
-// all the same), 2 on a
-// usage or browser error. No --dump-dom: the page's /events stream never
+// (a held or landing node in the needs-you band), its landing= or older= is
+// 0 or missing, its staleLast= isn't yes or its digest= is 1 (the seed
+// always has one landing lead, and one lead blocked for a day that folds
+// into the band's older line and sorts after the working leads, and its
+// digest is too old for the strip; the last title is printed all the same),
+// 2 on a usage or browser error. No --dump-dom: the page's /events stream never
 // ends, so a plain headless load never returns.
 //
 // Chromium is $CHROME, else the newest headless shell or Chromium in the
@@ -136,7 +138,13 @@ try {
   if (bandLanding) console.error("check.mjs: a landing node is in the needs-you band");
   const noLanding = !/ landing=[1-9]\d*/.test(t);
   if (noLanding) console.error("check.mjs: no landing box on the map");
-  code = ready && !bandHeld && !bandLanding && !noLanding ? 0 : 1;
+  const noOlder = !/ older=[1-9]\d*/.test(t);
+  if (noOlder) console.error("check.mjs: no stale row in the band's older fold");
+  const staleFirst = !/ staleLast=yes/.test(t);
+  if (staleFirst) console.error("check.mjs: a stale block is not after the working ones");
+  const oldDigest = / digest=1/.test(t);
+  if (oldDigest) console.error("check.mjs: the strip shows a digest older than twice digest_every");
+  code = ready && !bandHeld && !bandLanding && !noLanding && !noOlder && !staleFirst && !oldDigest ? 0 : 1;
   ws.close();
 } catch (e) {
   console.error(`check.mjs: ${e.message}`);

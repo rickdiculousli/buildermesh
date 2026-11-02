@@ -326,7 +326,8 @@ func TestTreeEndpoint(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	cfg := &config.Config{Repos: map[string]config.Repo{"app": {Path: repo}}, Spec: config.SpecConfig{Glob: "docs/proposals/{id}-*.md"}}
+	cfg := &config.Config{Repos: map[string]config.Repo{"app": {Path: repo}}, Spec: config.SpecConfig{Glob: "docs/proposals/{id}-*.md"},
+		Serve: config.ServeConfig{StaleAfter: 6 * time.Hour}}
 	for _, n := range []mesh.Node{
 		{Path: "a", Role: "lead"},
 		{Path: "a.x", Role: "executor", Parent: "a"},
@@ -362,6 +363,9 @@ func TestTreeEndpoint(t *testing.T) {
 	}
 	if len(v.Orphans) != 1 || v.Orphans[0].Node.Path != "b.x" {
 		t.Fatalf("orphans %+v", v.Orphans)
+	}
+	if v.StaleAfter != 6*3600 {
+		t.Fatalf("stale_after %d", v.StaleAfter)
 	}
 	// The needs-you band's specs: open steps only.
 	if !strings.Contains(body, `"operator":[{"repo":"app","id":"007","title":"Open steps","open":1,"total":2},{"repo":"app","id":"009","title":"Needs","open":2,"total":3}]`) {

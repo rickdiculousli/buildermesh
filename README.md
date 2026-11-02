@@ -225,7 +225,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
   </picture>
 </p>
 
-`bmesh serve` draws the mesh live at `http://127.0.0.1:3774/`: leads with their executors, rounds with their engineers, each check with its queue, and at the top what needs you: a session that is blocked, asking or silent. A lead its daemon is landing, or one held at a gate, is drawn calm and never in that band, and a quiet `working` lead is the only kind called silent.
+`bmesh serve` draws the mesh live at `http://127.0.0.1:3774/`: leads with their executors, rounds with their engineers, each check with its queue, and at the top what needs you: a session that is blocked, asking or silent. A need older than `[serve] stale_after` (6 hours), or one you dismiss with its `×`, folds into one `older` line under the rest. A lead its daemon is landing, or one held at a gate, is drawn calm and never in that band, and a quiet `working` lead is the only kind called silent.
 
 ## All commands and flags
 
