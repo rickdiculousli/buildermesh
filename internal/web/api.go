@@ -41,13 +41,16 @@ type server struct {
 	ledgers map[string]ledgerEntry // by repo path
 	kinds   kindEntry
 	fetched map[string]time.Time // when each repo's last background fetch started
-	hist    histEntry            // bm-mesh read whole, for /api/timeline
+
+	histMu sync.Mutex // held through a read of hist
+	hist   histEntry  // bm-mesh read whole, for /api/timeline
 }
 
 type histEntry struct {
-	at    time.Time
-	nodes []mesh.Node
-	msgs  []mesh.Stored
+	at     time.Time
+	nodes  []mesh.Node
+	states map[string]mesh.State
+	msgs   []mesh.Stored
 }
 
 type specEntry struct {

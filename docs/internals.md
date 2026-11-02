@@ -609,11 +609,12 @@ The start-of-read check runs `pragma_table_info` on each table and `json_type` o
 
 `/api/timeline?since=1h|6h|24h|7d` (default `6h`; any other value is a 400) serves `{from, to, lanes:[{path, role, parent, repo, spec, state, segs:[[from, to, state]], ticks:[[at, kind, text]]}]}`, every time in unix seconds. `to` is when bm-mesh was read; `state` is the lane's state at `to` (`done` once done).
 
-- **The read.** bm-mesh is read whole (`bm.>` from its first message) with the nodes, once per 30 seconds for every window and lead page, so each lane's state at the window's start is replayed from its own history. An event's time is its payload's `at` (the stored time without one), and events are replayed in that order.
+- **The read.** bm-mesh is read whole (`bm.>` from its first message) with the nodes and `bm-state`, once per 30 seconds for every window and lead page. Requests that miss the cache together wait for one read. Each lane's state at the window's start is replayed from its own history. An event's time is its payload's `at` (the stored time without one), and events are replayed in that order.
 - **The state table** (`nodeState` and `daemonState` in `internal/web/timeline.go`, `EVENT_STATE` and `DAEMON_STATE` in `map.js`):
   - a node's `started` and `progress` set `working`, `ask` sets `asking`, `blocked` sets `blocked`, `held` sets `held`, `ready` sets `landing`, and `done` ends the lane;
   - a daemon event addressed to a node (`to`) sets that node's state: `silent` sets `silent`, `landing` sets `landing`, and `land-refused` and `land-withdrawn` set `working`;
-  - a node's `started_at` opens an `idle` segment until its first event.
+  - a node's `started_at` opens an `idle` segment until its first event;
+  - a node with no events left in the stream (its 30 days have passed) starts from its `bm-state` state at that state's `at`, so a lead done long ago has no lane.
 - **Ticks**: `progress`, `job` (an inbox message of kind `job`, on its sender's lane), `refused` (`land-refused`, on its `to`), `ready` and `done`, within the window.
 - **Routine instances** get one `working` segment per job, from a `job <id> started` progress to the `job <id> ok|fail <ms>` that ends it; a job still open runs to `to`.
 - A path with events but no node record still gets a lane: a lead when it has one segment, else an executor under the path less its last segment.

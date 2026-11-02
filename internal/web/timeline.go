@@ -138,7 +138,10 @@ type transition struct {
 
 // Timeline replays hist (bm-mesh, oldest first) into a lane per node with a
 // segment in [from, to]: leads, rounds, fixers, executors and engineers by
-// the state table, from idle at registration (started_at); routine
+// the state table, from idle at registration (started_at). A node with no
+// events in hist (they aged out of the stream) starts from its stored state
+// in states at that state's at instead, so one done long ago has no lane;
+// routine
 // instances one working segment per job, from its "job <id> started" to its
 // "job <id> ok|fail". A path with events but no node record gets a lane
 // too, its parent the path less its last segment. Lanes come in need
@@ -146,7 +149,7 @@ type transition struct {
 // stale, when stale is set, after held and ahead of idle, as the band folds
 // it), then by start, then path, each followed by its children in the same
 // order; routine lanes last, by path.
-func Timeline(nodes []mesh.Node, hist []mesh.Stored, from, to time.Time, stale time.Duration) TimelineView {
+func Timeline(nodes []mesh.Node, states map[string]mesh.State, hist []mesh.Stored, from, to time.Time, stale time.Duration) TimelineView {
 	f, t := from.Unix(), to.Unix()
 	byPath := map[string]mesh.Node{}
 	for _, n := range nodes {
@@ -195,6 +198,17 @@ func Timeline(nodes []mesh.Node, hist []mesh.Stored, from, to time.Time, stale t
 		if k := tickKind[e.name]; k != "" && at >= f && at <= t {
 			ticks[e.path] = append(ticks[e.path], Tick{at, k, e.text})
 		}
+	}
+	for _, n := range nodes {
+		tr, st := trans[n.Path], states[n.Path]
+		if len(tr) != 1 || tr[0].state != "idle" || st.State == "" || st.State == "idle" {
+			continue
+		}
+		at := tr[0].at
+		if t, err := time.Parse(time.RFC3339, st.At); err == nil {
+			at = t.Unix()
+		}
+		trans[n.Path] = []transition{{at, st.State}}
 	}
 	for path, js := range open {
 		for _, s := range js {
@@ -334,9 +348,9 @@ func ordered(lanes []Lane, staleBefore int64) []Lane {
 // LeadTimeline is the lanes of path and the nodes under it over path's
 // whole life: from the earliest start among them to to, or, once all of
 // them are done, to the last of their segments and ticks.
-func LeadTimeline(nodes []mesh.Node, hist []mesh.Stored, path string, to time.Time) TimelineView {
+func LeadTimeline(nodes []mesh.Node, states map[string]mesh.State, hist []mesh.Stored, path string, to time.Time) TimelineView {
 	under := func(p string) bool { return p == path || strings.HasPrefix(p, path+".") }
-	all := Timeline(nodes, hist, time.Unix(0, 0), to, 0)
+	all := Timeline(nodes, states, hist, time.Unix(0, 0), to, 0)
 	v := TimelineView{From: to.Unix(), To: to.Unix(), Lanes: []Lane{}}
 	end, done := int64(0), true
 	for _, l := range all.Lanes {
@@ -357,30 +371,34 @@ func LeadTimeline(nodes []mesh.Node, hist []mesh.Stored, path string, to time.Ti
 	return v
 }
 
-// history is bm-mesh read whole with the nodes, at most once per histFor.
-func (s *server) history(r *http.Request) ([]mesh.Node, []mesh.Stored, time.Time, error) {
+// history is bm-mesh read whole with the nodes and their states, at most
+// once per histFor; histMu, held through the read, lets one read serve
+// every request that missed the cache together.
+func (s *server) history(r *http.Request) (histEntry, error) {
+	s.histMu.Lock()
+	defer s.histMu.Unlock()
 	now := s.now()
-	s.mu.Lock()
-	h := s.hist
-	s.mu.Unlock()
-	if h.msgs != nil && now.Sub(h.at) < histFor {
-		return h.nodes, h.msgs, h.at, nil
+	if s.hist.msgs != nil && now.Sub(s.hist.at) < histFor {
+		return s.hist, nil
 	}
-	nodes, err := mesh.ListNodes(r.Context(), s.c)
+	ctx := r.Context()
+	nodes, err := mesh.ListNodes(ctx, s.c)
 	if err != nil {
-		return nil, nil, now, err
+		return histEntry{}, err
 	}
-	msgs, err := mesh.History(r.Context(), s.c, "bm.>", time.Time{})
+	states, err := mesh.ReadAllStates(ctx, s.c)
 	if err != nil {
-		return nil, nil, now, err
+		return histEntry{}, err
+	}
+	msgs, err := mesh.History(ctx, s.c, "bm.>", time.Time{})
+	if err != nil {
+		return histEntry{}, err
 	}
 	if msgs == nil {
 		msgs = []mesh.Stored{}
 	}
-	s.mu.Lock()
-	s.hist = histEntry{at: now, nodes: nodes, msgs: msgs}
-	s.mu.Unlock()
-	return nodes, msgs, now, nil
+	s.hist = histEntry{at: now, nodes: nodes, states: states, msgs: msgs}
+	return s.hist, nil
 }
 
 // timeline is /api/timeline?since=1h|6h|24h|7d (default 6h), or with
@@ -396,16 +414,16 @@ func (s *server) timeline(w http.ResponseWriter, r *http.Request) {
 		}
 		span = d
 	}
-	nodes, hist, at, err := s.history(r)
+	h, err := s.history(r)
 	if err != nil {
 		fail(w, err)
 		return
 	}
 	if p := q.Get("lead"); p != "" {
-		writeJSON(w, LeadTimeline(nodes, hist, p, at))
+		writeJSON(w, LeadTimeline(h.nodes, h.states, h.msgs, p, h.at))
 		return
 	}
-	v := Timeline(nodes, hist, at.Add(-span), at, s.cfg.Serve.StaleAfter)
+	v := Timeline(h.nodes, h.states, h.msgs, h.at.Add(-span), h.at, s.cfg.Serve.StaleAfter)
 	if v.Lanes == nil {
 		v.Lanes = []Lane{}
 	}
