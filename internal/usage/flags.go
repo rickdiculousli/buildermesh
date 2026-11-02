@@ -31,6 +31,7 @@ type Flag struct {
 const (
 	sizeOver    = 2.5         // read past this many times its size's median: overworking
 	sizeRunaway = 5.0         // and past this many: runaway
+	sizeFloor   = 5_000_000   // a read at or under this is never heavy, whatever its median (XS medians are tiny)
 	refusedOver = 3           // land refused this many times or more: overworking
 	burnOver    = 50_000_000  // read past this in the trailing 60 minutes: overworking
 	burnRunaway = 100_000_000 // and past this: runaway
@@ -142,7 +143,7 @@ func (b Baselines) For(role, repo, size string) (m Median, scope string, ok bool
 // [context] compact_soon (0: the context rule is off).
 func Flags(s Subject, b Baselines, compactSoon int) []Flag {
 	var out []Flag
-	if m, scope, ok := b.For(s.Role, s.Repo, s.Size); ok && m.Read > 0 {
+	if m, scope, ok := b.For(s.Role, s.Repo, s.Size); ok && m.Read > 0 && s.Read > sizeFloor {
 		level := ""
 		switch {
 		case float64(s.Read) > sizeRunaway*float64(m.Read):
