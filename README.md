@@ -221,7 +221,7 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/map-dark.png">
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/map-light.png">
-    <img alt="The bmesh console: the KPI tiles, the needs-you band, the fleet timeline of every lead's states and coordinator sessions beside tokens read by role, the agents table, coordinators' design and execution, context per model call and quota" src="docs/assets/map-light.png" width="100%">
+    <img alt="The bmesh console: the KPI tiles, the needs-you band, the fleet timeline of every lead's states and coordinator sessions beside tokens read by role, the flagged agents in the band, the agents table with its watch column beside the outliers, context per model call and quota" src="docs/assets/map-light.png" width="100%">
   </picture>
 </p>
 
