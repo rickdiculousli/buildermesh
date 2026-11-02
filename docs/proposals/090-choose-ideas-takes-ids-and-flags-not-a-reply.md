@@ -4,10 +4,11 @@ title: choose-ideas takes spec ids and flags, not a reply in plain words, so the
 kind: refinement
 size: M
 judge: opus
-status: accepted
+status: rejected
 lens: eng
 proposed_by: operator
 proposed_on: 2026-10-23
+reason: choose-ideas was removed; spec set --land replaced it
 ---
 
 ## Opportunity
