@@ -8,10 +8,15 @@
 // (a held or landing node in the needs-you band), its older= is 0 or
 // missing, its digest= is 1, on the overview or timeline view its segs=
 // lacks any of working, landing, held, silent, asking or blocked, or on the
-// overview its kpis= isn't 6 (the seed always has a segment of each of
+// overview its kpis= isn't 8 (the seed always has a segment of each of
 // those states on the default window, one lead blocked for a day that folds
 // into the band's older line, and a digest too old for the strip; the last
-// title is printed all the same), 2 on a usage or browser error. No
+// title is printed all the same), 2 on a usage or browser error. On the
+// overview the title must also show agents= at least 1 before it counts as
+// loaded, and its roles= (series drawn on the tokens-by-role chart), agents=
+// (rows of the agents table), ctx= (points of the context-per-call chart)
+// and quota= (points of the quota chart) must each be at least 1: the seed
+// publishes usage for all four. No
 // --dump-dom: the page's /events stream never ends, so a plain headless
 // load never returns.
 //
@@ -124,7 +129,8 @@ try {
   for (let i = 0; i < 100 && !ready; i++) {
     await sleep(200);
     t = await title();
-    ready = /trees=[1-9]/.test(t) && /conn=\S*live/.test(t) && (/ lanes=[1-9]/.test(t) || / view=routines/.test(t));
+    ready = /trees=[1-9]/.test(t) && /conn=\S*live/.test(t) && (/ lanes=[1-9]/.test(t) || / view=routines/.test(t))
+      && (!/ view=map /.test(t) || / agents=[1-9]/.test(t));
   }
   if (ready) {
     for (let last = "", i = 0; last !== t && i < 10; i++) {
@@ -152,7 +158,13 @@ try {
       if (!drawn.has(st)) fails.push(`no ${st} segment on the timeline`);
     }
   }
-  if (/ view=map /.test(t) && !/ kpis=6 /.test(t)) fails.push("the KPI row hasn't 6 tiles");
+  if (/ view=map /.test(t)) {
+    if (!/ kpis=8 /.test(t)) fails.push("the KPI row hasn't 8 tiles");
+    for (const [k, what] of [["roles", "no series on the tokens-by-role chart"], ["agents", "no rows in the agents table"],
+      ["ctx", "no points on the context-per-call chart"], ["quota", "no points on the quota chart"]]) {
+      if (!new RegExp(` ${k}=[1-9]`).test(t)) fails.push(what);
+    }
+  }
   for (const f of fails) console.error(`check.mjs: ${f}`);
   code = ready && !fails.length ? 0 : 1;
   ws.close();

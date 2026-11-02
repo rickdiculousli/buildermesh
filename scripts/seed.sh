@@ -8,9 +8,11 @@
 # without a restart; Go changes need a re-run. State lives under
 # ~/.cache/bmesh-scratch/seed/<checkout name> and is wiped on each run (serve's
 # state dir too, so it never writes the box's serve record or plugin);
-# seed.pid there holds serve's pid. A run stops the previous one of the same
-# checkout first. Other arguments go to the seeder (scripts/seed), e.g.
-# -leads 6. BMESH_SEED_HTTP sets serve's listen address. Serve reads no
+# seed.pid there holds serve's pid. The seeded mesh also holds token use (the
+# bm-usage stream: leads, an executor, a routine, two coordinator sessions and
+# a day of quota readings) and the app repo's specs 39 to 42 carry a size.
+# A run stops the previous one of the same checkout first. Other arguments go
+# to the seeder (scripts/seed), e.g. -leads 6. BMESH_SEED_HTTP sets serve's listen address. Serve reads no
 # transcripts: its Claude Code config dir is an empty one.
 set -eu
 
@@ -52,7 +54,9 @@ rm -rf "$dir/jetstream" "$dir/state" "$dir/serve.log" "$dir/cli.toml" "$dir/app"
 mkdir -p "$dir/app/docs/proposals" "$dir/app/.bmesh/routines"
 cat >"$dir/app/docs/proposals/0042-map.md" <<'MD'
 ---
+id: 42
 title: The map
+size: M
 status: building
 merged: 0123abcd4567ef89
 verified: review ok, verify ok at 0123abcd
@@ -74,6 +78,12 @@ curl -s http://127.0.0.1:3775/api/tree | jq .
 
 The map works at 390x844 and 1280x800.
 MD
+# The other leads' specs, for the sizes the usage table shows.
+for spec in "39 S legend" "40 L hub-move" "41 M parser"; do
+	# shellcheck disable=SC2086
+	set -- $spec
+	printf -- '---\nid: %s\ntitle: %s\nsize: %s\nstatus: building\n---\n# %s\n' "$1" "$3" "$2" "$3" >"$dir/app/docs/proposals/00$1-$3.md"
+done
 # A spec app-round-1's engineer landed (the seed's thread-round-1-eng).
 cat >"$dir/app/docs/proposals/043-faster-tests.md" <<'MD'
 ---

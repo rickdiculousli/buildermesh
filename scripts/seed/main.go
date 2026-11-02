@@ -9,7 +9,14 @@
 // routine kind with instances in two repos and three spent fresh runs
 // (each instance's jobs a segment), a queued job, a few events and
 // messages, two leases, a result and a daemon digest 16 hours old (too old for the strip), and writes the quota fixture
-// the seeded config's quota command reads (-quota). -leads N (default 2)
+// the seeded config's quota command reads (-quota). It also publishes token
+// use to the bm-usage stream, back-dated inside each node's working span: the
+// main calls of app-0042 (about 120, context 20k to 320k, one compaction
+// down to 40k, one +19k step from "Read cases.go") with a subagent file,
+// app-0041, app-0039, app-0040, app-0042.api and routine.review.opus-5-5-1,
+// two coordinator sessions of runs split by design and exec (one with a
+// subagent, one peaking at 420k), and a day of claude and codex quota
+// readings every five minutes. -leads N (default 2)
 // adds N-2 working leads, each with one working executor, to look at a
 // crowded map (and long names) on a phone. -again PATH seeds nothing: it
 // publishes a new ask on the seeded mesh's PATH (one asking or silent, such
@@ -21,10 +28,15 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"math"
+	"math/rand/v2"
 	"os"
 	"time"
 
+	"github.com/nats-io/nats.go/jetstream"
+
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/usage"
 )
 
 func main() {
@@ -49,7 +61,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	if err := seed(ctx, *url, *leads); err != nil {
 		fmt.Fprintln(os.Stderr, "seed:", err)
@@ -231,8 +243,14 @@ func seed(ctx context.Context, url string, leads int) error {
 		Body: "asking: app-0042.web: which chart library?\ndone: docs-0007.guide @0123abcd\nsilent: docs-0007 (quiet for 25m)"}); err != nil {
 		return err
 	}
-	return mesh.SendReply(ctx, c, mesh.Path{"routine", "review", "opus-5-5-1"}, mesh.Path{"app-0042"},
-		mesh.Reply{Job: "seed-j1", Kind: "review", OK: true, Output: "looks good", By: "routine.review.opus-5-5-1"})
+	if err := mesh.SendReply(ctx, c, mesh.Path{"routine", "review", "opus-5-5-1"}, mesh.Path{"app-0042"},
+		mesh.Reply{Job: "seed-j1", Kind: "review", OK: true, Output: "looks good", By: "routine.review.opus-5-5-1"}); err != nil {
+		return err
+	}
+	if err := seedUsage(ctx, c, now); err != nil {
+		return err
+	}
+	return seedQuota(ctx, c, now)
 }
 
 // ask publishes a new ask on path and moves its state to asking.
@@ -265,4 +283,241 @@ func writeQuota(path string, now time.Time) error {
 		return err
 	}
 	return os.WriteFile(path, b, 0o644)
+}
+
+// thread is one transcript file's worth of usage: a message head and its
+// calls, published to subj.
+type thread struct {
+	subj, agent, role, repo, session, file, sub, desc string
+	calls                                             []usage.Call
+	marks                                             []usage.Mark
+}
+
+// publish sends t in messages of at most 500 calls (the marks with the
+// first), like the daemon's pass.
+func (t thread) publish(ctx context.Context, c *mesh.Client) error {
+	for i, chunk := 0, 0; i < len(t.calls) || chunk == 0; i, chunk = i+500, chunk+1 {
+		m := usage.Message{Agent: t.agent, Role: t.role, Host: "seed", Repo: t.repo, Session: t.session,
+			File: t.file, Sub: t.sub, Desc: t.desc, Calls: t.calls[i:min(i+500, len(t.calls))]}
+		if chunk == 0 {
+			m.Marks = t.marks
+		}
+		data, err := json.Marshal(m)
+		if err != nil {
+			return err
+		}
+		id := fmt.Sprintf("seed/%s/%d", t.file, chunk)
+		if _, err := c.JS.Publish(ctx, t.subj, data, jetstream.WithMsgID(id), jetstream.WithExpectStream(mesh.StreamUsage)); err != nil {
+			return fmt.Errorf("usage %s: %w", t.subj, err)
+		}
+	}
+	return nil
+}
+
+// ctxPath is n context sizes climbing in uneven steps from first to last;
+// when big is in 1..n-1 that step is exactly bigStep and the others share
+// the rest, so it is the largest.
+func ctxPath(r *rand.Rand, n int, first, last, big, bigStep int64) []int64 {
+	w := make([]float64, n)
+	total := 0.0
+	for i := 1; i < n; i++ {
+		if int64(i) != big {
+			x := r.Float64()
+			w[i] = 0.1 + 1.8*x*x
+			total += w[i]
+		}
+	}
+	rest := float64(last - first)
+	if big > 0 {
+		rest -= float64(bigStep)
+	}
+	out := make([]int64, n)
+	out[0] = first
+	for i := 1; i < n; i++ {
+		d := int64(w[i] / total * rest)
+		if int64(i) == big {
+			d = bigStep
+		}
+		out[i] = out[i-1] + d
+	}
+	return out
+}
+
+// spread is n increasing times across [from, to), jittered.
+func spread(r *rand.Rand, n int, from, to time.Time) []time.Time {
+	out := make([]time.Time, n)
+	for i := range out {
+		out[i] = from.Add(time.Duration(float64(to.Sub(from)) * (float64(i) + 0.8*r.Float64()) / float64(n)))
+	}
+	return out
+}
+
+var causes = []string{"Read cases.go", "Read map.js", "Bash: run the tests", "Edit map.js", "Edit api.go",
+	"Grep handlers", "Agent review the diff", "message", "Write notes.md", "wake"}
+
+// calls builds one call per time with the context sizes ctx: cache reads
+// about 95% of it, the causes drawn at random, the first one a message.
+// phase, when given, is each call's.
+func calls(r *rand.Rand, id, sub string, ts []time.Time, ctx []int64, phase []string) []usage.Call {
+	out := make([]usage.Call, len(ts))
+	for i, t := range ts {
+		in := int64(1 + r.IntN(8))
+		cw := int64(float64(ctx[i]) * (0.03 + 0.02*r.Float64()))
+		c := usage.Call{At: t.UTC().Format(time.RFC3339Nano), ID: fmt.Sprintf("msg_%s_%03d", id, i), Model: "claude-opus-5-5",
+			In: in, CW: cw, CR: ctx[i] - in - cw, Out: int64(120 + r.IntN(1500)), Ctx: ctx[i], Sub: sub,
+			Cause: causes[r.IntN(len(causes))]}
+		if i == 0 {
+			c.Cause = "message"
+		}
+		if phase != nil {
+			c.Phase = phase[i]
+		}
+		out[i] = c
+	}
+	return out
+}
+
+// seedUsage publishes the seeded agents' token use; every call is inside
+// the last six hours and its agent's working span.
+func seedUsage(ctx context.Context, c *mesh.Client, now time.Time) error {
+	r := rand.New(rand.NewPCG(107, 1))
+	ago := func(m float64) time.Time { return now.Add(-time.Duration(m * float64(time.Minute))) }
+	node := func(path, role string) thread {
+		return thread{subj: "bmusage.node." + path, agent: path, role: role, repo: "app",
+			session: fmt.Sprintf("5eed0000-0000-4000-8000-%012x", r.Uint64()>>16), file: "-home-seed-app/" + path + ".jsonl"}
+	}
+	var all []thread
+
+	// app-0042: ctx 20k to 320k over 80 calls, a compaction to 40k, 40 more
+	// calls; the +19k step at call 45 reads cases.go.
+	t := node("app-0042", "lead")
+	ts := spread(r, 120, ago(318), ago(2))
+	ctxs := append(ctxPath(r, 80, 20000, 320000, 45, 19000), ctxPath(r, 40, 40000, 150000, 0, 0)...)
+	t.calls = calls(r, "0042", "", ts, ctxs, nil)
+	t.calls[45].Cause = "Read cases.go"
+	t.calls[80].Cause = "compact"
+	t.marks = []usage.Mark{{At: ts[79].Add(ts[80].Sub(ts[79]) / 2).UTC().Format(time.RFC3339Nano), Kind: "compact"}}
+	all = append(all, t)
+	// Its subagent file.
+	s := t
+	s.file, s.sub, s.desc, s.marks = "-home-seed-app/"+t.session+"/subagents/agent-a1b2c3.jsonl", "agent-a1b2c3", "Explore the handlers", nil
+	s.calls = calls(r, "0042sub", "agent-a1b2c3", spread(r, 15, ago(210), ago(195)), ctxPath(r, 15, 8000, 60000, 0, 0), nil)
+	all = append(all, s)
+
+	for _, n := range []struct {
+		path, role  string
+		n           int
+		from, to    float64
+		first, peak int64
+	}{
+		{"app-0041", "lead", 60, 288, 20, 18000, 250000},
+		{"app-0039", "lead", 40, 238, 90, 15000, 150000},
+		{"app-0040", "lead", 30, 268, 40, 12000, 110000},
+		{"app-0042.api", "executor", 30, 298, 200, 10000, 90000},
+	} {
+		t := node(n.path, n.role)
+		t.calls = calls(r, n.path, "", spread(r, n.n, ago(n.from), ago(n.to)), ctxPath(r, n.n, n.first, n.peak, 0, 0), nil)
+		all = append(all, t)
+	}
+	// The routine instance: five calls around each of its two jobs.
+	t = node("routine.review.opus-5-5-1", "routine")
+	ts = append(spread(r, 5, ago(150), ago(145)), spread(r, 5, ago(32), ago(28))...)
+	t.calls = calls(r, "review1", "", ts, ctxPath(r, 10, 8000, 51000, 0, 0), nil)
+	all = append(all, t)
+
+	// Two coordinator sessions: runs of calls 30 s to 3 min apart with gaps
+	// over 5 min between, each run split by phase.
+	type seg struct {
+		n     int
+		phase string
+	}
+	for _, ss := range []struct {
+		id    string
+		start float64
+		peak  int64
+		runs  [][]seg
+	}{
+		{"ec03a02c-5eed-4a1b-9c0d-000000000001", 335, 420000, [][]seg{{{14, "design"}}, {{8, "design"}, {12, "exec"}}, {{22, "exec"}},
+			{{10, "exec"}, {9, "design"}}, {{6, "design"}, {14, "exec"}}, {{18, "exec"}}}},
+		{"b7d4e91f-5eed-4a1b-9c0d-000000000002", 280, 210000, [][]seg{{{12, "design"}, {6, "exec"}}, {{10, "exec"}, {8, "design"}},
+			{{9, "design"}, {11, "exec"}}, {{12, "exec"}}}},
+	} {
+		at := ago(ss.start)
+		var ts []time.Time
+		var phase []string
+		for _, run := range ss.runs {
+			at = at.Add(time.Duration(6+r.IntN(13)) * time.Minute)
+			for _, sg := range run {
+				for i := 0; i < sg.n; i++ {
+					at = at.Add(30*time.Second + time.Duration(r.IntN(150))*time.Second)
+					ts, phase = append(ts, at), append(phase, sg.phase)
+				}
+			}
+		}
+		agent := usage.SessionAgent("seed", ss.id)
+		t := thread{subj: "bmusage.session.seed." + ss.id, agent: agent, role: usage.Coordinator, repo: "app", session: ss.id,
+			file: "-home-seed-app/" + ss.id + ".jsonl"}
+		t.calls = calls(r, ss.id[:8], "", ts, ctxPath(r, len(ts), 30000, ss.peak, 0, 0), phase)
+		all = append(all, t)
+		if ss.peak < 300000 {
+			// Its subagent: eight calls in a few seconds, in the phase of the main call they follow.
+			k := 20
+			sub := t
+			sub.file, sub.sub, sub.desc = "-home-seed-app/"+ss.id+"/subagents/agent-d4e5f6.jsonl", "agent-d4e5f6", "Review the spec"
+			var sts []time.Time
+			var sph []string
+			for j := 0; j < 8; j++ {
+				sts, sph = append(sts, ts[k].Add(time.Duration(3*(j+1))*time.Second)), append(sph, phase[k])
+			}
+			sub.calls = calls(r, ss.id[:8]+"sub", "agent-d4e5f6", sts, ctxPath(r, 8, 10000, 70000, 0, 0), sph)
+			all = append(all, sub)
+		}
+	}
+	for _, t := range all {
+		if err := t.publish(ctx, c); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// seedQuota publishes a day of readings, one per provider every five
+// minutes: the five-hour percent climbs and drops at a reset every five
+// hours, the week's climbs slowly.
+func seedQuota(ctx context.Context, c *mesh.Client, now time.Time) error {
+	r := rand.New(rand.NewPCG(107, 2))
+	const five = 5 * time.Hour
+	for _, p := range []struct {
+		name        string
+		reset       time.Duration // the next five-hour reset from now
+		peak, week  float64       // the five-hour percent at a reset; the week's percent now
+		perDay      float64       // the week's gain per day
+		weekResetIn time.Duration
+	}{
+		{"claude", 70 * time.Minute, 78, 21.2, 9, 76 * time.Hour},
+		{"codex", 3*time.Hour + 5*time.Minute, 94, 64, 12, 30 * time.Hour},
+	} {
+		for k := 0; k < 288; k++ {
+			t := now.Add(-time.Duration(k) * 5 * time.Minute).UTC().Truncate(time.Second)
+			// The first reset after t, on the grid that has one at now+reset.
+			next := now.Add(p.reset)
+			for next.Add(-five).After(t) {
+				next = next.Add(-five)
+			}
+			phase := 1 - next.Sub(t).Seconds()/five.Seconds()
+			fh := math.Min(100, p.peak*math.Pow(phase, 0.85)+r.Float64()*2)
+			week := p.week - p.perDay*now.Sub(t).Hours()/24 + r.Float64()*0.2
+			readAt := t.Format(time.RFC3339)
+			data, err := json.Marshal(map[string]any{"provider": p.name, "five_hour": math.Round(fh*10) / 10, "week": math.Round(week*10) / 10,
+				"five_reset": next.UTC().Format(time.RFC3339), "week_reset": now.Add(p.weekResetIn).UTC().Format(time.RFC3339), "read_at": readAt})
+			if err != nil {
+				return err
+			}
+			if _, err := c.JS.Publish(ctx, "bmusage.quota.seed", data, jetstream.WithMsgID("seed/quota/"+p.name+"/"+readAt),
+				jetstream.WithExpectStream(mesh.StreamUsage)); err != nil {
+				return fmt.Errorf("quota: %w", err)
+			}
+		}
+	}
+	return nil
 }
