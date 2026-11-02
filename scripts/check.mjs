@@ -16,7 +16,12 @@
 // loaded, and its roles= (series drawn on the tokens-by-role chart), agents=
 // (rows of the agents table), ctx= (points of the context-per-call chart)
 // and quota= (points of the quota chart) must each be at least 1: the seed
-// publishes usage for all four. No
+// publishes usage for all four. The overview's flags= (flag rows in the
+// band) must be at least 1 with flagsRunaway= (runaway ones) at least 1, as
+// must outliers= (points on the outliers chart) and burndown= (marks on the
+// burndowns): the seed has a runaway lead, an overworking one, two build
+// families and a month of spec history; the overview waits for both charts
+// before it counts as loaded. The specs view draws no timeline. No
 // --dump-dom: the page's /events stream never ends, so a plain headless
 // load never returns.
 //
@@ -129,8 +134,9 @@ try {
   for (let i = 0; i < 100 && !ready; i++) {
     await sleep(200);
     t = await title();
-    ready = /trees=[1-9]/.test(t) && /conn=\S*live/.test(t) && (/ lanes=[1-9]/.test(t) || / view=routines/.test(t))
-      && (!/ view=map /.test(t) || / agents=[1-9]/.test(t));
+    ready = /trees=[1-9]/.test(t) && /conn=\S*live/.test(t) && (/ lanes=[1-9]/.test(t) || / view=(routines|specs) /.test(t))
+      && (!/ view=map /.test(t) || / agents=[1-9]/.test(t) && / outliers=[1-9]/.test(t) && / burndown=[1-9]/.test(t))
+      && (!/ view=specs /.test(t) || / burndown=[1-9]/.test(t));
   }
   if (ready) {
     for (let last = "", i = 0; last !== t && i < 10; i++) {
@@ -161,7 +167,9 @@ try {
   if (/ view=map /.test(t)) {
     if (!/ kpis=8 /.test(t)) fails.push("the KPI row hasn't 8 tiles");
     for (const [k, what] of [["roles", "no series on the tokens-by-role chart"], ["agents", "no rows in the agents table"],
-      ["ctx", "no points on the context-per-call chart"], ["quota", "no points on the quota chart"]]) {
+      ["ctx", "no points on the context-per-call chart"], ["quota", "no points on the quota chart"],
+      ["flags", "no flag row in the needs-you band"], ["flagsRunaway", "the seed's runaway has no band row"],
+      ["outliers", "no points on the outliers chart"], ["burndown", "no marks on the burndowns"]]) {
       if (!new RegExp(` ${k}=[1-9]`).test(t)) fails.push(what);
     }
   }
