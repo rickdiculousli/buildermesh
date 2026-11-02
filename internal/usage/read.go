@@ -266,6 +266,18 @@ func fetch(ctx context.Context, c *mesh.Client, since time.Time, filters []strin
 	if info.State.Msgs == 0 || info.State.LastTime.Before(since) {
 		return nil
 	}
+	// A consumer on subjects the stream lacks only ends at its wait.
+	held := false
+	for _, f := range filters {
+		fi, err := st.Info(ctx, jetstream.WithSubjectFilter(f))
+		if err != nil {
+			return err
+		}
+		held = held || len(fi.State.Subjects) > 0
+	}
+	if !held {
+		return nil
+	}
 	last := info.State.LastSeq
 	cons, err := c.JS.OrderedConsumer(ctx, mesh.StreamUsage, jetstream.OrderedConsumerConfig{
 		FilterSubjects: filters, DeliverPolicy: jetstream.DeliverByStartTimePolicy, OptStartTime: &since,

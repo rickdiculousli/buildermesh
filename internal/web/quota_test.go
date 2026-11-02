@@ -141,3 +141,23 @@ func TestQuotaRunIsDetachedAndUnlocked(t *testing.T) {
 		t.Fatalf("runs %q", b)
 	}
 }
+
+// A good run's readings go to bm-usage; a failed run publishes nothing, and
+// a host that is no subject token never publishes.
+func TestQuotaPublishesGoodRuns(t *testing.T) {
+	ctx, c := connect(t)
+	counter := filepath.Join(t.TempDir(), "runs")
+	cmd := `n=$(cat ` + counter + ` 2>/dev/null || echo 0); echo $((n+1)) > ` + counter + `; ` +
+		`[ "$n" -eq 0 ] || exit 1; echo '` + quotaOK + `'`
+	start := time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC)
+	q := &Quota{Command: cmd, Client: c, Host: "box"}
+	q.Get(ctx, start)
+	q.Get(ctx, start.Add(6*time.Minute))
+	(&Quota{Command: `echo '` + quotaOK + `'`, Client: c, Host: "a.b"}).Get(ctx, start.Add(time.Minute))
+	rs, err := usage.ReadQuota(ctx, c, start.Add(-time.Hour))
+	want := usage.QuotaReading{Provider: "claude", FiveHour: 42.5, Week: 17, FiveReset: "2026-10-15T10:59:59Z",
+		WeekReset: "2026-10-20T06:00:00Z", ReadAt: "2026-10-15T09:00:00Z"}
+	if err != nil || len(rs) != 1 || rs[0] != want {
+		t.Fatalf("published %+v, %v", rs, err)
+	}
+}
