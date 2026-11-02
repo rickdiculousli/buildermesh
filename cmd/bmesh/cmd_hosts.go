@@ -296,6 +296,15 @@ func (a *app) passphrase(prompt string, confirm bool) ([]byte, error) {
 	return p, nil
 }
 
+// keyWait is what a protected key's read may take on top of a command's
+// own bound: the bmesh dialog's wait, then a minute for the Keychain prompt.
+const keyWait = hosts.DialogWait + time.Minute
+
+// keyCmdCtx bounds a one-shot command that reads a protected key.
+func keyCmdCtx() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), time.Minute+keyWait)
+}
+
 // readKey reads this box's protected key name for req, behind the
 // request's dialog (or passphrase); a cancelled dialog refuses.
 func (a *app) readKey(name string, req hosts.Request) (ed25519.PrivateKey, hosts.Store, error) {
@@ -401,7 +410,7 @@ func (a *app) cmdHostsInvite(args []string) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), hosts.InviteTTL+time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), hosts.InviteTTL+time.Minute+keyWait)
 	defer cancel()
 	if err := a.connect(ctx, "hosts-invite"); err != nil {
 		return err
@@ -495,7 +504,7 @@ func (a *app) cmdHostsSet(args []string) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := cmdCtx()
+	ctx, cancel := keyCmdCtx()
 	defer cancel()
 	if err := a.connect(ctx, "hosts-set"); err != nil {
 		return err
@@ -547,7 +556,7 @@ func (a *app) cmdHostsRevoke(args []string) error {
 		return err
 	}
 	name := pos[0]
-	ctx, cancel := cmdCtx()
+	ctx, cancel := keyCmdCtx()
 	defer cancel()
 	if err := a.connect(ctx, "hosts-revoke"); err != nil {
 		return err

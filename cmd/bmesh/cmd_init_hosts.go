@@ -70,7 +70,7 @@ func (a *app) initHosts(cfgPath string, admin bool, ask *asker) error {
 		return err
 	}
 	hostPub := hosts.KeyHex(hostKey.Public().(ed25519.PublicKey))
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute+keyWait)
 	defer cancel()
 	if admin {
 		err = a.becomeAdmin(ctx, host, hostPub, secure, stateDir, local, joined)

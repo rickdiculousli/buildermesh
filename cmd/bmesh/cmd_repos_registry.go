@@ -129,7 +129,7 @@ func (a *app) cmdReposPublish(args []string) error {
 	if admin, ok := b.local.Roster.Admin(); !b.cfg.Hosts.Admin || !ok || admin.Name != b.host {
 		return fail(exitRefused, "only the admin box (%s) publishes the registry: run `bmesh repos propose` to send it this box's changes", admin.Name)
 	}
-	ctx, cancel := cmdCtx()
+	ctx, cancel := keyCmdCtx()
 	defer cancel()
 	if err := a.connect(ctx, "repos-publish"); err != nil {
 		return err
@@ -327,7 +327,7 @@ func (a *app) cmdReposRemove(args []string) error {
 	if admin, ok := b.local.Roster.Admin(); !b.cfg.Hosts.Admin || !ok || admin.Name != b.host {
 		return fail(exitRefused, "only the admin box (%s) removes a row from the registry", admin.Name)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), *wait+2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), *wait+2*time.Minute+keyWait)
 	defer cancel()
 	if err := a.connect(ctx, "repos-remove"); err != nil {
 		return err
