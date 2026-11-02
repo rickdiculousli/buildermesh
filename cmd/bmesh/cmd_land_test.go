@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/brief"
 	"github.com/rickdiculousli/buildermesh/internal/checkout"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
@@ -1503,6 +1504,16 @@ func reviewLandRepo(t *testing.T, c *mesh.Client, ctx context.Context, size stri
 	return r
 }
 
+// reviewBrief is the review job's text land sends for spec 012 on base.
+func reviewBrief(t *testing.T, base string) string {
+	t.Helper()
+	text, err := brief.Review(base, "docs/proposals/012-thing.md")
+	if err != nil || !strings.HasPrefix(text, "base: "+base+"\nspec: docs/proposals/012-thing.md\n") {
+		t.Fatal(text, err)
+	}
+	return text
+}
+
 var queuedRE = regexp.MustCompile(`review: queued (\S+)`)
 
 // queuedJob waits for land to queue a review, and returns the job.
@@ -1574,7 +1585,7 @@ func TestLandQueuesTheSizedReview(t *testing.T) {
 	base := gitOut(t, "merge-base", "origin/main", "HEAD")
 	out, errb, res := landBG(t, "app-012")
 	j := queuedJob(t, c, ctx, out, 1)
-	if j.Commit != head || j.Effort != "medium" || j.Model != "m1" || !j.Go || j.Text != "base: "+base || j.Repo != "repo" {
+	if j.Commit != head || j.Effort != "medium" || j.Model != "m1" || !j.Go || j.Text != reviewBrief(t, base) || j.Repo != "repo" {
 		t.Fatalf("job %+v", j)
 	}
 	if gitOut(t, "-C", r.origin, "rev-parse", "lead") != head {
@@ -1845,7 +1856,7 @@ func TestLandQueuesTheReviewAgainAfterItsRebase(t *testing.T) {
 			t.Fatalf("land lacks %q:\n%s", w, out.String())
 		}
 	}
-	if j.Text != "base: "+moved || j.Effort != "medium" {
+	if j.Text != reviewBrief(t, moved) || j.Effort != "medium" {
 		t.Fatalf("job %+v", j)
 	}
 	assertNoLeases(t, c, ctx)

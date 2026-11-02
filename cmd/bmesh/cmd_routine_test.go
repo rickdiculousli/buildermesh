@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/brief"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
@@ -99,6 +100,49 @@ func TestQueueDedupeIsModelAware(t *testing.T) {
 	}
 	if n, err := mesh.Depth(ctx, c, "review"); err != nil || n != 1 {
 		t.Fatalf("depth after m2 %d %v", n, err)
+	}
+}
+
+// A review queued by a lead whose spec is in the tree carries the review
+// brief for its base and spec, as land's does; a text naming a spec, or
+// one from a node with no spec, goes as given.
+func TestQueueReviewFromALeadCarriesItsSpec(t *testing.T) {
+	c, ctx := setup(t)
+	repo := kindRepo(t, map[string]string{"review": "models = [\"m1\"]\nprompt = \"check\"\n"})
+	writeFile(t, filepath.Join(repo, "docs", "proposals", "001-thing.md"), "---\nid: 1\nstatus: done\nsize: M\n---\nbody\n")
+	meshtest.Git(t, repo, "add", "-A")
+	meshtest.Git(t, repo, "commit", "-qm", "spec")
+	base := gitOut(t, "rev-parse", "HEAD^")
+	rendered, err := brief.Review(base, "docs/proposals/001-thing.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue := func(text string) string {
+		t.Helper()
+		if out, errs, code := runCLI(t, as("app-001"), "routine", "queue", "review", "--text", text); code != 0 || !strings.HasPrefix(out, "queued ") {
+			t.Fatalf("queue %q: %d %q %q", text, code, out, errs)
+		}
+		msgs, err := mesh.Fetch(ctx, c, mesh.RoutinePath("review"), false)
+		if err != nil || len(msgs) == 0 || msgs[len(msgs)-1].Job == nil {
+			t.Fatalf("jobs %+v %v", msgs, err)
+		}
+		return msgs[len(msgs)-1].Job.Text
+	}
+	if got := queue("base: " + base); got != "base: "+base {
+		t.Errorf("no node spec: %q", got)
+	}
+	putNode(t, c, ctx, mesh.Node{Path: "app-001", RepoPath: repo, Spec: "001", Repo: filepath.Base(repo)})
+	if got := queue("base: " + base); got != rendered {
+		t.Errorf("from the lead: %q, want the brief", got)
+	}
+	if got := queue("base: " + base + "\nmind the lock"); got != rendered+"\nmind the lock\n" {
+		t.Errorf("with words: %q", got)
+	}
+	if got := queue("base: " + base + "\nspec: docs/proposals/001-thing.md"); got != "base: "+base+"\nspec: docs/proposals/001-thing.md" {
+		t.Errorf("a spec line: %q", got)
+	}
+	if got := queue("look at the lock"); got != "look at the lock" {
+		t.Errorf("no base: %q", got)
 	}
 }
 

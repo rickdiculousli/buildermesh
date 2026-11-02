@@ -8,19 +8,23 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/brief"
 	"github.com/rickdiculousli/buildermesh/internal/checkout"
 	"github.com/rickdiculousli/buildermesh/internal/gitwork"
 	"github.com/rickdiculousli/buildermesh/internal/instance"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	wsetup "github.com/rickdiculousli/buildermesh/internal/setup"
+	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
 const routineUsage = "usage: bmesh routine list [--json] | status [<kind>] [--json] | " +
@@ -398,6 +402,11 @@ func (a *app) cmdRoutineQueue(args []string) error {
 	if _, ok := a.cfg.Repos[repo]; !ok {
 		return fail(exitRefused, "%s is not in the registry, so no daemon would run the job; ask the operator to add it (bmesh repos propose)", repo)
 	}
+	if name == reviewKind {
+		if *text, err = a.specReviewText(ctx, self, top, *text); err != nil {
+			return err
+		}
+	}
 	j := mesh.Job{ID: newID(), Kind: name, Repo: repo, Commit: *commit, Args: jobArgs,
 		Model: *model, Effort: *effort, Text: *text, Go: *goNow, Rerun: *rerun}
 	dup, err := mesh.Queue(ctx, a.client, self, j, top)
@@ -414,6 +423,53 @@ func (a *app) cmdRoutineQueue(args []string) error {
 	}
 	fmt.Fprintf(a.stdout, "%s %s%s\n", verb, j.ID, where)
 	return nil
+}
+
+var specLineRE = regexp.MustCompile(`(?m)^\s*spec:`)
+
+// specReviewText is a review job's text as land sends it, when queued by a
+// node whose spec is in the worktree at top and text names a base but no
+// spec: the review brief for that base and spec, then the text's other
+// lines. Any other text is sent as given.
+func (a *app) specReviewText(ctx context.Context, self mesh.Path, top, text string) (string, error) {
+	base := checkout.BaseFromText(text)
+	if base == "" || specLineRE.MatchString(text) {
+		return text, nil
+	}
+	n, ok, err := mesh.GetNode(ctx, a.client, self.String())
+	if err != nil || !ok || n.Spec == "" {
+		return text, err
+	}
+	id, err := strconv.Atoi(n.Spec)
+	if err != nil {
+		return text, nil
+	}
+	specs, err := spec.Scan(top, a.cfg.Spec.Glob)
+	if err != nil {
+		return "", err
+	}
+	s, ok := spec.Find(specs, id)
+	if !ok {
+		return text, nil
+	}
+	rel, err := filepath.Rel(top, s.Path)
+	if err != nil {
+		return "", err
+	}
+	out, err := brief.Review(base, rel)
+	if err != nil {
+		return "", err
+	}
+	var rest []string
+	for _, l := range strings.Split(text, "\n") {
+		if strings.TrimSpace(l) != "" && checkout.BaseFromText(l) == "" {
+			rest = append(rest, l)
+		}
+	}
+	if len(rest) > 0 {
+		out += "\n" + strings.Join(rest, "\n") + "\n"
+	}
+	return out, nil
 }
 
 // jobOS is the OS a job of the kind at commit runs on ("" for any box):

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/rickdiculousli/buildermesh/internal/brief"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
 
@@ -61,6 +62,13 @@ func TestPatchIDFollowsTheDiffNotTheBase(t *testing.T) {
 	}
 	if p, err := ReviewedPatch(ctx, repo, "please review\nbase: "+base2[:10], work2); err != nil || p != p1 {
 		t.Fatalf("reviewed patch: %q %v", p, err)
+	}
+	review, err := brief.Review(base2, "docs/proposals/001-x.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, err := ReviewedPatch(ctx, repo, review, work2); err != nil || p != p1 {
+		t.Fatalf("reviewed patch from the review brief: %q %v", p, err)
 	}
 	if p, err := ReviewedPatch(ctx, repo, "no base here", work2); err != nil || p != "" {
 		t.Fatalf("no base: %q %v", p, err)

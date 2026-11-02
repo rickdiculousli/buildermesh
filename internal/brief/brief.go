@@ -360,3 +360,11 @@ func RemoveCached(path string) (bool, error) {
 	}
 	return true, nil
 }
+
+// Review is a review job's text: `base: <sha>`, `spec: <path>` and the
+// check of the change against that spec, from the embedded template (no
+// repo overrides it, so the check reaches every repo whatever its review
+// kind's prompt says).
+func Review(base, specPath string) (string, error) {
+	return Render("", "review", map[string]string{"base": base, "spec_path": filepath.ToSlash(specPath)})
+}

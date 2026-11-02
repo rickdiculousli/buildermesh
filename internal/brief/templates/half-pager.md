@@ -34,6 +34,9 @@ The visible result when it's done.
 ## Verification
 Which verify commands prove it; anything new that's needed. A change to the verify commands themselves is a change to the repo's registry row: name it under "Needs from the operator" (`bmesh repos propose` with the new `verify`); once it is published, the row's host box commits the files to `main`. Never edit them by hand. A UI spec names its browser check: the viewports, and the repo's seed and check scripts where it has them (its README's testing section says).
 
+## Shown
+Empty when proposed. The lead fills it in the commit that sets the spec done: one `- <promise>: <evidence>` line per promise of What you'll see and per Verification item past the repo's verify, the evidence a command it ran and a line it printed (`` `cmd` -> `line` ``) or a file in the tree; one `- Easy to miss: <rule>: <evidence>` line; and `- Not shown: <promise>: <why>` for what it couldn't show.
+
 ## Risks and the alternative considered
 
 ## Needs from the operator
