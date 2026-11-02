@@ -1,0 +1,15 @@
+# Upgrade notes for v0.6.0, distilled from the Upgrading sections of the
+# specs it carries. 049 adds [serve] stale_after, asked below. 105's daemon
+# provisions bm-usage and reads its own transcripts, 069's skills come with
+# the binary that has bmesh spec rulings, and 112's half-pager change leaves
+# a repo's own brief alone: none needs a step.
+
+summary = "One question: how old a need grows before the map folds it away. Each box puts its agents' token use on the mesh once it runs this release (bmesh usage reads it); a box not yet updated shows no usage. Reviews check a change against what its spec promised, and a lead shows each promise in its spec's ## Shown."
+
+[[step]]
+kind = "ask"
+key = "[serve] stale_after"
+changed = "the map folds a blocked, asking or silent state older than this into one older line under the needs-you band."
+question = "How old should a need grow before it folds away?"
+choices = ["6h", "2h", "24h", "0"]
+default = "6h"
