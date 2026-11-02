@@ -10,8 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rickdiculousli/buildermesh/internal/brief"
 	"github.com/rickdiculousli/buildermesh/internal/instance"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
+	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
 
 // reviewFile is a file of the sandbox as the review's change leaves it.
@@ -195,5 +197,65 @@ func TestSummaryFlips(t *testing.T) {
 	res.Arms, res.Rows = res.Arms[1:], []Row{row("bug", "cand", 1, true), row("bug", "cand", 2, false)}
 	if md := summary(res); strings.Contains(md, "Flipped") {
 		t.Errorf("one arm has nothing to flip against:\n%s", md)
+	}
+}
+
+// Each review-spec change passes the fixture's tests and sets 015 done
+// with a Shown section; the dropped promise's lines hold one of its names
+// in the miss; and the job's text is the arm's review brief, or the base
+// alone for an arm without one.
+func TestReviewSpecChanges(t *testing.T) {
+	need(t, "git", "go")
+	if len(specSheet.Defects) != 1 {
+		t.Fatalf("%d dropped promises, want one", len(specSheet.Defects))
+	}
+	d := specSheet.Defects[0]
+	for _, r := range d.Lines {
+		b, err := reviewFS.ReadFile(reviewSpecDir + "/miss/" + r.File)
+		if err != nil {
+			t.Fatal(err)
+		}
+		span := strings.Join(strings.Split(string(b), "\n")[r.From-1:r.To], "\n")
+		if !strings.Contains(span, d.Names[0]) {
+			t.Errorf("%s:%d-%d names no %s:\n%s", r.File, r.From, r.To, d.Names[0], span)
+		}
+	}
+	noBrief := Arm{Name: "old", Dir: t.TempDir(), Commands: []string{"help"}, Review: &kind0}
+	for _, part := range []string{"miss", "met"} {
+		for _, arm := range []Arm{{Name: "test", Commands: []string{"help"}, Review: &kind0}, noBrief} {
+			dir := t.TempDir()
+			cs, err := setupCell(dir, findCase("review-spec-"+part), arm, testFixture(t), thisBox(), time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			sandbox := filepath.Join(dir, sandboxDir)
+			job := strings.TrimPrefix(cs.Words[0], kind0.Prompt+"\n\n")
+			want := "\nbase: " + cs.Base + "\n"
+			if arm.Dir == "" {
+				text, err := brief.Review(cs.Base, reviewSpecFile)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want = "\n" + text + "\n" // JobText ends the text with a newline
+			}
+			if !strings.HasPrefix(job, "job: "+reviewJob+" commit: ") || !strings.HasSuffix(job, want) {
+				t.Errorf("%s on %s: job %q, want it to end %q", part, arm.Name, job, want)
+			}
+			if arm.Dir != "" {
+				continue
+			}
+			changed, _ := git(sandbox, gitEnv(dir), "diff", "--name-only", cs.Base+"..HEAD")
+			if got, want := strings.Join(strings.Fields(changed), " "), "README.md cmd/shop/main.go cmd/shop/main_test.go "+reviewSpecFile+" report/report.go report/report_test.go"; got != want {
+				t.Errorf("%s touches %s, want %s", part, got, want)
+			}
+			specText, _ := git(sandbox, gitEnv(dir), "show", "HEAD:"+reviewSpecFile)
+			if shown, _ := spec.Section(specText, "Shown"); !strings.Contains(specText, "status: done") || !strings.Contains(shown, "- Easy to miss:") {
+				t.Errorf("%s: 015 as changed:\n%s", part, specText)
+			}
+			code, out, errs := run(sandbox, 5*time.Minute, append(os.Environ(), "GOTOOLCHAIN=local", "GOPROXY=off", "GOWORK=off", "GOFLAGS="), "go", "test", "-count=1", "./...")
+			if code != 0 {
+				t.Errorf("%s fails the fixture's tests:\n%s%s", part, out, errs)
+			}
+		}
 	}
 }

@@ -8,15 +8,18 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rickdiculousli/buildermesh/internal/brief"
 	"github.com/rickdiculousli/buildermesh/internal/instance"
 )
 
-// The review case: a session run as the review routine runs one, on a
-// commit of the sandbox with planted defects, scored on which of them its
-// reply names. testdata/review holds the base laid over the fixture, the
-// change laid over that, and the defect sheet the scoring reads.
+// The review cases: a session run as the review routine runs one, on a
+// commit of the sandbox, scored on what its reply names. testdata/review
+// holds the base laid over the fixture, the change with planted defects
+// laid over that, and the defect sheet the scoring reads; testdata/
+// review-spec a base adding a spec, two changes that keep its promises or
+// drop one, and the sheet of the dropped promise.
 
-//go:embed testdata/review
+//go:embed testdata/review testdata/review-spec
 var reviewFS embed.FS
 
 const (
@@ -25,9 +28,21 @@ const (
 	reviewBranch = "review"
 	reviewJob    = "skilltest-review"
 	reviewMsg    = "report --daily and --from; checkout prints the receipt once the order is saved; a discount is a negative amount"
+
+	reviewSpecDir   = "testdata/review-spec"
+	reviewSpecSheet = reviewSpecDir + "/promises.md"
+	reviewSpecMsg   = "report --since counts the orders from a date"
+	reviewSpecFile  = "docs/proposals/015-report-since-counts-from-a-date.md"
 	// reviewEffort is the effort landing queues a review at for an M change.
 	reviewEffort = "medium"
 )
+
+// Change is what a routine case's job reviews: the part of dir laid over
+// the base and committed with msg, and, for a change with a spec, the
+// spec's path, which the job's text names as land's does.
+type Change struct {
+	Dir, Part, Msg, Spec string
+}
 
 // Routine makes a cell a routine's model run rather than a plugin's
 // session: the kind's allow, as the routine's claude is given it, and the
@@ -59,16 +74,19 @@ type Sheet struct {
 	Clean   []string
 }
 
-var sheet = mustSheet()
+var (
+	sheet     = mustSheet(reviewSheet)
+	specSheet = mustSheet(reviewSpecSheet)
+)
 
-func mustSheet() Sheet {
-	b, err := reviewFS.ReadFile(reviewSheet)
+func mustSheet(name string) Sheet {
+	b, err := reviewFS.ReadFile(name)
 	if err != nil {
 		panic(err)
 	}
 	s, err := parseSheet(string(b))
 	if err != nil {
-		panic(reviewSheet + ": " + err.Error())
+		panic(name + ": " + err.Error())
 	}
 	return s
 }
@@ -124,17 +142,19 @@ func parseSheet(text string) (Sheet, error) {
 	return s, nil
 }
 
-// overlay writes the files under testdata/review/<part> over the sandbox.
-func overlay(sandbox, part string) error { return layOver(reviewFS, reviewDir+"/"+part, sandbox) }
+// overlay writes the files under <dir>/<part> over the sandbox.
+func overlay(sandbox, dir, part string) error { return layOver(reviewFS, dir+"/"+part, sandbox) }
 
 // commitChange lays the change over the sandbox's base and commits it on
 // its own branch, which the sandbox is left on, and returns the job's text
-// as the routine would send it for that commit.
-func commitChange(sandbox string, genv []string) (string, error) {
-	if err := overlay(sandbox, "change"); err != nil {
+// as the routine would send it for that commit: for a change with a spec,
+// the arm's review brief, as land sends it; for an arm without one, or a
+// change without a spec, the base alone.
+func commitChange(sandbox string, genv []string, ch Change, a Arm) (string, error) {
+	if err := overlay(sandbox, ch.Dir, ch.Part); err != nil {
 		return "", err
 	}
-	for _, s := range [][]string{{"checkout", "-q", "-b", reviewBranch}, {"add", "-A"}, {"commit", "-q", "--no-verify", "-m", reviewMsg}} {
+	for _, s := range [][]string{{"checkout", "-q", "-b", reviewBranch}, {"add", "-A"}, {"commit", "-q", "--no-verify", "-m", ch.Msg}} {
 		if _, err := git(sandbox, genv, s...); err != nil {
 			return "", err
 		}
@@ -151,7 +171,19 @@ func commitChange(sandbox string, genv []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return instance.JobText(instance.Job{ID: reviewJob, Commit: commit, Tree: tree, Text: "base: " + base}), nil
+	text := "base: " + base
+	if ch.Spec != "" {
+		tmpl, own, err := armTemplate(a, "review")
+		if err != nil {
+			return "", err
+		}
+		if own {
+			if text, err = brief.Fill(tmpl, map[string]string{"base": base, "spec_path": ch.Spec}); err != nil {
+				return "", fmt.Errorf("the arm's review template %w", err)
+			}
+		}
+	}
+	return instance.JobText(instance.Job{ID: reviewJob, Commit: commit, Tree: tree, Text: text}), nil
 }
 
 // routineRun is a routine case's run on arm a, and its one turn's words:
@@ -159,10 +191,10 @@ func commitChange(sandbox string, genv []string) (string, error) {
 // first job sends them, for the change committed on the sandbox.
 func routineRun(k *Case, a Arm, sandbox string, genv []string) (*Routine, string, error) {
 	kd := a.Review
-	if k.Routine.Kind != "review" || kd == nil {
+	if k.Routine.Kind != "review" || kd == nil || k.Change == nil {
 		return nil, "", fmt.Errorf("arm %s has no %s kind (its examples/routines/%s.toml)", a.Name, k.Routine.Kind, k.Routine.Kind)
 	}
-	job, err := commitChange(sandbox, genv)
+	job, err := commitChange(sandbox, genv, *k.Change, a)
 	if err != nil {
 		return nil, "", err
 	}
@@ -285,6 +317,17 @@ func caught(d Defect) Pred {
 	}}
 }
 
+// verdictOK is the reply passing the change as the routine reads it.
+func verdictOK() Pred {
+	return Pred{"verdict_ok", func(s *State) (bool, string) {
+		v, found := instance.Verdict(s.Reply())
+		if !found {
+			return false, "the reply has no VERDICT line"
+		}
+		return strings.EqualFold(v, "ok"), "VERDICT: " + v
+	}}
+}
+
 // verdictFail is the reply failing the change as the routine reads it
 // (instance.Verdict): a VERDICT line whose value isn't ok.
 func verdictFail() Pred {
@@ -336,7 +379,8 @@ func reviewCase() *Case {
 	k := &Case{
 		Name:    "review",
 		Routine: &Routine{Kind: "review", Effort: reviewEffort},
-		Setup:   func(e Env) error { return overlay(e.Sandbox, "base") },
+		Change:  &Change{Dir: reviewDir, Part: "change", Msg: reviewMsg},
+		Setup:   func(e Env) error { return overlay(e.Sandbox, reviewDir, "base") },
 	}
 	for _, d := range sheet.Defects {
 		k.Expect = append(k.Expect, caught(d))
@@ -378,3 +422,61 @@ const reviewGoodReply = "### 1. Must fix: --from leaves out the order it names\n
 	"### 3. Must fix: checkout saves a negative total\n\ncmd/shop/main.go, `checkout`: moving the receipt after the save dropped the guard on `c.Total() < 0`. An empty cart with SAVE5 totals -5.00 (`Total` doesn't floor it), and is now saved. Fix: put the guard back before `st.Add`.\n\n" +
 	"### 4. Should fix: report --daily is quadratic\n\nreport/report.go, `Days`: for each order it scans every order again, O(n²) in the orders, and the store keeps every order forever. Fix: one pass with a map from date to its Day.\n\n" +
 	"Not checked: nothing outside the repo.\n\nVERDICT: fail"
+
+// reviewSpecCase reviews a change to spec 015's promises, its job text the
+// arm's review brief: part "miss" drops the promise only the spec makes,
+// and the review passes when it names it and fails the change without a
+// finding against a kept promise; part "met" keeps every promise, and the
+// review passes when it passes the change.
+func reviewSpecCase(name, part string) *Case {
+	k := &Case{
+		Name:    name,
+		Routine: &Routine{Kind: "review", Effort: reviewEffort},
+		Change:  &Change{Dir: reviewSpecDir, Part: part, Msg: reviewSpecMsg, Spec: reviewSpecFile},
+		Setup:   func(e Env) error { return overlay(e.Sandbox, reviewSpecDir, "base") },
+	}
+	if part == "met" {
+		k.Expect = []Pred{verdictOK()}
+		k.Refs = []Ref{
+			{Name: "passed it", Play: func(r *Rehearsal) { r.Reply(specMetReply) }},
+			{Name: "a nice-to-have on a kept promise", Play: func(r *Rehearsal) {
+				r.Reply("### 1. Nice to have: Since could say UTC\n\nreport/report.go, `Since`: the day is a UTC day.\n\n" + specMetReply)
+			}},
+			{Name: "a must-fix on a kept promise", Fails: "verdict_ok", Play: func(r *Rehearsal) {
+				r.Reply("### 1. Must fix: the first line doesn't name the window\n\nreport/report.go, `WriteSince`: 015 promises `orders since 2026-10-21   1`.\n\nVERDICT: fail")
+			}},
+			{Name: "no verdict", Fails: "verdict_ok", Play: func(r *Rehearsal) { r.Reply("Looks right.") }},
+		}
+		return k
+	}
+	for _, d := range specSheet.Defects {
+		k.Expect = append(k.Expect, caught(d))
+	}
+	k.Expect = append(k.Expect, verdictFail(), noFalseAlarm(specSheet))
+	k.Refs = []Ref{
+		{Name: "named the dropped promise", Play: func(r *Rehearsal) { r.Reply(specMissReply) }},
+		{Name: "named it, and a nice-to-have on a kept promise", Play: func(r *Rehearsal) {
+			r.Reply(strings.Replace(specMissReply, "Not checked:", "### 2. Nice to have: Since could say UTC\n\nreport/report.go, `Since`: the day is a UTC day.\n\nNot checked:", 1))
+		}},
+		{Name: "named only kept promises", Fails: plantedPrefix + "window-label", Play: func(r *Rehearsal) {
+			r.Reply("### 1. Should fix: no test of an order at midnight\n\nreport/report.go, `Since`: `TestSinceCountsTheDayItNames` has no order at 00:00 on the day.\n\nVERDICT: fail")
+		}},
+		{Name: "named it, passed anyway", Fails: "verdict_fail", Play: func(r *Rehearsal) {
+			r.Reply(strings.Replace(specMissReply, "VERDICT: fail", "VERDICT: ok", 1))
+		}},
+		{Name: "named it, and a must-fix on a kept promise", Fails: "no_false_alarm", Play: func(r *Rehearsal) {
+			r.Reply(strings.Replace(specMissReply, "Not checked:", "### 2. Must fix: --since leaves out the day itself\n\nreport/report.go, `Since`: an order at 09:00 on the day is dropped.\n\nNot checked:", 1))
+		}},
+	}
+	return k
+}
+
+// specMissReply is a review that names 015's dropped promise.
+const specMissReply = "### 1. Must fix: the summary never names the window\n\n" +
+	"report/report.go:52-55, `WriteSince` calls `Write`, whose first line is `orders   1`. 015's What you'll see promises `orders since 2026-10-21   1` under `--since`, so a partial count is never read as the whole; " +
+	"`shop report --since 2026-10-21` prints `orders   1`, and `Shown` says nothing of it. Fix: pass the label to the summary, `orders since <day>`.\n\n" +
+	"Not checked: the `go run` lines in Shown, which only a run shows.\n\nVERDICT: fail"
+
+// specMetReply is a review that finds nothing against 015.
+const specMetReply = "Each promise of 015 holds: `Since` keeps the day itself, `--verbose --since` lists only those orders, and `WriteSince` opens with `orders since <day>`.\n\n" +
+	"Not checked: the `go run` lines in Shown, which only a run shows.\n\nVERDICT: ok"
