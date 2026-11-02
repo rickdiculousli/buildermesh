@@ -6,7 +6,8 @@
 # page (index.html, map.js, map.css) is read from this checkout's
 # internal/web on every request (BMESH_WEB_DIR), so an edit shows on reload
 # without a restart; Go changes need a re-run. State lives under
-# ~/.cache/bmesh-scratch/seed/<checkout name> and is wiped on each run;
+# ~/.cache/bmesh-scratch/seed/<checkout name> and is wiped on each run (serve's
+# state dir too, so it never writes the box's serve record or plugin);
 # seed.pid there holds serve's pid. A run stops the previous one of the same
 # checkout first. Other arguments go to the seeder (scripts/seed), e.g.
 # -leads 6. BMESH_SEED_HTTP sets serve's listen address. Serve reads no
@@ -47,7 +48,7 @@ if [ "${1:-}" = stop ]; then
 fi
 stop
 
-rm -rf "$dir/jetstream" "$dir/serve.log" "$dir/cli.toml" "$dir/app" "$dir/quota.json"
+rm -rf "$dir/jetstream" "$dir/state" "$dir/serve.log" "$dir/cli.toml" "$dir/app" "$dir/quota.json"
 mkdir -p "$dir/app/docs/proposals" "$dir/app/.bmesh/routines"
 cat >"$dir/app/docs/proposals/0042-map.md" <<'MD'
 ---
@@ -158,7 +159,7 @@ TOML
 detach=
 command -v setsid >/dev/null 2>&1 && detach=setsid
 (
-	BMESH_CONFIG="$dir/serve.toml" CLAUDE_CONFIG_DIR="$dir/claude" BMESH_WEB_DIR=${BMESH_WEB_DIR:-$root/internal/web} \
+	XDG_STATE_HOME="$dir/state" BMESH_CONFIG="$dir/serve.toml" CLAUDE_CONFIG_DIR="$dir/claude" BMESH_WEB_DIR=${BMESH_WEB_DIR:-$root/internal/web} \
 		nohup $detach "$dir/bmesh" serve </dev/null >"$dir/serve.log" 2>&1 &
 	echo $! >"$pidfile"
 )

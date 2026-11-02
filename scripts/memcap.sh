@@ -2,7 +2,7 @@
 # memcap.sh N: measure the memory N leads take on this box, to set [runner] max_leads.
 #
 # It starts a bmesh daemon of its own (embedded NATS on a loopback port, no
-# ntfy, nothing shared with the real mesh), a throwaway git repo, and N leads
+# ntfy, its own state dir, nothing shared with the real mesh), a throwaway git repo, and N leads
 # on the tmux runner, each briefed to spawn three executors that append a
 # line to a file every 30 s for 5 minutes and report. Every 10 s it samples
 # the RSS of every claude process (and of its process tree: MCP servers and
@@ -71,7 +71,7 @@ path = "$REPO"
 TOML
 sed -e "s|^nats = \"\"|nats = \"nats://127.0.0.1:$PORT\"|" "$RUN/serve.toml" > "$RUN/cli.toml"
 
-BMESH_CONFIG=$RUN/serve.toml bmesh serve > "$RUN/serve.log" 2>&1 &
+XDG_STATE_HOME=$RUN/state BMESH_CONFIG=$RUN/serve.toml bmesh serve > "$RUN/serve.log" 2>&1 &
 SERVE_PID=$!
 for _ in $(seq 1 50); do
   if BMESH_CONFIG=$RUN/cli.toml bmesh mesh-status >/dev/null 2>&1; then break; fi
