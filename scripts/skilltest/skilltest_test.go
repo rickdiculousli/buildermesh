@@ -70,9 +70,10 @@ func TestReferences(t *testing.T) {
 				} else {
 					bad++
 				}
-				if err := checkRef(t.TempDir(), k, ref, fixture); err != nil {
-					t.Errorf("%s: %v", ref.Name, err)
-				}
+			}
+			// As the harness plays them: a few at once, so refs sharing state fail here.
+			if err := checkRefs([]*Case{k}, fixture); err != nil {
+				t.Error(err)
 			}
 			if good == 0 || bad == 0 {
 				t.Errorf("%d good and %d bad references; a case needs both", good, bad)

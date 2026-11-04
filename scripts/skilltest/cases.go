@@ -1560,8 +1560,7 @@ func leadExecCase() *Case {
 	// handOff plays the executor's piece: made, its fix committed (the lead's
 	// worktree stands for its branch merged), done at that commit.
 	const verifiedText = "the receipt says Total, with its test; Verified: `go test ./cart` -> `ok  example.com/shop/cart`"
-	text := verifiedText
-	handOff := func(r *Rehearsal, commit string) {
+	handOff := func(r *Rehearsal, commit, text string) {
 		r.Call("--node", leadNode, "executor", "new", "--name", "receipt", "--model", "sonnet")
 		r.Call("--node", execNode, "started", "--text", "the receipt says Total")
 		fixTypo(r)
@@ -1581,23 +1580,19 @@ func leadExecCase() *Case {
 	k.Refs = []Ref{
 		{Name: "handed off, merged and readied", Play: func(r *Rehearsal) {
 			leadStarted(r)
-			handOff(r, "")
+			handOff(r, "", verifiedText)
 			remove(r)
 			finish(r)
 		}},
 		{Name: "the executor verified nothing, and said so", Play: func(r *Rehearsal) {
-			text = "the receipt says Total; Verified: none"
-			defer func() { text = verifiedText }()
 			leadStarted(r)
-			handOff(r, "")
+			handOff(r, "", "the receipt says Total; Verified: none")
 			remove(r)
 			finish(r)
 		}},
 		{Name: "the executor's done names no run", Fails: "executor_verified", Play: func(r *Rehearsal) {
-			text = "the receipt says Total, tests pass"
-			defer func() { text = verifiedText }()
 			leadStarted(r)
-			handOff(r, "")
+			handOff(r, "", "the receipt says Total, tests pass")
 			remove(r)
 			finish(r)
 		}},
@@ -1608,12 +1603,12 @@ func leadExecCase() *Case {
 		}},
 		{Name: "the executor left behind", Fails: "executor_chain", Play: func(r *Rehearsal) {
 			leadStarted(r)
-			handOff(r, "")
+			handOff(r, "", verifiedText)
 			finish(r)
 		}},
 		{Name: "readied before removing it", Fails: "executor_chain", Play: func(r *Rehearsal) {
 			leadStarted(r)
-			handOff(r, "")
+			handOff(r, "", verifiedText)
 			leadSetDone(r)
 			r.Call("--node", leadNode, "inbox")
 			leadReady(r)
@@ -1622,7 +1617,7 @@ func leadExecCase() *Case {
 		}},
 		{Name: "its branch never merged", Fails: "executor_merged", Play: func(r *Rehearsal) {
 			leadStarted(r)
-			handOff(r, "0123abcd0123abcd0123abcd0123abcd0123abcd")
+			handOff(r, "0123abcd0123abcd0123abcd0123abcd0123abcd", verifiedText)
 			remove(r)
 			finish(r)
 		}},
