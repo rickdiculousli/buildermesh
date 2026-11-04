@@ -191,7 +191,7 @@ func TestLandLandsAndWakesOnce(t *testing.T) {
 	if sends := f.sends(t); len(sends) != 1 || sends[0] != wake {
 		t.Fatalf("sends %q", sends)
 	}
-	if !strings.Contains(wake, "bmesh: landed "+rec[:8]+", spec 080 done; origin/main at "+rec[:8]+" contains it. Write your closing line; nothing else to run.") {
+	if !strings.Contains(wake, "bmesh: landed "+rec[:8]+", spec 080 done; origin/main at "+rec[:8]+" contains it. bmesh has nothing left to run; do what the repo's AGENTS.md puts after landing, if anything, then write your closing line.") {
 		t.Fatalf("final wake %q", wake)
 	}
 	if _, ok := f.ready(t); ok {

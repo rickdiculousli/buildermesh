@@ -44,7 +44,7 @@ func (d *Deps) lands() bool { return d.RunStep != nil || d.Exe != "" }
 // LandedText is the final wake of a lead whose change the daemon landed.
 func LandedText(commit, specID, main string) string {
 	return fmt.Sprintf("bmesh: landed %s, spec %s done; origin/main at %s contains it. "+
-		"Write your closing line; nothing else to run.", short8(commit), specID, short8(main))
+		"bmesh has nothing left to run; do what the repo's AGENTS.md puts after landing, if anything, then write your closing line.", short8(commit), specID, short8(main))
 }
 
 // RefusedText is the wake of a lead whose landing land refused: the
