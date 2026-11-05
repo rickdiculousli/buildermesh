@@ -3878,7 +3878,7 @@ keep_done = "24h"                           # mesh-status hides nodes done longe
 [routines]
 keep_results = "30d"                        # bm-results' age limit, applied by serve; "0" = none
 [quota]
-command = ""                                # the map's quota strip; "" = none. Run through the platform shell, at most every 5m (30s timeout); prints a JSON array of {"reading":{"provider","five_hour","week","five_reset","week_reset"}}
+command = ""                                # the map's quota strip; "" = none. Run through the platform shell, at most every 5m (30s timeout); prints a JSON array of {"reading":{"provider","five_hour","week","five_reset","week_reset"}}; five_hour null is a plan with no 5-hour window
 remind_topic = ""                           # ntfy topic for the weekly quota alerts at 50%, 25% and 10% left; "" = none; needs command and [notify] ntfy (see Quota reminders)
 [console]
 thread_url = ""                             # the map's thread link for leads here; {thread} = the runner thread, path-escaped (mcp:x is mcp%3Ax); "" = this host's [console.hosts] entry, else no link
@@ -4097,7 +4097,7 @@ The map (`/`) is a console under a top bar: `BMESH`, the connection (`● live �
    - `Landed`: the leads `done` in the window, and their spec ids;
    - `Flags`: the window's agents by their worst flag (`▲ 1 runaway`, `▲ 1 overworking`, each in its level's colour while above zero), and under them the daemon's `land-refused` events in the window and the node with the most (`land refused 6 · bm-096 ×5`);
    - `Asking / blocked`: the nodes asking or blocked, and up to three paths;
-   - `Quota`: each provider's 5h and week (`▲` and the warning colour at 80% or more), a meter for the higher week and when that week resets;
+   - `Quota`: each provider's 5h (`none` on a plan with no 5-hour window) and week (`▲` and the warning colour at 80% or more), a meter for the higher week and when that week resets;
    - `Routines`: jobs queued and instances running, linking the routines tab.
 2. The newest digest as a fold (`▸ digest 50m ago: <title>`) that opens to its body, while the digest is younger than twice `[notify] digest_every`; an older one is dropped (the phone's push is unchanged).
 3. **The needs-you band** (below).
@@ -4138,7 +4138,7 @@ The recent-events drawer is at the foot of every tab.
 
 **Specs, 30 days** draws a repo's last 30 UTC days: a bar for the specs landed each day (hover for their ids) and a line for the specs open at each day's end (proposed and not yet landed; rejected and shelved (`later`) specs are left out, having no date for either). Both are read from `/api/specs` (see [internals](internals.md#map)).
 
-**Quota** draws each provider's week (solid) and 5-hour (dashed) use over the window on one percent axis, a provider in one colour, each reset in the window as a faint line. Its readings are the strip's, each good run kept on the mesh (below).
+**Quota** draws each provider's week (solid) and 5-hour (dashed) use over the window on one percent axis, with no dashed line where a plan has no 5-hour window, a provider in one colour, each reset in the window as a faint line. Its readings are the strip's, each good run kept on the mesh (below).
 
 Narrower than 1000px, the tiles go to three columns (two under 480px), band rows put their words under the badge, and the timeline's label gutter narrows, with a grid line each hour on `6h` and `24h`.
 

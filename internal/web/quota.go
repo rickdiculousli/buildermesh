@@ -72,11 +72,11 @@ func (q *Quota) run(ctx context.Context, now time.Time) ([]usage.QuotaReading, b
 	}
 	var raw []struct {
 		Reading struct {
-			Provider  string  `json:"provider"`
-			FiveHour  float64 `json:"five_hour"`
-			Week      float64 `json:"week"`
-			FiveReset string  `json:"five_reset"`
-			WeekReset string  `json:"week_reset"`
+			Provider  string   `json:"provider"`
+			FiveHour  *float64 `json:"five_hour"`
+			Week      float64  `json:"week"`
+			FiveReset string   `json:"five_reset"`
+			WeekReset string   `json:"week_reset"`
 		} `json:"reading"`
 	}
 	if err := json.Unmarshal(out, &raw); err != nil {

@@ -86,14 +86,15 @@ func Short(agent string) string {
 }
 
 // QuotaReading is one provider's quota as the strip shows it and the stream
-// keeps it; ReadAt is when the command that produced it ran.
+// keeps it; ReadAt is when the command that produced it ran. FiveHour is nil
+// on a plan with no five-hour window.
 type QuotaReading struct {
-	Provider  string  `json:"provider"`
-	FiveHour  float64 `json:"five_hour"`
-	Week      float64 `json:"week"`
-	FiveReset string  `json:"five_reset"`
-	WeekReset string  `json:"week_reset"`
-	ReadAt    string  `json:"read_at"`
+	Provider  string   `json:"provider"`
+	FiveHour  *float64 `json:"five_hour"`
+	Week      float64  `json:"week"`
+	FiveReset string   `json:"five_reset"`
+	WeekReset string   `json:"week_reset"`
+	ReadAt    string   `json:"read_at"`
 }
 
 // Tokens writes a count in three figures: 845, 18.8k, 303k, 42.2M, 416M.

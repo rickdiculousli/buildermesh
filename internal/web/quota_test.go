@@ -2,9 +2,11 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -46,19 +48,19 @@ func TestQuotaKeepsLastReadingOnError(t *testing.T) {
 
 	var s strip
 	getJSON(t, srv, "/api/strip", 200, &s)
-	want := usage.QuotaReading{Provider: "claude", FiveHour: 42.5, Week: 17, FiveReset: "2026-10-15T10:59:59Z",
+	want := usage.QuotaReading{Provider: "claude", FiveHour: new(42.5), Week: 17, FiveReset: "2026-10-15T10:59:59Z",
 		WeekReset: "2026-10-20T06:00:00Z", ReadAt: "2026-10-15T09:00:00Z"}
-	if len(s.Quota) != 1 || s.Quota[0] != want || s.Digest != nil {
+	if len(s.Quota) != 1 || !reflect.DeepEqual(s.Quota[0], want) || s.Digest != nil {
 		t.Fatalf("first strip %+v", s)
 	}
 	now = start.Add(time.Minute) // inside 5 minutes: no run
 	getJSON(t, srv, "/api/strip", 200, &s)
-	if runs() != "1" || len(s.Quota) != 1 || s.Quota[0] != want {
+	if runs() != "1" || len(s.Quota) != 1 || !reflect.DeepEqual(s.Quota[0], want) {
 		t.Fatalf("cached strip %+v, runs %s", s, runs())
 	}
 	now = start.Add(6 * time.Minute) // the command fails: the good reading stays
 	getJSON(t, srv, "/api/strip", 200, &s)
-	if runs() != "2" || len(s.Quota) != 1 || s.Quota[0] != want {
+	if runs() != "2" || len(s.Quota) != 1 || !reflect.DeepEqual(s.Quota[0], want) {
 		t.Fatalf("strip after a failure %+v, runs %s", s, runs())
 	}
 	now = start.Add(8 * time.Minute) // the failure counts as a poll: no run yet
@@ -155,9 +157,28 @@ func TestQuotaPublishesGoodRuns(t *testing.T) {
 	q.Get(ctx, start.Add(6*time.Minute))
 	(&Quota{Command: `echo '` + quotaOK + `'`, Client: c, Host: "a.b"}).Get(ctx, start.Add(time.Minute))
 	rs, err := usage.ReadQuota(ctx, c, start.Add(-time.Hour))
-	want := usage.QuotaReading{Provider: "claude", FiveHour: 42.5, Week: 17, FiveReset: "2026-10-15T10:59:59Z",
+	want := usage.QuotaReading{Provider: "claude", FiveHour: new(42.5), Week: 17, FiveReset: "2026-10-15T10:59:59Z",
 		WeekReset: "2026-10-20T06:00:00Z", ReadAt: "2026-10-15T09:00:00Z"}
-	if err != nil || len(rs) != 1 || rs[0] != want {
+	if err != nil || len(rs) != 1 || !reflect.DeepEqual(rs[0], want) {
+		t.Fatalf("published %+v, %v", rs, err)
+	}
+}
+
+// A plan with no five-hour window reads null, not 0, on the strip and the stream.
+func TestQuotaNoFiveHourWindow(t *testing.T) {
+	ctx, c := connect(t)
+	cmd := `echo '[{"reading":{"provider":"claude","five_hour":null,"week":17,"five_reset":null,"week_reset":"2026-10-20T06:00:00Z"}}]'`
+	start := time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC)
+	got := (&Quota{Command: cmd, Client: c, Host: "box"}).Get(ctx, start)
+	if len(got) != 1 || got[0].FiveHour != nil || got[0].FiveReset != "" || got[0].Week != 17 {
+		t.Fatalf("strip %+v", got)
+	}
+	b, err := json.Marshal(got[0])
+	if err != nil || !strings.Contains(string(b), `"five_hour":null`) {
+		t.Fatalf("strip JSON %s, %v", b, err)
+	}
+	rs, err := usage.ReadQuota(ctx, c, start.Add(-time.Hour))
+	if err != nil || len(rs) != 1 || rs[0].FiveHour != nil {
 		t.Fatalf("published %+v, %v", rs, err)
 	}
 }

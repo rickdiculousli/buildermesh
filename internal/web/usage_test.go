@@ -263,7 +263,7 @@ func TestUsageRefusals(t *testing.T) {
 func TestUsageQuotaNewestPerSlotAcrossBoxes(t *testing.T) {
 	srv, ctx, c := usageMesh(t)
 	r := func(provider string, five float64, t time.Time) usage.QuotaReading {
-		return usage.QuotaReading{Provider: provider, FiveHour: five, Week: 20, ReadAt: t.Format(time.RFC3339)}
+		return usage.QuotaReading{Provider: provider, FiveHour: &five, Week: 20, ReadAt: t.Format(time.RFC3339)}
 	}
 	for host, rs := range map[string][]usage.QuotaReading{
 		"k16": {r("claude", 10, at(0, 10, 0)), r("codex", 3, at(0, 10, 1)), r("claude", 13, at(0, 10, 5)), r("claude", 1, at(0, 5, 0))},

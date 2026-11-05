@@ -1372,6 +1372,11 @@ function pct(x) {
   return Math.round(+x || 0) + "%";
 }
 
+// fiveH is a quota reading's 5-hour use; null is a plan with no such window.
+function fiveH(r) {
+  return r.five_hour == null ? "none" : pct(r.five_hour);
+}
+
 // tile is one KPI: a small-caps label, a large mono value and a mono
 // subline; a link when href is given.
 function tile(label, value, sub, href) {
@@ -1448,7 +1453,7 @@ function quotaTile() {
   const top = q.reduce((a, b) => (+b.week || 0) > (+a.week || 0) ? b : a);
   const lines = el("div", "v small", null, ...q.map((r) => {
     const high = +r.five_hour >= 80 || +r.week >= 80;
-    return el("div", high ? "high" : "", (high ? "▲ " : "") + (r.provider || "?") + " 5h " + pct(r.five_hour) + " · wk " + pct(r.week));
+    return el("div", high ? "high" : "", (high ? "▲ " : "") + (r.provider || "?") + " 5h " + fiveH(r) + " · wk " + pct(r.week));
   }));
   const meter = el("div", "meter" + (+top.week >= 80 ? " high" : ""), null, el("i"));
   meter.firstChild.style.width = Math.max(0, Math.min(100, +top.week || 0)) + "%";
@@ -2080,7 +2085,8 @@ function drawQuota(box) {
   }
   const provs = [...by.keys()].sort((a, b) => slot(a) - slot(b) || (a < b ? -1 : 1));
   tally(box, "quota", d.quota.length);
-  const leg = legendOf(provs.flatMap((p) => [["q" + slot(p) + " wk", p + " week"], ["q" + slot(p) + " fh", p + " 5h"]]));
+  const leg = legendOf(provs.flatMap((p) => [["q" + slot(p) + " wk", p + " week"],
+    ...(by.get(p).some((r) => r.five_hour != null) ? [["q" + slot(p) + " fh", p + " 5h"]] : [])]));
   if (!provs.length) return box.replaceChildren(el("p", "empty", "No quota readings in this window."));
   const W = Math.max(box.clientWidth, 240), H = 180, P = { l: 40, r: 8, t: 8, b: 20 };
   const from = d.from, to = d.to;
@@ -2097,9 +2103,11 @@ function drawQuota(box) {
   for (const t of resets) svg("line", { class: "reset", x1: x(t), x2: x(t), y1: P.t, y2: H - P.b }, root);
   for (const p of provs) {
     for (const [key, cls] of [["five_hour", "fh"], ["week", "wk"]]) {
-      // A gap of over 15 minutes between readings breaks the line.
+      // A gap of over 15 minutes between readings breaks the line, and so
+      // does a reading with no 5-hour window.
       let path = "", last = -Infinity;
       for (const r of by.get(p)) {
+        if (r[key] == null) { last = -Infinity; continue; }
         path += (r.at - last > 900 ? "M" : "L") + x(r.at).toFixed(1) + "," + y(+r[key] || 0).toFixed(1);
         last = r.at;
       }
@@ -2115,7 +2123,7 @@ function drawQuota(box) {
       for (const r of by.get(p)) if (!best || Math.abs(r.at - t) < Math.abs(best.at - t)) best = r;
       if (!best) continue;
       if (cx === null) cx = x(best.at);
-      lines.push(p + "  5h " + pct(best.five_hour) + " · wk " + pct(best.week) + "  " + hm(best.at));
+      lines.push(p + "  5h " + fiveH(best) + " · wk " + pct(best.week) + "  " + hm(best.at));
     }
     return cx === null ? null : { x: cx, text: lines.join("\n") };
   });

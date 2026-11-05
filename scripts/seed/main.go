@@ -16,7 +16,8 @@
 // app-0041, app-0039, app-0040, app-0042.api and routine.review.opus-5-5-1,
 // two coordinator sessions of runs split by design and exec (one with a
 // subagent, one peaking at 420k), and a day of claude and codex quota
-// readings every five minutes. For the flags (108) it adds app-batch-1, four
+// readings every five minutes (claude's plan losing its five-hour window
+// halfway, so the strip reads none). For the flags (108) it adds app-batch-1, four
 // S leads done three days ago that with app-0039 make the S baseline;
 // app-0041 (S) reads past 2.5x that median and is refused three times
 // (overworking), and app-0045's four subagents read 140M in the last 40
@@ -301,8 +302,8 @@ func ask(ctx context.Context, url, path string) error {
 func writeQuota(path string, now time.Time) error {
 	at := func(d time.Duration) string { return now.Add(d).UTC().Format(time.RFC3339) }
 	rs := []map[string]any{
-		{"reading": map[string]any{"provider": "claude", "five_hour": 42.4, "week": 21.2,
-			"five_reset": at(70 * time.Minute), "week_reset": at(76 * time.Hour)}},
+		{"reading": map[string]any{"provider": "claude", "five_hour": nil, "week": 21.2,
+			"five_reset": nil, "week_reset": at(76 * time.Hour)}},
 		{"reading": map[string]any{"provider": "codex", "five_hour": 87.6, "week": 64,
 			"five_reset": at(3*time.Hour + 5*time.Minute), "week_reset": at(30 * time.Hour)}},
 	}
@@ -553,8 +554,12 @@ func seedQuota(ctx context.Context, c *mesh.Client, now time.Time) error {
 			fh := math.Min(100, p.peak*math.Pow(phase, 0.85)+r.Float64()*2)
 			week := p.week - p.perDay*now.Sub(t).Hours()/24 + r.Float64()*0.2
 			readAt := t.Format(time.RFC3339)
-			data, err := json.Marshal(map[string]any{"provider": p.name, "five_hour": math.Round(fh*10) / 10, "week": math.Round(week*10) / 10,
-				"five_reset": next.UTC().Format(time.RFC3339), "week_reset": now.Add(p.weekResetIn).UTC().Format(time.RFC3339), "read_at": readAt})
+			var fiveHour, fiveReset any = math.Round(fh*10) / 10, next.UTC().Format(time.RFC3339)
+			if p.name == "claude" && k < 144 {
+				fiveHour, fiveReset = nil, nil
+			}
+			data, err := json.Marshal(map[string]any{"provider": p.name, "five_hour": fiveHour, "week": math.Round(week*10) / 10,
+				"five_reset": fiveReset, "week_reset": now.Add(p.weekResetIn).UTC().Format(time.RFC3339), "read_at": readAt})
 			if err != nil {
 				return err
 			}
