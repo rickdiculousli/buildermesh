@@ -167,6 +167,16 @@ func TestNixRemovesTheCheckoutItsWorktreesAndRoutineCheckouts(t *testing.T) {
 	}
 }
 
+func TestNixMatchesARowsGitHubRemoteWhateverItsCase(t *testing.T) {
+	f := setup(t)
+	meshtest.Git(t, f.app, "remote", "set-url", "origin", "https://github.com/Me/App.git")
+	req := f.req()
+	req.Origin, req.RowRemote = "Me/App", "Me/App"
+	if o := Nix(context.Background(), req); o.Result != Removed {
+		t.Fatalf("%+v", o)
+	}
+}
+
 func TestNixOfAnAbsentCheckoutStillRemovesItsRoutineCheckouts(t *testing.T) {
 	f := setup(t)
 	if err := os.RemoveAll(f.app); err != nil {

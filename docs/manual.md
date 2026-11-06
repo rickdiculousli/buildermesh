@@ -3718,7 +3718,7 @@ The box refuses, touching nothing, unless all of these hold:
 
 - the directory (symlinks resolved) has the name of the row's path;
 - it is a checkout's top level;
-- it has an `origin` (`refused: <path> has no origin`) that is the job's (`refused: <path>'s origin is <url>, not the registry's <origin>`; a GitHub URL matches its `owner/name`, and a trailing `/` or `.git` doesn't count);
+- it has an `origin` (`refused: <path> has no origin`) that is the job's (`refused: <path>'s origin is <url>, not the registry's <origin>`; a GitHub URL matches its `owner/name` whatever the case, and a trailing `/` or `.git` doesn't count);
 - the box's own row names no other remote.
 
 It also refuses:

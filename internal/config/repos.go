@@ -417,7 +417,8 @@ func tomlList(l []string) string {
 
 // SameRemote reports whether two remotes name the same repo: compared
 // without a trailing / or .git, and a GitHub URL (https, ssh or scp form)
-// as its owner/name, which is how a row's remote is usually written.
+// as its owner/name, which is how a row's remote is usually written. GitHub
+// names ignore case, so owner/name does too; any other path keeps its case.
 func SameRemote(a, b string) bool {
 	na, nb := normRemote(a), normRemote(b)
 	return na != "" && na == nb
@@ -429,6 +430,9 @@ func normRemote(u string) string {
 		if rest, ok := strings.CutPrefix(s, p); ok {
 			return strings.ToLower(rest)
 		}
+	}
+	if strings.Count(s, "/") == 1 && !strings.Contains(s, ":") && !strings.HasPrefix(s, "/") && !strings.HasPrefix(s, ".") {
+		return strings.ToLower(s)
 	}
 	return s
 }

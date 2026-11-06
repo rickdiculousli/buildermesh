@@ -111,6 +111,11 @@ func TestSameRemote(t *testing.T) {
 		{"me/app", "https://github.com/me/app", true},
 		{"ssh://git@github.com/me/app.git", "https://github.com/Me/App/", true},
 		{"me/app", "me/other", false},
+		{"https://github.com/Me/App.git", "Me/App", true},
+		{"Me/App", "me/app", true},
+		{"ssh://rick@k16/home/rick/git/X.git", "ssh://rick@k16/home/rick/git/x", false},
+		{"/home/rick/git/X", "/home/rick/git/x", false},
+		{"../X", "../x", false},
 		{"ssh://rick@k16/home/rick/git/x.git", "ssh://rick@k16/home/rick/git/x", true},
 		{"", "", false},
 	} {
