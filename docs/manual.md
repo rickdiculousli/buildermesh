@@ -1821,9 +1821,9 @@ Removes a merged executor's worktree and branch. The executor's parent runs it.
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--force` | off | remove an unmerged branch and drop uncommitted changes |
+| `--force` | off | remove an unmerged branch and drop uncommitted changes and ignored files |
 
-**What it does.** It removes the worktree (`--force` also drops uncommitted changes) and the branch (`-d`, or `-D` with `--force`), forgets the worktree in the node, drains its inbox and marks it `done`. The node stays on the mesh until [`bmesh node forget`](#bmesh-node-forget); the name can be used again.
+**What it does.** It removes the worktree with its ignored files (without `--force`, only when the caller's worktree has a file at each of their paths; `--force` also drops uncommitted changes) and the branch (`-d`, or `-D` with `--force`), forgets the worktree in the node, drains its inbox and marks it `done`. The node stays on the mesh until [`bmesh node forget`](#bmesh-node-forget); the name can be used again.
 
 **Output.** `removed <path>`.
 
@@ -1833,6 +1833,7 @@ Removes a merged executor's worktree and branch. The executor's parent runs it.
 |---|---|---|
 | A branch not merged into the caller's HEAD, without `--force` | 3 | `refused: branch <b> is not merged into <parent branch>; merge it (git merge <b>), then remove it again, or pass --force to discard it` |
 | No such executor with a worktree under the caller | 3 | `refused: no executor <path> under <parent> with a worktree; bmesh executor list shows yours` |
+| The worktree holds ignored files (a check's script, its output) the caller's worktree has no file at, without `--force`; the first five are named, then `and <n> more` | 3 | `refused: <path>'s worktree holds ignored files yours doesn't (<files>), which removing it deletes; copy out what you'll cite, then remove it again with --force` |
 
 ### `bmesh node`
 

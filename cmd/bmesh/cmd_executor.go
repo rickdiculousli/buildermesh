@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -329,6 +330,14 @@ func (a *app) cmdExecutorRemove(args []string) error {
 			return fail(exitRefused, "refused: branch %s is not merged into %s; merge it (git merge %s), then remove it again, or pass --force to discard it", n.Branch, parent.Branch, n.Branch)
 		}
 	}
+	if n.Host == a.cfg.HostName() && !*force && dirExists(n.Worktree) {
+		// git worktree remove refuses untracked files but deletes ignored ones.
+		if only, err := ignoredOnlyIn(ctx, n.Worktree, parent.Worktree); err != nil {
+			return err
+		} else if only != "" {
+			return fail(exitRefused, "refused: %s's worktree holds ignored files yours doesn't (%s), which removing it deletes; copy out what you'll cite, then remove it again with --force", path, only)
+		}
+	}
 	if n.Host == a.cfg.HostName() {
 		wtArgs := []string{"worktree", "remove"}
 		if *force {
@@ -382,6 +391,28 @@ func markDone(ctx context.Context, c *mesh.Client, path, text string) error {
 		_, err = mesh.WriteState(ctx, c, path, done)
 	}
 	return err
+}
+
+// ignoredOnlyIn names the ignored files in wt that other has no file at, the
+// first few and a count of the rest, or "" when there are none.
+func ignoredOnlyIn(ctx context.Context, wt, other string) (string, error) {
+	out, err := gitIn(ctx, wt, "ls-files", "--others", "--ignored", "--exclude-standard", "-z")
+	if err != nil {
+		return "", err
+	}
+	var only []string
+	for _, f := range strings.Split(out, "\x00") {
+		if f == "" {
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(other, f)); errors.Is(err, fs.ErrNotExist) {
+			only = append(only, f)
+		}
+	}
+	if len(only) > 5 {
+		return strings.Join(only[:5], ", ") + fmt.Sprintf(" and %d more", len(only)-5), nil
+	}
+	return strings.Join(only, ", "), nil
 }
 
 func dirExists(p string) bool {

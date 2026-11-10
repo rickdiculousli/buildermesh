@@ -412,3 +412,40 @@ func TestExecutorRemoveRefusesUnmerged(t *testing.T) {
 		t.Fatal("--force left the worktree or branch")
 	}
 }
+
+func TestExecutorRemoveRefusesIgnoredFilesOnlyItHas(t *testing.T) {
+	_, repo, root := executorSetup(t)
+	if _, errs, code := runCLI(t, nil, "executor", "new", "--name", "alpha", "--json"); code != 0 {
+		t.Fatalf("new: %d %q", code, errs)
+	}
+	wt := filepath.Join(root, "demo", "demo-012.alpha")
+	write := func(dir, name string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(wt, ".gitignore"), []byte("cache/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	meshtest.Git(t, wt, "add", "-A")
+	meshtest.Git(t, wt, "commit", "-m", "ignore cache")
+	meshtest.Git(t, repo, "merge", "--ff-only", "t3code/lead-alpha")
+	// An ignored file the lead has too (a build both ran) is not the executor's alone.
+	write(wt, "cache/bmesh")
+	write(repo, "cache/bmesh")
+	write(wt, "cache/RESULT.txt")
+	out, errs, code := runCLI(t, nil, "executor", "remove", "alpha")
+	if code != 3 || out != "" || errs != "bmesh: refused: demo-012.alpha's worktree holds ignored files yours doesn't (cache/RESULT.txt), which removing it deletes; copy out what you'll cite, then remove it again with --force\n" {
+		t.Fatalf("ignored: %d %q %q", code, out, errs)
+	}
+	if !exists(filepath.Join(wt, "cache", "RESULT.txt")) {
+		t.Fatal("ignored file deleted on refusal")
+	}
+	if _, errs, code := runCLI(t, nil, "executor", "remove", "alpha", "--force"); code != 0 || exists(wt) {
+		t.Fatalf("--force: %d %q", code, errs)
+	}
+}
