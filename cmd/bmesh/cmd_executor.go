@@ -26,12 +26,13 @@ const executorUsage = "usage: bmesh executor new --name N [--base REF] [--model 
 // the node on every bmesh command rather than exporting BMESH_NODE: the
 // harness's shell keeps no environment between tool calls, and a bmesh run
 // from the lead's worktree would otherwise act as the lead.
-func executorBrief(path, wt, branch, model, setup string) (string, error) {
+func executorBrief(path, wt, branch, model, setup string, t3 bool) (string, error) {
 	on := "on the model the piece calls for"
 	if model != "" {
 		on = "on `" + model + "`"
 	}
-	return brief.Render("", "executor", map[string]string{"path": path, "worktree": wt, "branch": branch, "model": on, "setup_step": setup})
+	start, resume := brief.ExecutorLead(t3, on)
+	return brief.Render("", "executor", map[string]string{"path": path, "worktree": wt, "branch": branch, "start": start, "resume": resume, "setup_step": setup})
 }
 
 // executorSetupStep is the header's first step when the repo names a setup
@@ -214,7 +215,7 @@ func (a *app) cmdExecutorNew(args []string) error {
 	}
 	fmt.Fprintf(a.stdout, "%s\n", line)
 	if !a.json {
-		text, err := executorBrief(path, wt, branch, *model, executorSetupStep(rc.Setup.Command, wt))
+		text, err := executorBrief(path, wt, branch, *model, executorSetupStep(rc.Setup.Command, wt), parent.Runner.Kind == "t3")
 		if err != nil {
 			return err
 		}

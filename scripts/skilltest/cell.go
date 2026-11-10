@@ -309,7 +309,8 @@ func installFake(dir string, a Arm, sandbox, host string, n fakeNode) error {
 		return err
 	}
 	if own {
-		text, err = brief.Fill(text, map[string]string{"path": "@PATH@", "worktree": "@WORKTREE@", "branch": "@BRANCH@", "model": "@MODEL@", "setup_step": ""})
+		start, resume := brief.ExecutorLead(false, "@MODEL@")
+		text, err = brief.Fill(text, map[string]string{"path": "@PATH@", "worktree": "@WORKTREE@", "branch": "@BRANCH@", "model": "@MODEL@", "start": start, "resume": resume, "setup_step": ""})
 		if err != nil {
 			return fmt.Errorf("the arm's executor template %w", err)
 		}

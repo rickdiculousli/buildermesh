@@ -66,6 +66,18 @@ func Template(repoPath, name string) (text, source string, err error) {
 	return string(b), "embedded", nil
 }
 
+// ExecutorLead is how the executor brief's lead note has the lead start and
+// resume its executor, on: a background Agent and SendMessage, or, for a lead
+// on T3 Code, whose harness forbids a background Agent, T3's delegate tools.
+func ExecutorLead(t3 bool, on string) (start, resume string) {
+	if t3 {
+		return "with T3 Code's `delegate_task` tool, `mode: \"async\"` (T3 Code forbids a background Agent), " + on +
+				" (`target.model`), at medium effort (`target.options: {effort: \"medium\"}`)",
+			"with `t3_thread_send` to its `childThreadId` (SendMessage can't reach it)"
+	}
+	return "with the Agent tool, in the background, " + on + ", at medium effort (`effort: \"medium\"`)", "with SendMessage"
+}
+
 // Render fills the named template (the repo's override, else the embedded
 // one) from values. A placeholder without a value is an error naming it.
 func Render(repoPath, name string, values map[string]string) (string, error) {

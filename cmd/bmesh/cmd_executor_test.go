@@ -133,6 +133,28 @@ func TestExecutorNewMakesWorktreeBranchNode(t *testing.T) {
 	}
 }
 
+// A lead on T3 Code, whose harness forbids a background Agent, is told to
+// start the executor with T3's delegate_task and resume it with t3_thread_send.
+func TestExecutorBriefOnT3NamesDelegateTask(t *testing.T) {
+	c, repo, _ := executorSetup(t)
+	putNode(t, c, t.Context(), mesh.Node{Path: "demo-012", Repo: "demo", RepoPath: repo, Worktree: repo, Branch: "t3code/lead", Spec: "012",
+		Runner: mesh.NodeRunner{Kind: "t3", Thread: "thread-1"}})
+	out, errs, code := runCLI(t, nil, "executor", "new", "--name", "alpha", "--model", "claude-sonnet-5-5")
+	if code != 0 {
+		t.Fatalf("code %d out %q err %q", code, out, errs)
+	}
+	_, note, _ := strings.Cut(out, "----- for the lead, not the prompt -----")
+	for _, w := range []string{"start the executor with T3 Code's `delegate_task` tool, `mode: \"async\"`", "on `claude-sonnet-5-5` (`target.model`)",
+		"`target.options: {effort: \"medium\"}`", "resume it with `t3_thread_send` to its `childThreadId`"} {
+		if !strings.Contains(note, w) {
+			t.Errorf("lead note lacks %q:\n%s", w, note)
+		}
+	}
+	if strings.Contains(note, "Agent tool") {
+		t.Errorf("lead note names the Agent tool:\n%s", note)
+	}
+}
+
 // The done report names the worktree's current branch (renamed here) and the
 // full commit; a detached worktree falls back to the recorded branch.
 // An executor's header has bmesh setup as its first step when the lead's
