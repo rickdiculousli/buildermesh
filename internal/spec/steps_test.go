@@ -18,6 +18,10 @@ func TestParseSteps(t *testing.T) {
 		{"empty", "", nil},
 		{"none", "None.", nil},
 		{"nothing", "Nothing: it works as it is.", nil},
+		{"none as the only bullet", "- None.", nil},
+		{"nothing as the only step, boxed and numbered", "1. [k16] Nothing to do here.", nil},
+		{"none among other steps stays", "- None on k16\n- restart the Mac's daemon", []Step{
+			{N: 1, Text: "None on k16"}, {N: 2, Text: "restart the Mac's daemon"}}},
 		{"bullets", "- set the key\n- restart the daemon\n", []Step{
 			{N: 1, Text: "set the key"}, {N: 2, Text: "restart the daemon"}}},
 		{"numbers and stars", "1. one\n2) two\n* three\n+ four", []Step{

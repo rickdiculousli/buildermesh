@@ -43,7 +43,8 @@ var (
 // (backticks around the command dropped). A paragraph of prose is a step of
 // its own, except one ending in `:` that leads straight into a list, whose
 // words go in front of each of that list's steps. A body that is empty, or
-// whose first word is `nothing` or `none`, has no steps.
+// whose first word is `nothing` or `none`, has no steps; nor has one whose
+// only step starts with either word (`- None.`).
 func ParseSteps(body string) []Step {
 	body = strings.TrimSpace(strings.ReplaceAll(body, "\r\n", "\n"))
 	if f := strings.Fields(body); len(f) == 0 || isNone(f[0]) {
@@ -92,6 +93,11 @@ func ParseSteps(body string) []Step {
 		s := parseStep(text, lead)
 		s.N = len(steps) + 1
 		steps = append(steps, s)
+	}
+	if len(steps) == 1 {
+		if f := strings.Fields(steps[0].Text); len(f) > 0 && isNone(f[0]) {
+			return nil
+		}
 	}
 	return steps
 }
