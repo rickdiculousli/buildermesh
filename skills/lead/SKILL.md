@@ -28,7 +28,7 @@ Every call re-reads your whole context: the session's setup, what you read to un
 
 ## Checkpoints
 
-`bmesh inbox` at every checkpoint: each milestone, each harness notice that a subagent finished, before any question, and before `ready` or `land`, as its own command, never chained into them. Landing is a one-way door, and the operator's messages (a review bar, a scope cut) are what most often change it. The harness's notice isn't a mesh message; the inbox is the record. Answer an executor with SendMessage.
+`bmesh inbox` at every checkpoint: each milestone, each harness notice that a subagent finished, before any question, and before `ready` or `land`, as its own command, never chained into them. Landing is a one-way door, and the operator's messages (a review bar, a scope cut) are what most often change it. The harness's notice isn't a mesh message; the inbox is the record.
 
 While executors or routines run and you have nothing else to do, end your turn (no `sleep`, no polling): the notice or the daemon's wake brings you back. A hold (a `hold from` message, or a stop that says `held`) is answered with `bmesh held`, then the end of your turn; never with `ask`. `bmesh progress` after each milestone and at least every 15 minutes while you build (a quiet node is marked silent), never more than once every ten.
 

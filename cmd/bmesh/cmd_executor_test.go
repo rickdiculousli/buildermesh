@@ -134,7 +134,8 @@ func TestExecutorNewMakesWorktreeBranchNode(t *testing.T) {
 }
 
 // A lead on T3 Code, whose harness forbids a background Agent, is told to
-// start the executor with T3's delegate_task and resume it with t3_thread_send.
+// start the executor with T3's delegate_task and resume it with t3_thread_send,
+// and told that an ask ends the task, whose completed notice isn't its report.
 func TestExecutorBriefOnT3NamesDelegateTask(t *testing.T) {
 	c, repo, _ := executorSetup(t)
 	putNode(t, c, t.Context(), mesh.Node{Path: "demo-012", Repo: "demo", RepoPath: repo, Worktree: repo, Branch: "t3code/lead", Spec: "012",
@@ -145,7 +146,8 @@ func TestExecutorBriefOnT3NamesDelegateTask(t *testing.T) {
 	}
 	_, note, _ := strings.Cut(out, "----- for the lead, not the prompt -----")
 	for _, w := range []string{"start the executor with T3 Code's `delegate_task` tool, `mode: \"async\"`", "on `claude-sonnet-5-5` (`target.model`)",
-		"`target.options: {effort: \"medium\"}`", "resume it with `t3_thread_send` to its `childThreadId`"} {
+		"`target.options: {effort: \"medium\"}`", "resume it with `t3_thread_send` to its `childThreadId`",
+		"an `ask` or `blocked` ends its task, so T3 reports that task completed too", "the inbox, not the notice, says what it reported"} {
 		if !strings.Contains(note, w) {
 			t.Errorf("lead note lacks %q:\n%s", w, note)
 		}

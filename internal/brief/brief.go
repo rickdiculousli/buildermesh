@@ -73,7 +73,7 @@ func ExecutorLead(t3 bool, on string) (start, resume string) {
 	if t3 {
 		return "with T3 Code's `delegate_task` tool, `mode: \"async\"` (T3 Code forbids a background Agent), " + on +
 				" (`target.model`), at medium effort (`target.options: {effort: \"medium\"}`)",
-			"with `t3_thread_send` to its `childThreadId` (SendMessage can't reach it)"
+			"with `t3_thread_send` to its `childThreadId` (SendMessage can't reach it; an `ask` or `blocked` ends its task, so T3 reports that task completed too, maybe after you've answered: the inbox, not the notice, says what it reported)"
 	}
 	return "with the Agent tool, in the background, " + on + ", at medium effort (`effort: \"medium\"`)", "with SendMessage"
 }
