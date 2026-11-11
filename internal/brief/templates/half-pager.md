@@ -18,13 +18,14 @@ proposed_on: {{date}}
 # Set later, never by the proposer:
 # reason: <one line>          rejected only
 # scope_grew: [<ids>]         set by the build thread when landed specs widened it
+# The body says what to build and what the operator will see. A sentence that only shows a repo rule was followed (a doc that needs no edit, a check that can't fail) is left out: the review checks the rules.
 ---
 
 ## Opportunity
 What's weak or missing, with the evidence seen: a timing, a screenshot, a repeated manual step, a principle in the product doc it falls short of.
 
 ## Proposal
-The change. In: ... Out: ...
+The change. In: ... Out: only what a reader of the title would assume is in.
 
 Judge: <opus, fable or sonnet>, because <one clause>.
 
@@ -38,6 +39,7 @@ Which verify commands prove it; anything new that's needed. A change to the veri
 Empty when proposed. The lead fills it in the commit that sets the spec done: one `- <promise>: <evidence>` line per promise of What you'll see and per Verification item past the repo's verify, the evidence a command it ran and a line it printed (`` `cmd` -> `line` ``) or a file in the tree; one `- Easy to miss: <rule>: <evidence>` line; and `- Not shown: <promise>: <why>` for what it couldn't show.
 
 ## Risks and the alternative considered
+Only a risk that would change what gets built or what the operator decides; one the same sentence answers is left out. The alternative, and why it lost.
 
 ## Needs from the operator
 Empty unless a taste call really is theirs, or a config key some box must set to turn the change on: name the key and the file it lives in. Write it as a list, one step per `-` line: a box in brackets first when the step is one box's (`- [<box>] set ...`), and `check: <command>` last when a command's exit 0 can tell it is done. Each step stays on mesh-status until it is ticked off.
