@@ -69,10 +69,11 @@ commands:
   hosts replies [--json]                   the replies this box's jobs got, checked
   hosts held [--json]                      the levels this secure box holds for the operator, and on the admin
                                            box the registry proposals
-  hosts approve <id>                       show a hold's log, sign the approval with the approve key (the
+  hosts approve [<repo> | <id>]            show a hold's log, sign the approval with the approve key (the
                                            announced Keychain dialog) and level; asks again when origin moved;
-                                           a registry proposal is published as the next registry version
-  hosts deny <id>                          drop a hold, answering its sender
+                                           a registry proposal (registry) is published as the next registry
+                                           version; with no argument, every hold on this box in turn
+  hosts deny [<repo> | <id>]               drop a hold, answering its sender; with no argument, the box's one hold
   sync [--repo R | --all] [--wait 30s]     level this box's checkout (pushing when ahead and allowed), then send
                                            level with origin's head to every box that has the repo; print each
                                            answer within --wait, or asleep, queued until <expires>

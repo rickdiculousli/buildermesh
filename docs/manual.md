@@ -1697,7 +1697,7 @@ Then, in order:
 2. `<path> held before land by <by> <age> ago: <why>` per hold (see [Holds](#holds));
 3. `<path> landing <age>: <text>` per ready request, its age since `bmesh ready` and the lead's `landing` text (`: held, waiting for the release` while held; `landed <sha8> (ready <age> ago); the final wake is pending` or `land refused (ready <age> ago): <refusal>; the wake carrying it is pending` while the daemon owes the lead its wake; see [`bmesh ready`](#bmesh-ready));
 4. `<path> ▲ <level> <age> ago: <words>` per open flag of a node not `done`: the newest `runaway` event of each rule the daemons announced for it since it started (at most the stream's 30 days), a `runaway` hiding the same rule's `overworking`, runaway first (see [Flags](#flags));
-5. `<host>: <repo> waits for your approval (+<N> commits): in a terminal on <host>, bmesh hosts approve <id> (expires <day hh:mm>)` per hold any box's presence carries (`<host>: a registry proposal from <box> waits for your approval (<N> row changes): ...` for a registry proposal), this box's own among them; none with `[hosts]` off (see [Hosts: The hold](#levelling));
+5. `<host>: <repo> waits for your approval (+<N> commits): in a terminal on <host>, bmesh hosts approve <repo> (expires <day hh:mm>)` per hold any box's presence carries (`<host>: a registry proposal from <box> waits for your approval (<N> row changes): in a terminal on <host>, bmesh hosts approve registry ...` for a registry proposal), this box's own among them; none with `[hosts]` off (see [Hosts: The hold](#levelling));
 6. `fixes: N pending for <repo> (<fixer> <state>)`, the open issues naming bmesh's own repo (see [The fixer](#the-fixer)): the parentheses read `(<fixer> <state>)` while a fixer has them (`fixes: N pending for <repo> (<fixer> working)`), `(starts within a minute)` when the daemon starts one on its next pass, `(starts once <family> is done)` while an issue's build family still has a lead working, `(<fixer> blocked)` while the newest fixer's block waits on the operator, and `(<fixer> done; they wait on you)` when the fixer had them and left them;
 7. `feedback: N pending in <family>` per family with other feedback pending (see [`bmesh feedback`](#bmesh-feedback));
 8. `t3 sign-in on <host>: expires in N days (bmesh t3 login)` with the `t3` runner and this box's T3 sign-in under 7 days from expiry (`expires in 1 day` in the singular, and `t3 sign-in on <host>: expired (bmesh t3 login)` once it has expired; see [`bmesh t3 login`](#bmesh-t3-login));
@@ -2677,10 +2677,12 @@ Refused as [`bmesh hosts`](#bmesh-hosts) is.
 #### `bmesh hosts approve`
 
 ```
-bmesh hosts approve <id>
+bmesh hosts approve [<repo> | <id>]
 ```
 
 At the box's own screen, approves a hold: a held level on a secure box, or a registry proposal on the admin box.
+
+**Which holds.** An argument is a hold's id, or else a name: a level's repo, or `registry` for every registry proposal. With no argument, it takes every hold on the box. A name, or no argument, leaves out holds past their expiry, which the daemon drops. It approves the holds in turn, each with its own log and dialog, as below; the first that is refused or cancelled stops the rest, and a `left held` answer goes on to the next.
 
 **What it does** for a held level:
 
@@ -2699,7 +2701,8 @@ Approved, it prints `<repo>: fast-forwarded <N> (approved)`. The job's sender ge
 
 | When | Exit | Message |
 |---|---|---|
-| this box holds no hold with that id | 3 | `` no hold <id> on this box (`bmesh hosts held` lists them) `` |
+| this box holds no hold with that id, nor an unexpired one of that name | 3 | `` no hold <arg> on this box (`bmesh hosts held` lists them) `` |
+| no argument, and this box holds nothing unexpired | 3 | `no holds on this box` |
 | stdin isn't a terminal | 3 | `approving needs the operator at this box's own screen (stdin is not a terminal)` |
 | the roster gives this box no approve key | 3 | `<host> has no approve key in roster v<N>: ask the admin to invite it again with --secure --replace` |
 | no daemon runs on this box | 3 | `` no daemon on <host> answered: is `bmesh serve` running with [hosts] enabled? `` |
@@ -2717,14 +2720,14 @@ Refused also as [`bmesh hosts`](#bmesh-hosts) is.
 #### `bmesh hosts deny`
 
 ```
-bmesh hosts deny <id>
+bmesh hosts deny [<repo> | <id>]
 ```
 
-Drops a hold: a held level, or a registry proposal. For a held level, the job's sender gets the reply `denied by the operator`.
+Drops a hold: a held level, or a registry proposal. The argument picks the hold as [`bmesh hosts approve`](#bmesh-hosts-approve)'s does, but it drops one only: a name or no argument that picks several is refused with `<name> names <N> holds: <id> (<what>), ...; name one by its id` (`this box has <N> holds: ...` with no argument), `<what>` as `<repo> +<N> commits` or `a registry proposal from <box> (<N> row changes)`. For a held level, the job's sender gets the reply `denied by the operator`.
 
 **Output.** For a level, `denied <id>: <repo> stays at <head8>`. For a registry proposal, `denied <id>: the registry stays at v<N> without <box>'s proposal`.
 
-**Refusals.** An id with no hold is refused as [`bmesh hosts approve`](#bmesh-hosts-approve) refuses it.
+**Refusals.** An argument naming no hold is refused as [`bmesh hosts approve`](#bmesh-hosts-approve) refuses it.
 
 ### `bmesh sync`
 
@@ -2874,7 +2877,7 @@ On any box but the admin, with `[hosts]` on, sends this box's `repos.toml` to th
 2. It prints the same diff as `publish`, against the registry it has: `proposed against registry v<N>:`. An unchanged file prints `no change against registry v<N>` and stops.
 3. It sends the box's `repos.toml` to the admin box as a `propose` job (args `[<base version>, <rows>]`). The admin box's row must accept `propose`.
 4. The admin's daemon refuses rows it can't read, and a proposal against an older version than its registry: `refused: proposed against registry v<N>; it is v<M> now: propose again`.
-5. Otherwise the admin's daemon holds the proposal with its row diff, pushes `<admin>: a registry proposal from <box> waits for your approval (<N> row changes)` (body `Approving publishes its rows as the next registry, which every box takes. In a terminal on <admin>: bmesh hosts approve <id> (it shows the diff first), or bmesh hosts deny <id> to leave it as it is. Expires <day hh:mm>.`) and answers `held for approval as <id> (<N> row changes against registry v<base>)`. A newer proposal from the same box supersedes it.
+5. Otherwise the admin's daemon holds the proposal with its row diff, pushes `<admin>: a registry proposal from <box> waits for your approval (<N> row changes)` (body `Approving publishes its rows as the next registry, which every box takes. In a terminal on <admin>: bmesh hosts approve registry (it shows the diff first), or bmesh hosts deny registry to leave it as it is. Expires <day hh:mm>.`) and answers `held for approval as <id> (<N> row changes against registry v<base>)`. A newer proposal from the same box supersedes it.
 
 Nothing changes until the operator approves it with [`bmesh hosts approve`](#bmesh-hosts-approve) on the admin box. [`bmesh hosts held`](#bmesh-hosts-held) lists it. A proposal the registry has moved past, or past its job's expiry, is dropped and its proposer told so. [`bmesh hosts deny`](#bmesh-hosts-deny) drops it too.
 
@@ -3633,11 +3636,11 @@ A level, the daemon's routine fetch, and the fast-forward of `main` in the main 
 
 - The hold keeps the job, the repo, its head and target, and `git log --stat HEAD..<target>`. The job is answered `held for approval (+<N> commits)`.
 - A repo has one hold. A newer job's hold replaces it, and the older job's sender gets the reply `hold superseded by job <id>`. A self-level leaves an existing hold as it is.
-- The box pushes the hold once (with `[notify]`, priority `default`). The title is `<host>: <repo> waits for your approval (+<N> commits)`. The body says what the move would change, `New sessions on <host> load its skills and plugins.`, then `In a terminal on <host>: bmesh hosts approve <id> (it shows the commits first), or bmesh hosts deny <id> to leave it as it is. Expires <day hh:mm>.` in the holding box's time zone.
+- The box pushes the hold once (with `[notify]`, priority `default`). The title is `<host>: <repo> waits for your approval (+<N> commits)`. The body says what the move would change, `New sessions on <host> load its skills and plugins.`, then `In a terminal on <host>: bmesh hosts approve <repo> (it shows the commits first), or bmesh hosts deny <repo> to leave it as it is. Expires <day hh:mm>.` in the holding box's time zone.
 - The box's presence carries the hold until it is approved, denied or expires, so every box's session line and [`bmesh mesh-status`](#bmesh-mesh-status) show it as waiting on the operator (see [Presence](#presence)).
 - A hold expires with its job (24h, a self-level's too) and is dropped, logged only.
 
-[`bmesh hosts held`](#bmesh-hosts-held) lists the holds, [`bmesh hosts approve`](#bmesh-hosts-approve) approves one and [`bmesh hosts deny`](#bmesh-hosts-deny) drops one.
+[`bmesh hosts held`](#bmesh-hosts-held) lists the holds, [`bmesh hosts approve`](#bmesh-hosts-approve) approves one, a repo's or every hold on the box, and [`bmesh hosts deny`](#bmesh-hosts-deny) drops one.
 
 **Self-level.** Each daemon with `[hosts] enabled` levels every registered repo it has a checkout of, on start and on each wake, as a fast-forward only, never a push. Refusals are logged, not pushed. Holds apply as above.
 

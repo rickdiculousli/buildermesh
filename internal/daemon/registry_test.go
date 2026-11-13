@@ -158,7 +158,7 @@ func TestProposeHoldsTheDiffOnTheAdminBox(t *testing.T) {
 	x := held[0].Presence()
 	if ev := evs[1]; ev.Text != testHost+": a registry proposal from k16 waits for your approval (1 row change)" ||
 		ev.Detail != "Approving publishes its rows as the next registry, which every box takes. In a terminal on "+testHost+
-			": bmesh hosts approve "+x.ID+" (it shows the diff first), or bmesh hosts deny "+x.ID+" to leave it as it is. Expires "+
+			": bmesh hosts approve registry (it shows the diff first), or bmesh hosts deny registry to leave it as it is. Expires "+
 			x.ExpiresAt()+"." {
 		t.Fatalf("held event: %+v", ev)
 	}

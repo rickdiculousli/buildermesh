@@ -12,4 +12,4 @@ As `--node operator`:
 
 ## What's building, what's waiting on me
 
-`bmesh mesh-status`, asks first. A box's hold (`<box>: <repo> waits for your approval`) is the operator's: name it and the `bmesh hosts approve <id>` they run in a terminal on that box; never run it yourself. Then `bmesh spec steps`, then any `bmesh update --notice` lines word for word.
+`bmesh mesh-status`, asks first. A box's hold (`<box>: <repo> waits for your approval`) is the operator's: name it and the `bmesh hosts approve <repo>` they run in a terminal on that box; never run it yourself. Then `bmesh spec steps`, then any `bmesh update --notice` lines word for word.

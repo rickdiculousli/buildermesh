@@ -150,8 +150,8 @@ func TestSyncLevelsEveryBoxAndHoldsOnASecureOne(t *testing.T) {
 		t.Fatalf("mac app at %s, want %s", got, appTop)
 	}
 
-	// At the Mac: the hold is listed, approved with the admin key, and
-	// tools moves.
+	// At the Mac: the hold is listed, approved with the admin key (bare
+	// approve takes every hold on the box), and tools moves.
 	out, _, _ = mac.run(t, "", "hosts", "held", "--json")
 	var held []hosts.Held
 	if err := json.Unmarshal([]byte(out), &held); err != nil || len(held) != 1 || held[0].Repo != "tools" || held[0].From() != "k16" {
@@ -160,7 +160,7 @@ func TestSyncLevelsEveryBoxAndHoldsOnASecureOne(t *testing.T) {
 	if got := meshtest.Git(t, macDir("tools"), "rev-parse", "HEAD"); got == toolsTop {
 		t.Fatal("a held level moved tools")
 	}
-	out, errs, code = mac.run(t, "pw\n", "hosts", "approve", held[0].ID)
+	out, errs, code = mac.run(t, "pw\n", "hosts", "approve")
 	if code != 0 || !strings.Contains(out, "skill.md") || !strings.Contains(out, "tools: fast-forwarded 1 (approved)") {
 		t.Fatalf("approve: %d %s %s", code, out, errs)
 	}
@@ -178,7 +178,8 @@ func TestSyncLevelsEveryBoxAndHoldsOnASecureOne(t *testing.T) {
 		t.Fatalf("k16 never heard the approval: %s", out)
 	}
 
-	// Another tools commit, held again, denied: the sender hears it.
+	// Another tools commit, held again, denied by its repo: the sender
+	// hears it.
 	t.Setenv("GIT_COMMITTER_DATE", time.Now().Add(-time.Hour).Format(time.RFC3339))
 	meshtest.CommitFiles(t, k16Dir("tools"), map[string]string{"skill2.md": "x\n"})
 	os.Unsetenv("GIT_COMMITTER_DATE")
@@ -188,7 +189,7 @@ func TestSyncLevelsEveryBoxAndHoldsOnASecureOne(t *testing.T) {
 	}
 	out, _, _ = mac.run(t, "", "hosts", "held")
 	id := strings.Fields(out)[0]
-	if out, errs, code := mac.run(t, "", "hosts", "deny", id); code != 0 || !strings.Contains(out, "denied "+id) {
+	if out, errs, code := mac.run(t, "", "hosts", "deny", "tools"); code != 0 || !strings.Contains(out, "denied "+id) {
 		t.Fatalf("deny: %d %s %s", code, out, errs)
 	}
 	waitFor(t, "the denial reaches k16", func() bool {

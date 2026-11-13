@@ -351,7 +351,7 @@ func settledLines(rows []statusRow, hide map[string]bool) []string {
 
 // boxHoldLines are the holds every box's presence carries (093), one line
 // each as waiting on the operator: `<host>: <repo> waits for your approval
-// (+<N> commits): in a terminal on <host>, bmesh hosts approve <id>
+// (+<N> commits): in a terminal on <host>, bmesh hosts approve <repo>
 // (expires <day hh:mm>)`. None with [hosts] off or before this box joined;
 // a presence read that fails is said on stderr.
 func (a *app) boxHoldLines(ctx context.Context, now time.Time) []string {
@@ -370,7 +370,7 @@ func (a *app) boxHoldLines(ctx context.Context, now time.Time) []string {
 			for _, s := range seen {
 				for _, x := range s.Presence.Held {
 					out = append(out, fmt.Sprintf("%s: in a terminal on %s, bmesh hosts approve %s (expires %s)",
-						x.Waits(s.Host.Name), s.Host.Name, x.ID, x.ExpiresAt()))
+						x.Waits(s.Host.Name), s.Host.Name, x.Name(), x.ExpiresAt()))
 				}
 			}
 			return out

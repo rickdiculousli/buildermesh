@@ -330,8 +330,8 @@ One always-on box runs the hub; the other boxes reach it over a tailnet such as 
 | [`bmesh hosts ping [<host>]`](docs/manual.md#bmesh-hosts-ping) | `[--wait D]` |
 | [`bmesh hosts replies`](docs/manual.md#bmesh-hosts-replies) | `[--json]` |
 | [`bmesh hosts held`](docs/manual.md#bmesh-hosts-held) | `[--json]` |
-| [`bmesh hosts approve <id>`](docs/manual.md#bmesh-hosts-approve) |  |
-| [`bmesh hosts deny <id>`](docs/manual.md#bmesh-hosts-deny) |  |
+| [`bmesh hosts approve [<repo> \| <id>]`](docs/manual.md#bmesh-hosts-approve) |  |
+| [`bmesh hosts deny [<repo> \| <id>]`](docs/manual.md#bmesh-hosts-deny) |  |
 | [`bmesh sync`](docs/manual.md#bmesh-sync) | `[--repo R \| --all] [--wait 30s]` |
 | [`bmesh prune`](docs/manual.md#bmesh-prune) | `[--repo R \| --all] [--apply] [--wait 30s]` |
 | [`bmesh repos`](docs/manual.md#bmesh-repos) | `[--json]` |

@@ -135,8 +135,7 @@ func TestRegistryPublishProposeAndRemoveWithCheckouts(t *testing.T) {
 	})
 	for _, b := range []box{k16, mac} {
 		out, errs, code := b.run(t, "", "mesh-status")
-		if want := "\nmac: a registry proposal from k16 waits for your approval (1 row change): in a terminal on mac, bmesh hosts approve " +
-			id + " (expires "; code != 0 || !strings.Contains(out, want) {
+		if want := "\nmac: a registry proposal from k16 waits for your approval (1 row change): in a terminal on mac, bmesh hosts approve registry (expires "; code != 0 || !strings.Contains(out, want) {
 			t.Fatalf("mesh-status on %s: %d %s %s", b.name, code, out, errs)
 		}
 	}

@@ -13,6 +13,6 @@ description: Levels a registry repo's checkouts across the mesh's boxes with bme
    - The other boxes: from `bmesh hosts --json`, those whose `accept` has `level` and whose presence lists the repo, with their state (an asleep box takes it when it wakes, within 24 hours) and the `secure` ones marked.
    Show one short row per box and repo.
 3. **Run it once:** `bmesh sync --all` or `bmesh sync --repo <repo>`. It prints `<box>: <answer>` per box; a box that answers later is read with `bmesh hosts replies`.
-4. **Report per box:** what moved; what's held (the operator approves at that box: `bmesh hosts held`, then `bmesh hosts approve <id>`); what was refused and why (a dirty or diverged checkout is the operator's to settle: never stash, reset or merge it here); and which boxes have yet to answer.
+4. **Report per box:** what moved; what's held (the operator approves at that box: `bmesh hosts approve <repo>`); what was refused and why (a dirty or diverged checkout is the operator's to settle: never stash, reset or merge it here); and which boxes have yet to answer.
 
 End with one line: how many checkouts moved on how many boxes, and what waits on the operator (holds to approve at a secure box, refusals to settle, boxes asleep), each named in plain words.

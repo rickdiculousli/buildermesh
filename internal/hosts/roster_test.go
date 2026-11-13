@@ -259,12 +259,12 @@ func TestPresenceHoldWords(t *testing.T) {
 	for _, tc := range []struct{ got, want string }{
 		{level.What(), "buildermesh +62 commits"},
 		{level.Waits("ricks-macbook"), "ricks-macbook: buildermesh waits for your approval (+62 commits)"},
-		{level.Step("ricks-macbook"), "In a terminal on ricks-macbook: bmesh hosts approve eZ7q (it shows the commits first), " +
-			"or bmesh hosts deny eZ7q to leave it as it is. Expires Sat 23:47."},
+		{level.Step("ricks-macbook"), "In a terminal on ricks-macbook: bmesh hosts approve buildermesh (it shows the commits first), " +
+			"or bmesh hosts deny buildermesh to leave it as it is. Expires Sat 23:47."},
 		{reg.What(), "a registry proposal from k16 (1 row change)"},
 		{reg.Waits("mac"), "mac: a registry proposal from k16 waits for your approval (1 row change)"},
-		{reg.Step("mac"), "In a terminal on mac: bmesh hosts approve Ab9 (it shows the diff first), " +
-			"or bmesh hosts deny Ab9 to leave it as it is. Expires Sat 23:47."},
+		{reg.Step("mac"), "In a terminal on mac: bmesh hosts approve registry (it shows the diff first), " +
+			"or bmesh hosts deny registry to leave it as it is. Expires Sat 23:47."},
 	} {
 		if tc.got != tc.want {
 			t.Errorf("got  %q\nwant %q", tc.got, tc.want)

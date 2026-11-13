@@ -120,17 +120,26 @@ func (p PresenceHold) Waits(host string) string {
 	return fmt.Sprintf("%s: %s waits for your approval (+%d %s)", host, p.Repo, p.Commits, plural(p.Commits, "commit"))
 }
 
+// Name is what `bmesh hosts approve` and `deny` take for the hold besides
+// its id: a level's repo, or `registry` for a registry proposal.
+func (p PresenceHold) Name() string {
+	if p.Kind == HeldRegistry {
+		return HeldRegistry
+	}
+	return p.Repo
+}
+
 // Step is how the operator answers the hold, and when it expires (in this
-// box's time zone): `In a terminal on <host>: bmesh hosts approve <id> (it
-// shows the commits first), or bmesh hosts deny <id> to leave it as it is.
-// Expires Sat 23:47.`
+// box's time zone): `In a terminal on <host>: bmesh hosts approve <repo>
+// (it shows the commits first), or bmesh hosts deny <repo> to leave it as
+// it is. Expires Sat 23:47.`
 func (p PresenceHold) Step(host string) string {
 	shows := "the commits"
 	if p.Kind == HeldRegistry {
 		shows = "the diff"
 	}
 	return fmt.Sprintf("In a terminal on %s: bmesh hosts approve %s (it shows %s first), or bmesh hosts deny %s to leave it as it is. Expires %s.",
-		host, p.ID, shows, p.ID, p.ExpiresAt())
+		host, p.Name(), shows, p.Name(), p.ExpiresAt())
 }
 
 // ExpiresAt is the expiry as `Sat 23:47`, in this box's time zone.

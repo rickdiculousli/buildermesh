@@ -82,30 +82,78 @@ func (a *app) cmdHostsHeld(args []string) error {
 	return nil
 }
 
-// cmdHostsApprove shows a hold's log, reads the approve key (the announced
-// Keychain dialog, or the passphrase) and signs approve/v1 over the job
-// and the target shown; the daemon re-checks it and levels. When origin
-// moved since, it shows the new log and asks again.
+// pickHolds is the holds a `hosts approve` or `deny` argument names: the
+// hold with that id, else the unexpired holds of that name (a level's
+// repo, or registry); with no argument, every unexpired hold on this box.
+// one asks for a single hold, refusing with the list when there are
+// several.
+func pickHolds(stateDir string, pos []string, one bool) ([]hosts.Held, error) {
+	all, err := hosts.ListHeld(stateDir)
+	if err != nil {
+		return nil, err
+	}
+	var got []hosts.Held
+	now := time.Now()
+	for _, x := range all {
+		if len(pos) == 1 && x.ID == pos[0] {
+			return []hosts.Held{x}, nil
+		}
+		if !x.Expired(now) && (len(pos) == 0 || x.Presence().Name() == pos[0]) {
+			got = append(got, x)
+		}
+	}
+	if len(got) == 0 {
+		if len(pos) == 0 {
+			return nil, fail(exitRefused, "no holds on this box")
+		}
+		return nil, fail(exitRefused, "no hold %s on this box (`bmesh hosts held` lists them)", pos[0])
+	}
+	if one && len(got) > 1 {
+		names := make([]string, len(got))
+		for i, x := range got {
+			names[i] = x.ID + " (" + x.Presence().What() + ")"
+		}
+		what := "this box has"
+		if len(pos) == 1 {
+			what = pos[0] + " names"
+		}
+		return nil, fail(exitRefused, "%s %d holds: %s; name one by its id", what, len(got), strings.Join(names, ", "))
+	}
+	return got, nil
+}
+
+// cmdHostsApprove approves every hold pickHolds names, one at a time, each
+// as approveHold does; the first that fails stops the rest.
 func (a *app) cmdHostsApprove(args []string) error {
 	fs := a.flags("hosts approve")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
-	if len(pos) != 1 {
-		return fail(exitUsage, "usage: bmesh hosts approve <id>")
+	if len(pos) > 1 {
+		return fail(exitUsage, "usage: bmesh hosts approve [<repo> | <id>]")
 	}
 	b, err := a.hostsBox()
 	if err != nil {
 		return err
 	}
-	x, ok, err := hosts.LoadHeld(b.stateDir, pos[0])
+	xs, err := pickHolds(b.stateDir, pos, false)
 	if err != nil {
 		return err
 	}
-	if !ok {
-		return fail(exitRefused, "no hold %s on this box (`bmesh hosts held` lists them)", pos[0])
+	for _, x := range xs {
+		if err := a.approveHold(b, x); err != nil {
+			return err
+		}
 	}
+	return nil
+}
+
+// approveHold shows a hold's log, reads the approve key (the announced
+// Keychain dialog, or the passphrase) and signs approve/v1 over the job
+// and the target shown; the daemon re-checks it and levels. When origin
+// moved since, it shows the new log and asks again.
+func (a *app) approveHold(b *hostsBox, x hosts.Held) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*approveWait)
 	defer cancel()
 	if err := a.connect(ctx, "hosts-approve"); err != nil {
@@ -278,27 +326,25 @@ func showHold(a *app, x hosts.Held) {
 		short8(x.Head), short8(x.Target), x.From(), x.Log)
 }
 
-// cmdHostsDeny drops a hold, answering its sender.
+// cmdHostsDeny drops the one hold pickHolds names, answering its sender.
 func (a *app) cmdHostsDeny(args []string) error {
 	fs := a.flags("hosts deny")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
-	if len(pos) != 1 {
-		return fail(exitUsage, "usage: bmesh hosts deny <id>")
+	if len(pos) > 1 {
+		return fail(exitUsage, "usage: bmesh hosts deny [<repo> | <id>]")
 	}
 	b, err := a.hostsBox()
 	if err != nil {
 		return err
 	}
-	x, ok, err := hosts.LoadHeld(b.stateDir, pos[0])
+	xs, err := pickHolds(b.stateDir, pos, true)
 	if err != nil {
 		return err
 	}
-	if !ok {
-		return fail(exitRefused, "no hold %s on this box (`bmesh hosts held` lists them)", pos[0])
-	}
+	x := xs[0]
 	if err := hosts.DropHeld(b.stateDir, x.ID); err != nil {
 		return err
 	}

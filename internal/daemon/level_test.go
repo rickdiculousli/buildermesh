@@ -270,8 +270,8 @@ func TestHoldApproveAndMovedTarget(t *testing.T) {
 	at := exp.Local().Format("Mon 15:04")
 	ev := l.claims(t, "held")
 	if len(ev) != 1 || ev[0].Text != "testhost: plug waits for your approval (+1 commit)" || ev[0].Body != j.ID ||
-		ev[0].Detail != "New sessions on testhost load its skills and plugins. In a terminal on testhost: bmesh hosts approve "+j.ID+
-			" (it shows the commits first), or bmesh hosts deny "+j.ID+" to leave it as it is. Expires "+at+"." {
+		ev[0].Detail != "New sessions on testhost load its skills and plugins. In a terminal on testhost: bmesh hosts approve plug"+
+			" (it shows the commits first), or bmesh hosts deny plug to leave it as it is. Expires "+at+"." {
 		t.Fatalf("held events %+v", ev)
 	}
 	// Presence carries it, and the session line names it.
@@ -374,7 +374,7 @@ func TestSelfLevelIsHeldOnASecureBox(t *testing.T) {
 		t.Fatalf("holds %+v", all)
 	}
 	if ev := l.claims(t, "held"); len(ev) != 1 || ev[0].Text != "testhost: plug waits for your approval (+1 commit)" ||
-		!strings.Contains(ev[0].Detail, "bmesh hosts approve "+all[0].ID+" (it shows the commits first)") {
+		!strings.Contains(ev[0].Detail, "bmesh hosts approve plug (it shows the commits first)") {
 		t.Fatalf("held events %+v", ev)
 	}
 	// A wake doesn't hold it twice.
