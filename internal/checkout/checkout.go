@@ -95,6 +95,15 @@ func MoveTo(dir, commit string) error {
 	if err != nil {
 		return fmt.Errorf("commit %q: not a commit in %s", commit, dir)
 	}
+	// Already there and clean: skip the reset, which rewrites the index on
+	// every rescan.
+	if _, err := git(dir, "symbolic-ref", "-q", "HEAD"); err != nil {
+		if head, _ := git(dir, "rev-parse", "HEAD"); head == sha {
+			if st, err := git(dir, "--no-optional-locks", "status", "--porcelain", "--untracked-files=normal"); err == nil && st == "" {
+				return nil
+			}
+		}
+	}
 	for _, args := range [][]string{
 		{"reset", "--hard", "--quiet"},
 		{"checkout", "--detach", "--quiet", sha},

@@ -3385,7 +3385,7 @@ Internals: [internals](internals.md#replies)
 
 #### Checkouts
 
-Fresh and pooled runs never touch a requester's worktree. Each instance has a detached worktree of the registered repo at `<[runner] checkouts>/<repo directory name>/<instance path>`, moved before each job with `git checkout --detach <commit> && git clean -fd`, which keeps ignored files: a pooled instance's installs (`node_modules`) stay from job to job, and [Setup](#setup) says when they are brought current. The daemon reads the repo's main in a sibling checkout named `main`. An inline run uses the cwd worktree's HEAD (see [`bmesh routine run`](#bmesh-routine-run)).
+Fresh and pooled runs never touch a requester's worktree. Each instance has a detached worktree of the registered repo at `<[runner] checkouts>/<repo directory name>/<instance path>`, moved before each job with `git checkout --detach <commit> && git clean -fd` (skipped when it is already at that commit with nothing changed or untracked, so a rescan writes nothing), which keeps ignored files: a pooled instance's installs (`node_modules`) stay from job to job, and [Setup](#setup) says when they are brought current. The daemon reads the repo's main in a sibling checkout named `main`. An inline run uses the cwd worktree's HEAD (see [`bmesh routine run`](#bmesh-routine-run)).
 
 #### Setup
 

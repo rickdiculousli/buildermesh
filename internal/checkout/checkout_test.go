@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
 )
@@ -60,6 +61,38 @@ func TestEnsureThenMoveToOlderCommit(t *testing.T) {
 	}
 	if err := MoveTo(dir, "--bogus"); err == nil {
 		t.Error("MoveTo accepted a bad commit")
+	}
+}
+
+func TestMoveToSameCommitLeavesIndexAlone(t *testing.T) {
+	repo, c1, _ := newRepo(t)
+	dir, err := Ensure(repo, t.TempDir(), "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := MoveTo(dir, c1); err != nil {
+		t.Fatal(err)
+	}
+	index := meshtest.Git(t, dir, "rev-parse", "--path-format=absolute", "--git-path", "index")
+	old := time.Now().Add(-time.Hour).Truncate(time.Second)
+	if err := os.Chtimes(index, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := MoveTo(dir, c1); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := os.Stat(index); err != nil || !st.ModTime().Equal(old) {
+		t.Error("a move to the commit already checked out rewrote the index")
+	}
+	// Dirt at the same commit is still cleaned.
+	if err := os.WriteFile(filepath.Join(dir, "junk.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := MoveTo(dir, c1); err != nil {
+		t.Fatal(err)
+	}
+	if exists(filepath.Join(dir, "junk.txt")) {
+		t.Error("junk.txt still present")
 	}
 }
 
