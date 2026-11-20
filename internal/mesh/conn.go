@@ -3,6 +3,7 @@ package mesh
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -13,6 +14,8 @@ import (
 type Client struct {
 	NC *nats.Conn
 	JS jetstream.JetStream
+
+	kvs sync.Map // bucket name → jetstream.KeyValue, opened once per client
 }
 
 // Connect dials url with the token (empty for none) and addresses JetStream

@@ -293,11 +293,11 @@ func TestWriteRepoRoundTrips(t *testing.T) {
 func TestLoadKeepDurations(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "c.toml")
 	c, err := Load(p)
-	if err != nil || c.Status.KeepDone != 24*time.Hour || c.Routines.KeepResults != 30*24*time.Hour || c.Serve.StaleAfter != 6*time.Hour {
+	if err != nil || c.Status.KeepDone != 24*time.Hour || c.Status.ForgetDone != 30*24*time.Hour || c.Routines.KeepResults != 30*24*time.Hour || c.Serve.StaleAfter != 6*time.Hour {
 		t.Fatalf("defaults: %v %+v %+v %+v", err, c.Status, c.Routines, c.Serve)
 	}
-	os.WriteFile(p, []byte("[serve]\nstale_after = \"0\"\n[status]\nkeep_done = \"36h\"\n[routines]\nkeep_results = \"7d\"\n"), 0o644)
-	if c, err = Load(p); err != nil || c.Status.KeepDone != 36*time.Hour || c.Routines.KeepResults != 7*24*time.Hour || c.Serve.StaleAfter != 0 {
+	os.WriteFile(p, []byte("[serve]\nstale_after = \"0\"\n[status]\nkeep_done = \"36h\"\nforget_done = \"0\"\n[routines]\nkeep_results = \"7d\"\n"), 0o644)
+	if c, err = Load(p); err != nil || c.Status.KeepDone != 36*time.Hour || c.Status.ForgetDone != 0 || c.Routines.KeepResults != 7*24*time.Hour || c.Serve.StaleAfter != 0 {
 		t.Fatalf("%v %+v %+v %+v", err, c.Status, c.Routines, c.Serve)
 	}
 	for _, bad := range []string{"[serve]\nstale_after = \"-1h\"\n", "[status]\nkeep_done = \"-1h\"\n", "[routines]\nkeep_results = \"xd\"\n", "[routines]\nkeep_results = \"-2d\"\n"} {

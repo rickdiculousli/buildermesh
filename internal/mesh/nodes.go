@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -62,8 +63,98 @@ type RunnerUpdate struct {
 	Sample RunnerSample
 }
 
+// bucket opens the named bucket once per client: each open is a stream info
+// request, which per key read made a listing cost two requests a key.
 func bucket(ctx context.Context, c *Client, name string) (jetstream.KeyValue, error) {
-	return c.JS.KeyValue(ctx, name)
+	if kv, ok := c.kvs.Load(name); ok {
+		return kv.(jetstream.KeyValue), nil
+	}
+	kv, err := c.JS.KeyValue(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	c.kvs.Store(name, kv)
+	return kv, nil
+}
+
+// allValues returns every live key's value in the named bucket. It asks
+// the server for each key's last message in one direct get (multi_last),
+// which the server reads under the stream's lock, so a key rewritten during
+// the read is never missed; past what one such read answers it falls back
+// to a get per key.
+func allValues(ctx context.Context, c *Client, name string) (map[string][]byte, error) {
+	if vals, ok := lastValues(ctx, c, name); ok {
+		return vals, nil
+	}
+	kv, err := bucket(ctx, c, name)
+	if err != nil {
+		return nil, err
+	}
+	keys, err := listKeys(ctx, c, kv, ">")
+	if errors.Is(err, jetstream.ErrNoKeysFound) {
+		return map[string][]byte{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string][]byte, len(keys))
+	for _, k := range keys {
+		e, err := kv.Get(ctx, k)
+		if errors.Is(err, jetstream.ErrKeyNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		out[k] = e.Value()
+	}
+	return out, nil
+}
+
+// lastValues is allValues in one multi_last direct get; false when the
+// server didn't answer it whole (no direct get, too many keys, too many
+// bytes, a timeout), for the caller to read key by key.
+func lastValues(ctx context.Context, c *Client, name string) (map[string][]byte, bool) {
+	prefix := "$KV." + name + "."
+	api := jetstream.DefaultAPIPrefix
+	if d := c.JS.Options().Domain; d != "" {
+		api = "$JS." + d + ".API."
+	}
+	req, _ := json.Marshal(map[string]any{"multi_last": []string{prefix + ">"}})
+	inbox := c.NC.NewInbox()
+	sub, err := c.NC.SubscribeSync(inbox)
+	if err != nil {
+		return nil, false
+	}
+	defer sub.Unsubscribe()
+	if err := c.NC.PublishRequest(api+"DIRECT.GET.KV_"+name, inbox, req); err != nil {
+		return nil, false
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	out := map[string][]byte{}
+	for {
+		m, err := sub.NextMsgWithContext(ctx)
+		if err != nil {
+			return nil, false
+		}
+		switch m.Header.Get("Status") {
+		case "":
+		case "204": // end of batch: whole only when nothing is left pending
+			return out, m.Header.Get("Nats-Num-Pending") == "0"
+		case "404": // "No Results": the bucket has no keys
+			return out, len(out) == 0 && m.Header.Get("Description") == "No Results"
+		default:
+			return nil, false
+		}
+		key := strings.TrimPrefix(m.Header.Get("Nats-Subject"), prefix)
+		switch m.Header.Get("KV-Operation") {
+		case "DEL", "PURGE":
+			delete(out, key)
+		default:
+			out[key] = m.Data
+		}
+	}
 }
 
 // listKeys lists kv's keys matching filter (">" for every key) as the
@@ -172,27 +263,22 @@ func ForgetNode(ctx context.Context, c *Client, path string) error {
 
 // ListNodes returns every node sorted by path.
 func ListNodes(ctx context.Context, c *Client) ([]Node, error) {
-	kv, err := bucket(ctx, c, BucketNodes)
-	if err != nil {
+	vals, err := allValues(ctx, c, BucketNodes)
+	if err != nil || len(vals) == 0 {
 		return nil, err
 	}
-	keys, err := listKeys(ctx, c, kv, ">")
-	if errors.Is(err, jetstream.ErrNoKeysFound) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
+	keys := make([]string, 0, len(vals))
+	for k := range vals {
+		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	out := make([]Node, 0, len(keys))
 	for _, k := range keys {
-		n, ok, err := GetNode(ctx, c, k)
-		if err != nil {
-			return nil, err
+		var n Node
+		if err := json.Unmarshal(vals[k], &n); err != nil {
+			return nil, fmt.Errorf("%s %s: %w", BucketNodes, k, err)
 		}
-		if ok {
-			out = append(out, n)
-		}
+		out = append(out, n)
 	}
 	return out, nil
 }

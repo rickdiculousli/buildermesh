@@ -194,6 +194,7 @@ func Run(ctx context.Context, d Deps) error {
 		every(ctx, pollEvery, func() { pollOnce(ctx, d, act); wakeOnce(ctx, d, act); roundsOnce(ctx, d); settleOnce(ctx, d) })
 	})
 	start(func() { every(ctx, silenceEvery, func() { silenceOnce(ctx, d, act) }) })
+	start(func() { every(ctx, forgetEvery, func() { forgetDoneOnce(ctx, d) }) })
 	if d.Cfg.Notify.Ntfy != "" || d.Cfg.Notify.Command != "" {
 		digestEvery := d.Cfg.Notify.DigestPeriod()
 		since := d.Now()

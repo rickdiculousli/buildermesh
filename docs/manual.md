@@ -1823,7 +1823,7 @@ Removes a merged executor's worktree and branch. The executor's parent runs it.
 |---|---|---|
 | `--force` | off | remove an unmerged branch and drop uncommitted changes and ignored files |
 
-**What it does.** It removes the worktree with its ignored files (without `--force`, only when the caller's worktree has a file at each of their paths; `--force` also drops uncommitted changes) and the branch (`-d`, or `-D` with `--force`), forgets the worktree in the node, drains its inbox and marks it `done`. The node stays on the mesh until [`bmesh node forget`](#bmesh-node-forget); the name can be used again.
+**What it does.** It removes the worktree with its ignored files (without `--force`, only when the caller's worktree has a file at each of their paths; `--force` also drops uncommitted changes) and the branch (`-d`, or `-D` with `--force`), forgets the worktree in the node, drains its inbox and marks it `done`. The node stays on the mesh until [`bmesh node forget`](#bmesh-node-forget), or until its daemon forgets it after `[status] forget_done` (see [`bmesh node`](#bmesh-node)); the name can be used again.
 
 **Output.** `removed <path>`.
 
@@ -1844,7 +1844,7 @@ bmesh node stop <path> [--text "<why>"] [--wait 30s]
 
 Removes a finished node from the mesh, or stops a running one. [`bmesh mesh-status`](#bmesh-mesh-status) lists the nodes these act on.
 
-**Routine nodes** leave the mesh by themselves: a fresh run's node goes once its run ends, and a pooled instance that stops (its pool restarted or shrunk, its kind or repo gone) is marked `done` and removed after `[status] keep_done` (`0`: never). Their events stay for the map. Every other node stays until forgotten.
+**Routine nodes** leave the mesh by themselves: a fresh run's node goes once its run ends, and a pooled instance that stops (its pool restarted or shrunk, its kind or repo gone) is marked `done` and removed after `[status] keep_done` (`0`: never). Their events stay for the map. Every other node of a box is forgotten by that box's daemon, once an hour, when it has been `done` for `[status] forget_done` (default `30d`; `0`: never), its worktree is gone from disk, no node names it as parent (so an executor goes before its lead, a round after its children), its own parent is gone or `done`, and its T3 thread, if any, has been settled; until then, [`bmesh node forget`](#bmesh-node-forget) removes it. Its events stay for the map.
 
 #### `bmesh node forget`
 
@@ -3879,6 +3879,7 @@ proposer = "claude-opus-5-5"                # a proposal round's threads
 proposer_effort = "xhigh"
 [status]
 keep_done = "24h"                           # mesh-status hides nodes done longer than this; the daemon deletes stopped routine instances' nodes after it; "0" = never; days work: "30d"
+forget_done = "30d"                         # the daemon forgets its box's other nodes done longer than this, once their worktree is gone and no node names them as parent; "0" = never
 [routines]
 keep_results = "30d"                        # bm-results' age limit, applied by serve; "0" = none
 [quota]

@@ -147,8 +147,9 @@ func CheckEffort(e string) error {
 }
 
 // StatusConfig: KeepDone is how long a done node shows in mesh-status (and
-// how long a stopped routine instance's node stays); 0 = forever.
-type StatusConfig struct{ KeepDone time.Duration }
+// how long a stopped routine instance's node stays); ForgetDone is how long
+// any other done node stays on the mesh. 0 = forever.
+type StatusConfig struct{ KeepDone, ForgetDone time.Duration }
 
 // RoutinesConfig: KeepResults is bm-results' age limit; 0 = none.
 type RoutinesConfig struct{ KeepResults time.Duration }
@@ -357,7 +358,8 @@ type file struct {
 	Quota   QuotaConfig
 	Console ConsoleConfig
 	Status  struct {
-		KeepDone duration `toml:"keep_done"`
+		KeepDone   duration `toml:"keep_done"`
+		ForgetDone duration `toml:"forget_done"`
 	}
 	Routines struct {
 		KeepResults duration `toml:"keep_results"`
@@ -394,7 +396,7 @@ func defaults() *Config {
 		Models: ModelsConfig{Lead: "claude-opus-5-5", LeadEffort: "high", Proposer: "claude-opus-5-5",
 			ProposerEffort: "xhigh"},
 		Console:  ConsoleConfig{Hosts: map[string]string{}},
-		Status:   StatusConfig{KeepDone: 24 * time.Hour},
+		Status:   StatusConfig{KeepDone: 24 * time.Hour, ForgetDone: 30 * 24 * time.Hour},
 		Routines: RoutinesConfig{KeepResults: 30 * 24 * time.Hour},
 		Update:   UpdateConfig{CheckEvery: 6 * time.Hour, Track: "release"},
 		Addons:   AddonsConfig{T3Done: T3DoneConfig{Every: 5 * time.Second, MinBusy: 5 * time.Minute}},
@@ -417,6 +419,7 @@ func (c *Config) file() file {
 	f.Liveness.PollEvery = duration(c.Liveness.PollEvery)
 	f.Liveness.WakeEvery = duration(c.Liveness.WakeEvery)
 	f.Status.KeepDone = duration(c.Status.KeepDone)
+	f.Status.ForgetDone = duration(c.Status.ForgetDone)
 	f.Routines.KeepResults = duration(c.Routines.KeepResults)
 	f.Addons.Enable = c.Addons.Enable
 	f.Addons.T3Done.Ntfy, f.Addons.T3Done.Every, f.Addons.T3Done.MinBusy = c.Addons.T3Done.Ntfy, duration(c.Addons.T3Done.Every), duration(c.Addons.T3Done.MinBusy)
@@ -585,9 +588,9 @@ func Load(path string) (*Config, error) {
 	}
 	c.Liveness = LivenessConfig{Grace: time.Duration(f.Liveness.Grace), PollEvery: time.Duration(f.Liveness.PollEvery),
 		WakeEvery: time.Duration(f.Liveness.WakeEvery)}
-	c.Status = StatusConfig{KeepDone: time.Duration(f.Status.KeepDone)}
+	c.Status = StatusConfig{KeepDone: time.Duration(f.Status.KeepDone), ForgetDone: time.Duration(f.Status.ForgetDone)}
 	c.Routines = RoutinesConfig{KeepResults: time.Duration(f.Routines.KeepResults)}
-	for key, d := range map[string]time.Duration{"[serve] stale_after": c.Serve.StaleAfter, "[status] keep_done": c.Status.KeepDone, "[routines] keep_results": c.Routines.KeepResults,
+	for key, d := range map[string]time.Duration{"[serve] stale_after": c.Serve.StaleAfter, "[status] keep_done": c.Status.KeepDone, "[status] forget_done": c.Status.ForgetDone, "[routines] keep_results": c.Routines.KeepResults,
 		"[update] check_every": c.Update.CheckEvery} {
 		if d < 0 {
 			return nil, fmt.Errorf("config %s: %s: negative duration", path, key)

@@ -113,27 +113,13 @@ func ReadState(ctx context.Context, c *Client, path string) (State, uint64, erro
 
 // ReadAllStates returns every path's state.
 func ReadAllStates(ctx context.Context, c *Client) (map[string]State, error) {
-	kv, err := bucket(ctx, c, BucketState)
+	vals, err := allValues(ctx, c, BucketState)
 	if err != nil {
 		return nil, err
 	}
-	keys, err := listKeys(ctx, c, kv, ">")
-	if errors.Is(err, jetstream.ErrNoKeysFound) {
-		return map[string]State{}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string]State, len(keys))
-	for _, k := range keys {
-		e, err := kv.Get(ctx, k)
-		if errors.Is(err, jetstream.ErrKeyNotFound) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		s, err := decodeState(e.Value())
+	out := make(map[string]State, len(vals))
+	for k, v := range vals {
+		s, err := decodeState(v)
 		if err != nil {
 			return nil, fmt.Errorf("state %s: %w", k, err)
 		}
