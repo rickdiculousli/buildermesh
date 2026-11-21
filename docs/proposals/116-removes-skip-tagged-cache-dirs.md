@@ -4,7 +4,7 @@ title: executor remove and repos remove leave tagged cache dirs, like Cargo's ta
 kind: refinement
 size: M
 judge: opus
-status: accepted
+status: done
 lens: eng
 proposed_by: buildermesh-fix-21
 proposed_on: 2026-11-20
@@ -36,6 +36,13 @@ The repo's verify. Failing first, each failing before the change:
 - On the real thing: built from the branch, `ignoredOnlyIn` on k16's eggnogg-rework worktree above against its lead's worktree names no `rust/target/` file (a test-only run or a throwaway executor; never remove that worktree).
 
 ## Shown
+- `executor remove` needs no `--force` for a tagged `rust/target/`: `TestExecutorRemoveRefusesIgnoredFilesOnlyItHas` in `cmd/bmesh/cmd_executor_test.go` (its last remove exits 0 printing `removed ...` and the worktree is gone).
+- An executor's `cache/RESULT.txt` beside it is still refused: the same test, whose refusal reads exactly `... holds ignored files yours doesn't (cache/RESULT.txt), ...`.
+- `repos remove --checkouts` needs no `--ignored-ok` for a tagged cache: `TestNixRemovesACheckoutWhoseOnlyIgnoredFilesAreATaggedCache` in `internal/nix/nix_test.go` (the checkout and a linked worktree, each with only a tagged `rust/target/`, are removed).
+- Failing first, `executor remove`: on the old code `go test -run TestExecutorRemoveRefusesIgnoredFilesOnlyItHas ./cmd/bmesh` -> `bmesh: refused: demo-012.alpha's worktree holds ignored files yours doesn't (cache/RESULT.txt, rust/target/CACHEDIR.TAG, rust/target/debug/out-1a2b3c), ...`.
+- Failing first, nix: on the old code `go test ./internal/nix` -> `--- FAIL: TestNixRemovesACheckoutWhoseOnlyIgnoredFilesAreATaggedCache` and `--- FAIL: TestNixRefusesTouchingNothing/ignored_files_beside_a_tagged_cache`; an untagged ignored file still refuses: the `ignored files beside a tagged cache` case wants `has ignored files (debug.log)`.
+- On the real thing: a test-only run of `ignoredOnlyIn` on k16's `~/.bmesh/worktrees/eggnogg-rework/eggnogg-rework-round-1-eng` against `~/repos/eggnogg-rework` -> `ignoredOnlyIn: "" <nil>` (by the old rule 6293 of its 8208 ignored files were absent from the other worktree); nothing was removed.
+- Easy to miss: a `CACHEDIR.TAG` without the standard's signature doesn't count: the unsigned-tag step of `TestExecutorRemoveRefusesIgnoredFilesOnlyItHas` (refusal names `rust/target/debug/out-1a2b3c`) and the nix case `a cache dir whose tag lacks the signature` (`has ignored files (rust/target/)`).
 
 ## Risks and the alternative considered
 - **An executor could tag a dir to get its files deleted unseen.** It is the executor's own worktree and `--force` already does that; the tag is a tool's mark, not one an agent writes by accident.
