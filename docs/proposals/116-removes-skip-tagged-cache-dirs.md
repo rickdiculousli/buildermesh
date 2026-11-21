@@ -19,7 +19,7 @@ from_feedback: eggnogg-rework-build-1 (eggnogg-rework-026) #5360
 In:
 - **One helper** in `internal/gitwork`: given a root and a path relative to it, it returns the outermost directory on that path (the path itself included, when it is a directory) holding a `CACHEDIR.TAG` whose first bytes are the standard signature, or `""`. A tag without the signature does not count, as the standard says.
 - **`executor remove`**: `ignoredOnlyIn` skips an ignored file inside a tagged dir before comparing it with the lead's worktree. `git ls-files` lists files sorted, so once a tagged dir is found the files under its prefix are skipped without looking again.
-- **The nix job**: `ignored` drops a `!!` entry inside or naming a tagged dir (`git status --ignored` lists `rust/target/` collapsed). Its refusal and `ignored-ok` are otherwise unchanged.
+- **The nix job**: `ignored` drops a `!!` entry inside or naming a tagged dir (`git status --ignored` lists `rust/target/` collapsed). Its refusal and `ignored-ok` are otherwise unchanged. As built, it reads `git status --ignored=matching`, which names `rust/target/` itself where the default would collapse it into an untracked `rust/` holding only ignored files; every ignored path is still named one way or the other.
 - The manual: `bmesh executor remove`'s What it does and its refusal row, and the nix job's ignored-files line, say that a dir tagged with `CACHEDIR.TAG` is not counted and goes with the worktree.
 
 Out: any config or flag naming exempt dirs (`no-new-surface`); guessing caches by name (`target`, `__pycache__`, `node_modules`): an untagged dir is still refused.

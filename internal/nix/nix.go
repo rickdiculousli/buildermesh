@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/config"
+	"github.com/rickdiculousli/buildermesh/internal/gitwork"
 )
 
 // Request is one nix on this box.
@@ -216,15 +217,18 @@ func merged(ctx context.Context, dir, head string) bool {
 	return false
 }
 
-// ignored names the first ignored paths in dir, "" when there are none.
+// ignored names the first ignored paths in dir, "" when there are none. A
+// dir tagged with CACHEDIR.TAG, or a path in one, is a tool's regenerable
+// cache and is not named.
 func ignored(ctx context.Context, dir string) string {
-	out, err := git(ctx, dir, "status", "--porcelain", "--ignored")
+	// matching names an ignored dir itself, never an untracked parent it collapses into.
+	out, err := git(ctx, dir, "status", "--porcelain", "--ignored=matching")
 	if err != nil {
 		return "unreadable"
 	}
 	var paths []string
 	for _, l := range strings.Split(out, "\n") {
-		if p, ok := strings.CutPrefix(l, "!! "); ok {
+		if p, ok := strings.CutPrefix(l, "!! "); ok && gitwork.CacheDir(dir, p) == "" {
 			paths = append(paths, p)
 		}
 	}

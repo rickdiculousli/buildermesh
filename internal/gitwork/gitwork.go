@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -284,4 +285,33 @@ func EditOnMain(ctx context.Context, e Edit, edit func(wt string) (msg string, p
 		warn(fmt.Errorf("%v; origin/main has %s", err, sha[:8]))
 	}
 	return sha, nil
+}
+
+// cacheDirSignature opens a CACHEDIR.TAG that marks its dir a regenerable
+// cache, as https://bford.info/cachedir/ (and Cargo's target/) writes it.
+const cacheDirSignature = "Signature: 8a477f597d28d172789f06886806bc55"
+
+// CacheDir returns the outermost directory on rel (slash-separated, relative
+// to root, rel itself included when it is a directory) that holds a
+// CACHEDIR.TAG opening with the standard signature, or "" when none does.
+func CacheDir(root, rel string) string {
+	rel = strings.Trim(rel, "/")
+	if rel == "" || rel == "." {
+		return ""
+	}
+	parts := strings.Split(rel, "/")
+	for i := range parts {
+		dir := strings.Join(parts[:i+1], "/")
+		f, err := os.Open(filepath.Join(root, filepath.FromSlash(dir), "CACHEDIR.TAG"))
+		if err != nil {
+			continue
+		}
+		buf := make([]byte, len(cacheDirSignature))
+		n, _ := io.ReadFull(f, buf)
+		f.Close()
+		if string(buf[:n]) == cacheDirSignature {
+			return dir
+		}
+	}
+	return ""
 }

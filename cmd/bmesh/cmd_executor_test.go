@@ -430,7 +430,7 @@ func TestExecutorRemoveRefusesIgnoredFilesOnlyItHas(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(wt, ".gitignore"), []byte("cache/\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(wt, ".gitignore"), []byte("cache/\ntarget/\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	meshtest.Git(t, wt, "add", "-A")
@@ -440,6 +440,12 @@ func TestExecutorRemoveRefusesIgnoredFilesOnlyItHas(t *testing.T) {
 	write(wt, "cache/bmesh")
 	write(repo, "cache/bmesh")
 	write(wt, "cache/RESULT.txt")
+	// Nor is a tool's tagged cache, like Cargo's target/, whose names the lead's doesn't share.
+	tag := filepath.Join(wt, "rust", "target", "CACHEDIR.TAG")
+	write(wt, "rust/target/debug/out-1a2b3c")
+	if err := os.WriteFile(tag, []byte("Signature: 8a477f597d28d172789f06886806bc55\n# by cargo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	out, errs, code := runCLI(t, nil, "executor", "remove", "alpha")
 	if code != 3 || out != "" || errs != "bmesh: refused: demo-012.alpha's worktree holds ignored files yours doesn't (cache/RESULT.txt), which removing it deletes; copy out what you'll cite, then remove it again with --force\n" {
 		t.Fatalf("ignored: %d %q %q", code, out, errs)
@@ -447,7 +453,18 @@ func TestExecutorRemoveRefusesIgnoredFilesOnlyItHas(t *testing.T) {
 	if !exists(filepath.Join(wt, "cache", "RESULT.txt")) {
 		t.Fatal("ignored file deleted on refusal")
 	}
-	if _, errs, code := runCLI(t, nil, "executor", "remove", "alpha", "--force"); code != 0 || exists(wt) {
-		t.Fatalf("--force: %d %q", code, errs)
+	// A tag without the standard's signature doesn't mark a cache.
+	if err := os.WriteFile(tag, []byte("cache\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, errs, code := runCLI(t, nil, "executor", "remove", "alpha"); code != 3 || !strings.Contains(errs, "rust/target/debug/out-1a2b3c") {
+		t.Fatalf("unsigned tag: %d %q", code, errs)
+	}
+	if err := os.WriteFile(tag, []byte("Signature: 8a477f597d28d172789f06886806bc55"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	write(repo, "cache/RESULT.txt")
+	if out, errs, code := runCLI(t, nil, "executor", "remove", "alpha"); code != 0 || !strings.HasPrefix(out, "removed ") || exists(wt) {
+		t.Fatalf("tagged cache only: %d %q %q", code, out, errs)
 	}
 }

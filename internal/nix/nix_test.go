@@ -25,7 +25,7 @@ func setup(t *testing.T) fixture {
 		checkouts: filepath.Join(root, "checkouts")}
 	meshtest.Git(t, root, "init", "-q", "--bare", "-b", "main", f.origin)
 	meshtest.Git(t, root, "clone", "-q", f.origin, f.app)
-	meshtest.CommitFiles(t, f.app, map[string]string{"a.txt": "one\n", ".gitignore": "*.log\n"})
+	meshtest.CommitFiles(t, f.app, map[string]string{"a.txt": "one\n", ".gitignore": "*.log\ntarget/\n"})
 	meshtest.Git(t, f.app, "push", "-q", "origin", "HEAD:main")
 	meshtest.Git(t, f.app, "worktree", "add", "-q", "--detach", filepath.Join(f.checkouts, "app", "verify"), "origin/main")
 	return f
@@ -43,6 +43,20 @@ func (f fixture) write(t *testing.T, rel, text string) {
 	}
 	if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// cacheDir gives dir a rust/target/ of build output, tagged as a cache with tag.
+func cacheDir(t *testing.T, dir, tag string) {
+	t.Helper()
+	target := filepath.Join(dir, "rust", "target")
+	if err := os.MkdirAll(filepath.Join(target, "debug"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range map[string]string{"CACHEDIR.TAG": tag, "debug/out-1a2b3c": "x\n"} {
+		if err := os.WriteFile(filepath.Join(target, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -88,6 +102,21 @@ func TestNixRefusesTouchingNothing(t *testing.T) {
 		}, "has a stash"},
 		{"ignored files", func(t *testing.T, f fixture) Request { f.write(t, "debug.log", "x\n"); return f.req() },
 			"has ignored files (debug.log)"},
+		{"ignored files beside a tagged cache", func(t *testing.T, f fixture) Request {
+			cacheDir(t, f.app, "Signature: 8a477f597d28d172789f06886806bc55\n")
+			f.write(t, "debug.log", "x\n")
+			return f.req()
+		}, "has ignored files (debug.log)"},
+		{"a cache dir whose tag lacks the signature", func(t *testing.T, f fixture) Request {
+			cacheDir(t, f.app, "cache\n")
+			return f.req()
+		}, "has ignored files (rust/target/)"},
+		{"a linked worktree with ignored files", func(t *testing.T, f fixture) Request {
+			wt := filepath.Join(f.root, "wt")
+			meshtest.Git(t, f.app, "worktree", "add", "-q", "-b", "side", wt, "main")
+			os.WriteFile(filepath.Join(wt, "debug.log"), []byte("x"), 0o644)
+			return f.req()
+		}, "worktree " + "WT" + " has ignored files (debug.log)"},
 		{"no origin", func(t *testing.T, f fixture) Request {
 			meshtest.Git(t, f.app, "remote", "remove", "origin")
 			return f.req()
@@ -164,6 +193,17 @@ func TestNixRemovesTheCheckoutItsWorktreesAndRoutineCheckouts(t *testing.T) {
 	// Again: absent.
 	if o := Nix(context.Background(), req); o.Result != Absent || !o.OK() {
 		t.Fatalf("again: %+v", o)
+	}
+}
+
+func TestNixRemovesACheckoutWhoseOnlyIgnoredFilesAreATaggedCache(t *testing.T) {
+	f := setup(t)
+	wt := filepath.Join(f.root, "t3", "lead")
+	meshtest.Git(t, f.app, "worktree", "add", "-q", "-b", "landed", wt, "main")
+	cacheDir(t, f.app, "Signature: 8a477f597d28d172789f06886806bc55\n# by cargo\n")
+	cacheDir(t, wt, "Signature: 8a477f597d28d172789f06886806bc55")
+	if o := Nix(context.Background(), f.req()); o.Result != Removed || exists(f.app) || exists(wt) {
+		t.Fatalf("%+v", o)
 	}
 }
 

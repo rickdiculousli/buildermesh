@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/brief"
+	"github.com/rickdiculousli/buildermesh/internal/gitwork"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
@@ -394,15 +395,21 @@ func markDone(ctx context.Context, c *mesh.Client, path, text string) error {
 }
 
 // ignoredOnlyIn names the ignored files in wt that other has no file at, the
-// first few and a count of the rest, or "" when there are none.
+// first few and a count of the rest, or "" when there are none. A file in a
+// dir tagged with CACHEDIR.TAG is a tool's regenerable cache, not counted.
 func ignoredOnlyIn(ctx context.Context, wt, other string) (string, error) {
 	out, err := gitIn(ctx, wt, "ls-files", "--others", "--ignored", "--exclude-standard", "-z")
 	if err != nil {
 		return "", err
 	}
 	var only []string
+	cache := "" // the tagged dir the sorted listing is in, with its trailing slash
 	for _, f := range strings.Split(out, "\x00") {
-		if f == "" {
+		if f == "" || cache != "" && strings.HasPrefix(f, cache) {
+			continue
+		}
+		if c := gitwork.CacheDir(wt, f); c != "" {
+			cache = c + "/"
 			continue
 		}
 		if _, err := os.Lstat(filepath.Join(other, f)); errors.Is(err, fs.ErrNotExist) {
