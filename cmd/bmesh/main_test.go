@@ -42,6 +42,7 @@ func TestMain(m *testing.M) {
 		// A test run inside a Claude Code session would read its context
 		// and end commands with the session's context line (094).
 		os.Unsetenv("CLAUDE_CODE_SESSION_ID")
+		os.Unsetenv("GIT_EDITOR")
 		for k, v := range map[string]string{
 			"BMESH_KEY_STORE":              "file",
 			"BMESH_CACHE_DIR":              filepath.Join(dir, "cache"),
