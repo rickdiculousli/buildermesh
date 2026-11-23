@@ -162,7 +162,7 @@ cd ~/repos/your-repo
 bmesh init      # press Enter at every prompt
 ```
 
-`bmesh init` also installs the plugin: the binary carries its skills and writes them to a dir of its own, which it makes Claude Code's `buildermesh` marketplace (`claude plugin list` shows `buildermesh@buildermesh` read from it). On a box set up already, `bmesh plugin --install` does the same. The skills move with the binary: `bmesh update` (or the daemon's own update) brings both.
+`bmesh init` also installs the plugin: the binary carries its skills and writes them to a dir of its own, which it makes Claude Code's `buildermesh` marketplace (`claude plugin list` shows `buildermesh@buildermesh` read from it) and adds to Antigravity's `~/.gemini/config/plugins.json` when Antigravity is present. On a box set up already, `bmesh plugin --install` does the same. The skills move with the binary: `bmesh update` (or the daemon's own update) brings both.
 
 Add the repo's verify commands to the row `bmesh init` wrote in `repos.toml` (it prints the path):
 

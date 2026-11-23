@@ -17,8 +17,11 @@ func setup(t *testing.T) fakes {
 	t.Setenv("FAKE_PLUGIN_LOG", log)
 	cl, _ := filepath.Abs("../../testdata/fake-claude-plugin.sh")
 	cx, _ := filepath.Abs("../../testdata/fake-codex.sh")
+	ag, _ := filepath.Abs("../../testdata/fake-agy.sh")
 	t.Setenv("BMESH_CLAUDE_COMMAND", "/bin/sh "+cl)
 	t.Setenv("BMESH_CODEX_COMMAND", "/bin/sh "+cx)
+	t.Setenv("BMESH_ANTIGRAVITY_COMMAND", "/bin/sh "+ag)
+	t.Setenv("BMESH_ANTIGRAVITY_CONFIG_DIR", filepath.Join(t.TempDir(), "gemini-config"))
 	return fakes{log}
 }
 
@@ -195,5 +198,127 @@ func TestLoadsPluginsWhenClaudeFails(t *testing.T) {
 	}
 	if !LoadsPlugins(ctx, checkout(t, "mk")) {
 		t.Fatal("no claude, a marketplace file")
+	}
+}
+
+func TestLoadsPluginsAntigravity(t *testing.T) {
+	setup(t)
+	ctx := context.Background()
+	parent := t.TempDir()
+	d := filepath.Join(parent, "myrepo")
+	pluginsPath := filepath.Join(d, "plugins")
+	if err := os.MkdirAll(pluginsPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgDir := os.Getenv("BMESH_ANTIGRAVITY_CONFIG_DIR")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name string
+		file string
+		body string
+		want bool
+	}{
+		{"inside plugins.json", "plugins.json", fmt.Sprintf(`{"entries":[{"path":%q,"include_only":["quota"]}]}`, pluginsPath), true},
+		{"inside skills.json", "skills.json", fmt.Sprintf(`{"entries":[{"path":%q}]}`, filepath.Join(d, "skills")), true},
+		{"parent include_only matches", "plugins.json", fmt.Sprintf(`{"entries":[{"path":%q,"include_only":["myrepo"]}]}`, parent), true},
+		{"parent include_only other", "plugins.json", fmt.Sprintf(`{"entries":[{"path":%q,"include_only":["other"]}]}`, parent), false},
+		{"parent exclude matches", "plugins.json", fmt.Sprintf(`{"entries":[{"path":%q,"exclude":["myrepo"]}]}`, parent), false},
+		{"bare parent", "plugins.json", fmt.Sprintf(`{"entries":[{"path":%q}]}`, parent), true},
+		{"elsewhere", "plugins.json", `{"entries":[{"path":"/elsewhere/plugins"}]}`, false},
+		{"malformed fails closed", "plugins.json", `{bad`, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			os.Remove(filepath.Join(cfgDir, "plugins.json"))
+			os.Remove(filepath.Join(cfgDir, "skills.json"))
+			if err := os.WriteFile(filepath.Join(cfgDir, tc.file), []byte(tc.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if got := LoadsPlugins(ctx, d); got != tc.want {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+	os.Remove(filepath.Join(cfgDir, "plugins.json"))
+	os.Remove(filepath.Join(cfgDir, "skills.json"))
+
+	// Snapshot detection reads disk directly and works without `agy` on PATH.
+	t.Setenv("BMESH_ANTIGRAVITY_COMMAND", "")
+	t.Setenv("BMESH_CLAUDE_COMMAND", "")
+	t.Setenv("BMESH_CODEX_COMMAND", "")
+	t.Setenv("PATH", t.TempDir())
+
+	qdir := filepath.Join(pluginsPath, "quota")
+	if err := os.MkdirAll(qdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(qdir, "plugin.json"), []byte(`{"name":"quota","version":"0.2.0"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snapDir := filepath.Join(cfgDir, "plugins", "quota")
+	if err := os.MkdirAll(snapDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(snapDir, "plugin.json"), []byte(`{"name":"quota","version":"0.1.5"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !LoadsPlugins(ctx, d) {
+		t.Fatal("enabled snapshot on disk without agy on PATH must hold")
+	}
+	// Disabled in config.json does not hold.
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(`{"plugins":{"quota":{"enabled":false}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if LoadsPlugins(ctx, d) {
+		t.Fatal("disabled snapshot should not hold")
+	}
+	// Malformed config.json fails closed.
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(`{bad`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !LoadsPlugins(ctx, d) {
+		t.Fatal("malformed config.json must hold")
+	}
+}
+
+func TestRefreshAntigravitySnapshot(t *testing.T) {
+	f := setup(t)
+	d := checkout(t, "")
+	for name, ver := range map[string]string{"quota": "0.2.0", "same": "1.0.0", "off": "2.0.0"} {
+		pdir := filepath.Join(d, "plugins", name)
+		if err := os.MkdirAll(pdir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(pdir, "plugin.json"), []byte(fmt.Sprintf(`{"name":%q,"version":%q}`, name, ver)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Root buildermesh plugin.json must never be copied back into ~/.gemini/config/plugins/buildermesh.
+	if err := os.WriteFile(filepath.Join(d, "plugin.json"), []byte(`{"name":"buildermesh","version":"0.9.0"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BMESH_CODEX_COMMAND", "")
+	t.Setenv("BMESH_CLAUDE_COMMAND", "")
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("FAKE_AGY_LIST", `[
+		{"name":"quota","version":"0.1.5","enabled":true},
+		{"name":"same","version":"1.0.0","enabled":true},
+		{"name":"off","version":"1.0.0","enabled":false},
+		{"name":"buildermesh","version":"0.8.0","enabled":true},
+		{"name":"other","version":"1.0.0","enabled":true}
+	]`)
+	lines, err := Refresh(context.Background(), d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(lines, "|") != "antigravity quota 0.1.5 -> 0.2.0" {
+		t.Fatalf("lines %q", lines)
+	}
+	got := strings.Join(f.lines(), "|")
+	if got != "plugin list --json|plugin install "+filepath.Join(d, "plugins", "quota") {
+		t.Fatalf("calls %q", got)
 	}
 }

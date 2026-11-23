@@ -1,0 +1,11 @@
+{
+  "buildermesh": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "sh ./hooks/agy-session-start.sh",
+        "timeout": 10
+      }
+    ]
+  }
+}

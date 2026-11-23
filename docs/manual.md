@@ -482,30 +482,30 @@ bmesh plugin
 bmesh plugin --install
 ```
 
-The binary carries its plugin (see [The plugin](#the-plugin)) and writes it to the plugin dir, `<state dir>/plugin`, which Claude Code reads as the `buildermesh` marketplace. So a box's skills are always its binary's: they move when the binary does, by [`bmesh update`](#bmesh-update) or the daemon's, and never ahead of it or behind it.
+The binary carries its plugin (see [The plugin](#the-plugin)) and writes it to the plugin dir, `<state dir>/plugin`, which Claude Code reads as the `buildermesh` marketplace and Antigravity reads through `~/.gemini/config/plugins.json`. So a box's skills are always its binary's: they move when the binary does, by [`bmesh update`](#bmesh-update) or the daemon's, and never ahead of it or behind it.
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--install` | off | Write the plugin dir, then point Claude Code at it. |
+| `--install` | off | Write the plugin dir, then point Claude Code and Antigravity at it. |
 
-**`bmesh plugin`** prints three lines:
+**`bmesh plugin`** prints four lines:
 
 ```
 dir: /home/me/.local/state/bmesh/plugin
 written by: bmesh v0.5.0 (1a2b3c4d 2026-10-24T08:00:00Z)
 claude: reads it (buildermesh@buildermesh, user scope)
+antigravity: reads it (/home/me/.gemini/config/plugins.json)
 ```
 
 - `written by:` names the binary that wrote the dir, as its `bmesh version` prints, or `none yet (bmesh plugin --install writes it)`.
 - `claude:` says whether Claude Code loads the plugin from the dir: `reads it (...)`; `no buildermesh marketplace; ...`; `its buildermesh marketplace reads <path or repo>; bmesh plugin --install moves it here`; `buildermesh@buildermesh is not installed at user scope; ...`; `... is disabled; ...`; or `not on PATH`. A `claude` that fails prints its error there.
+- `antigravity:` says whether Antigravity loads the plugin from the dir: `reads it (<plugins.json>)`; `shadowed by copy at <path>; bmesh plugin --install switches it here`; `not configured; bmesh plugin --install adds it`; or `not on PATH`.
 
 **`bmesh plugin --install`**, in order:
 
 1. Writes the plugin dir unless it already holds this binary's plugin, `plugin: wrote <dir> (bmesh <version>)`.
-2. Removes a `buildermesh` marketplace that reads anything but the dir (a checkout, or the GitHub repo): `plugin: removed marketplace buildermesh (<what it read>)`. Removing it uninstalls its plugin.
-3. Adds the dir as the `buildermesh` marketplace (`claude plugin marketplace add <dir>`): `plugin: added marketplace buildermesh (<dir>)`.
-4. Installs `buildermesh@buildermesh` at user scope (`plugin: installed buildermesh@buildermesh (user scope)`), or enables it when it is disabled (`plugin: enabled ...`).
-5. Checks that `claude plugin list` shows the install, enabled, from the dir.
+2. When `claude` is on PATH: removes a `buildermesh` marketplace that reads anything but the dir (a checkout, or the GitHub repo), adds the dir as the `buildermesh` marketplace (`claude plugin marketplace add <dir>`), installs `buildermesh@buildermesh` at user scope (or enables it), and checks that `claude plugin list` shows the install, enabled, from the dir.
+3. When Antigravity is present (`agy` on PATH or `~/.gemini/config` exists): removes any shadowing copy at `~/.gemini/config/plugins/buildermesh`, removes any stale single-plugin `buildermesh` entry from `~/.gemini/config/plugins.json`, and adds `{"path": "<state dir>", "include_only": ["plugin"]}` to `plugins.json`, preserving all other entries and `inherits`.
 
 Each step runs only when needed, so a second run prints nothing and changes nothing. A new session loads the plugin from the dir; a session already open keeps what it loaded.
 
@@ -519,13 +519,13 @@ Each step runs only when needed, so a second run prints nothing and changes noth
 
 | When | Exit | Message |
 |---|---|---|
-| `claude` is not on PATH (`--install`; the dir is still written) | 3 | `claude is not on PATH: install Claude Code, then run bmesh plugin --install` |
+| Neither `claude` nor `agy` is on PATH (`--install`; the dir is still written) | 3 | `neither claude nor agy is on PATH: install Claude Code or Antigravity, then run bmesh plugin --install` |
 | A `claude` command fails | 1 | `claude plugin <args>: <its stderr>`; after the old marketplace was removed, then `; to put the old marketplace back: claude plugin marketplace add <what it read> && claude plugin install buildermesh@buildermesh --scope user` |
 | An argument | 2 | `usage: bmesh plugin [--install]` |
 
 **Trying skills before a release.** The dir holds the binary's skills, not a checkout's. To try a skill change before it lands, run its session with `claude --plugin-dir <checkout>`, or measure it with the skill test (`scripts/skilltest`, its cand arm).
 
-`BMESH_CLAUDE_COMMAND` replaces the `claude` it runs (see [Testing](#testing)).
+`BMESH_CLAUDE_COMMAND`, `BMESH_ANTIGRAVITY_COMMAND` and `BMESH_ANTIGRAVITY_CONFIG_DIR` replace the tools and config dir it reads (see [Testing](#testing)).
 
 See also: [The plugin](#the-plugin), [`bmesh update`](#bmesh-update), [Updates](#updates).
 
@@ -3628,11 +3628,12 @@ A level, the daemon's routine fetch, and the fast-forward of `main` in the main 
    - Ahead only: `git push origin <branch> <tags…>` (the tags that point at the pushed commits, lightweight ones included), answered `pushed <N>`. It pushes only when the caller may push (a received job or `bmesh sync`, never a self-level), the row's mode is in `[hosts] push_modes` (default `["ship", "fork"]`) and the newest local commit is at least 10 minutes old. Else it answers `ahead <N>, not pushed: <why>` (`a self-level never pushes`, `mode <m> is not in push_modes`, `the newest commit is <age> old (10m0s before a push)`). If another box pushed first, the push fails as not a fast-forward: `refused: diverged`.
 6. **Plugin refresh.** After the checkout moves, the box refreshes what it loads from it:
    - with `.claude-plugin/marketplace.json` in it and `claude` on `PATH`: `claude plugin marketplace update <name>`, then `claude plugin update <id> --scope user` for each user-scope install from that marketplace whose version lags the checkout's;
-   - with `codex` on `PATH`: `codex plugin add <id>` for each installed Codex plugin whose marketplace source is the checkout.
+   - with `codex` on `PATH`: `codex plugin add <id>` for each installed Codex plugin whose marketplace source is the checkout;
+   - with `agy` on `PATH` and native `plugin.json` manifests in the checkout: `agy plugin install <plugin dir>` for each enabled snapshot-installed Antigravity plugin (excluding `buildermesh` itself) whose version lags the checkout's (entries loaded live through `~/.gemini/config/plugins.json` read the checkout directly and need no copy).
 
-   Each refresh adds a part to the answer (`fast-forwarded 3; claude buildermesh@buildermesh 0.7.3 -> 0.7.4`). A failure is appended as `plugins: <error>`. A new session loads the change. bmesh runs no other command a job or the registry names.
+   Each refresh adds a part to the answer (`fast-forwarded 3; claude buildermesh@buildermesh 0.7.3 -> 0.7.4`). A failure stops later hosts' refreshes and is appended as `plugins: <error>`. A new session loads the change. bmesh runs no other command a job or the registry names.
 
-**The hold.** On a secure box (its `[hosts] secure`, or its roster row's), a level that would move a repo sessions load waits for the operator. This applies to a job, a self-level and `bmesh sync` alike. Such a repo is a checkout an installed marketplace reads: a Claude Code marketplace whose directory is the checkout or inside it (as `claude plugin marketplace list` names it), or the marketplace source of a Codex install. What the box can't ask counts as read, so it holds rather than move it: a `claude` on PATH that fails to answer reads the checkout, and with no `claude` on PATH (a service's `PATH` can lack the one sessions use) a checkout with `.claude-plugin/marketplace.json` is read. A checkout with a marketplace file that nothing reads levels like any other: bmesh's own repo, once its box's sessions load the plugin from the plugin dir (see [`bmesh plugin`](#bmesh-plugin)), is one. The `[update] repo` isn't held for itself either: an update builds from a checkout of its own, never from the repo's working tree, and the binary carries its plugin. A push moves nothing here, so it isn't held.
+**The hold.** On a secure box (its `[hosts] secure`, or its roster row's), a level that would move a repo sessions load waits for the operator. This applies to a job, a self-level and `bmesh sync` alike. Such a repo is a checkout an installed marketplace or config reads: a Claude Code marketplace whose directory is the checkout or inside it (as `claude plugin marketplace list` names it), the marketplace source of a Codex install, or an Antigravity `plugins.json`/`skills.json` entry matching the checkout (directly, inside it, or via its parent directory) or an enabled snapshot install on disk matching a plugin inside it. What the box can't ask counts as read, so it holds rather than move it: a `claude` on PATH that fails to answer reads the checkout, a malformed Antigravity `plugins.json`, `skills.json` or `config.json` reads it, and with no `claude` on PATH (a service's `PATH` can lack the one sessions use) a checkout with `.claude-plugin/marketplace.json` is read. A checkout with a marketplace file that nothing reads levels like any other: bmesh's own repo, once its box's sessions load the plugin from the plugin dir (see [`bmesh plugin`](#bmesh-plugin)), is one. The `[update] repo` isn't held for itself either: an update builds from a checkout of its own, never from the repo's working tree, and the binary carries its plugin. A push moves nothing here, so it isn't held.
 
 - The hold keeps the job, the repo, its head and target, and `git log --stat HEAD..<target>`. The job is answered `held for approval (+<N> commits)`.
 - A repo has one hold. A newer job's hold replaces it, and the older job's sender gets the reply `hold superseded by job <id>`. A self-level leaves an existing hold as it is.
@@ -3747,7 +3748,7 @@ Internals: [internals](internals.md#hosts)
 
 ### The plugin
 
-The repo is a Claude Code plugin, `buildermesh`, with nine skills. The binary reads none of them; a session loads them. The binary carries the plugin (`.claude-plugin/`, `skills/`, `hooks/` and `third_party/ponytail/LICENSE`, embedded from the repo) and writes it to the plugin dir, which Claude Code reads (see [`bmesh plugin`](#bmesh-plugin)), so a box's skills are always its binary's.
+The repo is a Claude Code and Antigravity plugin, `buildermesh`, with nine skills. The binary reads none of them; a session loads them. The binary carries the plugin (`.claude-plugin/`, `plugin.json`, `hooks.json`, `skills/`, `hooks/` and `third_party/ponytail/LICENSE`, embedded from the repo) and writes it to the plugin dir, which Claude Code reads as a directory marketplace and Antigravity reads through `~/.gemini/config/plugins.json` (see [`bmesh plugin`](#bmesh-plugin)), so a box's skills are always its binary's.
 
 | Skill | Run by | What it covers |
 |---|---|---|

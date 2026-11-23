@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -64,8 +65,8 @@ func TestEnsureWritesTheEmbeddedPlugin(t *testing.T) {
 			t.Fatalf("%s differs from the embedded file", p)
 		}
 	}
-	for _, p := range []string{".claude-plugin/marketplace.json", ".claude-plugin/plugin.json", "skills/work/SKILL.md",
-		"skills/lead/SKILL.md", "hooks/hooks.json", "third_party/ponytail/LICENSE"} {
+	for _, p := range []string{".claude-plugin/marketplace.json", ".claude-plugin/plugin.json", "plugin.json", "hooks.json",
+		"skills/work/SKILL.md", "skills/lead/SKILL.md", "hooks/hooks.json", "third_party/ponytail/LICENSE"} {
 		if _, ok := got[p]; !ok {
 			t.Fatalf("no %s in %v", p, got)
 		}
@@ -274,6 +275,110 @@ func TestNoClaude(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 	if _, err := Status(context.Background()); !errors.Is(err, ErrNoClaude) {
+		t.Fatalf("status: %v", err)
+	}
+}
+
+// InstallAntigravity adds bmesh's plugin dir to plugins.json without
+// clobbering existing entries or inherits, removes a shadowing copy, and is
+// idempotent on a second run.
+func TestInstallAntigravity(t *testing.T) {
+	cfgDir := filepath.Join(t.TempDir(), "gemini-config")
+	if err := os.MkdirAll(filepath.Join(cfgDir, "plugins", "buildermesh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BMESH_ANTIGRAVITY_CONFIG_DIR", cfgDir)
+	t.Setenv("BMESH_ANTIGRAVITY_COMMAND", "")
+
+	// Seed plugins.json with an existing tools entry and inherits, plus a stale
+	// single-plugin buildermesh entry pointing at an old checkout.
+	oldCheckout := filepath.Join(t.TempDir(), "old-bmesh")
+	if err := os.MkdirAll(oldCheckout, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(oldCheckout, "plugin.json"), []byte(`{"name":"buildermesh"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	seed := `{"inherits":[{"path":"/shared/plugins.json"}],"entries":[{"path":"/tools/plugins","include_only":["quota"]},{"path":"` +
+		filepath.Dir(oldCheckout) + `","include_only":["` + filepath.Base(oldCheckout) + `"]}]}`
+	if err := os.WriteFile(filepath.Join(cfgDir, "plugins.json"), []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := filepath.Join(t.TempDir(), "plugin")
+	if _, err := Ensure(dir, "v1"); err != nil {
+		t.Fatal(err)
+	}
+	s, err := StatusAntigravity(dir)
+	if err != nil || s.Reads || s.Shadowed == "" {
+		t.Fatalf("before: %+v %v", s, err)
+	}
+
+	lines, err := InstallAntigravity(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 3 {
+		t.Fatalf("lines %q", lines)
+	}
+	s, err = StatusAntigravity(dir)
+	if err != nil || !s.Reads || s.Shadowed != "" {
+		t.Fatalf("after: %+v %v", s, err)
+	}
+
+	// Preserves existing entries and inherits.
+	entries, err := AntigravityConfigEntries("plugins.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 || entries[0].Path != "/tools/plugins" || !SamePath(entries[1].Path, filepath.Dir(dir)) {
+		t.Fatalf("entries %+v", entries)
+	}
+	raw, err := os.ReadFile(filepath.Join(cfgDir, "plugins.json"))
+	if err != nil || !strings.Contains(string(raw), `"/shared/plugins.json"`) {
+		t.Fatalf("inherits lost: %s %v", raw, err)
+	}
+
+	// Second run is a no-op.
+	lines, err = InstallAntigravity(dir)
+	if err != nil || len(lines) != 0 {
+		t.Fatalf("second run: %q %v", lines, err)
+	}
+}
+
+// Root plugin.json and .claude-plugin/plugin.json must stay in step.
+func TestEmbeddedManifestsMatch(t *testing.T) {
+	type manifest struct {
+		Name        string `json:"name"`
+		Version     string `json:"version"`
+		Description string `json:"description"`
+	}
+	read := func(p string) manifest {
+		b, err := fs.ReadFile(buildermesh.Plugin, p)
+		if err != nil {
+			t.Fatalf("read %s: %v", p, err)
+		}
+		var m manifest
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatalf("parse %s: %v", p, err)
+		}
+		return m
+	}
+	root := read("plugin.json")
+	claude := read(".claude-plugin/plugin.json")
+	if root != claude {
+		t.Fatalf("plugin.json %+v != .claude-plugin/plugin.json %+v", root, claude)
+	}
+}
+
+func TestNoAntigravity(t *testing.T) {
+	t.Setenv("BMESH_ANTIGRAVITY_COMMAND", "")
+	t.Setenv("BMESH_ANTIGRAVITY_CONFIG_DIR", filepath.Join(t.TempDir(), "absent"))
+	t.Setenv("PATH", t.TempDir())
+	if _, err := InstallAntigravity(t.TempDir()); !errors.Is(err, ErrNoAntigravity) {
+		t.Fatalf("install: %v", err)
+	}
+	if _, err := StatusAntigravity(t.TempDir()); !errors.Is(err, ErrNoAntigravity) {
 		t.Fatalf("status: %v", err)
 	}
 }

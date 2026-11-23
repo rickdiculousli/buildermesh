@@ -40,6 +40,7 @@ func TestPluginInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	if out, _, _ := runCLI(t, nil, "plugin"); !strings.Contains(out, "claude: reads it (buildermesh@buildermesh, user scope)") ||
+		!strings.Contains(out, "antigravity: reads it (") ||
 		!strings.Contains(out, "written by: bmesh ") {
 		t.Fatalf("after: %q", out)
 	}
@@ -49,23 +50,61 @@ func TestPluginInstall(t *testing.T) {
 	}
 	b, _ := os.ReadFile(log)
 	for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
-		if !strings.Contains(l, " list --json") {
+		if l != "" && !strings.Contains(l, " list --json") {
 			t.Fatalf("second run ran %q", l)
 		}
 	}
 }
 
-// Without Claude Code, --install writes the dir and is refused, saying
-// what to install.
+// Without Claude Code or Antigravity, --install writes the dir and is
+// refused, saying what to install.
 func TestPluginInstallWithoutClaude(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	t.Setenv("BMESH_CLAUDE_COMMAND", "")
+	t.Setenv("BMESH_ANTIGRAVITY_COMMAND", "")
+	t.Setenv("BMESH_ANTIGRAVITY_CONFIG_DIR", filepath.Join(t.TempDir(), "absent"))
 	t.Setenv("PATH", t.TempDir())
 	_, errOut, code := runCLI(t, nil, "plugin", "--install")
-	if code != exitRefused || !strings.Contains(errOut, "claude is not on PATH: install Claude Code, then run bmesh plugin --install") {
+	if code != exitRefused || !strings.Contains(errOut, "neither claude nor agy is on PATH: install Claude Code or Antigravity, then run bmesh plugin --install") {
 		t.Fatalf("code %d err %q", code, errOut)
 	}
 	if _, _, ok := plugin.Written(plugin.Dir(filepath.Join(os.Getenv("XDG_STATE_HOME"), "bmesh"))); !ok {
 		t.Fatal("no dir written")
+	}
+}
+
+// With only Antigravity present (no claude), --install succeeds and wires
+// plugins.json.
+func TestPluginInstallAntigravityOnly(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Setenv("BMESH_CLAUDE_COMMAND", "")
+	t.Setenv("BMESH_ANTIGRAVITY_CONFIG_DIR", filepath.Join(t.TempDir(), "gemini-config"))
+	t.Setenv("PATH", t.TempDir())
+	out, errOut, code := runCLI(t, nil, "plugin", "--install")
+	if code != 0 || !strings.Contains(out, "added Antigravity plugin entry") {
+		t.Fatalf("code %d out %q err %q", code, out, errOut)
+	}
+	if out, _, code := runCLI(t, nil, "plugin"); code != 0 || !strings.Contains(out, "claude: not on PATH") || !strings.Contains(out, "antigravity: reads it (") {
+		t.Fatalf("status: code %d out %q", code, out)
+	}
+}
+
+// When Claude succeeds but Antigravity's plugins.json is malformed, --install
+// exits with an error so the failure is not silent.
+func TestPluginInstallMalformedAntigravityFails(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	state := t.TempDir()
+	t.Setenv("FAKE_CLAUDE_STATE", state)
+	cfgDir := filepath.Join(t.TempDir(), "gemini-config")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "plugins.json"), []byte(`{bad`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BMESH_ANTIGRAVITY_CONFIG_DIR", cfgDir)
+	_, errOut, code := runCLI(t, nil, "plugin", "--install")
+	if code != exitError || !strings.Contains(errOut, "plugins.json") {
+		t.Fatalf("code %d err %q", code, errOut)
 	}
 }
