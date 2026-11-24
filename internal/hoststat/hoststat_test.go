@@ -196,7 +196,7 @@ func TestDarwinSampleSumsProcesses(t *testing.T) {
 	if err != nil || m == nil {
 		t.Fatal(m, err)
 	}
-	if m.CPU != 0.5 || m.Cores != 10 || m.Load1 != 5 || m.MacPressure != nil || m.Pressure != nil || m.OS != "darwin" {
+	if m.CPU != 0.5 || m.Cores != 10 || m.Load1 != 5 || m.MacPressure != nil || m.Pressure != nil || m.OS != "darwin" || m.Run != nil || m.Wait != nil {
 		t.Fatalf("%+v", m)
 	}
 	if m.MemTotal != 17179869184 {
@@ -204,7 +204,7 @@ func TestDarwinSampleSumsProcesses(t *testing.T) {
 	}
 	// node 400 runs Claude Code's CLI, with no session file and no repo: its
 	// ancestor's agent, other.
-	if len(m.Agents) != 1 || m.Agents[Other].CPU != 0.5 {
+	if len(m.Agents) != 1 || m.Agents[Other].CPU != 0.5 || m.Agents[Other].Run != nil {
 		t.Fatalf("agents %v", m.Agents)
 	}
 }
@@ -349,5 +349,113 @@ func TestLinuxSampleAndLive(t *testing.T) {
 	m, err := s.Minute(ctx)
 	if err != nil || m == nil || m.Agents["bluke-002"].CPU != round2(5.0/12) {
 		t.Fatalf("%+v %v", m, err)
+	}
+}
+
+func TestParseSchedstatAndFullTotal(t *testing.T) {
+	b := "version 17\ntimestamp 1\ncpu0 0 0 0 0 0 0 3000000000 1000000000 5\ndomain0 SMT 0003 0 0 0\ncpu1 0 0 0 0 0 0 2000000000 500000000 5\n"
+	if run, wait, ok := parseSchedstat([]byte(b)); !ok || run != 5 || wait != 1.5 {
+		t.Fatalf("run %v wait %v ok %v", run, wait, ok)
+	}
+	if _, _, ok := parseSchedstat([]byte("version 17\ncpu0 0 0 0 0 0 0 0 0 0\n")); ok {
+		t.Fatal("every cpu 0 (no CONFIG_SCHED_INFO): want not ok")
+	}
+	if v, ok := parseFullTotal([]byte("some avg10=0 avg60=0 avg300=0 total=9\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=1146806112\n")); !ok || v != 1146806112 {
+		t.Fatalf("full %v %v", v, ok)
+	}
+	if _, ok := parseFullTotal([]byte("some avg10=0 avg60=0 avg300=0 total=9\n")); ok {
+		t.Fatal("no full line: want not ok")
+	}
+}
+
+// queuedProc writes, under dir (a /proc from fakeProc), the box's
+// schedstat (seconds run and waited, over two CPUs), memory's full total
+// (µs) and each thread of pid: tid -> {start, run s, wait s}; a thread
+// with start 0 has a stat but no schedstat (gone mid-read).
+func queuedProc(t *testing.T, dir string, run, wait float64, full int, threads map[int]map[int][3]float64) {
+	t.Helper()
+	ns := func(s float64) string { return strconv.FormatInt(int64(s*1e9), 10) }
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("schedstat", "version 17\ntimestamp 1\ncpu0 0 0 0 0 0 0 "+ns(run/2)+" "+ns(wait/2)+" 1\ncpu1 0 0 0 0 0 0 "+ns(run/2)+" "+ns(wait/2)+" 1\n")
+	write("pressure/memory", "some avg10=0.00 avg60=0.50 avg300=0.00 total=1\nfull avg10=0.00 avg60=0.00 avg300=0.00 total="+strconv.Itoa(full)+"\n")
+	for pid, ts := range threads {
+		task := filepath.Join(dir, strconv.Itoa(pid), "task")
+		os.RemoveAll(task)
+		for tid, th := range ts {
+			sub := filepath.Join(strconv.Itoa(pid), "task", strconv.Itoa(tid))
+			write(filepath.Join(sub, "stat"), pidStat(tid, 1, "worker", [4]int{}, int(th[0]), 0))
+			if th[0] != 0 {
+				write(filepath.Join(sub, "schedstat"), ns(th[1])+" "+ns(th[2])+" 7\n")
+			}
+		}
+	}
+}
+
+// An agent's run and wait sum its threads' since the last read: a thread
+// read before counts its growth, a new one and a reused tid (another start
+// time) all theirs, one gone mid-read nothing; an agent whose run covers
+// under half its CPU reads null. The box's come from /proc/schedstat, and
+// memory full from its total=.
+func TestLinuxQueuedRunAndWait(t *testing.T) {
+	dir, wt, wt2 := t.TempDir(), t.TempDir(), t.TempDir()
+	fakeProc(t, dir, true, map[int]string{
+		10: pidStat(10, 1, "java", [4]int{100, 0, 0, 0}, 50, 1000),
+		20: pidStat(20, 1, "gradle", [4]int{0, 0, 0, 0}, 60, 1000),
+	}, map[int]string{10: wt, 20: wt2})
+	queuedProc(t, dir, 100, 10, 1_000_000, map[int]map[int][3]float64{
+		10: {10: {50, 10, 1}, 11: {51, 5, 5}, 13: {52, 100, 100}},
+		20: {20: {60, 0, 0}},
+	})
+	now := time.Unix(1_800_000_000, 0)
+	s := New(Env{Host: "k16", GOOS: "linux", Proc: dir, PageSize: 4096, Now: func() time.Time { return now },
+		Nodes: func(context.Context) ([]mesh.Node, error) {
+			return []mesh.Node{{Path: "bluke-002", Host: "k16", Worktree: wt}, {Path: "bluke-004", Host: "k16", Worktree: wt2}}, nil
+		}})
+	ctx := context.Background()
+	if _, err := s.Minute(ctx); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(10 * time.Second)
+	// java: 7 s of CPU; its threads: 10 grew 3+1, 11 exited, 12 is new
+	// (2+0.5), 13 is a new thread on a reused tid (1+1), 14 went mid-read.
+	// gradle: 10 s of CPU, its one thread ran 2: a fifth covered.
+	os.WriteFile(filepath.Join(dir, "10", "stat"), []byte(pidStat(10, 1, "java", [4]int{800, 0, 0, 0}, 50, 1000)), 0o644)
+	os.WriteFile(filepath.Join(dir, "20", "stat"), []byte(pidStat(20, 1, "gradle", [4]int{1000, 0, 0, 0}, 60, 1000)), 0o644)
+	queuedProc(t, dir, 130, 20, 1_100_000, map[int]map[int][3]float64{
+		10: {10: {50, 13, 2}, 12: {53, 2, 0.5}, 13: {54, 1, 1}, 14: {0, 0, 0}},
+		20: {20: {60, 2, 3}},
+	})
+	m, err := s.Minute(ctx)
+	if err != nil || m == nil {
+		t.Fatal(m, err)
+	}
+	if *m.Run != 30 || *m.Wait != 10 || *m.Pressure.MemFull != 1 {
+		t.Fatalf("box run %v wait %v mem_full %v", *m.Run, *m.Wait, *m.Pressure.MemFull)
+	}
+	j := m.Agents["bluke-002"]
+	if j.CPU != 0.7 || j.Run == nil || *j.Run != 6 || *j.Wait != 2.5 || m.Cover["bluke-002"] != round2(6.0/7) {
+		t.Fatalf("java's agent %+v cover %v", j, m.Cover)
+	}
+	if g := m.Agents["bluke-004"]; g.CPU != 1 || g.Run != nil || g.Wait != nil || m.Cover["bluke-004"] != 0.2 {
+		t.Fatalf("under half covered: %+v cover %v", g, m.Cover)
+	}
+	if o := m.Agents[Other]; o.Run != nil {
+		t.Fatalf("other %+v", o)
+	}
+
+	// A kernel that doesn't count (every cpu 0 0 0): no run or wait,
+	// the box's or any agent's.
+	now = now.Add(10 * time.Second)
+	queuedProc(t, dir, 0, 0, 1_100_000, map[int]map[int][3]float64{10: {10: {50, 0, 0}}})
+	if m, err = s.Minute(ctx); err != nil || m.Run != nil || m.Wait != nil || m.Agents["bluke-002"].Run != nil || *m.Pressure.MemFull != 0 {
+		t.Fatalf("0 0 0: %+v %v", m, err)
 	}
 }
