@@ -4266,15 +4266,35 @@ Runner tests drive shell fakes instead of tmux and claude, and a fake T3. The `c
 | Exit | When |
 |---|---|
 | 0 | the title showed |
-| 1 | no such title showed within 20 s (the last title is printed anyway), or the title's `bandHeld=` is non-zero (stderr: `check.mjs: a held node is in the needs-you band`), or its `bandLanding=` is non-zero (`check.mjs: a landing node is in the needs-you band`), or its `older=` is 0 or missing (`check.mjs: no stale row in the band's older fold`), or its `digest=` is 1 (`check.mjs: the strip shows a digest older than twice digest_every`; the seed's digest is 16 hours old), or on the overview or timeline tab its `segs=` lacks any of `working`, `landing`, `held`, `silent`, `asking` or `blocked` (`check.mjs: no held segment on the timeline`), or on the overview its `kpis=` isn't 6 (`check.mjs: the KPI row hasn't 6 tiles`). The seed has all of these. |
+| 1 | no such title showed within 20 s (the last title is printed anyway), or any rule below fails (stderr: `check.mjs: <message>`, one line per failure) |
 | 2 | a usage or browser error |
+
+The rules are the `RULES` table in `scripts/check.mjs`, evaluated on the final title; the seed passes all of them. A rule marked "required" also fails when its key is missing from the title; the others pass then.
+
+| View | Key | Must be | Required | stderr message |
+|---|---|---|---|---|
+| every | `bandHeld=` | 0 | no | `a held node is in the needs-you band` |
+| every | `bandLanding=` | 0 | no | `a landing node is in the needs-you band` |
+| every | `older=` | at least 1 | yes | `no stale row in the band's older fold` |
+| every | `digest=` | not 1 | no | `the strip shows a digest older than twice digest_every` (the seed's digest is 16 hours old) |
+| every | `stateGaps=` | 0 | no | `a state in the node-state table has no icon or colour token` |
+| overview, timeline | `segs=` | names each of `working`, `landing`, `held`, `silent`, `asking`, `blocked` | yes | `no <state> segment on the timeline` (one line per missing state) |
+| overview | `kpis=` | 8 | yes | `the KPI row hasn't 8 tiles` |
+| overview | `roles=` | at least 1 | yes | `no series on the tokens-by-role chart` |
+| overview | `agents=` | at least 1 | yes | `no rows in the agents table` |
+| overview | `ctx=` | at least 1 | yes | `no points on the context-per-call chart` |
+| overview | `quota=` | at least 1 | yes | `no points on the quota chart` |
+| overview | `flags=` | at least 1 | yes | `no flag row in the needs-you band` |
+| overview | `flagsRunaway=` | at least 1 | yes | `the seed's runaway has no band row` |
+| overview | `outliers=` | at least 1 | yes | `no points on the outliers chart` |
+| overview | `burndown=` | at least 1 | yes | `no marks on the burndowns` |
 
 A hash picks the view and window (`/#/timeline?w=24h`, `/#/lead/<path>`, `/#/routines`). `CHECK_COLOR_SCHEME=dark` (or `light`) sets the page's `prefers-color-scheme`; unset, it is Chromium's own, light. Chromium is `$CHROME`, else the newest headless shell or Chromium in the Playwright cache (`$PLAYWRIGHT_BROWSERS_PATH`, `~/.cache/ms-playwright`, `~/Library/Caches/ms-playwright`); stderr names it. `chromium --dump-dom` is no substitute: the page's `/events` stream never ends, so it never returns.
 
 To check a UI change:
 
 1. Run `scripts/seed.sh`.
-2. Run the printed `node scripts/check.mjs ... 390 844 shot.png`, and the same at `1000 800` and `1600 1000`.
+2. Run the printed `node scripts/check.mjs ... 390 844 shot.png` at `390 844`, `1000 800` and `1600 1000`, each with `CHECK_COLOR_SCHEME=dark` and with `CHECK_COLOR_SCHEME=light`.
 3. Run `scripts/seed.sh stop`.
 
 **`go run ./scripts/skilltest --arm <name>=<ref or dir> ...`** measures the plugin's skills and the review prompt `bmesh scaffold` seeds: scripted operator asks, a lead's build brief, the fix lead's brief and a review of a change with planted defects, run as headless Claude Code sessions, one arm per version of the plugin, twice each by default, each in a sandbox repo with a local origin and a fake `bmesh` first on PATH, and each cell is scored on what landed, what it ran, what it replied and how often it had to be steered, and its summary opens with the cases whose pass flipped between the arms (`scripts/skilltest/README.md`). Its Go tests check its scorers offline and run with the rest; no test starts a session.

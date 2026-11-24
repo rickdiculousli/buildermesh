@@ -1,34 +1,12 @@
-// check.mjs <url> <width> <height> [png]: loads the map at url (with
-// ?check=1 added when missing) in headless Chromium at width x height over
-// the DevTools protocol, waits for the self-check title to show a loaded
-// tree and a drawn timeline (lanes= at least 1; the routines view draws
-// none) on a live connection, prints the title, writes a screenshot of the
-// viewport to png when given, and exits: 0 once the title showed, 1 when it
-// did not within 20 s, its bandHeld= or bandLanding= is a non-zero number
-// (a held or landing node in the needs-you band), its older= is 0 or
-// missing, its digest= is 1, on the overview or timeline view its segs=
-// lacks any of working, landing, held, silent, asking or blocked, or on the
-// overview its kpis= isn't 8 (the seed always has a segment of each of
-// those states on the default window, one lead blocked for a day that folds
-// into the band's older line, and a digest too old for the strip; the last
-// title is printed all the same), 2 on a usage or browser error. On the
-// overview the title must also show agents= at least 1 before it counts as
-// loaded, and its roles= (series drawn on the tokens-by-role chart), agents=
-// (rows of the agents table), ctx= (points of the context-per-call chart)
-// and quota= (points of the quota chart) must each be at least 1: the seed
-// publishes usage for all four. The overview's flags= (flag rows in the
-// band) must be at least 1 with flagsRunaway= (runaway ones) at least 1, as
-// must outliers= (points on the outliers chart) and burndown= (marks on the
-// burndowns): the seed has a runaway lead, an overworking one, two build
-// families and a month of spec history; the overview waits for both charts
-// before it counts as loaded. The specs view draws no timeline. No
-// --dump-dom: the page's /events stream never ends, so a plain headless
-// load never returns.
-//
-// Chromium is $CHROME, else the newest headless shell or Chromium in the
-// Playwright cache ($PLAYWRIGHT_BROWSERS_PATH, ~/.cache/ms-playwright or
-// ~/Library/Caches/ms-playwright); stderr names the one it runs. Needs Node
-// 22 or later (global fetch and WebSocket).
+// check.mjs <url> <width> <height> [png]: loads the map at url (with ?check=1
+// added when missing) in headless Chromium at width x height, waits for the
+// self-check title to show a loaded tree on a live connection, prints it, and
+// writes a screenshot of the viewport to png when given. Exit 0 ok; 1 not
+// loaded within 20 s or a RULES rule failed; 2 usage or browser error.
+// CHECK_COLOR_SCHEME=dark|light sets prefers-color-scheme. Chromium is
+// $CHROME, else the newest headless shell or Chromium in the Playwright cache
+// ($PLAYWRIGHT_BROWSERS_PATH, ~/.cache/ms-playwright, ~/Library/Caches/ms-playwright).
+// Node 22 or later. No --dump-dom: the page's /events stream never ends.
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -69,6 +47,51 @@ function chromium() {
   }
   console.error(`check.mjs: no Chromium: set CHROME, or install one into the Playwright cache (looked in ${roots.join(", ")})`);
   process.exit(2);
+}
+
+// RULES: per view ("all" = every view), what the final title must show. Each
+// rule reads the title key `key=value`: `test` is ">= 1", "== N", "!= N" or
+// "has a,b,c" (value is "name:count,..." and must name each). A rule with no
+// `required` passes when its key is missing; a `required` one fails.
+const SEGS = "working,landing,held,silent,asking,blocked";
+const RULES = {
+  all: [
+    { key: "bandHeld", test: "== 0", msg: "a held node is in the needs-you band" },
+    { key: "bandLanding", test: "== 0", msg: "a landing node is in the needs-you band" },
+    { key: "older", test: ">= 1", required: true, msg: "no stale row in the band's older fold" },
+    { key: "digest", test: "!= 1", msg: "the strip shows a digest older than twice digest_every" },
+    { key: "stateGaps", test: "== 0", msg: "a state in the node-state table has no icon or colour token" },
+  ],
+  map: [
+    { key: "segs", test: `has ${SEGS}`, required: true, msg: "no $ segment on the timeline" },
+    { key: "kpis", test: "== 8", required: true, msg: "the KPI row hasn't 8 tiles" },
+    ...[["roles", "no series on the tokens-by-role chart"], ["agents", "no rows in the agents table"],
+      ["ctx", "no points on the context-per-call chart"], ["quota", "no points on the quota chart"],
+      ["flags", "no flag row in the needs-you band"], ["flagsRunaway", "the seed's runaway has no band row"],
+      ["outliers", "no points on the outliers chart"], ["burndown", "no marks on the burndowns"],
+    ].map(([key, msg]) => ({ key, test: ">= 1", required: true, msg })),
+  ],
+  timeline: [{ key: "segs", test: `has ${SEGS}`, required: true, msg: "no $ segment on the timeline" }],
+};
+
+const val = (t, key) => (new RegExp(`(?:^| )${key}=(\\S*)`).exec(t) || [])[1];
+// failures lists the message of every rule of the title's view that fails.
+function failures(t) {
+  const view = (/ view=(\S+) /.exec(t) || [])[1];
+  const out = [];
+  for (const r of [...RULES.all, ...(RULES[view] || [])]) {
+    const v = val(t, r.key);
+    const [op, arg] = r.test.split(" ");
+    if (v === undefined) {
+      if (r.required) out.push(...(op === "has" ? arg.split(",").map((st) => r.msg.replace("$", st)) : [r.msg]));
+      continue;
+    }
+    if (op === "has") {
+      const drawn = new Set(v.split(",").map((s) => s.split(":")[0]));
+      for (const st of arg.split(",")) if (!drawn.has(st)) out.push(r.msg.replace("$", st));
+    } else if (!{ ">=": (a, b) => a >= b, "==": (a, b) => a === b, "!=": (a, b) => a !== b }[op](+v, +arg)) out.push(r.msg);
+  }
+  return out;
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -134,9 +157,10 @@ try {
   for (let i = 0; i < 100 && !ready; i++) {
     await sleep(200);
     t = await title();
-    ready = /trees=[1-9]/.test(t) && /conn=\S*live/.test(t) && (/ lanes=[1-9]/.test(t) || / view=(routines|specs) /.test(t))
-      && (!/ view=map /.test(t) || / agents=[1-9]/.test(t) && / outliers=[1-9]/.test(t) && / burndown=[1-9]/.test(t))
-      && (!/ view=specs /.test(t) || / burndown=[1-9]/.test(t));
+    const view = (/ view=(\S+) /.exec(t) || [])[1];
+    const up = (k) => +val(t, k) >= 1;
+    ready = up("trees") && /conn=\S*live/.test(t) && (up("lanes") || view === "routines" || view === "specs")
+      && (view !== "map" || up("agents") && up("outliers") && up("burndown")) && (view !== "specs" || up("burndown"));
   }
   if (ready) {
     for (let last = "", i = 0; last !== t && i < 10; i++) {
@@ -152,27 +176,7 @@ try {
     console.log(`  screenshot ${png}`);
   }
   if (!ready) console.error("check.mjs: no loaded tree and timeline on a live connection within 20 s");
-  const fails = [];
-  if (/bandHeld=[1-9]/.test(t)) fails.push("a held node is in the needs-you band");
-  if (/bandLanding=[1-9]/.test(t)) fails.push("a landing node is in the needs-you band");
-  if (!/ older=[1-9]/.test(t)) fails.push("no stale row in the band's older fold");
-  if (/ digest=1/.test(t)) fails.push("the strip shows a digest older than twice digest_every");
-  if (/ view=(map|timeline) /.test(t)) {
-    const segs = (/ segs=(\S*)/.exec(t) || [])[1] || "";
-    const drawn = new Set(segs.split(",").map((s) => s.split(":")[0]));
-    for (const st of ["working", "landing", "held", "silent", "asking", "blocked"]) {
-      if (!drawn.has(st)) fails.push(`no ${st} segment on the timeline`);
-    }
-  }
-  if (/ view=map /.test(t)) {
-    if (!/ kpis=8 /.test(t)) fails.push("the KPI row hasn't 8 tiles");
-    for (const [k, what] of [["roles", "no series on the tokens-by-role chart"], ["agents", "no rows in the agents table"],
-      ["ctx", "no points on the context-per-call chart"], ["quota", "no points on the quota chart"],
-      ["flags", "no flag row in the needs-you band"], ["flagsRunaway", "the seed's runaway has no band row"],
-      ["outliers", "no points on the outliers chart"], ["burndown", "no marks on the burndowns"]]) {
-      if (!new RegExp(` ${k}=[1-9]`).test(t)) fails.push(what);
-    }
-  }
+  const fails = failures(t);
   for (const f of fails) console.error(`check.mjs: ${f}`);
   code = ready && !fails.length ? 0 : 1;
   ws.close();
