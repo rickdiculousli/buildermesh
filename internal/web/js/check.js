@@ -27,7 +27,7 @@ export function checkSoon() {
 // selfCheck writes, under ?check=1, whether the page scrolls sideways, the
 // smallest tap target, the tree reads, the timeline drawn (lanes, segments
 // per state, ticks), the KPI tiles, the usage panels' counts, the band's
-// flag rows (runaway ones too), the outliers' points, the burndowns' marks,
+// flag rows (runaway ones too), the outliers' points, the burndowns' marks, the host cards and process rows,
 // the band's rows (held and landing ones too), the older fold, the digest,
 // the state table's gaps (stateGaps) and the connection history into document.title.
 function selfCheck() {
@@ -45,6 +45,7 @@ function selfCheck() {
     ` window=${tl.win} trees=${c.trees} lanes=${c.lanes} segs=${segs} ticks=${c.ticks} kpis=${n("#kpis .tile")}` +
     ` roles=${c.roles} agents=${c.agents} ctx=${c.ctx} quota=${c.quota}` +
     ` flags=${n("#needs .need.flag")} flagsRunaway=${n("#needs .need.flag.fl-runaway")} outliers=${c.outliers} burndown=${c.burndown}` +
+    ` hosts=${c.hosts} procs=${c.procs}` +
     ` conn=${c.conn.join(">")} replay=${c.replay} live=${c.live}` +
     ` band=${$("needs").hidden ? "hidden" : $("needs").children.length}` +
     ` bandHeld=${n("#needs .need.st-held")} bandLanding=${n("#needs .need.st-landing")}` +

@@ -16,7 +16,7 @@ export const $ = (id) => document.getElementById(id);
 // check is set by ?check=1: a self-check that writes viewport and
 // connection facts into document.title for headless screenshots.
 export const check = new URLSearchParams(location.search).get("check") === "1"
-  ? { conn: [], trees: 0, replay: 0, live: 0, lanes: 0, segs: {}, ticks: 0, roles: 0, agents: 0, ctx: 0, quota: 0, outliers: 0, burndown: 0 } : null;
+  ? { conn: [], trees: 0, replay: 0, live: 0, lanes: 0, segs: {}, ticks: 0, roles: 0, agents: 0, ctx: 0, quota: 0, outliers: 0, burndown: 0, hosts: 0, procs: 0 } : null;
 
 export function svg(tag, attrs, parent) {
   const e = document.createElementNS(NS, tag);

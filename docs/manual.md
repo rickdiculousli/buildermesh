@@ -4092,7 +4092,7 @@ Internals: [internals](internals.md#t3-done)
 
 ### Map
 
-The map (`/`) is a console under a top bar: `BMESH`, the connection (`● live · <host> hub`, else `connecting` or `reconnecting`), the tabs `overview`, `timeline`, `tokens`, `specs` and `routines`, the window chips `1h 6h 24h 7d`, and the hub's clock in UTC. The window (default `6h`) is kept in the hash (`#/?w=24h`, `#/timeline?w=7d`, `#/tokens?w=1h`) and in this browser across reloads. The look is dark; a browser set to light gets the light palette. Every number, path and time is set in monospace.
+The map (`/`) is a console under a top bar: `BMESH`, the connection (`● live · <host> hub`, else `connecting` or `reconnecting`), the tabs `overview`, `timeline`, `tokens`, `specs`, `routines` and `hosts`, the window chips `1h 6h 24h 7d`, and the hub's clock in UTC. The window (default `6h`) is kept in the hash (`#/?w=24h`, `#/timeline?w=7d`, `#/tokens?w=1h`, `#/hosts?w=24h`) and in this browser across reloads. The look is dark; a browser set to light gets the light palette. Every number, path and time is set in monospace.
 
 Each panel's read shows `loading <what>` until it answers. A read that fails before anything showed says `could not load <what>; retrying` (the lead page `no such node: <path>` for a node the mesh doesn't have, the session page `no model calls of <agent> in the last 30 days`), and the view's next minute re-read tries it again; a read that fails after something showed keeps what it shows.
 
@@ -4131,7 +4131,7 @@ The recent-events drawer is at the foot of every tab.
 
 **Tokens read by role** stacks what the window's model calls read, per bucket (a minute on `1h`, 10 minutes on `6h`, 30 on `24h`, 3 hours on `7d`), in five series in this order: `leads` (leads, fixers, rounds and engineers, their own calls), `subagents` (executors and the Agent subagents of nodes), coordinator `design` and `exec` (a coordinator session's calls and its subagents', by phase) and `routines`. Hover for each series and the total of a bucket.
 
-**Agents** lists every agent with model calls in the window, most read first: its path or `session <id8>` (`●` when live: a node at work or waiting, or a session with a call in the last hour), role, its spec's `size` or its repo, state, read, a bar of its main thread's read (blue) against its subagents' (orange), peak context, wall time from first to last call, output, and `watch`: every flag's words, `▲` first, in its level's colour, for live and done agents alike, the row's first cell ruled on its left in the worst level's colour. Narrower than 1400px the words go under the agent's name instead of in a column. On the tokens tab, sorting by `watch` puts runaways first. The overview shows the first 20 rows and a link to the tokens tab. The agent links to its lead or session page; a click elsewhere on the row shows its context in the panel below.
+**Agents** lists every agent with model calls in the window, most read first: its path or `session <id8>` (`●` when live: a node at work or waiting, or a session with a call in the last hour), role, its spec's `size` or its repo, state, read, a bar of its main thread's read (blue) against its subagents' (orange), peak context, `cpu` (its processes' mean cores over the window's minutes it has processes in, `–` for none) and `peak mem` (their largest per-minute resident memory, `5.2 GB`), both from the boxes' minute history and hidden on a phone, wall time from first to last call, output, and `watch`: every flag's words, `▲` first, in its level's colour, for live and done agents alike, the row's first cell ruled on its left in the worst level's colour. Narrower than 1400px the words go under the agent's name instead of in a column. On the tokens tab, sorting by `watch` puts runaways first. The overview shows the first 20 rows and a link to the tokens tab. The agent links to its lead or session page; a click elsewhere on the row shows its context in the panel below.
 
 **Outliers** plots every lead and fixer with model calls in the last 30 days, whatever the window: across, its wall time in minutes (from its start to its `done`, or to now while live); up, its read. A point's colour is its spec's size, `S` blue, `M` orange and `L` teal, with `XS` and fixers in grey. A flagged one is ringed in its level's colour and labelled with its path. There is no threshold line: each run is judged against its own repo's size median. Hover a point for its path, size, read, wall time, peak context and turns (main-thread calls). Click it for its lead page, compared (`?vs=` in the hash) with the done run of its size nearest that size's median read.
 
@@ -4154,13 +4154,15 @@ Narrower than 1000px, the tiles go to three columns (two under 480px), band rows
 
 **The specs tab** (`#/specs`) draws every configured repo's 30 days, then the burndown of every build family started in the last 30 days, newest first. It has no window chips.
 
-**The tokens tab** draws tokens read by role full width, the agents table with every agent in the window (click a column heading to sort by it, again to reverse), and the quota chart.
+**The tokens tab** draws tokens read by role full width, the agents table with every agent in the window (click a column heading to sort by it, again to reverse; `cpu` and `peak mem` sort too), and the quota chart.
 
 **The session page** (`#/session/<host>/<id>`, linked from a session's lane and rows) shows a coordinator session over the last 30 days: its repo and host, first and last call, read and output, and its design/exec split as a bar, numbers and share; its busy lane; its context per model call; and its subagents, each with its description, the phase it ran in, read, output and calls.
 
 **Quota history.** Each good run of `[quota] command` (at most one every five minutes, while the map or the quota reminder reads it) is also published to the mesh's usage stream, so any box's map draws the window's readings, each provider's newest per five minutes across boxes.
 
 **The routines tab** lists each kind with its instances per repo, its queue, results and leases.
+
+**The hosts tab** (`#/hosts`) has a card per box, this box first: every box with a minute of load history in the window, and this one. Its head line, uncoloured, is `k16 · CPU wait 11% · mem wait 0% · io wait 2% · load 25.5/16 · 11/29 GB`: each resource's pressure (avg10 from the live answer, else the newest minute's avg60; `–` for a resource with no pressure file), load1 over cores, and memory used over total; a Mac shows `pressure normal`, `warn` or `critical` in place of the waits. Under it, over the window: contention (CPU, memory and I/O wait as lines in %; on a Mac load per core), then CPU in cores and memory, each stacked, one series per lead tree in its drawer chip's hue (executors folded under their lead), routines, sessions and repos together in slate, and `other` (the box less the agents) in grey on top, with the box's cores or memory as a dashed line; a missing bucket is a gap. Under them, the live processes (the top 15 by CPU and by memory, by CPU): command, its agent's chip (a node's in its lead tree's hue, linking its page; a grey `routine`, `session <id8>` linking its page, or `<repo>`; none for other, whose rows are muted), CPU in cores and memory; then the live totals folded by lead tree, `bluke-002 · 3 procs · 5.2 GB · 2.1 cores`. Summed memory counts pages processes share once for each, and the page says so. A box that didn't answer live (asleep, or on an older release) shows `no live stats` over its history; a box with neither reads `<host> · no stats`. The tab reads the live answer every 10 seconds while it is shown and the page is visible, every 60 seconds while no box's live CPU is over half its cores, and not at all on another tab or while hidden; a window chip re-reads the history.
 
 **The recent-events drawer** shows each row's node as a chip in its lead tree's hue (routines and `daemon.*` grey); an inbox row shows the sender's chip, `→`, and a small recipient chip. Hovering a chip dims every row but that node's and those addressed to it. Clicking it (a tap on touch) pins that focus until you click it again or press Escape.
 
@@ -4257,14 +4259,14 @@ Runner tests drive shell fakes instead of tmux and claude, and a fake T3. The `c
 - State lives under `~/.cache/bmesh-scratch/seed/<checkout directory name>` (`BMESH_SEED_DIR` overrides it, `BMESH_SEED_HTTP` the listen address), wiped each run, so two checkouts seed side by side. Serve's state dir is `state/` there (`XDG_STATE_HOME`), so the seed never writes the box's serve record or plugin dir. `seed.pid` there holds serve's pid; a run first stops its checkout's previous serve.
 - `go run ./scripts/seed -nats <url> -again <path>` seeds nothing: it publishes a new `ask` on the seeded `<path>` (an asking or silent node, such as `docs-0007`), so a band row dismissed with `×` shows again. `<url>` is the `nats` of the printed CLI config.
 - `scripts/seed.sh stop` stops it by that pidfile. Never `pkill -f` its command line: it matches the caller's own shell.
-- The seeded serve reads the page from the checkout's `internal/web/` on every request, so edits to `index.html`, `map.css` or a module under `js/` show on reload; a Go change needs a re-run. `BMESH_WEB_DIR=<dir>` does the same for any `bmesh serve` (logged as `bmesh serve: map page from <dir>`); unset, the page is the one embedded at build.
+- The seeded serve reads the page from the checkout's `internal/web/` on every request, so edits to `index.html`, `map.css` or a module under `js/` show on reload; a Go change, or a new module (the server serves only the names embedded at build), needs a re-run. `BMESH_WEB_DIR=<dir>` does the same for any `bmesh serve` (logged as `bmesh serve: map page from <dir>`); unset, the page is the one embedded at build.
 
 **`go run ./scripts/hostload`** reads this box as the daemon's sampler does (two reads 5 seconds apart) and prints one live answer as JSON: each process's agent matched against the hub's nodes, read and never written, so it runs beside the box's own serve without a second one. It needs `[mesh] nats` set.
 
 **`node scripts/check.mjs <url> <width> <height> [png]`** (Node 22 or later) is the map's browser check:
 
 1. It loads `url` (adding `?check=1`) in headless Chromium at that viewport, over the DevTools protocol.
-2. It waits for the self-check title to show a loaded tree and a drawn timeline on a live connection (`trees=` and `lanes=` at least 1, `conn=` ending `live`; the routines tab draws no lanes, so there `lanes=` isn't waited for).
+2. It waits for the self-check title to show a loaded tree and a drawn timeline on a live connection (`trees=` and `lanes=` at least 1, `conn=` ending `live`; the routines, specs, tokens and hosts tabs draw no lanes, so there `lanes=` isn't waited for: the tokens tab waits for `agents=` and the hosts tab for `hosts=` and `procs=` instead).
 3. It prints the title and, with `png` given, writes a viewport screenshot there.
 
 | Exit | When |
@@ -4292,6 +4294,8 @@ The rules are the `RULES` table in `scripts/check.mjs`, evaluated on the final t
 | overview | `flagsRunaway=` | at least 1 | yes | `the seed's runaway has no band row` |
 | overview | `outliers=` | at least 1 | yes | `no points on the outliers chart` |
 | overview | `burndown=` | at least 1 | yes | `no marks on the burndowns` |
+| hosts | `hosts=` | at least 1 | yes | `no host card drawn` (cards drawn, `no stats` ones too) |
+| hosts | `procs=` | at least 1 | yes | `no live process rows on the hosts tab` (process rows shown) |
 
 A hash picks the view and window (`/#/timeline?w=24h`, `/#/lead/<path>`, `/#/routines`). `CHECK_COLOR_SCHEME=dark` (or `light`) sets the page's `prefers-color-scheme`; unset, it is Chromium's own, light. Chromium is `$CHROME`, else the newest headless shell or Chromium in the Playwright cache (`$PLAYWRIGHT_BROWSERS_PATH`, `~/.cache/ms-playwright`, `~/Library/Caches/ms-playwright`); stderr names it. `chromium --dump-dom` is no substitute: the page's `/events` stream never ends, so it never returns.
 
