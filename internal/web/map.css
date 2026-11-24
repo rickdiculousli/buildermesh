@@ -331,6 +331,7 @@ a.tile:hover { text-decoration: none; border-color: var(--tm); }
   border-radius: 6px;
   background: var(--node-bg);
 }
+.lead-landing:empty { display: none; }
 .panel { display: grid; gap: var(--pad); grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); align-items: start; }
 #lead-panel { grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 1000px) {

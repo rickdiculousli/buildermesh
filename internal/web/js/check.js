@@ -45,7 +45,7 @@ function selfCheck() {
   document.title = `bmesh ${sw <= iw ? "ok" : "SCROLLS"} view=${pages.view} scrollWidth=${sw} innerWidth=${iw} minTap=${Math.round(tap)}` +
     (pages.view === "lead" ? ` firstCard=${firstCard()}` : "") +
     (pages.view === "lead" && land.lead && land.lead.path === pages.lead && land.lead.status === 200
-      ? ` landSteps=${n("#lead-panel [data-card=landing] .lstep")}` : "") +
+      ? ` landSteps=${n("#view-lead [data-card=landing] .lstep")}` : "") +
     ` window=${tl.win} trees=${c.trees} lanes=${c.lanes} segs=${segs} ticks=${c.ticks} kpis=${n("#kpis .tile")}` +
     ` roles=${c.roles} agents=${c.agents} ctx=${c.ctx} quota=${c.quota}` +
     ` flags=${n("#needs .need.flag")} flagsRunaway=${n("#needs .need.flag.fl-runaway")} outliers=${c.outliers} burndown=${c.burndown}` +
@@ -83,7 +83,7 @@ function stateGaps() {
 // spaces as "_": CSS order, not the DOM, decides it in one column.
 function firstCard() {
   let best = null, top = Infinity, left = Infinity;
-  for (const e of document.querySelectorAll("#lead-panel .card")) {
+  for (const e of document.querySelectorAll("#lead-landing .card, #lead-panel .card")) {
     const r = e.getBoundingClientRect();
     if (!r.height) continue;
     if (r.top < top - 0.5 || Math.abs(r.top - top) <= 0.5 && r.left < left) {

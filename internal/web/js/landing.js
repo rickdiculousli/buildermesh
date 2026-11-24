@@ -93,8 +93,12 @@ export function landEnded(v) {
   return !v.running && !(r && r.quiet);
 }
 
-function usualOf(v, step, label) {
-  return (v.usual || []).find((u) => u.step === step && u.label === label);
+// usualOf is step row s's usual time: the repo's review jobs' for a row
+// that waits on a review job, else its step and label's over the repo's runs
+// (a jobs row with no job, "review: on the branch already", takes seconds).
+function usualOf(v, s) {
+  if (s.step === "jobs" && v.review_usual && /^waiting for job /.test(s.text || "") && s.label.split(", ").includes("review")) return v.review_usual;
+  return (v.usual || []).find((u) => u.step === s.step && u.label === s.label);
 }
 
 const usualText = (u) => "usually " + usualDur(u.secs) + " (" + u.n + ")";
@@ -152,7 +156,7 @@ function stepWords(v, cur) {
     if (job.cause) out.push(" · " + job.cause);
     return out;
   }
-  const u = usualOf(v, cur.step, cur.label);
+  const u = usualOf(v, cur);
   const out = [cur.label + " ", ticker("", cur.from, "run")];
   if (u) out.push(", usually " + usualDur(u.secs));
   const cmd = v.now.cmd;
@@ -214,7 +218,7 @@ function stepRow(glyph, cls, label, time, notes, ...under) {
 }
 
 function doneRow(v, s) {
-  const u = usualOf(v, s.step, s.label);
+  const u = usualOf(v, s);
   const notes = [];
   if (s.text && s.text !== s.label && s.text !== "checking") notes.push(el("span", "muted", s.text));
   if (u) notes.push(el("span", "muted", usualText(u)));
@@ -225,7 +229,7 @@ function doneRow(v, s) {
 // or how long land has said nothing; under it the command, its jobs or the
 // lease holder.
 function curRow(v, s) {
-  const r = newest(v), u = usualOf(v, s.step, s.label), notes = [];
+  const r = newest(v), u = usualOf(v, s), notes = [];
   if (r.quiet) {
     notes.push(ticker("warn", v.at, "quiet"));
   } else if (u) {

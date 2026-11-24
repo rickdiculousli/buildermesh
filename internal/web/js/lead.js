@@ -98,10 +98,10 @@ function renderLead(path, v) {
   head.replaceChildren(...parts);
 
   const main = [];
-  // The landing card comes first while its newest run is running or quiet,
-  // after the spec card once the landing has ended.
+  // The landing card comes first, above the lanes, while its newest run is
+  // running or quiet; after the spec card once the landing has ended.
   const lv = landingOf(path), lc = lv && landCard(lv), lateLand = lv && landEnded(lv);
-  if (lc && !lateLand) main.push(lc);
+  $("lead-landing").replaceChildren(...(lc && !lateLand ? [lc] : []));
   const kids = v.children || [];
   if (kids.length) main.push(card("tree", el("ol", "rows", null, ...kids.map(childRow))));
   if (n.role === "round") {
@@ -311,6 +311,7 @@ export function enterLead(rest, q) {
   if (path !== pages.leadShown) {
     $("lead-title").textContent = path;
     $("lead-head").replaceChildren();
+    $("lead-landing").replaceChildren();
     $("lead-lanes").replaceChildren();
     $("lead-panel").replaceChildren();
     pages.leadShown = "";
