@@ -8,7 +8,7 @@ Every `bmesh` command with its flags, output and refusals, then the model behind
 - [Setup and updates](#setup-and-updates): [`bmesh init`](#bmesh-init) · [`bmesh serve`](#bmesh-serve) · [`bmesh hub`](#bmesh-hub) · [`bmesh config check`](#bmesh-config-check) · [`bmesh t3 login`](#bmesh-t3-login) · [`bmesh version`](#bmesh-version) · [`bmesh update`](#bmesh-update) · [`bmesh plugin`](#bmesh-plugin)
 - [Proposals and builds](#proposals-and-builds): [`bmesh ideate`](#bmesh-ideate) · [`bmesh spec`](#bmesh-spec) · [`bmesh build`](#bmesh-build) · [`bmesh lead start`](#bmesh-lead-start) · [`bmesh hold`, `unhold`, `held`](#bmesh-hold-unhold-held) · [`bmesh feedback`](#bmesh-feedback) · [`bmesh fix`](#bmesh-fix) · [`bmesh release`](#bmesh-release) · [`bmesh scaffold`](#bmesh-scaffold)
 - [Nodes](#nodes): [`bmesh whoami`](#bmesh-whoami) · [`bmesh context`](#bmesh-context) · [`bmesh audit`](#bmesh-audit) · [`bmesh usage`](#bmesh-usage) · [`bmesh started`, `progress`, `blocked`, `ask`, `done`](#bmesh-started-progress-blocked-ask-done) · [`bmesh send`](#bmesh-send) · [`bmesh inbox`](#bmesh-inbox) · [`bmesh thread-status`](#bmesh-thread-status) · [`bmesh mesh-status`](#bmesh-mesh-status) · [`bmesh watch`](#bmesh-watch) · [`bmesh executor`](#bmesh-executor) · [`bmesh node`](#bmesh-node)
-- [Checks and landing](#checks-and-landing): [`bmesh routine`](#bmesh-routine) · [`bmesh result`](#bmesh-result) · [`bmesh lock-lease`](#bmesh-lock-lease) · [`bmesh setup`](#bmesh-setup) · [`bmesh land`](#bmesh-land) · [`bmesh ready`](#bmesh-ready)
+- [Checks and landing](#checks-and-landing): [`bmesh routine`](#bmesh-routine) · [`bmesh result`](#bmesh-result) · [`bmesh lock-lease`](#bmesh-lock-lease) · [`bmesh run`](#bmesh-run) · [`bmesh setup`](#bmesh-setup) · [`bmesh land`](#bmesh-land) · [`bmesh ready`](#bmesh-ready)
 - [Boxes](#boxes): [`bmesh hosts`](#bmesh-hosts) · [`bmesh sync`](#bmesh-sync) · [`bmesh prune`](#bmesh-prune) · [`bmesh repos`](#bmesh-repos)
 - [Concepts](#concepts): [Several boxes](#several-boxes) · [Updates](#updates) · [Upgrading](#upgrading) · [Runners](#runners) · [Build families](#build-families) · [Holds](#holds) · [Briefs](#briefs) · [The fixer](#the-fixer) · [The ledger](#the-ledger) · [Routines](#routines) ([Setup](#setup)) · [Hosts](#hosts) · [The plugin](#the-plugin) · [Names](#names)
 - [Config](#config): [config.toml](#configtoml) · [repos.toml](#repostoml) · [Pushes](#pushes) · [Quota reminders](#quota-reminders) · [Add-ons](#add-ons) ([t3-done](#t3-done)) · [Map](#map) · [Upgrade notes](#upgrade-notes)
@@ -2260,6 +2260,42 @@ Takes, renews and gives back leases on a repo's slots (see [Leases](#leases)). I
 See also: [Leases](#leases).
 
 Internals: [internals](internals.md#leases)
+
+### `bmesh run`
+
+```
+bmesh run [--timeout D] [--no-stall] -- <cmd...>
+```
+
+Waits on an agent's long command, bounds it, and ends it once it stops moving. Like `lock-lease run`, the command is argv (a pipeline is `sh -c '…'`), run in the cwd in its own process group (on Unix, a session of its own), its output passing through as it comes. It needs no mesh. A lead runs a command it expects to take over 2 minutes in the background as `bmesh run -- <cmd>` and ends its turn; an executor runs one in the foreground as `bmesh run --timeout 9m -- <cmd>`, so the call returns once the command stops moving.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--timeout D` | 20m | the bound: past it the group is ended |
+| `--no-stall` | off | keep a quiet run going until `--timeout`: for work outside the group (a Gradle daemon, adb's server, a container engine, a Playwright browser, which launches detached) |
+
+**Checkups.** Every 2 minutes (every 5 when `--timeout` is an hour or more) it looks at the run and prints one line on stderr: `bmesh run 4m: 37 lines, cpu 61s: <newest line>`, with `; quiet 4m` added while the run is quiet. A run that ends before its first checkup is never looked at. See [Checkups](#checkups).
+
+**A stall** is two quiet checkups in a row: 4 minutes, or 10 at the 5-minute cadence. It ends the run: the group gets SIGQUIT first, so Go and the JVM print their stacks, then SIGKILL 10 s later. A timeout ends the run the same way. On Windows nothing is ended for a stall (no CPU is read there), only at the timeout.
+
+**Exit.** The command's own code. 5 when bmesh ended the run, with `bmesh run: stalled: no output and no CPU for 4m; last line: <line>` or `bmesh run: timed out after 20m; last line: <line>` on stderr. On SIGINT or SIGTERM it kills the group and exits 1 (`interrupted`). A stalled or timed-out end means: read its last lines (a Go or JVM stack is there), find what it waited on, and fix that before running it again.
+
+**The `run` event.** From a node (one resolves, as [How a command finds its node](#synopsis) says), it publishes a `run` event under the node at the start, at each checkup and at the end. Like `land`'s, it sets no state but counts as the node's activity, so a node waiting on its command isn't silent. It carries the program's base name (`go`, `./gradlew` as typed when it names a path in the cwd) and a `key`, a sha256 of the argv and of the cwd relative to the worktree's top, and never the args or an output line: the stream is readable by any holder of the hub's token. Its text is `go 4m: 37 lines, cpu 61s` (`; quiet 4m` while quiet), and at the end `go: ok after 3m12s`, `go: exit 1 after 40s`, `go: stalled after 4m` or `go: timed out after 20m`. With no node, or no hub, it runs all the same and publishes nothing. [`bmesh watch`](#bmesh-watch) prints a `run` event only when the run ended stalled or timed out.
+
+**Refusals.** Each message prints after `bmesh `.
+
+| When | Exit | Message |
+|---|---|---|
+| no command after `--`, or a positional before it | 2 | `usage: bmesh run [--timeout D] [--no-stall] -- <cmd...>` |
+| `--timeout` not positive | 2 | `run: --timeout must be positive` |
+| the command is bmesh (its own executable, or `bmesh` on PATH) | 2 | `run: bmesh <cmd> bounds itself; run it as it is` |
+| the command can't start | 1 | `run: <error>` |
+
+`land`, `routine run`, `routine wait` and `watch` wait silently by design, and every bmesh command bounds itself.
+
+See also: [Checkups](#checkups), [`bmesh lock-lease`](#bmesh-lock-lease).
+
+Internals: [internals](internals.md#checkups)
 
 ### `bmesh setup`
 

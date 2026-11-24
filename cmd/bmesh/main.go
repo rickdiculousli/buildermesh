@@ -243,6 +243,8 @@ commands:
   lock-lease release <key>                 give back a held lease
   lock-lease run <slot> [--ttl D] -- <cmd...>
                                            hold a lease while a command runs; exit with its code
+  run [--timeout D] [--no-stall] -- <cmd...>
+                                           run a long command with a checkup every 2m; end it once it stalls (exit 5)
   routine list [--json]                    the repo's kinds with their instances and queue depth
   routine status [<kind>] [--json]         a kind's (or every kind's) instances with state and model
   routine queue <kind> [--commit C] [--model M] [--effort E] [--go] [--rerun] [--again] [--text T] [-- args...]
