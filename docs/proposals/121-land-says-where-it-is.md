@@ -4,7 +4,7 @@ title: bmesh land puts its step, the command it runs and that command's newest o
 kind: feature
 size: M
 judge: opus
-status: accepted
+status: done
 lens: eng
 proposed_by: 47745d6c-4585-4a15-b7a7-19807a4abecf
 proposed_on: 2026-11-24
@@ -111,6 +111,17 @@ Judge: opus, because the event spans land's passes before and under the lease, t
 - **The map's drawer and the lead page's timeline card:** on the seed, a landing lead's repeated `land` events show once. `check.mjs` on the overview and on `#/lead/app-0041` adds `landDup=`, the count of `land` rows whose text equals the previous one for their node, and exits 1 when it is not 0. The seed publishes two `land` events with the same text.
 
 ## Shown
+- `mesh-status` names the step, its age and the newest line, or how the last run ended, and ignores an earlier run's event: `TestMeshStatusSaysWhereALandingIs` in `cmd/bmesh/cmd_ready_test.go`; `TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test -count=1 -run '^TestMeshStatusSaysWhereALandingIs$' -v ./cmd/bmesh` -> `--- PASS: TestMeshStatusSaysWhereALandingIs (0.14s)`
+- `watch` prints a `land` event, a daemon `landing` with the same text and a third with new text as two lines: `TestWatchPrintsALandingOncePerChange` in `cmd/bmesh/cli_test.go`; `TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test -count=1 -run '^TestWatchPrintsALandingOncePerChange$' -v ./cmd/bmesh` -> `--- PASS: TestWatchPrintsALandingOncePerChange (1.10s)`
+- The map's drawer and the lead page's timeline card show a repeated land text once, on the seed's two repeated `land` events: `node scripts/check.mjs "http://127.0.0.1:40197/" 1280 900` -> `landDup=0` (exit 0), and on `http://127.0.0.1:40197/#/lead/app-0041` -> `landDup=0` (exit 0); with the filters taken out the executor saw `landDup=2` and `landDup=3`, exit 1
+- `ready` points the lead at `mesh-status`: `TestReadyThenTheDaemonLands` in `cmd/bmesh/cmd_ready_test.go` checks `ready: testhost's daemon lands <sha8>; it wakes you only if land needs you; bmesh mesh-status shows where it is`; `TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test -count=1 -run '^TestReadyThenTheDaemonLands$' -v ./cmd/bmesh` -> `--- PASS: TestReadyThenTheDaemonLands (0.33s)`
+- `land`'s steps come in order, each `since` no earlier than the one before, its texts change at once, `cmd.last` is the newest non-empty line before the heartbeat with its `last_at`, the command goes out once, and the last event reads `landed <sha8>`: `TestLandEventsSayWhereItIs` in `cmd/bmesh/land_status_test.go`; `TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test -count=1 -run '^TestLandEventsSayWhereItIs$' -v ./cmd/bmesh` -> `--- PASS: TestLandEventsSayWhereItIs (1.32s)`
+- A refused push goes back to `rebase`; a refused land and a timed-out one end with their own line: `TestLandEventsAgainAndEnd` (subtests `main moved`, `refused`, `timed out`); `TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test -count=1 -run '^TestLandEventsAgainAndEnd$' -v ./cmd/bmesh` -> `--- PASS: TestLandEventsAgainAndEnd (0.95s)`
+- A queued review's entry carries `state` and `host` and its text names them; after the jobs wait the steps show `checks` again: `TestLandEventsNameTheJobsStateAndHost`; `TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test -count=1 -run '^TestLandEventsNameTheJobsStateAndHost$' -v ./cmd/bmesh` -> `--- PASS: TestLandEventsNameTheJobsStateAndHost (0.48s)`
+- An inline kind waiting for its slot puts `wait` in `cmd`, its text naming only the slot, and the text goes back once it holds; the lease's wait names its holder: `TestLandStatusSlotWait`; `TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test -count=1 -run '^TestLandStatusSlotWait$' -v ./cmd/bmesh` -> `--- PASS: TestLandStatusSlotWait (0.00s)`
+- A command kind's output is teed as it is captured, the reply still whole: `TestCommandInstanceTeesToOut` in `internal/instance/command_test.go`
+- Easy to miss: the minute's event reads each job's state and host again (`KindJobs`), so a daemon taking the job shows without a text change from land itself: `TestLandEventsNameTheJobsStateAndHost` puts the daemon's hold only after land queued the job, and waits for an event reading `waiting for job <id> (review, running on k16)`
+- Not shown: a real daemon's landing read with `bmesh mesh-status`: the daemon runs the installed release, so it waits for the release (the step below)
 
 ## Risks and the alternative considered
 - **The stream grows a little.** Measured:

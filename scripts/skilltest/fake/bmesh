@@ -522,7 +522,7 @@ fake_ready() {
 	fi
 	leadcheck ready "$@"
 	echo ready >>"$state/accepted"
-	echo "ready: $host's daemon lands $(sha8 HEAD); it wakes you only if land needs you"
+	echo "ready: $host's daemon lands $(sha8 HEAD); it wakes you only if land needs you; bmesh mesh-status shows where it is"
 }
 
 # fake_executor: an executor's worktree and branch under the lead's, made
