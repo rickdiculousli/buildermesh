@@ -31,9 +31,38 @@ export function describe(f) {
   return { path, event, text };
 }
 
+// landOf is {node, text} for a node's land event or the daemon's landing event
+// addressed to it, else null; the readers show each node's changed text once.
+export function landOf(f) {
+  const p = f.payload && typeof f.payload === "object" ? f.payload : {};
+  const rest = f.subject.replace(/^bm\./, "");
+  const text = String(p.text || "");
+  if (rest.startsWith("daemon.")) return rest.endsWith(".landing") && p.to ? { node: p.to, text } : null;
+  return rest.endsWith(".land") ? { node: rest.slice(0, -5), text } : null;
+}
+
+// landFilter returns a function true for each frame that shows: not a land
+// or landing whose text equals the last shown for its node.
+export function landFilter() {
+  const last = new Map();
+  return (f) => {
+    const l = landOf(f);
+    if (!l) return true;
+    if (last.get(l.node) === l.text) return false;
+    last.set(l.node, l.text);
+    return true;
+  };
+}
+
 let recentTimer = 0;
+let landSeen = null, landShow = null; // the filter for the current mesh.recent array
 
 export function remember(f) {
+  if (landSeen !== mesh.recent) {
+    landSeen = mesh.recent;
+    landShow = landFilter();
+  }
+  if (!landShow(f)) return;
   mesh.recent.unshift(f);
   if (mesh.recent.length > RECENT) mesh.recent.length = RECENT;
   if (!recentTimer) recentTimer = setTimeout(drawRecent, 50);
@@ -114,6 +143,11 @@ export function drawRecent() {
     const li = document.createElement("li");
     li.className = "ev-" + d.event;
     li.dataset.who = who;
+    const l = landOf(f);
+    if (l) {
+      li.dataset.land = l.node;
+      li.dataset.landText = l.text;
+    }
     const c = chip(who, owners, "chip");
     c.style.setProperty("--lane", Math.min(order.indexOf(who), max - 1));
     li.append(span("t", stamp((f.payload && f.payload.at) || f.at)), c);
