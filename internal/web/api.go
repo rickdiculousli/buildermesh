@@ -54,6 +54,9 @@ type server struct {
 
 	baseMu sync.Mutex // held through a read of base
 	base   baseEntry  // the baselines and the 30 days' use (108)
+
+	landingMu    sync.Mutex              // held through a read of landingCache
+	landingCache map[string]landingEntry // /api/landing by ?lead ("" for every landing)
 }
 
 type histEntry struct {
@@ -107,7 +110,7 @@ func newServer(c *mesh.Client, o Options) *server {
 		quota = &Quota{Command: cfg.Quota.Command, Client: c, Host: o.Host}
 	}
 	return &server{c: c, cfg: cfg, host: o.Host, now: now, quota: quota, log: log,
-		usageCache: map[string]usageEntry{}, hostsCache: map[string]hostsEntry{}, specs: map[string]specEntry{}, ledgers: map[string]ledgerEntry{}, fetched: map[string]time.Time{}}
+		usageCache: map[string]usageEntry{}, landingCache: map[string]landingEntry{}, hostsCache: map[string]hostsEntry{}, specs: map[string]specEntry{}, ledgers: map[string]ledgerEntry{}, fetched: map[string]time.Time{}}
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

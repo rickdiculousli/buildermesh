@@ -90,7 +90,8 @@ spec 39 S accepted legend
 spec 40 L accepted hub-move
 spec 41 S accepted parser
 spec 42 M accepted map
-commit 12 "Propose 39 to 42"
+spec 43 M accepted input-surfaces
+commit 12 "Propose 39 to 43"
 land 9 37
 spec 45 M accepted fan-out
 spec 46 M proposed cache
