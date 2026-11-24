@@ -637,8 +637,9 @@ func (s *State) toolInputs(field string, tools ...string) []string {
 	return out
 }
 
-// goTestRE is one go test invocation, to the end of its command segment.
-var goTestRE = regexp.MustCompile(`\bgo\s+test\b[^;&|\n]*`)
+// goTestRE is one go test invocation, to the end of its command segment
+// or its backticks.
+var goTestRE = regexp.MustCompile("\\bgo\\s+test\\b[^;&|\\n`]*")
 
 // namedTestRE is what makes a run name its tests: a -run pattern or a
 // test file.

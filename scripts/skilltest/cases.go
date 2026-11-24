@@ -1522,10 +1522,6 @@ const (
 // `Verified: none`, or `Verified: <command> -> <a line it printed>`.
 var executorVerifiedRE = regexp.MustCompile(`Verified:\s*(none\b|\S.*->\s*\S)`)
 
-// namesTestRE is a test file or a Go test function, as a brief names the
-// tests that check its piece.
-var namesTestRE = regexp.MustCompile(`\b\w+_test\.go\b|\bTest[A-Z]\w*`)
-
 // leadExecCase is lead-s with the operator asking for the piece to go to
 // an executor: scored on the executor's whole chain (executor new, its
 // done, its branch merged, executor remove, then one ready or land) as
@@ -1587,10 +1583,13 @@ func leadExecCase() *Case {
 			if !strings.Contains(p, "You are executor ") {
 				continue
 			}
-			if m := namesTestRE.FindString(p); m != "" {
-				return true, "the executor's brief names " + m
+			runs := goTestRE.FindAllString(p, -1)
+			for _, run := range runs {
+				if namedTestRE.MatchString(run) {
+					return true, "the executor's brief runs " + strings.TrimSpace(run)
+				}
 			}
-			return false, "the executor's brief names no test file or test"
+			return false, fmt.Sprintf("the executor's brief has no go test naming a test, of %d go test", len(runs))
 		}
 		return false, "no subagent was started with an executor's brief"
 	}}
@@ -1634,6 +1633,12 @@ func leadExecCase() *Case {
 		{Name: "the executor's brief names no tests", Fails: "executor_brief_tests", Play: func(r *Rehearsal) {
 			leadStarted(r)
 			handOffBriefed(r, "", verifiedText, strings.Replace(briefed, "- Tests: cart/receipt_test.go, TestReceiptSaysTotal: `go test -run '^TestReceiptSaysTotal$' ./cart`.", "- Done when: the cart tests pass.", 1))
+			remove(r)
+			finish(r)
+		}},
+		{Name: "the executor's brief names its test but runs the suite", Fails: "executor_brief_tests", Play: func(r *Rehearsal) {
+			leadStarted(r)
+			handOffBriefed(r, "", verifiedText, strings.Replace(briefed, "`go test -run '^TestReceiptSaysTotal$' ./cart`", "`go test ./...`, then `go vet ./...`", 1))
 			remove(r)
 			finish(r)
 		}},
