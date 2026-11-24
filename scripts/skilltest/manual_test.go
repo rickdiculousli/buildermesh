@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -23,8 +24,8 @@ var (
 	manualErr      error
 )
 
-// quotes are the inline code spans of this tree's docs/manual.md whose
-// fixed start isn't blank, read one line at a time, fenced blocks skipped.
+// quotes are the inline code spans of this tree's docs/manual.md that read
+// as lines (quoteOf), read one line at a time, fenced blocks skipped.
 func quotes(t *testing.T) []quote {
 	t.Helper()
 	manualOnce.Do(func() {
@@ -117,11 +118,7 @@ func quoteOf(s string) (quote, bool) {
 	if !strings.Contains(strings.TrimLeft(start, " "), " ") {
 		return quote{}, false
 	}
-	re, err := regexp.Compile("^" + pattern(s) + "$")
-	if err != nil {
-		return quote{}, false
-	}
-	return quote{text: s, start: start, re: re}, true
+	return quote{text: s, start: start, re: regexp.MustCompile("^" + pattern(s) + "$")}, true
 }
 
 func pattern(s string) string {
@@ -188,6 +185,44 @@ func heldToManual(t *testing.T, dir string, args []string, outs ...string) {
 			if begun := mismatch(qs, l); begun != nil {
 				t.Errorf("bmesh %s printed %q, which the manual quotes as %q", strings.Join(args, " "), l, begun)
 			}
+		}
+	}
+}
+
+// The matcher reads the manual's grammar, and holds only a line that
+// begins a quote's fixed start.
+func TestManualQuotes(t *testing.T) {
+	if got := codeSpans("prints `a b`, or ``c `d` e`` and `` `f` ``"); !slices.Equal(got, []string{"a b", "c `d` e", "`f`"}) {
+		t.Errorf("codeSpans: %q", got)
+	}
+	var qs []quote
+	for _, s := range []string{"verify", "next:", "<kind> ok t:<tree8>", "ready: <host>'s daemon lands <sha8>",
+		"drained N from <family>", "would release <repo> vX.Y.Z at <sha8> (...)", "this box is <host>[ (admin)]; secure: yes\\|no",
+		"land needs --spec NNN"} {
+		if q, ok := quoteOf(s); ok {
+			qs = append(qs, q)
+		}
+	}
+	if len(qs) != 5 {
+		t.Fatalf("%d quotes read as lines, want 5 (not a name, a bare prefix or one opening with a placeholder): %v", len(qs), qs)
+	}
+	for line, held := range map[string]bool{
+		"ready: k16's daemon lands 0123abcd":               false,
+		"bmesh: ready: k16's daemon land 0123abcd":         true,
+		"drained 2 from shop-build-1":                      false,
+		"drained two from shop-build-1":                    true,
+		"would release shop v0.1.0 at 0123abcd (no specs)": false,
+		"would release shop vX at 0123abcd (no specs)":     true,
+		"this box is k16; secure: no":                      false,
+		"this box is k16 (admin); secure: yes":             false,
+		"this box is k16; secure: maybe":                   true,
+		"land needs --spec NNN":                            false,
+		"land needs --spec 012":                            false,
+		"verify ok t:0123abcd":                             false,
+		"started shop-012":                                 false,
+	} {
+		if got := mismatch(qs, line) != nil; got != held {
+			t.Errorf("%q fails the check %v, want %v", line, got, held)
 		}
 	}
 }
