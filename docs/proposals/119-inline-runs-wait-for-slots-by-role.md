@@ -4,7 +4,7 @@ title: An inline run whose slot is busy waits its turn instead of failing, a lan
 kind: time-cost
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: coordinator on ricks-macbook, from the operator's request during the Bluke build
 proposed_on: 2026-11-23

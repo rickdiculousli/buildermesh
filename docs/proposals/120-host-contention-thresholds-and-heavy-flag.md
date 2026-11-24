@@ -4,7 +4,7 @@ title: Host contention reads ok, warn or red from measured thresholds, the overv
 kind: feature
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: ux
 proposed_by: coordinator
 proposed_on: 2026-11-23
