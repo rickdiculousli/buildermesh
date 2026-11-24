@@ -70,10 +70,11 @@ func (a *app) cmdRun(args []string) error {
 	endText := ""     // and its text: "stalled after 4m"
 	var watch *proc.Watch
 	var grace *time.Timer // the SIGKILL after a SIGQUIT, stopped once the run is reaped
+	exited := false       // the command was reaped: a late stall or timeout changes nothing
 	end := func(line, kind, text string) {
 		mu.Lock()
 		defer mu.Unlock()
-		if ended != "" {
+		if ended != "" || exited {
 			return
 		}
 		if l := watch.Last(); l != "" {
@@ -119,6 +120,9 @@ func (a *app) cmdRun(args []string) error {
 		end("timed out after "+runDur(*timeout), "timed out", "timed out after "+runDur(*timeout))
 	})
 	err = cmd.Wait()
+	mu.Lock()
+	exited = true
+	mu.Unlock()
 	timer.Stop()
 	close(done)
 	watch.Stop()
@@ -165,11 +169,11 @@ func (a *app) runRefused(code int, format string, args ...any) error {
 // runDur is d in seconds, its zero tail dropped: 3m12s, 4m, 40s.
 func runDur(d time.Duration) string {
 	s := d.Round(time.Second).String()
-	if strings.Contains(s, "m") {
-		s = strings.TrimSuffix(s, "0s")
+	if strings.HasSuffix(s, "m0s") {
+		s = s[:len(s)-2]
 	}
-	if strings.Contains(s, "h") {
-		s = strings.TrimSuffix(s, "0m")
+	if strings.HasSuffix(s, "h0m") {
+		s = s[:len(s)-2]
 	}
 	return s
 }

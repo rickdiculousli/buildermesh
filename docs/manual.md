@@ -2276,7 +2276,7 @@ Waits on an agent's long command, bounds it, and ends it once it stops moving. L
 
 **Checkups.** Every 2 minutes (every 5 when `--timeout` is an hour or more) it looks at the run and prints one line on stderr: `bmesh run 4m: 37 lines, cpu 61s: <newest line>`, with `; quiet 4m` added while the run is quiet. A run that ends before its first checkup is never looked at. See [Checkups](#checkups).
 
-**A stall** is two quiet checkups in a row: 4 minutes, or 10 at the 5-minute cadence. It ends the run: the group gets SIGQUIT first, so Go and the JVM print their stacks, then SIGKILL 10 s later. A timeout ends the run the same way. On Windows nothing is ended for a stall (no CPU is read there), only at the timeout.
+**A stall** is two quiet checkups in a row: 4 to 6 minutes after a hang began (10 to 15 at the 5-minute cadence), since the checkup the hang began in may still have seen output. It ends the run: the group gets SIGQUIT first, so Go and the JVM print their stacks, then SIGKILL 10 s later. A timeout ends the run the same way. On Windows nothing is ended for a stall (no CPU is read there), only at the timeout.
 
 **Exit.** The command's own code. 5 when bmesh ended the run, with `bmesh run: stalled: no output and no CPU for 4m; last line: <line>` or `bmesh run: timed out after 20m; last line: <line>` on stderr. On SIGINT or SIGTERM it kills the group and exits 1 (`interrupted`). A stalled or timed-out end means: read its last lines (a Go or JVM stack is there), find what it waited on, and fix that before running it again.
 

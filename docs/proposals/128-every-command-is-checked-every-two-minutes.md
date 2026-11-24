@@ -103,8 +103,8 @@ Judge: opus, because the watcher must read a process group's CPU on two OSes wit
 
 ## What you'll see
 - `bmesh routine run verify` prints a line every 2 minutes on stderr while it runs. A daemon job's instance reads `job <id> running 6m: …` on the map's routines box, ending `quiet 4m` when nothing moved.
-- A lead runs `bmesh run -- ./gradlew test` in the background and ends its turn. A hang ends the run within 4 minutes (10 for an hour-long bound), with the stack on stderr, and the node isn't silent while it runs.
-- An executor's foreground `bmesh run` returns within 4 minutes of a hang, not at the harness's 10-minute move to the background.
+- A lead runs `bmesh run -- ./gradlew test` in the background and ends its turn. A hang ends the run 4 to 6 minutes after it began (10 to 15 for an hour-long bound: two quiet checkups in a row, and the one the hang began in may have seen output), with the stack on stderr, and the node isn't silent while it runs.
+- An executor's foreground `bmesh run` returns 4 to 6 minutes after a hang began (its `--timeout 9m` bounds it before the harness's 10), not at the harness's 10-minute move to the background.
 - `bmesh run -- bmesh land` is refused.
 - `bmesh watch` shows an agent's run only when it stalled or timed out.
 
@@ -127,7 +127,7 @@ Judge: opus, because the watcher must read a process group's CPU on two OSes wit
 ## Shown
 - `routine run verify` prints a checkup on stderr: `cache/bmesh-v --node buildermesh-128 routine run verify` (this branch's build) -> `bmesh: verify 2m: 3 lines, cpu 446s: ok  	github.com/rickdiculousli/buildermesh/addons/t3done	0.872s`; and `TestRoutineRunPrintsCheckups` (cmd/bmesh/cmd_run_unix_test.go): a sleeping kind's last line ends `; quiet`, its result recorded as before.
 - A daemon job's instance reads `job <id> running …`: `TestCommandJobReportsCheckups` (internal/daemon/routines_test.go) reads the instance's state text `job <id> running …` mid-run, its progress event `to` the requester, the last ending `; quiet`; the routines page shows a working instance's text (`instanceSub`, internal/web/js/routines.js).
-- A hang ends within 4 minutes, and so does an executor's foreground call: `bmesh run -- sleep 300` on k16 -> `bmesh run: stalled: no output and no CPU for 4m`, exit 5 after 241 s, after `bmesh run 2m: 0 lines, cpu 0s; quiet 2m` and `bmesh run 4m: 0 lines, cpu 0s; quiet 4m`.
+- A hang ends 4 to 6 minutes after it began, and so does an executor's foreground call (a hang from the start is the 4-minute case): `bmesh run -- sleep 300` on k16 -> `bmesh run: stalled: no output and no CPU for 4m`, exit 5 after 241 s, after `bmesh run 2m: 0 lines, cpu 0s; quiet 2m` and `bmesh run 4m: 0 lines, cpu 0s; quiet 4m`.
 - The node isn't silent while it runs: `TestRunEventsAndWatch`: run events under the node at start, each checkup and end (`run` moves no state; any event under the node is its activity).
 - `bmesh run -- bmesh land` is refused: `cache/bmesh run -- bmesh land` -> `bmesh run: bmesh land bounds itself; run it as it is` (exit 2).
 - `bmesh watch` shows a run only when it stalled or timed out: `TestRunEventsAndWatch` (one ` a run sh: stalled after …` line, none for the ok run).

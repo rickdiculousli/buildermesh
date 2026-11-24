@@ -144,3 +144,13 @@ func TestRoutineRunPrintsCheckups(t *testing.T) {
 		t.Fatalf("result %+v %v %v", r, ok, err)
 	}
 }
+
+// A run's time drops only whole zero units.
+func TestRunDur(t *testing.T) {
+	for d, want := range map[time.Duration]string{3 * time.Second: "3s", 70 * time.Second: "1m10s", 4 * time.Minute: "4m",
+		90 * time.Second: "1m30s", 70 * time.Minute: "1h10m", 90 * time.Minute: "1h30m", time.Hour: "1h", 20 * time.Minute: "20m"} {
+		if got := runDur(d); got != want {
+			t.Errorf("runDur(%s) = %q, want %q", d, got, want)
+		}
+	}
+}
