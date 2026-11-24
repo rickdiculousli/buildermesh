@@ -4,7 +4,7 @@ title: The map shows each box's CPU, memory and contention, and which agents' pr
 kind: feature
 size: L
 judge: opus
-status: accepted
+status: done
 lens: ux
 proposed_by: coordinator
 proposed_on: 2026-11-23
@@ -38,6 +38,8 @@ In:
   - The tab polls `live=1` every 10 s while it is the tab shown and visible, every 60 s when no box's CPU is over half its cores, and not at all on another tab or while hidden.
 - **The agents table** gains `cpu` (mean cores over the window's minutes the agent appears in) and `peak mem` (the largest per-minute sum), sortable on the tokens tab.
 
+As built: `/api/hosts` serves each box's minutes as means over buckets of the window's step (a minute on `1h`, 10 minutes on `6h`, 30 on `24h`, 3 hours on `7d`), so `7d` isn't 10,080 points a box; the agents table's `cpu` and `peak mem` are computed from the minutes themselves. A live read with no live read at least 5 s old diffs against the minute series' read instead. A child's time read before it exits is subtracted from its parent's when the parent reaps it, so it is never counted twice.
+
 Out: thresholds, colours, the KPI tile, the timeline strip and the `heavy` flag (120); alerts or pushes; killing or pausing processes; per-process history; GPU, disk space, network; Windows.
 
 Judge: opus, because the attribution must agree with usage's matching on two OSes and the page joins three data sources.
@@ -52,6 +54,16 @@ A `hosts` tab with a card per box: what it's waiting on, its load and memory, CP
 - On k16, never a second `bmesh serve` and no test touching the hub (the manual's Testing rules): a command under `scripts/` reads the real box and the real `bm-nodes` read-only, and prints one live answer; Shown quotes the running leads it attributed.
 
 ## Shown
+- A hosts tab with a card per box, its waits, load, memory, stacked charts and live processes: `CHECK_COLOR_SCHEME=light node scripts/check.mjs "<seed>/#/hosts" 390 844` -> `bmesh ok hosts=3 procs=23 light 390 844 exit 0` (also 1000x800 and 1600x1000, dark and light, all exit 0); `internal/web/js/hosts.js`.
+- An agent's processes in its lead tree's hue, everything else grey: the seeded serve runs in app-0042's worktree, and `/api/hosts?live=1`'s totals read `['app-0042', 'other']`; the 390x844 screenshot shows `bmesh` with an `app-0042` chip and `app-0042 · 1 proc · 60 MB · 0.0 cores` under the table.
+- The agents table's `cpu` and `peak mem`: `curl /api/usage?since=6h` on the seed -> `app-0045 8.1 4559954498`; `TestHostsHistoryLiveAndAgentColumns` (a mean of 1.75 cores and a 3 GB peak across two boxes).
+- A box on an older release reads `no live stats`: box-a and mac-b answer no request, `/api/hosts?live=1` -> `box-a 37 14.33 None`; the 1600x1000 screenshot shows `no live stats` on both; the test's `mac` (recent, no responder) and `old` (not recent) read null within 2 s.
+- The Linux and macOS parsers and the attribution on fixtures: `TestParseProcStat`, `TestParseMeminfoLoadavgPSI`, `TestParsePidStatCommWithParens` (comm `a) (b`), `TestReadLinuxMissingPressureIsNull`, `TestParseDarwin` (`ps -S` comm with spaces, `vm_stat` at 16384-byte pages, `sysctl`, `lsof` with a vanished pid), `TestDarwinSampleSumsProcesses`, `TestProcCPUSubtractsReapedChildren`, `TestAttribution` (worktree, `bluke-002.app2` beside `bluke-002.app`, routine checkout, session file and a stale one, `repo:` fallback, ancestor, other), `TestLiveNodesSkipsDoneAndOtherHosts` (a done node's reused worktree).
+- `/api/hosts` against meshtest with seeded history, the test's own responder and a host that never answers: `TestHostsHistoryLiveAndAgentColumns`; the daemon's minute publish and responder: `TestHostStatAnswersAndPublishes`.
+- `check.mjs`'s `hosts=` and `procs=` on `#/hosts`: `scripts/check.mjs` `RULES.hosts`; before this change the seed had no hosts tab, so both were 0.
+- On k16, read-only: `go run ./scripts/hostload` -> `{'pid': 3554318, 'ppid': 3554306, 'comm': 'qemu-system-x86', 'cpu': 1.2, 'rss': 3913732096, 'agent': 'bluke-007'}`, `{'pid': 3529718, 'ppid': 2009, 'comm': 'claude', 'cpu': 0.01, 'rss': 344506368, 'agent': 'buildermesh-117'}`, `{'pid': 3529923, 'ppid': 2009, 'comm': 'claude', 'cpu': 0.02, 'rss': 332955648, 'agent': 'buildermesh-119'}` (three running leads, the emulator its lead's).
+- Easy to miss: a missing PSI file is `null`, never 0: `TestReadLinuxMissingPressureIsNull`.
+- Not shown: the Mac's card on a real Mac: only fixtures cover macOS before a release carries 117 (the operator's step below).
 
 ## Risks and the alternative considered
 - A shared daemon counts for the agent whose worktree it started in, or as other: a Gradle daemon reparented to `systemd --user` keeps its starter's cwd; nix builds under root's `nix-daemon` are other; 119's one emulator shared by several leads is its starter's.
