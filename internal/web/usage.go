@@ -45,7 +45,7 @@ type UsageAgent struct {
 	Last        int64        `json:"last"`
 	Calls       int          `json:"calls"`
 	Compactions int          `json:"compactions"`
-	Flags       []usage.Flag `json:"flags"` // the rules it trips (108), the worst first
+	Flags       []usage.Flag `json:"flags"`    // the rules it trips (108), the worst first
 	CPU         *float64     `json:"cpu"`      // mean cores over the window's minutes it has processes in (117); null for none
 	PeakMem     *int64       `json:"peak_mem"` // its processes' largest per-minute resident memory
 }
