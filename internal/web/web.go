@@ -44,7 +44,7 @@ type frame struct {
 
 // Options is what the handler needs beyond the client: the config, this
 // daemon's host name, the clock (time.Now when nil), the log (discarded
-// when nil) and Dir, a directory to read the page, map.js and map.css from
+// when nil) and Dir, a directory to read the page, js/ and map.css from
 // on every request instead of the embedded copies (none when empty).
 type Options struct {
 	Cfg  *config.Config
@@ -75,22 +75,44 @@ func asset(dir, name string, body []byte, contentType string) http.HandlerFunc {
 	}
 }
 
-// Handler serves / (the page, with /map.js and /map.css), /api/nodes, /api/tree, /api/lead/{path},
-// /api/routines, /api/strip, /api/timeline, /api/usage, /api/usage/agent, /api/specs and /events, whose replay starts hist before the
-// request unless ?since=RFC3339 says otherwise.
-func Handler(c *mesh.Client, hist time.Duration, opts Options) http.Handler {
-	s := newServer(c, opts)
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", asset(opts.Dir, "index.html", page, "text/html; charset=utf-8"))
-	mux.HandleFunc("GET /js/{name}", func(w http.ResponseWriter, r *http.Request) {
+// jsFile serves an embedded js/ file (read from dir/js when dir is set); a
+// name not embedded is 404.
+func jsFile(dir string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
 		body, err := jsFS.ReadFile("js/" + name)
 		if err != nil {
 			http.NotFound(w, r)
 			return
 		}
-		asset(opts.Dir, filepath.Join("js", name), body, "text/javascript; charset=utf-8")(w, r)
-	})
+		asset(dir, filepath.Join("js", name), body, "text/javascript; charset=utf-8")(w, r)
+	}
+}
+
+// meshTable serves the node-state table as an ES module rendered from
+// mesh.States and mesh.Ticks; there is no file for dir to override.
+func meshTable(dir string) http.HandlerFunc {
+	st, _ := json.Marshal(mesh.States)
+	tk, _ := json.Marshal(mesh.Ticks)
+	body := []byte("// The node-state table, rendered by bmesh serve from internal/mesh (States and Ticks).\nexport const STATES = " + string(st) + ";\nexport const TICKS = " + string(tk) + ";\n")
+	return func(w http.ResponseWriter, r *http.Request) {
+		if dir != "" {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		_, _ = w.Write(body)
+	}
+}
+
+// Handler serves / (the page, with /js/ and /map.css), /api/nodes, /api/tree, /api/lead/{path},
+// /api/routines, /api/strip, /api/timeline, /api/usage, /api/usage/agent, /api/specs and /events, whose replay starts hist before the
+// request unless ?since=RFC3339 says otherwise.
+func Handler(c *mesh.Client, hist time.Duration, opts Options) http.Handler {
+	s := newServer(c, opts)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", asset(opts.Dir, "index.html", page, "text/html; charset=utf-8"))
+	mux.HandleFunc("GET /js/mesh-table.js", meshTable(opts.Dir))
+	mux.HandleFunc("GET /js/{name}", jsFile(opts.Dir))
 	mux.HandleFunc("GET /map.css", asset(opts.Dir, "map.css", mapCSS, "text/css; charset=utf-8"))
 	mux.HandleFunc("GET /api/nodes", func(w http.ResponseWriter, r *http.Request) { nodes(w, r, c) })
 	mux.HandleFunc("GET /api/tree", s.tree)

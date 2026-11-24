@@ -36,7 +36,7 @@ func silenceOnce(ctx context.Context, d Deps, act *Activity) {
 			continue
 		}
 		text := "quiet for " + shortDuration(quiet)
-		if _, err := mesh.WriteState(ctx, d.Client, path, mesh.State{State: "silent", By: "daemon", Text: text,
+		if _, err := mesh.WriteState(ctx, d.Client, path, mesh.State{State: must(mesh.DaemonStateFor("silent")), By: "daemon", Text: text,
 			At: now.UTC().Format(time.RFC3339)}); err != nil {
 			d.Log.Warn("silence: write state", "path", path, "err", err)
 			continue

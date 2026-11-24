@@ -127,3 +127,64 @@ func TestWriteStateCAS(t *testing.T) {
 		t.Fatal(err, attempts)
 	}
 }
+
+// The table answers as the maps it replaced did, key for key.
+func TestStateTableMatchesTheOldMaps(t *testing.T) {
+	transitions := map[string][]string{
+		"idle":    {"working"},
+		"working": {"working", "blocked", "asking", "done", "silent", "held", "landing"},
+		"blocked": {"working", "done"},
+		"asking":  {"working", "blocked", "asking", "done", "held"},
+		"silent":  {"working", "blocked", "asking", "done", "held"},
+		"held":    {"working", "blocked", "asking", "done", "held", "landing"},
+		"landing": {"landing", "held", "done", "working", "blocked"},
+	}
+	nodeState := map[string]string{"started": "working", "progress": "working", "ask": "asking", "blocked": "blocked", "held": "held", "ready": "landing", "done": "done"}
+	daemonState := map[string]string{"silent": "silent", "landing": "landing", "land-refused": "working", "land-withdrawn": "working"}
+	tickKind := map[string]string{"progress": "progress", "job": "job", "land-refused": "refused", "ready": "ready", "done": "done"}
+	needRank := map[string]int{"blocked": 0, "asking": 1, "silent": 2, "working": 3, "landing": 4, "held": 5, "idle": 6, "done": 7}
+	live := map[string]bool{"working": true, "asking": true, "blocked": true, "silent": true, "landing": true, "held": true}
+	needs := map[string]bool{"blocked": true, "asking": true, "silent": true}
+
+	for from := range States {
+		for to := range States {
+			want := false
+			for _, x := range transitions[from] {
+				want = want || x == to
+			}
+			if Legal(from, to) != want {
+				t.Errorf("Legal(%s,%s) = %v", from, to, !want)
+			}
+		}
+		if Live(from) != live[from] || Needs(from) != needs[from] {
+			t.Errorf("%s: Live %v Needs %v", from, Live(from), Needs(from))
+		}
+		if r, ok := needRank[from]; !ok || NeedRank(from) != r {
+			t.Errorf("NeedRank(%s) = %d", from, NeedRank(from))
+		}
+		if States[from].Next == nil || States[from].Events == nil || States[from].Daemon == nil {
+			t.Errorf("%s has a nil list", from)
+		}
+	}
+	if NeedRank("nope") != needRank["idle"] || Live("nope") || Needs("nope") || Legal("nope", "working") {
+		t.Error("an unknown state is not idle-like")
+	}
+	events := []string{"started", "progress", "ask", "blocked", "held", "ready", "done", "silent", "landing", "land-refused", "land-withdrawn", "job", "wake"}
+	for _, ev := range events {
+		ws, wok := nodeState[ev]
+		if gs, gok := StateFor(ev); gs != ws || gok != wok {
+			t.Errorf("StateFor(%s) = %q %v", ev, gs, gok)
+		}
+		ds, dok := daemonState[ev]
+		if gs, gok := DaemonStateFor(ev); gs != ds || gok != dok {
+			t.Errorf("DaemonStateFor(%s) = %q %v", ev, gs, gok)
+		}
+		wk, kok := tickKind[ev]
+		if gk, gok := TickFor(ev); gk != wk || gok != kok {
+			t.Errorf("TickFor(%s) = %q %v", ev, gk, gok)
+		}
+	}
+	if len(Ticks) != len(tickKind) {
+		t.Error("Ticks has extra keys")
+	}
+}

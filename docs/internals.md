@@ -612,7 +612,7 @@ The start-of-read check runs `pragma_table_info` on each table and `json_type` o
 `/api/timeline?since=1h|6h|24h|7d` (default `6h`; any other value is a 400) serves `{from, to, lanes:[{path, role, parent, repo, spec, state, segs:[[from, to, state]], ticks:[[at, kind, text]]}]}`, every time in unix seconds. `to` is when bm-mesh was read; `state` is the lane's state at `to` (`done` once done).
 
 - **The read.** bm-mesh is read whole (`bm.>` from its first message) with the nodes and `bm-state`, once per 30 seconds for every window and lead page. Requests that miss the cache together wait for one read. Each lane's state at the window's start is replayed from its own history. An event's time is its payload's `at` (the stored time without one), and events are replayed in that order.
-- **The state table** (`nodeState` and `daemonState` in `internal/web/timeline.go`, `EVENT_STATE` and `DAEMON_STATE` in `map.js`):
+- **The state table** is `States` and `Ticks` in `internal/mesh/state.go`, which the timeline, the usage read and the daemon's writers read, and which the page reads as `/js/mesh-table.js`:
   - a node's `started` and `progress` set `working`, `ask` sets `asking`, `blocked` sets `blocked`, `held` sets `held`, `ready` sets `landing`, and `done` ends the lane;
   - a daemon event addressed to a node (`to`) sets that node's state: `silent` sets `silent`, `landing` sets `landing`, and `land-refused` and `land-withdrawn` set `working`;
   - a node's `started_at` opens an `idle` segment until its first event;

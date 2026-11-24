@@ -203,31 +203,78 @@ func TestNodesAndPage(t *testing.T) {
 		rows[1].Node.Path != "b" || rows[1].Runner != nil || rows[1].State.State != "idle" {
 		t.Fatalf("%+v", rows)
 	}
-	if page := get("/"); !strings.Contains(page, `src="/map.js"`) || !strings.Contains(page, `href="/map.css"`) {
+	if page := get("/"); !strings.Contains(page, `type="module" src="/js/main.js"`) || !strings.Contains(page, `href="/map.css"`) {
 		t.Fatalf("page %q", page)
 	}
-	if js := get("/map.js"); !strings.Contains(js, `EventSource("/events")`) {
-		t.Fatalf("map.js %q", js)
+	if js := get("/js/main.js"); !strings.Contains(js, `EventSource("/events")`) {
+		t.Fatalf("main.js %q", js)
 	}
+}
+
+// jsNames lists the embedded js/ files.
+func jsNames(t *testing.T) []string {
+	t.Helper()
+	es, err := jsFS.ReadDir("js")
+	if err != nil || len(es) == 0 {
+		t.Fatal(err, len(es))
+	}
+	var out []string
+	for _, e := range es {
+		out = append(out, e.Name())
+	}
+	return out
+}
+
+func serveGet(t *testing.T, srv *httptest.Server, path string) (int, string, string, string) {
+	t.Helper()
+	resp, err := http.Get(srv.URL + path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, resp.Header.Get("Content-Type"), resp.Header.Get("Cache-Control"), string(b)
 }
 
 func TestAssets(t *testing.T) {
 	_, c := connect(t)
 	srv := httptest.NewServer(Handler(c, time.Hour, Options{}))
 	defer srv.Close()
-	for path, want := range map[string]string{
-		"/":        "text/html; charset=utf-8",
-		"/map.js":  "text/javascript; charset=utf-8",
-		"/map.css": "text/css; charset=utf-8",
-	} {
-		resp, err := http.Get(srv.URL + path)
-		if err != nil {
-			t.Fatal(err)
+	want := map[string]string{"/": "text/html; charset=utf-8", "/map.css": "text/css; charset=utf-8",
+		"/js/mesh-table.js": "text/javascript; charset=utf-8"}
+	for _, n := range jsNames(t) {
+		want["/js/"+n] = "text/javascript; charset=utf-8"
+	}
+	for path, ct := range want {
+		code, got, cc, b := serveGet(t, srv, path)
+		if code != 200 || got != ct || len(b) == 0 || cc != "" {
+			t.Fatalf("%s: %d %q cache %q, %d bytes; want 200 %q", path, code, got, cc, len(b), ct)
 		}
-		b, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != want || len(b) == 0 {
-			t.Fatalf("%s: %d %q, %d bytes; want 200 %q", path, resp.StatusCode, resp.Header.Get("Content-Type"), len(b), want)
+	}
+	checkTable(t, srv)
+	for _, path := range []string{"/js/", "/js/nope.js", "/map.js"} {
+		if code, _, _, _ := serveGet(t, srv, path); code != http.StatusNotFound {
+			t.Fatalf("%s: %d, want 404", path, code)
+		}
+	}
+}
+
+// checkTable asserts /js/mesh-table.js is the module and names every state and tick.
+func checkTable(t *testing.T, srv *httptest.Server) {
+	t.Helper()
+	_, _, _, b := serveGet(t, srv, "/js/mesh-table.js")
+	if !strings.HasPrefix(b, "// The node-state table, rendered by bmesh serve from internal/mesh (States and Ticks).\nexport const STATES = {") ||
+		!strings.Contains(b, ";\nexport const TICKS = {") || !strings.HasSuffix(b, "};\n") {
+		t.Fatalf("mesh-table.js %q", b)
+	}
+	for k := range mesh.States {
+		if !strings.Contains(b, `"`+k+`":{"need"`) {
+			t.Fatalf("mesh-table.js lacks state %s", k)
+		}
+	}
+	for k, v := range mesh.Ticks {
+		if !strings.Contains(b, `"`+k+`":"`+v+`"`) {
+			t.Fatalf("mesh-table.js lacks tick %s", k)
 		}
 	}
 }
@@ -237,34 +284,51 @@ func TestAssetsFromDir(t *testing.T) {
 	dir := t.TempDir()
 	srv := httptest.NewServer(Handler(c, time.Hour, Options{Dir: dir}))
 	defer srv.Close()
-	get := func(path string) (int, string, string) {
-		resp, err := http.Get(srv.URL + path)
-		if err != nil {
+	names := jsNames(t)
+	for _, n := range names {
+		if code, _, _, _ := serveGet(t, srv, "/js/"+n); code != http.StatusInternalServerError {
+			t.Fatalf("missing js/%s: %d", n, code)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "js"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range names {
+		if err := os.WriteFile(filepath.Join(dir, "js", n), []byte("js v1"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		defer resp.Body.Close()
-		b, _ := io.ReadAll(resp.Body)
-		return resp.StatusCode, resp.Header.Get("Content-Type"), string(b)
 	}
-	if code, _, _ := get("/map.js"); code != http.StatusInternalServerError {
-		t.Fatalf("missing map.js: %d", code)
-	}
-	for name, body := range map[string]string{"index.html": "page v1", "map.js": "js v1", "map.css": "css v1"} {
+	for name, body := range map[string]string{"index.html": "page v1", "map.css": "css v1"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if code, ct, b := get("/"); code != 200 || ct != "text/html; charset=utf-8" || b != "page v1" {
-		t.Fatalf("/: %d %q %q", code, ct, b)
+	if code, ct, cc, b := serveGet(t, srv, "/"); code != 200 || ct != "text/html; charset=utf-8" || cc != "no-store" || b != "page v1" {
+		t.Fatalf("/: %d %q %q %q", code, ct, cc, b)
 	}
-	if code, _, b := get("/map.css"); code != 200 || b != "css v1" {
+	if code, _, _, b := serveGet(t, srv, "/map.css"); code != 200 || b != "css v1" {
 		t.Fatalf("/map.css: %d %q", code, b)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "map.js"), []byte("js v2"), 0o644); err != nil {
+	for _, n := range names {
+		if code, ct, cc, b := serveGet(t, srv, "/js/"+n); code != 200 || ct != "text/javascript; charset=utf-8" || cc != "no-store" || b != "js v1" {
+			t.Fatalf("/js/%s: %d %q %q %q", n, code, ct, cc, b)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "js", "main.js"), []byte("js v2"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if code, _, b := get("/map.js"); code != 200 || b != "js v2" {
-		t.Fatalf("/map.js after an edit: %d %q", code, b)
+	if code, _, _, b := serveGet(t, srv, "/js/main.js"); code != 200 || b != "js v2" {
+		t.Fatalf("/js/main.js after an edit: %d %q", code, b)
+	}
+	// The table is rendered, with no file under dir.
+	if _, _, cc, _ := serveGet(t, srv, "/js/mesh-table.js"); cc != "no-store" {
+		t.Fatalf("mesh-table.js cache %q", cc)
+	}
+	checkTable(t, srv)
+	for _, path := range []string{"/js/", "/js/nope.js", "/map.js"} {
+		if code, _, _, _ := serveGet(t, srv, path); code != http.StatusNotFound {
+			t.Fatalf("%s: %d, want 404", path, code)
+		}
 	}
 }
 
