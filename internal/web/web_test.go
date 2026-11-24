@@ -206,8 +206,8 @@ func TestNodesAndPage(t *testing.T) {
 	if page := get("/"); !strings.Contains(page, `type="module" src="/js/main.js"`) || !strings.Contains(page, `href="/map.css"`) {
 		t.Fatalf("page %q", page)
 	}
-	if js := get("/js/main.js"); !strings.Contains(js, `EventSource("/events")`) {
-		t.Fatalf("main.js %q", js)
+	if js := get("/js/live.js"); !strings.Contains(js, `EventSource("/events")`) {
+		t.Fatalf("live.js %q", js)
 	}
 }
 

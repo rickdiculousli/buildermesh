@@ -4277,7 +4277,7 @@ The rules are the `RULES` table in `scripts/check.mjs`, evaluated on the final t
 | every | `bandLanding=` | 0 | no | `a landing node is in the needs-you band` |
 | every | `older=` | at least 1 | yes | `no stale row in the band's older fold` |
 | every | `digest=` | not 1 | no | `the strip shows a digest older than twice digest_every` (the seed's digest is 16 hours old) |
-| every | `stateGaps=` | 0 | no | `a state in the node-state table has no icon or colour token` |
+| every | `stateGaps=` | 0 | yes | `a state in the node-state table has no icon or colour token` |
 | overview, timeline | `segs=` | names each of `working`, `landing`, `held`, `silent`, `asking`, `blocked` | yes | `no <state> segment on the timeline` (one line per missing state) |
 | overview | `kpis=` | 8 | yes | `the KPI row hasn't 8 tiles` |
 | overview | `roles=` | at least 1 | yes | `no series on the tokens-by-role chart` |

@@ -60,7 +60,7 @@ const RULES = {
     { key: "bandLanding", test: "== 0", msg: "a landing node is in the needs-you band" },
     { key: "older", test: ">= 1", required: true, msg: "no stale row in the band's older fold" },
     { key: "digest", test: "!= 1", msg: "the strip shows a digest older than twice digest_every" },
-    { key: "stateGaps", test: "== 0", msg: "a state in the node-state table has no icon or colour token" },
+    { key: "stateGaps", test: "== 0", required: true, msg: "a state in the node-state table has no icon or colour token" },
   ],
   map: [
     { key: "segs", test: `has ${SEGS}`, required: true, msg: "no $ segment on the timeline" },
