@@ -5,6 +5,7 @@ import { pages, tl, tok } from "./state.js";
 import { crosshair, hover } from "./drawer.js";
 import { ctxAgent, ctxPanel, fiveH, pct, renderBand, select } from "./overview.js";
 import { tally } from "./check.js";
+import { gb } from "./hosts.js";
 import { drawAll } from "./main.js";
 
 // ROLES are the tokens-by-role series in their fixed order, each drawn in
@@ -150,6 +151,9 @@ const AGENT_COLS = [
   ["read", "read", (a) => +a.read || 0, false],
   ["mainsub", "main · sub", (a) => kindsRead(a.sub), true],
   ["peak", "peak ctx", (a) => +a.peak || 0, false],
+  // cpu and peak mem are its processes' (117): mean cores, largest memory
+  ["cpu", "cpu", (a) => a.cpu == null ? -1 : +a.cpu, true],
+  ["mem", "peak mem", (a) => +a.peak_mem || 0, true],
   ["wall", "wall", (a) => (+a.last || 0) - (+a.first || 0), true],
   ["out", "out", (a) => +a.out || 0, true],
   // runaway first when sorted ascending, as a word column sorts on its first click
@@ -217,6 +221,8 @@ export function drawAgents(box, opts) {
       el("td", "r", fmtTok(a.read)),
       el("td", "hide-n", null, bar),
       el("td", "r", a.peak ? fmtTok(a.peak) : "–"),
+      el("td", "r hide-n", a.cpu == null ? "–" : (+a.cpu).toFixed(1)),
+      el("td", "r hide-n", a.peak_mem == null ? "–" : gb(a.peak_mem)),
       el("td", "r hide-n", a.calls > 1 ? dur(((+a.last || 0) - (+a.first || 0)) * 1000) : "–"),
       el("td", "r hide-n", fmtTok(a.out)),
       el("td", "watch hide-n" + (lvl ? " fl-" + lvl : ""), lvl ? "▲ " + flagWords(a.flags) : ""));

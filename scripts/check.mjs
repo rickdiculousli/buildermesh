@@ -71,6 +71,8 @@ const RULES = {
       ["outliers", "no points on the outliers chart"], ["burndown", "no marks on the burndowns"],
     ].map(([key, msg]) => ({ key, test: ">= 1", required: true, msg })),
   ],
+  hosts: [["hosts", "no host card drawn"], ["procs", "no live process rows on the hosts tab"]]
+    .map(([key, msg]) => ({ key, test: ">= 1", required: true, msg })),
   timeline: [{ key: "segs", test: `has ${SEGS}`, required: true, msg: "no $ segment on the timeline" }],
 };
 
@@ -151,16 +153,18 @@ try {
   await send("Page.enable");
   await send("Page.navigate", { url: url.href });
   // The page writes its title 100 ms after each change; wait for a tree and
-  // a drawn timeline on a live connection, then (for up to 3 s) for the
-  // title to hold still.
+  // the view's own drawing (a timeline, or a tab's panels) on a live
+  // connection, then (for up to 3 s) for the title to hold still.
   let t = "", ready = false;
   for (let i = 0; i < 100 && !ready; i++) {
     await sleep(200);
     t = await title();
     const view = (/ view=(\S+) /.exec(t) || [])[1];
     const up = (k) => +val(t, k) >= 1;
-    ready = up("trees") && /conn=\S*live/.test(t) && (up("lanes") || view === "routines" || view === "specs")
-      && (view !== "map" || up("agents") && up("outliers") && up("burndown")) && (view !== "specs" || up("burndown"));
+    ready = up("trees") && /conn=\S*live/.test(t) && (up("lanes") || ["routines", "specs", "hosts", "tokens"].includes(view))
+      && (view !== "map" || up("agents") && up("outliers") && up("burndown")) && (view !== "specs" || up("burndown"))
+      && (view !== "tokens" || up("agents"))
+      && (view !== "hosts" || up("hosts") && up("procs"));
   }
   if (ready) {
     for (let last = "", i = 0; last !== t && i < 10; i++) {

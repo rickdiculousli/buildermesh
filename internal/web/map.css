@@ -643,3 +643,44 @@ a.tile:hover { text-decoration: none; border-color: var(--tm); }
 /* The specs tab: a card per repo, then a card per family. */
 .cards { display: grid; gap: var(--pad); grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr)); }
 .cards > .empty { grid-column: 1 / -1; }
+
+/* The hosts tab (117): a card per box. Lead trees draw in their chip's
+   hue, routines and sessions in slate, other in grey. */
+.hosts .hostcard h3 { font: 600 12px var(--mono); font-variant-numeric: tabular-nums; }
+.hosts .card h4:first-of-type { margin-top: 0; }
+.wline { fill: none; stroke-width: 2; stroke-linejoin: round; }
+.wline.w-cpu { stroke: var(--c1); }
+.wline.w-mem { stroke: var(--c2); }
+.wline.w-io { stroke: var(--c4); }
+.legend i.w-cpu, .legend i.w-mem, .legend i.w-io, .legend i.refkey { height: 3px; vertical-align: 2px; }
+.legend i.w-cpu { background: var(--c1); }
+.legend i.w-mem { background: var(--c2); }
+.legend i.w-io { background: var(--c4); }
+.legend i.refkey { background-image: linear-gradient(90deg, var(--tm) 50%, transparent 50%); background-size: 5px 3px; }
+.area.hue, .legend i.hue { fill: var(--c-fg); background: var(--c-fg); }
+.area.u-misc, .legend i.u-misc { fill: var(--slate); background: var(--slate); }
+.area.u-other, .legend i.u-other { fill: color-mix(in srgb, var(--tm) 40%, var(--s1)); background: color-mix(in srgb, var(--tm) 40%, var(--s1)); }
+.hosts .chip {
+  display: inline-block;
+  max-width: 180px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--c-bg);
+  color: var(--c-fg);
+  font: 600 11px/18px var(--font);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: top;
+}
+.hosts a.chip:hover { text-decoration: none; box-shadow: inset 0 0 0 1.5px var(--c-fg); }
+.procs .who { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.procs tr.other td { color: var(--tm); }
+.hosts .totals { margin: 6px 0 0; padding: 0; list-style: none; font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+.hosts .totals li { padding: 1px 0; overflow-wrap: anywhere; }
+.hosts > .note { grid-column: 1 / -1; }
+/* Six tabs outgrow a phone's width: the tabs wrap. */
+@media (max-width: 479px) {
+  header nav { flex-wrap: wrap; }
+  header nav a { padding: 0 6px; }
+}
