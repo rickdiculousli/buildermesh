@@ -155,7 +155,7 @@ window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(drawAll, 100);
 });
-for (const id of ["needs", "recent", "lead-panel"]) $(id).addEventListener("click", toggleRows);
+for (const id of ["needs", "recent", "lead-landing", "lead-panel"]) $(id).addEventListener("click", toggleRows);
 $("lead-vs").addEventListener("change", (ev) => {
   if (!tok.lead || tok.lead.path !== pages.lead) return;
   tok.lead.vs = ev.target.value;
