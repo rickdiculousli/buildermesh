@@ -1,0 +1,6 @@
+# Upgrade notes for v0.8.0, distilled from the Upgrading sections of the
+# specs it carries. 129's tests rule set reaches a repo at its next scaffold,
+# which keeps an edited block; 120, 122 and 128 need nothing. No step, so
+# the notes are a summary.
+
+summary = "Nothing to run on a box. Long commands are checked every 2 minutes (5 when bounded at an hour or more): routines and setup report each checkup, and bmesh run -- <cmd> ends an agent's command once it stops moving or passes its --timeout; the lead and executor skills run long commands under it. The tests rule set gains two lines on how narrow and how deep to test in each phase, written into a repo's AGENTS.md at its next bmesh scaffold (an edited tests block is kept). The map shows a landing as it runs, and the hosts tab says how long each box's CPU work queued, who queued most and who held the CPU, with no ok/warn/red level yet."
