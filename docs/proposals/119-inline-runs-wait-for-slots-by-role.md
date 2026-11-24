@@ -81,6 +81,7 @@ The manual's paragraph on inline slots (`docs/manual.md:2163`) says an inline ru
 - No flag sets priority: in `TestLandingWaiterGoesFirst`, A runs as `routine run slow --rerun --here --commit HEAD` from a lead node and holds `x` as `best-effort`.
 - On the real hub, the built binary: `bmesh --node operator lock-lease run demo119 -- ...` while best-effort `demo119-a` held it -> `preempted by operator (the operator's run); waiting again at #2` in a's output, and the operator's `op-ran` before a's second run.
 - The manual's paragraph on inline slots says an inline run waits and how it is ordered: docs/manual.md, Details of `bmesh routine run`.
+- A kind with more than one slot waits for them in sorted order, renews the places it took while it waits for the next, yields them when asked, and gives them back on an interrupt: `TestMultiSlotWaitRenewsAndNeverDeadlocks` and `TestMultiSlotWaitYieldsAndReleases` (cmd/bmesh/slot_wait_test.go).
 - Easy to miss: a renew must keep the yield mark and the priority, or a holder's own renew would erase the urgent waiter's ask: `TestSlotLineOrderAndYield` (internal/mesh/leases_test.go) renews after `AskYield` and still reads the yield.
 - Not shown: Bluke's `slots = ["emulator"]`, `[slots] emulator = 1`, `rig.py`'s refusal and the lock path: Bluke's own change, after this lands (Needs from the operator).
 
@@ -90,7 +91,7 @@ The manual's paragraph on inline slots (`docs/manual.md:2163`) says an inline ru
 - **Alternative: priority and preemption on daemon jobs.** It would not reach an inline verify, which is where the clash happened.
 
 ## Upgrading
-nothing. An inline run that used to exit 3 on a busy slot now waits. A script that relied on that exit code stops seeing it.
+nothing. An inline run that used to exit 3 on a busy slot now waits. A script that relied on that exit code stops seeing it. While boxes on an older release share the hub, their map lists a run waiting in line (a `<slot>.w-...` key) as a lease; their own runs, which write no priority, are never asked to yield.
 
 ## Needs from the operator
 - **Product direction you asked for, built here.** A best-effort run can be killed by a landing. Lease values gain a priority, waiters record themselves beside the lease, and status lines gain a place in line.

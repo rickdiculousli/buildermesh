@@ -118,7 +118,7 @@ func TestSlotLineOrderAndYield(t *testing.T) {
 	if err != nil || len(leases) != 1 || leases[0].Key != k || leases[0].Priority != BestEffort {
 		t.Fatalf("leases: %+v %v", leases, err)
 	}
-	if err := DeleteWaiter(ctx, c, "land.app", "a.one"); err != nil {
+	if err := DeleteWaiter(ctx, c, "land.app", "a.one", BestEffort); err != nil {
 		t.Fatal(err)
 	}
 	// An unranked lease is never asked to yield.

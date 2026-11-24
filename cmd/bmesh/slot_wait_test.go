@@ -201,3 +201,132 @@ func TestWaitShowsOnStatusLine(t *testing.T) {
 		t.Fatal("the run never ended")
 	}
 }
+
+// multiSlotRepo is a repo whose kind p needs x and y and q needs y and x
+// (both running $SLOW), r needs x alone, and $MARKS is a dir of the test's.
+func multiSlotRepo(t *testing.T) (marks string) {
+	t.Helper()
+	slotWaitFast(t)
+	kind := func(slots string) string {
+		return "mode = \"inline\"\nslots = [" + slots + "]\ncommand = \"sh \\\"$SLOW\\\"\"\n"
+	}
+	kindRepo(t, map[string]string{"p": kind(`"x", "y"`), "q": kind(`"y", "x"`), "r": kind(`"x"`)})
+	marks = t.TempDir()
+	t.Setenv("MARKS", marks)
+	slow := filepath.Join(t.TempDir(), "slow.sh")
+	writeFile(t, slow, "touch \"$MARKS/$BMESH_FROM\"; while [ ! -e \"$MARKS/go\" ]; do sleep 0.05; done; echo ran\n")
+	t.Setenv("SLOW", slow)
+	return marks
+}
+
+// heldOf reads slot's one place.
+func heldOf(t *testing.T, c *mesh.Client, ctx context.Context, slot string) []mesh.Lease {
+	t.Helper()
+	line, err := mesh.SlotQueue(ctx, c, slot, 1, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return line.Held
+}
+
+// ends waits for a background run to exit code with out ending in suffix.
+func ends(t *testing.T, res chan int, code int, out, errb *meshtest.SyncBuffer, suffix string) {
+	t.Helper()
+	select {
+	case got := <-res:
+		if got != code || !strings.HasSuffix(out.String(), suffix) {
+			t.Fatalf("run: %d %q %q", got, out.String(), errb.String())
+		}
+	case <-time.After(meshtest.Within(t)):
+		t.Fatalf("run never ended: %q", out.String())
+	}
+}
+
+// A run waiting for its second slot keeps the first renewed, and two kinds
+// naming the same slots in opposite orders wait in one order: never each
+// holding what the other waits for.
+func TestMultiSlotWaitRenewsAndNeverDeadlocks(t *testing.T) {
+	c, ctx := setup(t)
+	marks := multiSlotRepo(t)
+	key, err := mesh.AcquireLease(ctx, c, "y", "someone", time.Minute, 1, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	aOut, aErr, aRes := runBG("--node", "app-051", "routine", "run", "p")
+	meshtest.Until(t, "A to wait for y", func() bool { return aOut.String() == "waiting for y (held by someone); #1\n" })
+	x := heldOf(t, c, ctx, "x")
+	if len(x) != 1 || x[0].Holder != "app-051" {
+		t.Fatalf("x while A waits: %+v", x)
+	}
+	meshtest.Until(t, "A to renew x", func() bool {
+		h := heldOf(t, c, ctx, "x")
+		return len(h) == 1 && h[0].ExpiresAt.After(x[0].ExpiresAt)
+	})
+	bOut, bErr, bRes := runBG("--node", "app-052", "routine", "run", "q")
+	meshtest.Until(t, "B to wait for x", func() bool { return bOut.String() == "waiting for x (held by app-051, best effort); #1\n" })
+	if y := heldOf(t, c, ctx, "y"); len(y) != 1 || y[0].Holder != "someone" {
+		t.Fatalf("B took y: %+v", y)
+	}
+	if err := mesh.ReleaseLease(ctx, c, key, "someone"); err != nil {
+		t.Fatal(err)
+	}
+	meshtest.Until(t, "A to run", func() bool { return exists(filepath.Join(marks, "app-051")) })
+	writeFile(t, filepath.Join(marks, "go"), "")
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")[:8]
+	ends(t, aRes, 0, aOut, aErr, "ran\np ok t:"+tree+" (recorded)\n")
+	ends(t, bRes, 0, bOut, bErr, "ran\nq ok t:"+tree+" (recorded)\n")
+	assertNoLeases(t, c, ctx)
+}
+
+// A best-effort run asked to yield a place it took while it waits for
+// another gives it up and waits again; one interrupted while it waits
+// gives back what it took.
+func TestMultiSlotWaitYieldsAndReleases(t *testing.T) {
+	c, ctx := setup(t)
+	marks := multiSlotRepo(t)
+	key, err := mesh.AcquireLease(ctx, c, "y", "someone", time.Minute, 1, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	aOut, aErr, aRes := runBG("--node", "app-051", "routine", "run", "p")
+	meshtest.Until(t, "A to wait for y", func() bool { return aOut.String() == "waiting for y (held by someone); #1\n" })
+	oOut, oErr, oRes := runBG("--node", "operator", "routine", "run", "r")
+	meshtest.Until(t, "the operator's run to start", func() bool { return exists(filepath.Join(marks, "operator")) })
+	meshtest.Until(t, "A to wait again", func() bool {
+		return strings.HasSuffix(aOut.String(), "preempted by operator (the operator's run); waiting again at #1\n")
+	})
+	writeFile(t, filepath.Join(marks, "go"), "")
+	tree := gitOut(t, "rev-parse", "HEAD^{tree}")[:8]
+	ends(t, oRes, 0, oOut, oErr, "ran\nr ok t:"+tree+" (recorded)\n")
+	meshtest.Until(t, "A to take x again", func() bool {
+		h := heldOf(t, c, ctx, "x")
+		return len(h) == 1 && h[0].Holder == "app-051" && h[0].Priority == mesh.Urgent
+	})
+
+	sigs := make(chan os.Signal, 1)
+	orig := leaseSignals
+	leaseSignals = func() (<-chan os.Signal, func()) { return sigs, func() {} }
+	t.Cleanup(func() { leaseSignals = orig })
+	// A took its signals before the swap; the next run takes the fake.
+	if err := mesh.ReleaseLease(ctx, c, key, "someone"); err != nil {
+		t.Fatal(err)
+	}
+	ends(t, aRes, 0, aOut, aErr, "ran\np ok t:"+tree+" (recorded)\n")
+	if _, err := mesh.AcquireLease(ctx, c, "y", "someone", time.Minute, 1, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	iOut, iErr, iRes := runBG("--node", "app-053", "routine", "run", "p", "--rerun")
+	meshtest.Until(t, "the run to wait for y", func() bool { return strings.HasPrefix(iOut.String(), "waiting for y (held by someone); #1\n") })
+	sigs <- os.Interrupt
+	select {
+	case code := <-iRes:
+		if code != 1 || iErr.String() != "bmesh: interrupted\n" {
+			t.Fatalf("interrupted: %d %q", code, iErr.String())
+		}
+	case <-time.After(meshtest.Within(t)):
+		t.Fatal("the run never ended")
+	}
+	if x := heldOf(t, c, ctx, "x"); len(x) != 0 {
+		t.Fatalf("x kept after an interrupt: %+v", x)
+	}
+}

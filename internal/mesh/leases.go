@@ -57,8 +57,8 @@ type leaseValue struct {
 
 func (v leaseValue) data() ([]byte, error) { return json.Marshal(v) }
 
-// waiterMark separates a slot from a waiter's holder in its key,
-// <slot>.w-<holder>: no lease place, which ends in a number, reads as one.
+// waiterMark separates a slot from a waiter's id in its key,
+// <slot>.w-<priority>-<holder>: no lease place, which ends in a number, reads as one.
 const waiterMark = ".w-"
 
 // readLease returns the entry's value and revision; absent is rev 0.
@@ -265,13 +265,13 @@ func (v leaseValue) lease(key string, rev uint64) Lease {
 	return l
 }
 
-// isWaiterKey reports a key <slot>.w-<holder> (waiterID has no dot).
+// isWaiterKey reports a waiter's key (waiterID has no dot).
 func isWaiterKey(k string) bool {
 	i := strings.LastIndex(k, waiterMark)
 	return i > 0 && !strings.Contains(k[i+len(waiterMark):], ".")
 }
 
-// Waiter is one wait for a slot, kept beside its leases as <slot>.w-<holder>
+// Waiter is one wait for a slot, kept beside its leases as <slot>.w-<priority>-<holder>
 // while the waiter polls, so every waiter reads the same line.
 type Waiter struct {
 	Holder    string    `json:"holder"`
@@ -282,25 +282,27 @@ type Waiter struct {
 }
 
 // PutWaiter writes w for slot, its expiry moved to now+ttl. A waiter's key
-// is its holder's (waiterID): one wait per holder and slot, so the bucket
-// keeps one key per holder however many waits end.
+// is its holder's and priority's (waiterID): one wait per holder, priority
+// and slot, so the bucket keeps a key or two per holder however many waits
+// end, and a lead's landing never shares a record with its own
+// best-effort run.
 func PutWaiter(ctx context.Context, c *Client, slot string, w Waiter, ttl time.Duration, now time.Time) error {
 	w.ExpiresAt = now.Add(ttl)
-	return put(ctx, c, BucketLeases, slot+waiterMark+waiterID(w.Holder), w)
+	return put(ctx, c, BucketLeases, slot+waiterMark+waiterID(w.Holder, w.Priority), w)
 }
 
-// DeleteWaiter removes holder's wait for slot.
-func DeleteWaiter(ctx context.Context, c *Client, slot, holder string) error {
+// DeleteWaiter removes holder's wait at prio for slot.
+func DeleteWaiter(ctx context.Context, c *Client, slot, holder string, prio Priority) error {
 	kv, err := bucket(ctx, c, BucketLeases)
 	if err != nil {
 		return err
 	}
-	return kv.Delete(ctx, slot+waiterMark+waiterID(holder))
+	return kv.Delete(ctx, slot+waiterMark+waiterID(holder, prio))
 }
 
-// waiterID is holder as one key token with no dot.
-func waiterID(holder string) string {
-	return strings.Map(func(r rune) rune {
+// waiterID is holder and prio as one key token with no dot.
+func waiterID(holder string, prio Priority) string {
+	return string(prio) + "-" + strings.Map(func(r rune) rune {
 		if r == '-' || r == '_' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' {
 			return r
 		}

@@ -177,6 +177,8 @@ type leaseWait struct {
 	deadline  time.Time             // given up at (exit 5); zero: none
 	preempted string                // who made this run yield, while it waits again
 	said      bool                  // say was given a line since the run last held its slots
+	held      []string              // the places a wait for a later slot already took: renewed each poll, and given up when one is asked to yield
+	sigs      <-chan os.Signal      // ends the wait, "interrupted"; nil: none
 }
 
 // roleWait is an inline run's wait outside land: urgent from the operator
@@ -199,17 +201,24 @@ var waiterTTL = 30 * time.Second
 // held marks the best-effort holder that started last to yield (one per
 // urgent waiter ahead of it and itself). Each new line of the wait is
 // printed and said; check runs before each pause, and past the deadline
-// it gives up (exit 5). The waiter's record goes when it returns.
+// it gives up (exit 5). Each poll renews w.held, the places a wait for a
+// later slot already took: a lost one exits 1 "lease lost", and one asked
+// to yield returns *yielded. A signal on w.sigs ends it (exit 1). The
+// waiter's record goes when it returns.
 func (a *app) acquireWait(slot, holder string, ttl time.Duration, capacity int, w *leaseWait) (string, error) {
-	since, said := time.Now(), ""
+	since, said, prio := time.Now(), "", w.prio
 	defer func() {
 		ctx, cancel := cmdCtx()
 		defer cancel()
-		mesh.DeleteWaiter(ctx, a.client, slot, holder) // one that outlives a failure expires
+		mesh.DeleteWaiter(ctx, a.client, slot, holder, prio) // one that outlives a failure expires
 	}()
 	for {
 		ctx, cancel := cmdCtx()
 		now := time.Now()
+		if err := a.keepHeld(ctx, holder, ttl, w); err != nil {
+			cancel()
+			return "", err
+		}
 		err := mesh.PutWaiter(ctx, a.client, slot, mesh.Waiter{Holder: holder, Priority: w.prio, Why: w.why, Since: since}, waiterTTL, now)
 		var line mesh.SlotLine
 		if err == nil {
@@ -219,7 +228,7 @@ func (a *app) acquireWait(slot, holder string, ttl time.Duration, capacity int, 
 			cancel()
 			return "", err
 		}
-		place := slices.IndexFunc(line.Waiters, func(x mesh.Waiter) bool { return x.Holder == holder })
+		place := slices.IndexFunc(line.Waiters, func(x mesh.Waiter) bool { return x.Holder == holder && x.Priority == w.prio })
 		if place < 0 {
 			place = len(line.Waiters) // expired between the write and the read: last until the next poll
 		}
@@ -257,8 +266,36 @@ func (a *app) acquireWait(slot, holder string, ttl time.Duration, capacity int, 
 		if !w.deadline.IsZero() && time.Now().After(w.deadline) {
 			return "", fail(exitTimeout, "timed out waiting for %s, held by %s; nothing is pushed: run bmesh land again", slot, by)
 		}
-		time.Sleep(landPoll)
+		select {
+		case <-w.sigs:
+			return "", fail(exitError, "interrupted")
+		case <-time.After(landPoll):
+		}
 	}
+}
+
+// keepHeld renews the places w.held while a wait for a later slot goes
+// on, and reads a best-effort run's for a yield asked of it.
+func (a *app) keepHeld(ctx context.Context, holder string, ttl time.Duration, w *leaseWait) error {
+	for _, key := range w.held {
+		if err := mesh.RenewLease(ctx, a.client, key, holder, ttl, time.Now()); err != nil {
+			if errors.Is(err, mesh.ErrNotHolder) {
+				return fail(exitError, "lease lost")
+			}
+			return err
+		}
+		if w.prio != mesh.BestEffort {
+			continue
+		}
+		by, err := mesh.LeaseYield(ctx, a.client, key, holder)
+		if err != nil {
+			return err
+		}
+		if by != "" {
+			return &yielded{by: by}
+		}
+	}
+	return nil
 }
 
 // tell prints a line of the wait and says it.
@@ -317,8 +354,9 @@ func askYield(ctx context.Context, c *mesh.Client, line mesh.SlotLine, place int
 	return mesh.AskYield(ctx, c, *pick, by)
 }
 
-// withLeases waits for a place in each slot for holder, in turn (capacity
-// per slot from capacity; see acquireWait), then runs body, renewing every
+// withLeases waits for a place in each slot for holder, in sorted order so
+// two runs never each hold what the other waits for (capacity per slot
+// from capacity; see acquireWait), then runs body, renewing every
 // lease each ttl/3. A failed wait releases the places already taken. A
 // failed renew cancels body's context and exits 1 "lease lost"; SIGINT or
 // SIGTERM cancels it, releases the leases and exits 1 "interrupted". A
@@ -328,31 +366,44 @@ func askYield(ctx context.Context, c *mesh.Client, line mesh.SlotLine, place int
 // leases are released and body's error is returned.
 func (a *app) withLeases(slots []string, holder string, ttl time.Duration, capacity func(slot string) (int, error),
 	w leaseWait, body func(ctx context.Context) error) error {
+	slots = slices.Sorted(slices.Values(slots))
 	for {
-		var keys []string
-		for _, slot := range slots {
-			n, err := capacity(slot)
-			if err == nil {
-				var key string
-				if key, err = a.acquireWait(slot, holder, ttl, n, &w); err == nil {
-					keys = append(keys, key)
-					continue
-				}
-			}
-			a.releaseLeases(keys, holder)
-			return err
-		}
-		if w.said {
-			w.say("")
-			w.said = false
-		}
-		err := a.holdLeases(keys, holder, ttl, w.prio == mesh.BestEffort, body)
+		keys, err := a.waitAll(slots, holder, ttl, capacity, &w)
 		var y *yielded
+		if err == nil {
+			if w.said {
+				w.say("")
+				w.said = false
+			}
+			err = a.holdLeases(keys, holder, ttl, w.prio == mesh.BestEffort, body)
+		}
 		if !errors.As(err, &y) {
 			return err
 		}
 		w.prio, w.why, w.preempted = mesh.Urgent, "", y.by
 	}
+}
+
+// waitAll waits for each of slots in turn, as withLeases does, SIGINT or
+// SIGTERM ending the waits; a failed wait gives back the places taken.
+func (a *app) waitAll(slots []string, holder string, ttl time.Duration, capacity func(slot string) (int, error), w *leaseWait) ([]string, error) {
+	sigs, stopSigs := leaseSignals()
+	defer stopSigs()
+	w.sigs, w.held = sigs, nil
+	defer func() { w.sigs, w.held = nil, nil }()
+	for _, slot := range slots {
+		n, err := capacity(slot)
+		if err == nil {
+			var key string
+			if key, err = a.acquireWait(slot, holder, ttl, n, w); err == nil {
+				w.held = append(w.held, key)
+				continue
+			}
+		}
+		a.releaseLeases(w.held, holder) // a lost one is someone else's now
+		return nil, err
+	}
+	return w.held, nil
 }
 
 // yielded is holdLeases giving its leases up to an urgent waiter, by.
