@@ -1,6 +1,6 @@
 // overview: the tree read, the KPI row, the digest strip, the needs-you
 // band and the overview's panels.
-import { $, badge, chartRoot, check, clock, dur, el, fetchJSON, hm, keep, keepOpen, legendOf, loader, niceMax, readState, svg, svgText, yAxis } from "./core.js";
+import { $, badge, chartRoot, check, clock, dur, el, fetchJSON, hm, keepOpen, legendOf, loader, niceMax, readState, svg, svgText, yAxis } from "./core.js";
 import { LIVE, NEEDS, WINDOWS, byStart, eachNode, hubNow, isStale, mesh, needRank, setTree, specs, stateOf, strip, tl, tok } from "./state.js";
 import { showConn } from "./live.js";
 import { clampRow, hover } from "./drawer.js";
@@ -188,7 +188,7 @@ function tile(label, value, sub, href) {
 }
 
 // list is up to n of names joined with " · ", "+N" for the rest.
-export function list(names, n) {
+function list(names, n) {
   const more = names.length > n ? " +" + (names.length - n) : "";
   return names.slice(0, n).join(" · ") + more;
 }

@@ -1,6 +1,6 @@
 // drawer: the recent-events drawer (its chips, lanes and focus), the
 // clamped rows and the tooltip.
-import { $, el, keep, kept, open, phone, span, stamp, svg } from "./core.js";
+import { $, el, keep, kept, phone, span, stamp, svg } from "./core.js";
 import { mesh } from "./state.js";
 
 const RECENT = 30;

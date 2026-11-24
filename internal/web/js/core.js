@@ -1,6 +1,5 @@
 // core: DOM and SVG helpers, times and clocks, fetchJSON, loader, every,
 // kept and the ?check=1 counters. It imports nothing: every module may use it.
-import { shown } from "./main.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const PHONE = "(max-width: 699px)";
@@ -254,7 +253,7 @@ export function bare(title, text) {
 // <id>" for a round's spec, "<kind> <repo>" for a spent fold, "older" for
 // the band's, "digest" for the strip's), so a redraw keeps them open; past
 // KEPT_MAX the oldest are forgotten.
-export const open = new Set();
+const open = new Set();
 const KEPT_MAX = 200;
 
 export function kept(key) {

@@ -188,3 +188,20 @@ func TestStateTableMatchesTheOldMaps(t *testing.T) {
 		t.Error("Ticks has extra keys")
 	}
 }
+
+// TestStateTableEventsSetOneState holds the table to one row per event: an
+// event in two rows' Events (or two rows' Daemon) would make StateFor
+// (DaemonStateFor) answer by map order.
+func TestStateTableEventsSetOneState(t *testing.T) {
+	for _, list := range []func(StateRow) []string{func(r StateRow) []string { return r.Events }, func(r StateRow) []string { return r.Daemon }} {
+		seen := map[string]string{}
+		for s, r := range States {
+			for _, e := range list(r) {
+				if was, ok := seen[e]; ok {
+					t.Fatalf("event %s sets both %s and %s", e, was, s)
+				}
+				seen[e] = s
+			}
+		}
+	}
+}

@@ -1,6 +1,6 @@
 // routines: the routines panel.
 import { $, badge, card, check, clock, el, fetchJSON, keepOpen, loader, readState } from "./core.js";
-import { list } from "./overview.js";
+
 import { checkSoon } from "./check.js";
 
 function instanceSub(i) {

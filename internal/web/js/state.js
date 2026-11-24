@@ -1,7 +1,6 @@
 // state: the page's shared state, the node-state table as the page reads
 // it (from /js/mesh-table.js, rendered from internal/mesh) and stateOf.
 import { STATES, TICKS } from "./mesh-table.js";
-import { tree } from "./overview.js";
 
 const stateRows = Object.entries(STATES);
 const byEvent = (key) => Object.fromEntries(stateRows.flatMap(([s, r]) => r[key].map((e) => [e, s])));

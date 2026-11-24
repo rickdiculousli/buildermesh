@@ -40,7 +40,7 @@ const VIEWS = [
     reads: () => [sessionPage], poll: () => [] },
 ];
 
-export function shown() {
+function shown() {
   return VIEWS.find((v) => v.name === pages.view) || VIEWS[0];
 }
 

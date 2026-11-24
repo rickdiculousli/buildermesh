@@ -1,6 +1,6 @@
 // timeline: the fleet timeline's data and drawLanes, which the overview,
 // the timeline tab, the lead page and the session page draw with.
-import { $, axisStep, el, fetchJSON, fit, hm, lastToken, loader, md, narrowQ, open, phone, readState, spanText, svg, svgText, svgTspan } from "./core.js";
+import { $, axisStep, el, fetchJSON, fit, hm, lastToken, loader, md, narrowQ, phone, readState, spanText, svg, svgText, svgTspan } from "./core.js";
 import { WINDOWS, hubNow, mesh, tl } from "./state.js";
 import { hover } from "./drawer.js";
 import { agentHref, agentName, flagMap, fmtTok, usageNow } from "./tokens.js";

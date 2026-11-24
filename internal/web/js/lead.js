@@ -1,11 +1,11 @@
 // lead: the lead page.
 import { $, badge, bare, card, check, dur, el, fetchJSON, field, hm, keepOpen, lastToken, loader, md, readState, stamp } from "./core.js";
-import { hubNow, pages, specs, tl, tok } from "./state.js";
+import { hubNow, pages, tl, tok } from "./state.js";
 import { clampRow, describe, frameKey } from "./drawer.js";
 import { drawLanes, replayLive } from "./timeline.js";
 import { ctxChart, fmtTok, kindsRead } from "./tokens.js";
 import { checkSoon } from "./check.js";
-import { drawAll, shown } from "./main.js";
+import { drawAll } from "./main.js";
 
 const TIMELINE_MAX = 200;
 
@@ -159,6 +159,7 @@ export const lead = loader(async (path) => {
 }, {
   key: () => pages.lead,
   show: (r, path) => {
+    if (!path) return; // a re-read queued as the route left the lead page
     if (r.u.body || r.u.status === 404) tok.lead = { path, vs: r.vs, data: r.u.body };
     if (r.t.body) {
       r.t.body.lanes = r.t.body.lanes || [];

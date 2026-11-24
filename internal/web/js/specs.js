@@ -1,5 +1,5 @@
 // specs: the specs read, the burndowns and the specs tab.
-import { $, chartRoot, el, every, fetchJSON, hm, legendOf, loader, md, readState, svg, svgText, timeAxis, yAxis } from "./core.js";
+import { $, chartRoot, el, fetchJSON, hm, legendOf, loader, md, readState, svg, svgText, timeAxis, yAxis } from "./core.js";
 import { hubNow, specs } from "./state.js";
 import { crosshair, hover } from "./drawer.js";
 import { tally } from "./check.js";
