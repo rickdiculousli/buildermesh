@@ -94,7 +94,7 @@ func Read(ctx context.Context, c *mesh.Client, since time.Time, f Filter) (Repor
 		filters = []string{subject(f.Agent)}
 	}
 	var msgs []Message
-	err := fetch(ctx, c, since, filters, func(data []byte) {
+	err := Fetch(ctx, c, since, filters, func(data []byte) {
 		var m Message
 		if json.Unmarshal(data, &m) == nil { // a message it can't read counts as nothing
 			msgs = append(msgs, m)
@@ -249,9 +249,9 @@ func named(filter, agent string) bool {
 	return len(want) >= 8 && strings.HasPrefix(id, want)
 }
 
-// fetch hands each of the stream's messages on filters from since to each,
+// Fetch hands each of the stream's messages on filters from since to each,
 // oldest first, up to what the stream held when the read began.
-func fetch(ctx context.Context, c *mesh.Client, since time.Time, filters []string, each func([]byte)) error {
+func Fetch(ctx context.Context, c *mesh.Client, since time.Time, filters []string, each func([]byte)) error {
 	st, err := c.JS.Stream(ctx, mesh.StreamUsage)
 	if errors.Is(err, jetstream.ErrStreamNotFound) {
 		return ErrNoStream
@@ -323,7 +323,7 @@ func ReadQuota(ctx context.Context, c *mesh.Client, since time.Time) ([]QuotaRea
 	}
 	newest := map[key]QuotaReading{}
 	at := map[key]time.Time{}
-	err := fetch(ctx, c, since, []string{"bmusage.quota.>"}, func(data []byte) {
+	err := Fetch(ctx, c, since, []string{"bmusage.quota.>"}, func(data []byte) {
 		var r QuotaReading
 		if json.Unmarshal(data, &r) != nil {
 			return
