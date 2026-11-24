@@ -17,7 +17,11 @@
 // two coordinator sessions of runs split by design and exec (one with a
 // subagent, one peaking at 420k), and a day of claude and codex quota
 // readings every five minutes (claude's plan losing its five-hour window
-// halfway, so the strip reads none). For the flags (108) it adds app-batch-1, four
+// halfway, so the strip reads none), and a day of two other boxes' minutes
+// on bmusage.host (box-a on Linux with pressure, mac-b on macOS with its
+// pressure level), their CPU and memory split among the seeded agents
+// while each works; the seeded serve's own daemon answers box seed's live
+// reads from this box's real processes. For the flags (108) it adds app-batch-1, four
 // S leads done three days ago that with app-0039 make the S baseline;
 // app-0041 (S) reads past 2.5x that median and is refused three times
 // (overworking), and app-0045's four subagents read 140M in the last 40
@@ -41,6 +45,7 @@ import (
 
 	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/rickdiculousli/buildermesh/internal/hoststat"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/usage"
 )
@@ -277,6 +282,9 @@ func seed(ctx context.Context, url string, leads int) error {
 		return err
 	}
 	if err := seedUsage(ctx, c, now); err != nil {
+		return err
+	}
+	if err := seedHosts(ctx, c, now); err != nil {
 		return err
 	}
 	return seedQuota(ctx, c, now)
@@ -566,6 +574,72 @@ func seedQuota(ctx context.Context, c *mesh.Client, now time.Time) error {
 			if _, err := c.JS.Publish(ctx, "bmusage.quota.seed", data, jetstream.WithMsgID("seed/quota/"+p.name+"/"+readAt),
 				jetstream.WithExpectStream(mesh.StreamUsage)); err != nil {
 				return fmt.Errorf("quota: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+// seedHosts publishes a day of minutes of two boxes the seeded serve isn't:
+// box-a (Linux, 16 cores, pressure rising with its load) and mac-b (macOS,
+// 10 cores, its pressure level warn for the busiest hour). Each agent uses
+// CPU and memory only inside its working span (minutes ago).
+func seedHosts(ctx context.Context, c *mesh.Client, now time.Time) error {
+	r := rand.New(rand.NewPCG(117, 1))
+	type agent struct {
+		name     string
+		from, to float64 // minutes ago
+		cpu      float64 // cores at its busiest
+		rss      int64
+	}
+	boxes := []struct {
+		host, os string
+		cores    int
+		total    int64
+		agents   []agent
+	}{
+		{"box-a", "linux", 16, 32 << 30, []agent{
+			{"app-0042", 330, 0, 6, 5 << 30}, {"app-0042.api", 305, 200, 3, 2 << 30}, {"app-0041", 300, 0, 4, 3 << 30},
+			{"app-0045", 70, 0, 9, 4 << 30}, {"routine.review.opus-5-5-1", 150, 28, 1.5, 1 << 30}}},
+		{"mac-b", "darwin", 10, 16 << 30, []agent{
+			{"app-0039", 245, 90, 3, 2 << 30}, {"session.seed.ec03a02c-5eed-4a1b-9c0d-000000000001", 335, 0, 1, 1 << 30}}},
+	}
+	start := now.Truncate(time.Minute)
+	for _, b := range boxes {
+		for m := 24 * 60; m >= 1; m-- {
+			at := start.Add(-time.Duration(m) * time.Minute)
+			wave := 0.6 + 0.4*math.Sin(float64(m)/37)
+			mm := hoststat.Minute{Host: b.host, OS: b.os, At: at.UTC().Format(time.RFC3339), Cores: b.cores,
+				MemTotal: b.total, Agents: map[string]hoststat.Use{}}
+			var cpu float64
+			var mem int64
+			for _, a := range b.agents {
+				if float64(m) > a.from || float64(m) < a.to {
+					continue
+				}
+				u := hoststat.Use{CPU: math.Round(a.cpu*wave*(0.7+0.6*r.Float64())*100) / 100, RSS: a.rss + int64(r.IntN(1<<28))}
+				mm.Agents[a.name] = u
+				cpu, mem = cpu+u.CPU, mem+u.RSS
+			}
+			other := hoststat.Use{CPU: math.Round((0.3+r.Float64()*0.8)*100) / 100, RSS: 3<<30 + int64(r.IntN(1<<29))}
+			mm.Agents[hoststat.Other] = other
+			mm.CPU, mm.MemUsed = math.Round((cpu+other.CPU)*100)/100, mem+other.RSS
+			mm.Load1 = math.Round(mm.CPU*(1+0.3*r.Float64())*100) / 100
+			if b.os == "linux" {
+				over := math.Max(0, mm.CPU-float64(b.cores)*0.5) / float64(b.cores) * 100
+				cp, mp, ip := math.Round(over*2*100)/100, 0.0, math.Round(r.Float64()*3*100)/100
+				mm.Pressure = &hoststat.Pressure{CPU: &cp, Mem: &mp, IO: &ip}
+				mm.SwapUsed = 256 << 20
+			} else {
+				lvl := 1
+				if m >= 120 && m < 180 {
+					lvl = 2
+				}
+				mm.MacPressure = &lvl
+				mm.SwapUsed = 1 << 30
+			}
+			if err := hoststat.Publish(ctx, c, &mm); err != nil {
+				return err
 			}
 		}
 	}
