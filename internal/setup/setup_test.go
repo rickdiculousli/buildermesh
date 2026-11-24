@@ -167,3 +167,27 @@ func TestMarkerIsPerWorktree(t *testing.T) {
 }
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
+
+// A tracked symlink among the inputs counts by its link, as git tracks it,
+// even when it names a directory.
+func TestHashReadsATrackedSymlinkAsItsLink(t *testing.T) {
+	dir, _ := repo(t)
+	ctx := context.Background()
+	os.MkdirAll(filepath.Join(dir, "vendor", "a"), 0o755)
+	os.WriteFile(filepath.Join(dir, "vendor", "a", "f"), []byte("x\n"), 0o644)
+	if err := os.Symlink("../vendor/a", filepath.Join(dir, "web", "link")); err != nil {
+		t.Fatal(err)
+	}
+	gitT(t, dir, "add", ".")
+	gitT(t, dir, "commit", "-qm", "link")
+	s := kind.Setup{Command: "true", Inputs: []string{"web"}}
+	before, err := Hash(ctx, dir, s)
+	if err != nil {
+		t.Fatalf("hash with a linked dir among the inputs: %v", err)
+	}
+	os.Remove(filepath.Join(dir, "web", "link"))
+	os.Symlink("../vendor", filepath.Join(dir, "web", "link"))
+	if after, err := Hash(ctx, dir, s); err != nil || after == before {
+		t.Fatalf("relinked: %v, same hash %v", err, after == before)
+	}
+}

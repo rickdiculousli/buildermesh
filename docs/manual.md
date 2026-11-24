@@ -3400,7 +3400,7 @@ timeout = "10m"                             # the default; the run's process gro
 
 bmesh reads `[setup]` from the commit being worked on (the worktree's file, or the commit's for a job), never from the row. A repo with no `[setup]` runs nothing.
 
-**Current.** A run that succeeds writes `bmesh-setup` into the worktree's own git dir (`git rev-parse --git-dir`, outside the tree): a sha256 of the command and of every tracked file the inputs match, path and content, read from the working tree after the run. The installs are current while that hash matches. Without `inputs`, the hash is the command's alone, so a worktree is current once setup has run in it. A failed run leaves no marker.
+**Current.** A run that succeeds writes `bmesh-setup` into the worktree's own git dir (`git rev-parse --git-dir`, outside the tree): a sha256 of the command and of every tracked file the inputs match, path and content (a symlink's content is its link), read from the working tree after the run. The installs are current while that hash matches. Without `inputs`, the hash is the command's alone, so a worktree is current once setup has run in it. A failed run leaves no marker.
 
 **Where it runs.**
 

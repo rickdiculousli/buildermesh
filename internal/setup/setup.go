@@ -40,8 +40,8 @@ type Error struct {
 func (e *Error) Error() string { return e.Msg }
 
 // Hash is the sha256 of s's command and of every tracked file of dir that
-// s's inputs match (path and content, in path order; a tracked file missing
-// from the tree counts as missing), hex-encoded.
+// s's inputs match (path and content, in path order; a symlink counts by its
+// link text, a tracked file missing from the tree as missing), hex-encoded.
 func Hash(ctx context.Context, dir string, s kind.Setup) (string, error) {
 	h := sha256.New()
 	fmt.Fprintf(h, "command %s\x00", s.Command)
@@ -57,7 +57,10 @@ func Hash(ctx context.Context, dir string, s kind.Setup) (string, error) {
 				continue
 			}
 			sum := "missing"
-			if b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(p))); err == nil {
+			fp := filepath.Join(dir, filepath.FromSlash(p))
+			if l, err := os.Readlink(fp); err == nil {
+				sum = "link " + l // git tracks a link's text; it may name a directory
+			} else if b, err := os.ReadFile(fp); err == nil {
 				d := sha256.Sum256(b)
 				sum = hex.EncodeToString(d[:])
 			} else if !errors.Is(err, os.ErrNotExist) {
