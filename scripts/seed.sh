@@ -15,7 +15,9 @@
 # with Spec: trailers on several days).
 # A run stops the previous one of the same checkout first. Other arguments go
 # to the seeder (scripts/seed), e.g. -leads 6. BMESH_SEED_HTTP sets serve's listen address. Serve reads no
-# transcripts: its Claude Code config dir is an empty one.
+# transcripts: its Claude Code config dir is an empty one. Serve runs in the
+# app repo, which the seeder makes app-0042's worktree, so the hosts tab's
+# live answer has a lead's process (after its first minute's node read).
 set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
@@ -209,6 +211,7 @@ TOML
 detach=
 command -v setsid >/dev/null 2>&1 && detach=setsid
 (
+	cd "$dir/app"
 	XDG_STATE_HOME="$dir/state" BMESH_CONFIG="$dir/serve.toml" CLAUDE_CONFIG_DIR="$dir/claude" BMESH_WEB_DIR=${BMESH_WEB_DIR:-$root/internal/web} \
 		nohup $detach "$dir/bmesh" serve </dev/null >"$dir/serve.log" 2>&1 &
 	echo $! >"$pidfile"
@@ -239,7 +242,7 @@ nats = "$url"
 name = "seed"
 TOML
 
-(cd "$root" && go run ./scripts/seed -nats "$url" -map "http://$addr/" -quota "$dir/quota.json" "$@") || fail "seeding failed"
+(cd "$root" && go run ./scripts/seed -nats "$url" -map "http://$addr/" -quota "$dir/quota.json" -worktree "$dir/app" "$@") || fail "seeding failed"
 printf 'check: node %s/scripts/check.mjs "http://%s/?check=1" 390 844 shot.png\n' "$root" "$addr"
 printf 'cli: BMESH_CONFIG=%s %s --node app-0042 send app-0042.api hi\nserving until %s stop (pid %s, log: %s)\n' \
 	"$dir/cli.toml" "$dir/bmesh" "$0" "$pid" "$dir/serve.log"

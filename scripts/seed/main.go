@@ -28,7 +28,9 @@
 // minutes (runaway); app-0039, app-0041, app-0042 and app-0045 are the live
 // family app-batch-2. -leads N (default 2)
 // adds N-2 working leads, each with one working executor, to look at a
-// crowded map (and long names) on a phone. -again PATH seeds nothing: it
+// crowded map (and long names) on a phone. -worktree DIR makes DIR
+// app-0042's worktree: seed.sh passes the seeded serve's working directory,
+// so the serve's own process reads as that lead's on the hosts tab. -again PATH seeds nothing: it
 // publishes a new ask on the seeded mesh's PATH (one asking or silent, such
 // as docs-0007), so a row dismissed on the map shows again.
 package main
@@ -56,6 +58,7 @@ func main() {
 	leads := flag.Int("leads", 2, "adds this many working leads less two")
 	quota := flag.String("quota", "", "where to write the quota fixture (none when empty)")
 	again := flag.String("again", "", "seed nothing: publish a new ask on this node")
+	worktree := flag.String("worktree", "", "app-0042's worktree: the seeded serve's working directory, so its process is that lead's")
 	flag.Parse()
 	if *again != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -74,7 +77,7 @@ func main() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	if err := seed(ctx, *url, *leads); err != nil {
+	if err := seed(ctx, *url, *leads, *worktree); err != nil {
 		fmt.Fprintln(os.Stderr, "seed:", err)
 		os.Exit(1)
 	}
@@ -85,7 +88,7 @@ func main() {
 // hours.
 const batch1 = 3*24*60 + 300
 
-func seed(ctx context.Context, url string, leads int) error {
+func seed(ctx context.Context, url string, leads int, worktree string) error {
 	c, err := mesh.Connect(ctx, url, "", "hub", "bmesh/seed", false)
 	if err != nil {
 		return err
@@ -93,7 +96,7 @@ func seed(ctx context.Context, url string, leads int) error {
 	defer c.Close()
 	ago := func(m int) string { return time.Now().UTC().Add(-time.Duration(m) * time.Minute).Format(time.RFC3339) }
 	for _, n := range []mesh.Node{
-		{Path: "app-0042", Role: "lead", Repo: "app", Spec: "0042", StartedAt: ago(330), Branch: "bmesh/app-0042",
+		{Path: "app-0042", Role: "lead", Repo: "app", Spec: "0042", StartedAt: ago(330), Branch: "bmesh/app-0042", Worktree: worktree,
 			Runner: mesh.NodeRunner{Kind: "t3", Thread: "thread-0042"}, Model: "claude-opus-5-5", Family: "app-batch-2"},
 		{Path: "app-0042.api", Role: "executor", Repo: "app", Parent: "app-0042", StartedAt: ago(305)},
 		{Path: "app-0042.web", Role: "executor", Repo: "app", Parent: "app-0042", StartedAt: ago(285)},
@@ -621,13 +624,20 @@ func seedHosts(ctx context.Context, c *mesh.Client, now time.Time) error {
 				mm.Agents[a.name] = u
 				cpu, mem = cpu+u.CPU, mem+u.RSS
 			}
+			if limit := float64(b.cores) * 0.88; cpu > limit { // a box can't run more than its cores
+				for a, u := range mm.Agents {
+					u.CPU = math.Round(u.CPU*limit/cpu*100) / 100
+					mm.Agents[a] = u
+				}
+				cpu = limit
+			}
 			other := hoststat.Use{CPU: math.Round((0.3+r.Float64()*0.8)*100) / 100, RSS: 3<<30 + int64(r.IntN(1<<29))}
 			mm.Agents[hoststat.Other] = other
 			mm.CPU, mm.MemUsed = math.Round((cpu+other.CPU)*100)/100, mem+other.RSS
 			mm.Load1 = math.Round(mm.CPU*(1+0.3*r.Float64())*100) / 100
 			if b.os == "linux" {
 				over := math.Max(0, mm.CPU-float64(b.cores)*0.5) / float64(b.cores) * 100
-				cp, mp, ip := math.Round(over*2*100)/100, 0.0, math.Round(r.Float64()*3*100)/100
+				cp, mp, ip := math.Round(math.Min(over*2, 60)*100)/100, 0.0, math.Round(r.Float64()*3*100)/100
 				mm.Pressure = &hoststat.Pressure{CPU: &cp, Mem: &mp, IO: &ip}
 				mm.SwapUsed = 256 << 20
 			} else {
