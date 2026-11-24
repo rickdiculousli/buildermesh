@@ -450,6 +450,29 @@ Roster, signature, `to` and replay failures are published as `bm.daemon.<host>.r
 
 **Removing a repo everywhere.** `bmesh repos remove --checkouts` keeps the boxes it asked and their jobs in `<state dir>/nix/<name>.json` until each has answered.
 
+## Box load
+
+[Manual: Map](manual.md#map)
+
+`internal/hoststat` reads a box's load (117). Every daemon runs one sampler (`hostStatRun`), whatever `[hosts]` says; Windows reads nothing.
+
+**A read.** Linux reads `/proc`: `stat` (busy is every tick but `idle` and `iowait`; cores are the `cpuN` lines), `meminfo` (used `MemTotal - MemAvailable`, swap `SwapTotal - SwapFree`), `loadavg`, `pressure/{cpu,memory,io}` (`some avg10` and `avg60`; a missing file is `null`, never 0), and each `<pid>/stat` (comm up to the last `)`; CPU `utime+stime+cutime+cstime` at 100 ticks a second, so a reaped child's time is its parent's; `starttime`; `rss` pages) and `<pid>/cwd` (another user's process has none), and a `node`'s `cmdline`. macOS runs `ps -axS -o pid,ppid,time,rss,comm` (comm the rest of the line, its base name; `time` cumulative, `-S` summing exited children into their parent), `vm_stat` (used is wired + anonymous − purgeable + occupied by compressor pages, times the page size its header prints), `sysctl hw.ncpu hw.memsize vm.swapusage vm.loadavg kern.memorystatus_vm_pressure_level` (a key it doesn't know is left out), `lsof -a -d cwd -Fpn -u <uid>` (exit 1, a pid gone, keeps its output) and `ps -o pid=,args= -p <the node pids>`. No args leave the box.
+
+**A diff.** Two series each keep their previous read: the minute's, and the live one's. A process's CPU is its time less its previous read's, less the last time read of each of its children gone since (whose time moved into it), over the seconds between; a process not read before counts all its time; a pid is the same process while its start time is (on macOS, which has none, its comm). The box's CPU is Linux's busy ticks over all ticks times the cores, and on macOS its processes' sum (kernel time isn't counted). A live read diffs against the newest previous read of either series at least 5 seconds old (else the oldest younger one); within 5 seconds of the last live answer it serves that answer again; with no previous read it answers `null`.
+
+**Attribution**, each process's own agent, the first rule that holds, as usage names agents (Which agent a file is):
+1. the node on this box not `done` (`hoststat.LiveNodes`, read once a minute and reused by live reads) whose worktree (symlinks resolved) is the process's working directory or holds it on a path-separator boundary, the deepest, then the newest by `started_at`;
+2. the routine instance whose checkout holds it (`usage.RoutineOf`, the usage rule 4);
+3. for Claude Code (comm `claude`, or `node` whose args hold `claude-code` or a `claude` path), `session.<host token>.<sessionId>` from `<Claude Code config dir>/sessions/<pid>.json`, unless its `procStart` names another start time; else `repo:<repo>` by `usage.RepoOf` (the usage rule 5, cached per directory), unless that is `other`.
+
+A process with none takes its nearest ancestor's (up to 64 parents), else `other`.
+
+**The minute** is published to `bmusage.host.<host>` on `bm-usage`, `Nats-Msg-Id` `<host>/host/<at>`: `{host, os, at, cores, cpu, load1, mem_used, mem_total, swap_used, pressure: {cpu, mem, io} | null (each some avg60), mac_pressure | null (1 normal, 2 warn, 4 critical), agents: {<agent>: {cpu, rss}}}`, CPU in cores to two decimals, memory in bytes, `rss` an agent's processes' resident memory summed (shared pages count twice), `other` the box's CPU and memory less the agents'. The first read publishes nothing; a failed publish is dropped; a host that is no subject token publishes nothing.
+
+**Live.** From its first read, the daemon answers core NATS requests on `bmhosts.load.<host>` with the live read: the minute's fields, `pressure10` (avg10), `procs` (the top 15 by CPU and the top 15 by memory, merged, by CPU: `{pid, ppid, comm, cpu, rss, agent}`) and `totals` (`{<agent>: {procs, cpu, rss}}`, `other`'s too), or `null`. Nothing is read live while no one asks.
+
+`go run ./scripts/hostload` reads the box as the sampler does, two reads 5 seconds apart, matching against the hub's `bm-nodes` and `bm-state` read-only, and prints one live answer; it needs `[mesh] nats` set (an embedded hub is serve's alone).
+
 ## Names
 
 [Manual: Names](manual.md#names)
@@ -460,7 +483,7 @@ The streams, subjects and buckets built on node paths:
 |---|---|---|
 | stream | `bm-mesh` | `bm.>` (30 days, file store, 2m duplicate window) |
 | stream | `bm-usage` | `bmusage.>` (30 days, file store, 2m duplicate window; every agent's token use, see Usage) |
-| usage subject | | `bmusage.node.<path>` (a node's calls), `bmusage.session.<host>.<session id>` (a coordinator session's), `bmusage.quota.<host>` (a box's quota readings, see Map) |
+| usage subject | | `bmusage.node.<path>` (a node's calls), `bmusage.session.<host>.<session id>` (a coordinator session's), `bmusage.quota.<host>` (a box's quota readings, see Map), `bmusage.host.<host>` (a box's load each minute, see Box load) |
 | event subject | | `bm.<path>.<event>` |
 | inbox subject | | `bm.inbox.<path>` |
 | daemon subject | | `bm.daemon.<host>.<event>` (`started`, `update`, `wake`, `silent`, `landing`, `land-refused`, `land-withdrawn`, `runaway`, `digest`, `push`, `push-failed`, `refused`, `held`, `level`, `registry`, `fixer`, `wiped`, `settled`) |
@@ -470,6 +493,7 @@ The streams, subjects and buckets built on node paths:
 | routine event subject | | `bm.routine.<kind>.<instance>.<event>` (`started`, `progress`, `done`) |
 | feedback subject | | `bm.feedback.<family>` (a build family's pending feedback; no consumer, drained by purge) |
 | host job subject | | `bm.inbox.host.<host>` (signed jobs for a box; see Hosts) |
+| load request subject | | `bmhosts.load.<host>` (core NATS request/reply, never stored: a box's live load; see Box load) |
 | consumer per host | `inbox-host--<host>` | filter `bm.inbox.host.<host>`; MaxAckPending 1, AckWait 10m |
 | host reply subject | | `bm.hostreply.<caller>.<job id>` |
 | join subject | | `bmhosts.join.<id>` (core NATS, outside the stream: an invite's request and reply) |
@@ -653,7 +677,7 @@ Under `?check=1` the title carries:
 `/api/usage?since=1h|6h|24h|7d` (default `6h`; any other value is a 400) is built from `usage.Read` over the window with every agent's calls, the timeline's cached read of the nodes and their states, and the window's quota readings, and is cached 30 seconds per window (requests that miss together wait for one build). It serves, every time in unix seconds:
 
 - `from`, `to`; `read` and `out`, the window's calls summed (read is input, cache read and cache write); `hour`, the read of the calls in the last hour;
-- `agents`: per agent with calls in the window, most read first, `{agent, role, host, repo, size, state, live, main, sub, read, out, design, exec, peak, last_ctx, first, last, calls, compactions, flags}`. `flags` is the rules the agent trips (Flags, below), `[{level, rule, words}]`, the worst first, `[]` for none. `main` and `sub` are the four kinds (`{in, cr, cw, out}`). `size` is a node's spec's frontmatter `size`, read from its repo's ledger on the local `origin/main` as the operator rows read it. `state` is a node's `bm-state` state (`idle` with none), or for a session `live` when its last call is within an hour of `to`. `live` is a node `working`, `asking`, `blocked`, `silent`, `landing` or `held`, or a live session. `design` and `exec` are a coordinator's read by phase, main and subagents;
+- `agents`: per agent with calls in the window, most read first, `{agent, role, host, repo, size, state, live, main, sub, read, out, design, exec, peak, last_ctx, first, last, calls, compactions, flags, cpu, peak_mem}`. `cpu` is the agent's mean cores over the window's minutes on `bmusage.host.>` that name it (its CPU summed across boxes per minute) and `peak_mem` the largest of its per-minute memory sums, both read from `/api/hosts`' cached history; both `null` for an agent in no minute. `flags` is the rules the agent trips (Flags, below), `[{level, rule, words}]`, the worst first, `[]` for none. `main` and `sub` are the four kinds (`{in, cr, cw, out}`). `size` is a node's spec's frontmatter `size`, read from its repo's ledger on the local `origin/main` as the operator rows read it. `state` is a node's `bm-state` state (`idle` with none), or for a session `live` when its last call is within an hour of `to`. `live` is a node `working`, `asking`, `blocked`, `silent`, `landing` or `held`, or a live session. `design` and `exec` are a coordinator's read by phase, main and subagents;
 - `roles`: `{step, from, series:{lead, sub, design, exec, routine}}`, each series the read per bucket of `step` seconds (60 on `1h`, 600 on `6h`, 1800 on `24h`, 10800 on `7d`) from `from`, the window's start floored to a multiple of `step`. A call goes to its agent's phase when the agent is a coordinator (`design` when it has none), to `routine` for a routine instance, to `sub` for an executor, and otherwise to `sub` when it is a subagent's and `lead` when it is the main thread's;
 - `sessions`: per coordinator session with calls in the window, by first call, `{agent, host, id, repo, spans, design, exec, peak, first, last}`. Its `spans` (`[[from, to, phase]]`) are its busy spans: its calls, main and subagents, in order, make a run while each is under 5 minutes after the one before; within a run a span ends where a call's phase differs, at that call, and the next begins there; a run's last span ends at its last call;
 - `quota`: the window's quota readings (below);
@@ -662,6 +686,10 @@ Under `?check=1` the title carries:
 - `outliers`: every lead and fixer node with use in the 30 days, whatever the window, `[{agent, role, repo, size, live, read, wall, peak, turns, level, flags, vs}]`: `wall` its seconds from `started_at` to its `done` state's `at` (to `to` while live), `turns` its main-thread calls, `level` its worst flag's level, `vs` the done run of the baseline it is judged by nearest that baseline's median read (`""` with none).
 
 `/api/usage/agent?agent=<path|session.<host>.<id>>[&since=1h|6h|24h|7d][&vs=<agent>]` serves one agent over the window, or over the last 30 days without `since`: `agent` (as in `agents`), `calls` (every call in order, main and subagents, `{at, m, ctx, out, sub, phase, cause}`, `m` the minutes since the agent's first call), `marks` (its compactions, `{at, sub}`), `events` (a node's `progress`, `ready`, `refused` and `done` in the window, `{at, kind, text}`, read from the timeline's cached read; none for a session), `context`, `subs` (per subagent `{id, desc, phase, calls, read, out}`, most read first, its phase that of its first call) and, for a session, `spans`. With `vs`, `vs` carries the second agent's `agent`, `calls`, `marks` and `events`, its `m` on its own first call, so both line up on minutes since start. A missing `agent` is a 400; an agent with no calls in the window a 404.
+
+#### Hosts on the map
+
+`/api/hosts?since=1h|6h|24h|7d` (default `6h`; any other value is a 400) reads `bmusage.host.>` over the window (`hoststat.ReadHistory`), cached 30 seconds per window (requests that miss together wait for one read), and serves `{from, to, step, host, boxes:[{host, last, points}]}`: `host` the serving box, first in `boxes`, the rest by name, each box with a minute in the window (and the serving box with none). `last` is the box's newest minute in the window (null with none). `points` are its minutes in buckets of `step` (as `roles`' steps: 60, 600, 1800, 10800 seconds), only the buckets that hold one, each `{at, n, cpu, load1, mem_used, swap_used, pressure, mac_pressure, agents}`: the means over its `n` minutes (an agent missing from a minute counts 0 there, so `agents` with `other` sum to the box), each pressure the mean over the minutes that have it, `mac_pressure` the worst. With `live=1` (never cached) each box also has `live`: the serving box and every box whose `last` is within 3 minutes of `to` are asked on `bmhosts.load.<host>` in parallel, 2 seconds in all, and a box that doesn't answer (asleep, or a release before the sampler: no responders) or isn't asked is `null`. An answer is decoded and encoded again, so only the live answer's fields reach the page, and one naming another host is dropped.
 
 #### Flags
 
