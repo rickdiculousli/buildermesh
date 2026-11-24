@@ -55,7 +55,7 @@ func TestQueueFillsTreeAndDedupesByID(t *testing.T) {
 	if err != nil || info.Config.MaxAckPending != 3 || info.Config.AckWait != time.Minute {
 		t.Fatalf("consumer overwritten: %+v %v", info.Config, err)
 	}
-	msgs, err := Fetch(ctx, c, RoutinePath("verify"), true)
+	msgs, err := Fetch(ctx, c, RoutinePath("verify"))
 	if err != nil || len(msgs) != 1 {
 		t.Fatalf("fetch %v %v", msgs, err)
 	}

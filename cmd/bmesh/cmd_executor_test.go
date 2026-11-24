@@ -199,7 +199,7 @@ func TestExecutorDoneReportsWorktreeBranch(t *testing.T) {
 				t.Fatalf("%s: %d %q", ev, code, errs)
 			}
 		}
-		msgs, err := mesh.Fetch(ctx, c, lead, true)
+		msgs, err := mesh.Fetch(ctx, c, lead)
 		if err != nil || len(msgs) != 1 || msgs[0].Report == nil {
 			t.Fatalf("lead inbox %+v %v", msgs, err)
 		}

@@ -1896,7 +1896,7 @@ func TestLandStopsForWhatNeedsTheLead(t *testing.T) {
 		out, errb, res := landBG(t, "app-012")
 		queuedJob(t, c, ctx, out, 1)
 		sendTo(t, c, ctx, "app-012", mesh.Message{From: "operator", Kind: "message", Text: "two reviews"})
-		if _, err := mesh.Fetch(ctx, c, p, true); err != nil {
+		if _, err := mesh.Fetch(ctx, c, p); err != nil {
 			t.Fatal(err)
 		}
 		landEnds(t, res, 3, out, errb)

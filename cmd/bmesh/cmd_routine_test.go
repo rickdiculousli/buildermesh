@@ -46,7 +46,7 @@ func TestQueueAnswersFromRecordEvenWhenFailed(t *testing.T) {
 		t.Fatalf("queue: %d %q %q", code, out, errs)
 	}
 	me, _ := mesh.ParsePath("app-001")
-	msgs, err := mesh.Fetch(ctx, c, me, true)
+	msgs, err := mesh.Fetch(ctx, c, me)
 	if err != nil || len(msgs) != 1 || msgs[0].Kind != "reply" || msgs[0].Reply == nil {
 		t.Fatalf("inbox %+v %v", msgs, err)
 	}
@@ -122,7 +122,7 @@ func TestQueueReviewFromALeadCarriesItsSpec(t *testing.T) {
 		if out, errs, code := runCLI(t, as("app-001"), "routine", "queue", "review", "--text", text); code != 0 || !strings.HasPrefix(out, "queued ") {
 			t.Fatalf("queue %q: %d %q %q", text, code, out, errs)
 		}
-		msgs, err := mesh.Fetch(ctx, c, mesh.RoutinePath("review"), false)
+		msgs, err := mesh.Pending(ctx, c, mesh.RoutinePath("review"))
 		if err != nil || len(msgs) == 0 || msgs[len(msgs)-1].Job == nil {
 			t.Fatalf("jobs %+v %v", msgs, err)
 		}
@@ -155,7 +155,7 @@ func TestQueueCarriesItsEffort(t *testing.T) {
 	if out, errs, code := runCLI(t, as("app-001"), "routine", "queue", "review", "--effort", "high"); code != 0 || !strings.HasPrefix(out, "queued ") {
 		t.Fatalf("queue: %d %q %q", code, out, errs)
 	}
-	msgs, err := mesh.Fetch(ctx, c, mesh.RoutinePath("review"), false)
+	msgs, err := mesh.Pending(ctx, c, mesh.RoutinePath("review"))
 	if err != nil || len(msgs) != 1 || msgs[0].Job == nil || msgs[0].Job.Effort != "high" {
 		t.Fatalf("job %+v %v: want effort high", msgs, err)
 	}
@@ -260,7 +260,7 @@ func queuedRepo(t *testing.T, c *mesh.Client, ctx context.Context) string {
 	if code != 0 || !strings.HasPrefix(out, "queued ") {
 		t.Fatalf("queue: %d %q %q", code, out, errs)
 	}
-	msgs, err := mesh.Fetch(ctx, c, mesh.RoutinePath("verify"), true)
+	msgs, err := mesh.Fetch(ctx, c, mesh.RoutinePath("verify"))
 	if err != nil || len(msgs) != 1 || msgs[0].Job == nil {
 		t.Fatalf("kind inbox %+v %v", msgs, err)
 	}

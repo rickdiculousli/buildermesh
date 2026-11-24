@@ -1634,7 +1634,7 @@ Reads this node's unread messages and acks them. Leads and executors run it when
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--peek` | off | leave the messages unread |
+| `--peek` | off | list the messages without taking them, so they stay unread |
 | `--json` | off | print every message whole, one JSON object per line |
 
 **What it does.** It returns what the inbox holds at once. When the node has a hold at the gate `now`, it prints that hold first, on its own line, on every read while the hold stands (see [Holds](#holds)).
@@ -1646,7 +1646,7 @@ Reads this node's unread messages and acks them. Leads and executors run it when
 - A routine's reply: `<at> <from>: reply to job <id>: <kind> ok|fail, <n> lines; bmesh routine wait <id> prints it` (see [`bmesh routine wait`](#bmesh-routine-wait)).
 - Nothing waiting: `inbox: empty` (nothing under `--json`).
 
-A reply [`bmesh routine wait`](#bmesh-routine-wait) found is not printed by `inbox` again. Under `--json`, an executor's report carries its `report` field (see [What reaches the lead](#bmesh-started-progress-blocked-ask-done)).
+A reply [`bmesh routine wait`](#bmesh-routine-wait) found is not printed by `inbox` again (`--peek` lists it while an older message waits unread). A read is done when `inbox` returns: the next `inbox`, from any process, sees what it took gone and what it left still there. Under `--json`, an executor's report carries its `report` field (see [What reaches the lead](#bmesh-started-progress-blocked-ask-done)).
 
 **Refusals.**
 

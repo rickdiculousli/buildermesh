@@ -213,7 +213,9 @@ func FetchMatch(ctx context.Context, c *Client, p Path, match func(Message) bool
 		if i == hit {
 			err = m.DoubleAck(ctx) // the caller acts on it, so be sure it is gone
 		} else {
-			err = m.Nak()
+			// A Nak the server confirms (jetstream has no DoubleNak), so a
+			// read right after finds the message back.
+			_, err = c.NC.RequestWithContext(ctx, m.Reply(), []byte("-NAK"))
 		}
 		if err != nil {
 			return Message{}, false, err

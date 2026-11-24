@@ -298,7 +298,7 @@ func TestFixLeadReportsToItsFixer(t *testing.T) {
 			}
 		}
 	}
-	msgs, err := mesh.Fetch(ctx, c, fixer, true)
+	msgs, err := mesh.Fetch(ctx, c, fixer)
 	if err != nil || len(msgs) != 2 || msgs[0].Text != "ask from demo-030: which db?" || msgs[1].Text != "blocked from demo-030: no db" ||
 		msgs[1].Report == nil || msgs[1].Report.Event != "blocked" {
 		t.Fatalf("fixer inbox %+v %v", msgs, err)

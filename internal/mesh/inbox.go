@@ -67,9 +67,10 @@ func Send(ctx context.Context, c *Client, m Message) (dup bool, err error) {
 }
 
 // Fetch pulls up to 100 messages from p's inbox, what it holds now without
-// waiting for more, acking them when ack and returning them to the inbox
-// otherwise.
-func Fetch(ctx context.Context, c *Client, p Path, ack bool) ([]Message, error) {
+// waiting for more, and acks them, each ack confirmed by the server so a read
+// right after (another process's) sees them gone. Pending reads without
+// taking.
+func Fetch(ctx context.Context, c *Client, p Path) ([]Message, error) {
 	if err := ensureAnyInbox(ctx, c, p); err != nil {
 		return nil, err
 	}
@@ -84,7 +85,6 @@ func Fetch(ctx context.Context, c *Client, p Path, ack bool) ([]Message, error) 
 	if err != nil {
 		return nil, err
 	}
-	// Settle after the batch ends: a Nak inside it would redeliver into it.
 	var msgs []jetstream.Msg
 	var out []Message
 	for m := range batch.Messages() {
@@ -99,13 +99,7 @@ func Fetch(ctx context.Context, c *Client, p Path, ack bool) ([]Message, error) 
 		return nil, err
 	}
 	for _, m := range msgs {
-		var err error
-		if ack {
-			err = m.Ack()
-		} else {
-			err = m.Nak()
-		}
-		if err != nil {
+		if err := m.DoubleAck(ctx); err != nil {
 			return out, err
 		}
 	}

@@ -318,7 +318,7 @@ A job is an inbox message (`kind: "job"`) to `routine.<kind>` with the job id as
 
 A reply is an inbox message (`kind: "reply"`) to the requester carrying `{"job","kind","tree","ok","output","result_key","by"}`.
 
-`wait` reads the reply from this node's inbox subject in the stream, not its consumer, so acked messages are found too for the stream's 30 days. It scans that history, then follows the subject until the reply arrives. A reply still unread is acked once found (one no-wait batch from the consumer that acks it and returns every other message unread), so no wake follows and `inbox` doesn't print it again; one further back than 100 unread messages stays unread and wakes the node once. The kind of a job id is looked up in the kinds' inboxes for the `--timeout` default.
+`wait` reads the reply from this node's inbox subject in the stream, not its consumer, so acked messages are found too for the stream's 30 days. It scans that history, then follows the subject until the reply arrives. A reply still unread is acked once found (one no-wait batch from the consumer that acks it and returns every other message unread, each ack and NAK confirmed by the server before `wait` returns), so no wake follows and `inbox` doesn't print it again; one further back than 100 unread messages stays unread and wakes the node once. The kind of a job id is looked up in the kinds' inboxes for the `--timeout` default.
 
 ### Setup
 

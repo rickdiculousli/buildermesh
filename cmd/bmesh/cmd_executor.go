@@ -364,7 +364,7 @@ func (a *app) cmdExecutorRemove(args []string) error {
 	}
 	// Its unread mail would otherwise reach the next executor of this name.
 	if p, err := mesh.ParsePath(path); err == nil {
-		if _, err := mesh.Fetch(ctx, a.client, p, true); err != nil {
+		if _, err := mesh.Fetch(ctx, a.client, p); err != nil {
 			return err
 		}
 	}

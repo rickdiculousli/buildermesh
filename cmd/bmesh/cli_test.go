@@ -399,7 +399,7 @@ func TestExecutorAskGoesToParent(t *testing.T) {
 		t.Fatalf("ask: %d %q %q", code, out, errs)
 	}
 	lead, _ := mesh.ParsePath("app-012")
-	msgs, err := mesh.Fetch(ctx, c, lead, true)
+	msgs, err := mesh.Fetch(ctx, c, lead)
 	if err != nil || len(msgs) != 1 || msgs[0].Kind != "message" || msgs[0].From != "app-012.alpha" ||
 		msgs[0].Text != "ask from app-012.alpha: which db?" {
 		t.Fatalf("lead inbox %+v %v", msgs, err)
@@ -420,7 +420,7 @@ func TestExecutorAskGoesToParent(t *testing.T) {
 	if n, err := mesh.Unread(ctx, c, lead); err != nil || n != 1 {
 		t.Fatalf("lead unread after retry and a new ask: %d %v", n, err)
 	}
-	if msgs, err := mesh.Fetch(ctx, c, lead, true); err != nil || len(msgs) != 1 || msgs[0].Text != "ask from app-012.alpha: which port?" {
+	if msgs, err := mesh.Fetch(ctx, c, lead); err != nil || len(msgs) != 1 || msgs[0].Text != "ask from app-012.alpha: which port?" {
 		t.Fatalf("lead inbox %+v %v", msgs, err)
 	}
 	// A lead's ask stays its own: nothing is sent anywhere.
@@ -486,7 +486,7 @@ func TestExecutorDoneAndBlockedReportToParent(t *testing.T) {
 	}
 	run("started")
 	run("blocked", "--text", "no db")
-	msgs, err := mesh.Fetch(ctx, c, lead, true)
+	msgs, err := mesh.Fetch(ctx, c, lead)
 	if err != nil || len(msgs) != 1 || msgs[0].Kind != "report" || msgs[0].From != "app-012.alpha" ||
 		msgs[0].Text != "blocked from app-012.alpha: no db" || !strings.HasPrefix(msgs[0].ID, "blocked-app-012.alpha-") ||
 		msgs[0].Report == nil || *msgs[0].Report != (mesh.Report{Event: "blocked", From: "app-012.alpha"}) {

@@ -91,7 +91,12 @@ func (a *app) cmdInbox(args []string) error {
 			fmt.Fprintln(a.stdout, line)
 		}
 	}
-	msgs, err := mesh.Fetch(ctx, a.client, p, !*peek)
+	// A peek reads the stream and takes nothing, so the next read finds all.
+	read := mesh.Fetch
+	if *peek {
+		read = mesh.Pending
+	}
+	msgs, err := read(ctx, a.client, p)
 	if err != nil {
 		return err
 	}
