@@ -444,11 +444,12 @@ func (a *app) cmdHostsInvite(args []string) error {
 		return err
 	}
 	inv.Secure, inv.Accept, inv.Replace = *secure, acceptList(*accept), *replace
-	fmt.Fprintf(a.stdout, "invite for %s: %s\n", name, inv.Code())
-	fmt.Fprintf(a.stdout, "good once, until %s: on %s run `bmesh init --hosts` and type it at its prompt; waiting\n",
-		inv.Expires.Local().Format("15:04"), name)
 	var published hosts.Roster
-	_, err = hosts.Serve(ctx, a.client.NC, inv, func(req hosts.JoinRequest) (json.RawMessage, string, error) {
+	_, err = hosts.Serve(ctx, a.client.NC, inv, func() {
+		fmt.Fprintf(a.stdout, "invite for %s: %s\n", name, inv.Code())
+		fmt.Fprintf(a.stdout, "good once, until %s: on %s run `bmesh init --hosts` and type it at its prompt; waiting\n",
+			inv.Expires.Local().Format("15:04"), name)
+	}, func(req hosts.JoinRequest) (json.RawMessage, string, error) {
 		if err := b.sync(ctx, a); err != nil {
 			return nil, "", fmt.Errorf("roster: %w", err)
 		}

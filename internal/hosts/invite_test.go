@@ -45,12 +45,16 @@ func serve(t *testing.T, nc *nats.Conn, inv Invite, acceptErr error) (<-chan ser
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	out := make(chan served, 1)
+	listening := make(chan struct{})
 	go func() {
-		req, err := Serve(ctx, nc, inv, accept)
+		req, err := Serve(ctx, nc, inv, func() { close(listening) }, accept)
 		out <- served{req, err}
 	}()
-	// Let the subscription reach the server before anyone joins.
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-listening:
+	case s := <-out:
+		t.Fatalf("serve ended before listening: %v", s.err)
+	}
 	return out, &calls
 }
 

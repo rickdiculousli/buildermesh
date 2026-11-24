@@ -179,7 +179,9 @@ func sealReply(key []byte, rep JoinReply, reqSalt string) ([]byte, error) {
 const maxBadRequests = 3
 
 // Serve answers join requests for inv on nc until the invite is burned, ctx
-// ends or inv.Expires passes, and returns the request it burned on.
+// ends or inv.Expires passes, and returns the request it burned on. It
+// calls listening once the server has its subscription: a join sent before
+// that finds no responder, so the code is shown only then.
 // A request whose MAC fails is dropped without burning; the third failure
 // burns the invite (error "invite <id> burned after 3 bad requests").
 // The first request whose MAC verifies burns it: then the name must equal
@@ -187,7 +189,7 @@ const maxBadRequests = 3
 // it does, accept is called and its roster and admin key, or its error,
 // are the reply. The reply is MACed. A refused request is returned with
 // the refusal as the error. After expiry: error "invite <id> expired".
-func Serve(ctx context.Context, nc *nats.Conn, inv Invite,
+func Serve(ctx context.Context, nc *nats.Conn, inv Invite, listening func(),
 	accept func(JoinRequest) (roster json.RawMessage, adminKey string, err error)) (JoinRequest, error) {
 	reqKey, err := macKey(inv.ID, inv.Secret, infoRequest)
 	if err != nil {
@@ -205,6 +207,7 @@ func Serve(ctx context.Context, nc *nats.Conn, inv Invite,
 	if err := nc.Flush(); err != nil {
 		return JoinRequest{}, err
 	}
+	listening()
 	wctx, cancel := context.WithDeadline(ctx, inv.Expires)
 	defer cancel()
 	bad := 0
