@@ -4,7 +4,7 @@ title: The map shows each box's CPU, memory and contention, and which agents' pr
 kind: feature
 size: L
 judge: opus
-status: proposed
+status: accepted
 lens: ux
 proposed_by: coordinator
 proposed_on: 2026-11-23
