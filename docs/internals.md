@@ -328,6 +328,16 @@ A reply is an inbox message (`kind: "reply"`) to the requester carrying `{"job",
 
 **The run** goes through the platform shell in the worktree's root, its own process group (`internal/proc`: `Setsid` on Unix, so no controlling terminal; a new process group on Windows) killed at `timeout` and again after it exits, with the caller's environment and `BMESH_SETUP=1`. Its output is captured whole; a failure carries the last 30 lines. An inline run's setup is bounded by its own timeout, not the command's one-minute deadline. The daemon runs a job's setup under its loop's context, so a stopping daemon kills it and hands the job back.
 
+### Checkups
+
+[Manual: Checkups](manual.md#checkups)
+
+**The watcher** is `proc.Watch` (`internal/proc`): the run's output writer, beside its captured buffer (and the job's `Out`, an inline run's live writer), counting bytes and `\n`s and keeping the line being printed (up to 640 bytes) and the newest non-empty one (a `\r` ends a line as `\n` does, so a progress meter's newest frame is the newest line). `proc.Run` starts the command, then the watch on its pid, which `proc.Group` made the leader of its own group, and stops it once `Wait` returns, so no checkup is reported after. It reads the group (`hoststat.ReadGroup`) once at start and at each tick of `proc.Every(timeout)` (`proc.Cadence`, 2m, or `proc.LongCadence`, 5m, for a timeout of an hour or more; tests shorten them). The CPU since the last read is `Group.CPUSince`: on Linux each `/proc/<pid>/stat` whose `pgrp` (field 5) is the group, utime + stime + cutime + cstime; on macOS `ps -axS -o pgid,pid,ppid,time,rss,comm` filtered to the group; per pid, less its last read, less the last read time of each child gone since (its time is in its parent's now), a new pid counting all its time. A checkup is quiet when no byte came and that CPU is under 1% of the time since the last checkup; a failed read is never quiet; Windows (`hoststat.ErrUnsupported`) sets `NoCPU`, and `Checkup.Stalled` (two quiet in a row) is never true there.
+
+**Callers.** `instance.Job.Checkup` (the daemon sets it for a command kind's job, `runKind` for an inline one unless `leaseWait.noCheckups`, which `land` sets) and `setup.Options.Checkup`. The daemon's job checkup is a `progress` event of the instance, `job <id> running <checkup>`, with `to` the requester, so `Activity.ObserveStored` counts it for the requester; `jobStartRE`, `jobEndRE`, `jobMsRE` and `jobDoneRE` don't match it. A job's setup checkup goes to the daemon's log, `routines: setup <checkup> path=<instance>`.
+
+**`bmesh run`** (`cmd/bmesh/cmd_run.go`) starts the command itself, so its timer and signal handler start only once `cmd.Process` is set. A stall (the watch's report) or the timeout sends SIGQUIT to the group (`proc.QuitGroup`; a kill on Windows) and arms a SIGKILL `runQuitGrace` (10 s) later, which is stopped once the command is reaped, since its pid may be reused after the final `KillGroup`. A node is resolved with `identity` (with a 10 s bound); any error, no node or no hub, publishes nothing. The `run` event is `bm.<node>.run`, `{"from","event":"run","text","at","run":{"prog","key","since","lines","cpu","quiet","end"}}`: `cpu` and `quiet` in whole seconds, `end` one of `ok`, `exit <n>`, `stalled`, `timed out`, `interrupted`. `run` is in no state's `Events`, so it moves no state, and `Activity.Observe` counts it as the node's.
+
 ### Leases
 
 [Manual: Leases](manual.md#leases)
@@ -729,6 +739,8 @@ The tiles are computed on every render: `Tokens read` and `Last hour` from the w
 #### The recent-events drawer
 
 A chip's hue is a hash of the path's top segment over eight hues; an executor's is a lighter step of its lead's. A chip is labelled without the prefix of an ancestor that has rows of its own (`eng`; the full path in the tooltip). Each node with rows takes a lane, in order of first appearance from the newest row, 14 px apart: a faint line in its hue down the list, its chip at the lane's offset. Past six lanes (three under 700 px) the rest share the last lane, its line grey. Hovering a chip or its line also brightens the line; a pin holds across new events, and clicking another chip moves it.
+
+`landFilter` (`drawer.js`), which the drawer and the lead page's timeline card both read through, drops a run's checkups first: a `bm.<node>.run` frame whose `run` has no `end`, and a `bm.routine.….progress` frame whose text starts `job <id> running `.
 
 #### The needs-you band
 
