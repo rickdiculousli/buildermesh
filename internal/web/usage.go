@@ -46,6 +46,8 @@ type UsageAgent struct {
 	Calls       int          `json:"calls"`
 	Compactions int          `json:"compactions"`
 	Flags       []usage.Flag `json:"flags"` // the rules it trips (108), the worst first
+	CPU         *float64     `json:"cpu"`      // mean cores over the window's minutes it has processes in (117); null for none
+	PeakMem     *int64       `json:"peak_mem"` // its processes' largest per-minute resident memory
 }
 
 // Roles is the read per bucket of each role series.
@@ -304,7 +306,7 @@ func (s *server) usageAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, e.v)
 		return
 	}
-	v, err := s.usageView(r, now, span, roleStep[key])
+	v, err := s.usageView(r, now, key, span, roleStep[key])
 	if err != nil {
 		fail(w, err)
 		return
@@ -313,7 +315,7 @@ func (s *server) usageAPI(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, v)
 }
 
-func (s *server) usageView(r *http.Request, now time.Time, span time.Duration, step int64) (UsageView, error) {
+func (s *server) usageView(r *http.Request, now time.Time, key string, span time.Duration, step int64) (UsageView, error) {
 	ctx := r.Context()
 	h, err := s.history(r)
 	if err != nil {
@@ -339,9 +341,14 @@ func (s *server) usageView(r *http.Request, now time.Time, span time.Duration, s
 	for _, name := range []string{"lead", "sub", usage.Design, usage.Exec, "routine"} {
 		v.Roles.Series[name] = make([]int64, n)
 	}
+	hosts, err := s.hostsData(ctx, key)
+	if err != nil {
+		return UsageView{}, err
+	}
 	for _, a := range rep.Agents {
 		calls := rep.ByAgent[a.Agent]
 		row := s.agentRow(ctx, a, calls, h, t)
+		row.CPU, row.PeakMem = hosts.uses[a.Agent].stats()
 		v.Agents = append(v.Agents, row)
 		for _, c := range calls {
 			at, read := unix(c.At), c.In+c.CR+c.CW
