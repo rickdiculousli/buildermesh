@@ -1,11 +1,12 @@
 // lead: the lead page.
 import { $, badge, bare, card, check, dur, el, fetchJSON, field, hm, keepOpen, lastToken, loader, md, readState, stamp } from "./core.js";
-import { hubNow, pages, tl, tok } from "./state.js";
+import { hubNow, land, pages, tl, tok } from "./state.js";
 import { clampRow, describe, frameKey, landFilter, landOf } from "./drawer.js";
 import { drawLanes, replayLive } from "./timeline.js";
 import { ctxChart, fmtTok, kindsRead } from "./tokens.js";
 import { checkSoon } from "./check.js";
 import { drawAll } from "./main.js";
+import { landCard, landEnded } from "./landing.js";
 
 const TIMELINE_MAX = 200;
 
@@ -62,7 +63,17 @@ function shortPath(s, lead) {
   return String(s).split(" → ").map((p) => p.startsWith(lead + ".") ? p.slice(lead.length + 1) : p).join(" → ");
 }
 
+// shownLead is the lead view drawn last, so a landing re-read redraws it.
+let shownLead = null;
+
+// landingOf is the lead page's landing view for path, null with none (a 404).
+function landingOf(path) {
+  const l = land.lead;
+  return l && l.path === path && l.status === 200 ? l.body : null;
+}
+
 function renderLead(path, v) {
+  shownLead = { path, v };
   const head = $("lead-head"), panel = $("lead-panel");
   const n = v.node || {}, st = v.state || {}, sp = v.spec;
   const parts = [badge(st.state)];
@@ -87,6 +98,10 @@ function renderLead(path, v) {
   head.replaceChildren(...parts);
 
   const main = [];
+  // The landing card comes first while its newest run is running or quiet,
+  // after the spec card once the landing has ended.
+  const lv = landingOf(path), lc = lv && landCard(lv), lateLand = lv && landEnded(lv);
+  if (lc && !lateLand) main.push(lc);
   const kids = v.children || [];
   if (kids.length) main.push(card("tree", el("ol", "rows", null, ...kids.map(childRow))));
   if (n.role === "round") {
@@ -102,6 +117,7 @@ function renderLead(path, v) {
   } else {
     main.push(bare("spec", n.spec ? "spec " + n.spec + " is not on main of a repo configured here" : "no spec"));
   }
+  if (lc && lateLand) main.push(lc);
 
   const inbox = (v.inbox || []).map((m) => {
     const li = el("li", null, null,
@@ -158,14 +174,16 @@ export const lead = loader(async (path) => {
   if (!path) return { status: 404, t: {}, u: {} };
   const get = (url) => fetchJSON(url).catch(() => ({ status: 0, body: null }));
   const vs = tok.lead && tok.lead.path === path ? tok.lead.vs : "";
-  const [r, t, u] = await Promise.all([get("/api/lead/" + encodeURIComponent(path)),
+  const [r, t, u, l] = await Promise.all([get("/api/lead/" + encodeURIComponent(path)),
     get("/api/timeline?lead=" + encodeURIComponent(path)),
-    get("/api/usage/agent?agent=" + encodeURIComponent(path) + (vs ? "&vs=" + encodeURIComponent(vs) : ""))]);
-  return { status: r.status, body: r.body, t, u, vs };
+    get("/api/usage/agent?agent=" + encodeURIComponent(path) + (vs ? "&vs=" + encodeURIComponent(vs) : "")),
+    get("/api/landing?lead=" + encodeURIComponent(path))]);
+  return { status: r.status, body: r.body, t, u, l, vs };
 }, {
   key: () => pages.lead,
   show: (r, path) => {
     if (!path) return; // a re-read queued as the route left the lead page
+    keepLanding(path, r.l);
     if (r.u.body || r.u.status === 404) tok.lead = { path, vs: r.vs, data: r.u.body };
     if (r.t.body) {
       r.t.body.lanes = r.t.body.lanes || [];
@@ -187,6 +205,31 @@ export const lead = loader(async (path) => {
     if (check) checkSoon();
   },
 });
+
+// keepLanding stores a landing read for path: a 404 drops the card, a
+// failed read keeps the one shown.
+function keepLanding(path, l) {
+  if (l.status === 200 || l.status === 404) land.lead = { path, status: l.status, body: l.body };
+}
+
+// leadLanding re-reads the lead page's landing alone and redraws the page
+// with it (the 5 s poll while its card runs).
+const leadLanding = loader((path) => path ? fetchJSON("/api/landing?lead=" + encodeURIComponent(path)) : Promise.resolve({ status: 404 }), {
+  key: () => pages.lead,
+  show: (r, path) => {
+    if (!path) return;
+    keepLanding(path, r);
+    if (shownLead && shownLead.path === path) renderLead(path, shownLead.v);
+    if (check) checkSoon();
+  },
+});
+
+// leadLandPoll re-reads the lead page's landing while its card shows a run
+// not yet ended.
+export function leadLandPoll() {
+  const v = pages.view === "lead" && landingOf(pages.lead);
+  if (v && !landEnded(v)) leadLanding.run();
+}
 
 // drawLead draws the lead page's lanes and context chart once they are the
 // lead's shown.

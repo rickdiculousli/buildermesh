@@ -227,6 +227,12 @@ a.tile:hover { text-decoration: none; border-color: var(--tm); }
   .need .say { grid-column: 1 / -1; padding-top: 0; }
 }
 
+/* The landing rows under the band: a band row's layout in the landing
+   colour, never in the band; a quiet run's words in the warning colour. */
+.need.st-landing { border-left-color: var(--landing); cursor: default; }
+.landings .need .say { font-family: var(--mono); }
+.warn { color: var(--warn); }
+
 /* Panels: a small-caps title with a muted one-line subtitle. */
 .tpanel { min-width: 0; background: var(--s1); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px 8px; }
 .tpanel h2 { margin: 0 0 4px; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--ts); word-break: normal; }
@@ -389,6 +395,54 @@ a.tile:hover { text-decoration: none; border-color: var(--tm); }
 @media (max-width: 999px) {
   #lead-panel .stack { display: contents; }
   #lead-panel .bare { order: 1; }
+}
+/* The lead page's landing card: its time, earlier runs one line each, a
+   row per step (glyph, label, time, usual) and what the current one does. */
+.card.landing .lhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; font-weight: 400; }
+.card.landing .lhead .k { font: 700 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ts); }
+.card.landing .lhead .big { font: 600 16px var(--mono); font-variant-numeric: tabular-nums; }
+.card.landing .lhead .muted { font: 12px var(--mono); }
+.lruns { margin: 0 0 6px; }
+.lrun, .lsay { margin: 0 0 4px; font: 12px var(--mono); color: var(--tm); overflow-wrap: anywhere; }
+.lsay { color: var(--ts); }
+.lsteps { list-style: none; margin: 0; padding: 0; font: 13px var(--mono); }
+.lstep {
+  display: grid;
+  grid-template-columns: 16px minmax(64px, max-content) 64px minmax(0, 1fr);
+  gap: 0 10px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.lstep:first-child { border-top: 0; }
+.lstep .lg { color: var(--tm); }
+.lstep.done .lg { color: var(--good); }
+.lstep.now .lg, .lstep.now .lt { color: var(--landing); }
+.lstep.now .lt { font-weight: 600; }
+.lstep.ahead { color: var(--tm); }
+.lstep .lt { text-align: right; white-space: nowrap; }
+.lstep .ln { display: flex; flex-wrap: wrap; gap: 0 10px; min-width: 0; font-size: 12px; }
+.lstep .ln > span { min-width: 0; overflow-wrap: anywhere; }
+.lstep .ln .warn { font-weight: 600; }
+.ldetail {
+  grid-column: 2 / -1;
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: var(--s2);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  min-width: 0;
+}
+.ldetail .dl { overflow-wrap: anywhere; }
+.ldetail .cmdl { display: flex; gap: 6px; }
+.ldetail .cmdl .muted { flex: none; }
+.ldetail .lcmd { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: inherit; color: var(--tp); }
+@media (max-width: 699px) {
+  .lstep { grid-template-columns: 16px minmax(0, 1fr) max-content; }
+  .lstep .ln { grid-column: 2 / -1; }
+  .ldetail { grid-column: 1 / -1; }
 }
 .clock.lease { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
 .clock.past { color: var(--blocked); }

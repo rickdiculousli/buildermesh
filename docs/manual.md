@@ -4124,7 +4124,7 @@ Each panel's read shows `loading <what>` until it answers. A read that fails bef
    - `Quota`: each provider's 5h (`none` on a plan with no 5-hour window) and week (`▲` and the warning colour at 80% or more), a meter for the higher week and when that week resets;
    - `Routines`: jobs queued and instances running, linking the routines tab.
 2. The newest digest as a fold (`▸ digest 50m ago: <title>`) that opens to its body, while the digest is younger than twice `[notify] digest_every`; an older one is dropped (the phone's push is unchanged).
-3. **The needs-you band** (below).
+3. **The needs-you band** (below), then under it **the landing rows** (below).
 4. **The fleet timeline** (two thirds) beside **tokens read by role** (one third).
 5. **Agents** (two thirds) beside **outliers** over **coordinators: design and execution** (one third).
 6. **Context per model call** (two thirds) beside **quota** (one third).
@@ -4195,6 +4195,13 @@ Narrower than 1000px, the tiles go to three columns (two under 480px), band rows
 
 A `held` lead (a coordinator holds it at a gate) and a `landing` lead (it ran `ready` and its box's daemon is landing it) never get a band row: their lanes show them. The daemon's `land-refused` and `land-withdrawn` events put a lead back to `working`.
 
+**The landing rows** sit under the band, never in it: one per node whose land run is running or has gone quiet, none (and no space) while nothing lands. Each has a 3px rule in the landing colour, the `▲ landing` badge, the path linking its lead page, and one line: how long the landing has run, then its current step.
+- Waiting on a job: `16m · review 3m 29s on k16, usually 6m 30s · 29 calls · Bash: Find animations in surface files`: the job's kind, how long its routine instance has run it and on which box, the repo's usual review time, the instance's model calls since it took the job, and what fed the newest one. Before an instance takes it: `review 40s · waiting: no instance has taken it`.
+- Any other step: `verify 9m 48s, usually 11m · PASS switch to web_buttons`: the step, how long the run has been in it, the repo's usual time for it, and the command's newest output line (or the slot it waits for, or land's text).
+- A run that has said nothing for 2½ minutes reads `16m · no word from land for 4m` in the warning colour: land was likely killed.
+
+Narrower than 1000px the words go under the badge, as on band rows.
+
 **The lead page** (`#/lead/<path>`, for any node) opens with a head line: state badge, spec id and title, host, model, when it started and how long it has run (to its `done` once done), then its words, branch and console link. Under it are its lane and its children's lanes over its whole life, ending at its last event once all are done. Then, in order:
 
 1. a `tree` card, one row per child (state badge, last segment of its path, branch, `N unread`) linking its page;
@@ -4203,6 +4210,15 @@ A `held` lead (a coordinator holds it at a gate) and a `landing` lead (it ran `r
 4. its inbox and timeline; the timeline shows a `land` or `landing` row only when its text differs from the node's previous one, so a landing that repeats itself reads once.
 
 Between its lanes and the cards, its context per model call over its life (as on the overview). Its `compare` select lists the done leads of its spec's size with model calls in the last week; choosing one draws that lead in orange beside it, both on minutes since their first call. `#/lead/<path>?vs=<path>` opens the page compared (the outliers' click).
+
+**The landing card.** A node that has landed or is landing (it has a `ready` or a `land` event) gets a `landing` card: first of all the cards while its newest land run is running or quiet, after the spec card once the landing has ended (landed, refused or withdrawn).
+- **Head:** `landing 16m 00s since ready at 03:38:00Z`: how long since the `ready` (or, landing in its own turn, since the run began), ticking; once ended, the time to land's last event.
+- **Earlier runs,** one line each: `run 1 · 12m 29s · checks, verify 12m 28s, review · ended: timed out waiting for job 3XANly81 (review); the daemon ran land again`: its time, its steps (with their time past a minute), and how it ended.
+- **A row per step of the newest run,** a step taken twice a row each time: `✓` done, `▸` the step it is in, `○` the steps still ahead in land's order (`checks`, the kinds, the jobs, `lease`, `rebase`, `results`, `push`; `main` gets a row only when the run waited there). Each has its time (ticking on the current one) and `usually 12m (4)`: the median over the repo's last 30 days of land runs that went past it, and how many, shown from 3. The current step past twice its usual adds `▲ 2.1× usual` in the warning colour; a quiet run's reads `no word from land for 4m` in the warning colour. A done row shows the text land began it with (`review: on the branch already (fail at t:ca2ec50d)`).
+- **Under the current step,** whichever applies: the command (its kind, the command on one line, `last:` its newest output line and that line's age, its line count); the slot it waits for (`waiting for <slot> · held by <holder> · place 2`); each job it waits on (`job 3XANly81 · claude-opus-5-5 high · routine.review.k16-opus-5-5-1 on k16`, the instance linking its page, then `running 3m 29s · 29 calls · read 2.4M · context 139k`, `last: <what fed the newest call> · 8s ago`, and for a review `usually 6m 30s (3)`, the median of the repo's review jobs; `waiting: no instance has taken it` before one does, `ok in 6m 12s` once it ends); and while it waits for the land lease, its holder linking its page with the holder's own landing text. The tool use shown can lag up to a minute: usage is read every 30 seconds and a call is published once the next one shows it finished, so it always shows its age.
+- A land by a bmesh before steps were published shows its text and `this bmesh publishes no steps`.
+
+The landing rows and a card not yet ended are read again every 5 seconds while the tab is visible, and the overview reads them at once on a `land` event or the daemon's `landing`, `land-refused` or `land-withdrawn`, so a new landing shows without waiting; their times tick every second on the hub's clock.
 
 The spec is read from the repo's local `origin/main` (`main` without an origin). While lead pages are viewed, the daemon fetches `origin main` in the background at most once a minute per repo, so a spec shows a minute or two after landing. A card with nothing to show (`no spec`, `no messages`, no events) is one muted line.
 
