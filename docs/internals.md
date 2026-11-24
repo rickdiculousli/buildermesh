@@ -332,7 +332,9 @@ A reply is an inbox message (`kind: "reply"`) to the requester carrying `{"job",
 
 [Manual: Leases](manual.md#leases)
 
-Leases live in KV `bm-leases`, key `<slot>.<n>` (`n` below the capacity), value `{"holder","expires_at"}`; an expired entry is free.
+Leases live in KV `bm-leases`, key `<slot>.<n>` (`n` below the capacity), value `{"holder","expires_at","priority","started","yield"}`; an expired entry is free. `priority` (`urgent` or `best-effort`) and `started` (RFC 3339 with nanoseconds) are written by a holder that waited in line (`mesh.AcquireRanked`); `lock-lease acquire`, daemon jobs and the daemon's claims write neither, and are never asked to yield. A renew rewrites only `expires_at`, reading again when another write beat it.
+
+**Waiting in line.** A waiter (`acquireWait`, `cmd/bmesh/cmd_lease.go`) puts `<slot>.w-<holder>` (the holder with every character outside `[A-Za-z0-9_-]` made `_`; one wait per holder and slot, so the bucket keeps one key per holder) to `{"holder","priority","why","since","expires_at"}` every 2 s, `expires_at` 30 s on, and deletes it when the wait ends. `mesh.SlotQueue` reads the slot's places below the capacity and its unexpired waiters, ordered urgent first, then by `since`, then by holder; a lease key `<slot>.w-x.<n>` of a slot named `<slot>.w-x` is told from a waiter by the dot after its holder, and `ListLeases` skips waiter keys. A waiter at index `i` takes a place (`AcquireRanked`) when `i` is below the free places. An urgent waiter with a `why` and no free place, when the places marked to yield are no more than the urgent waiters before it, sets `yield` to `<holder> (<why>)` on the best-effort place with the latest `started`, by an update at the revision it read (`mesh.AskYield`). A best-effort holder's `holdLeases` reads its keys every 2 s (`mesh.LeaseYield`); marked, it cancels its body's context, releases every key and returns `*yielded`, and `withLeases` waits again with priority `urgent` and no `why` (so it asks no yield itself) and runs the body again.
 
 ### Results
 
@@ -475,7 +477,7 @@ The streams, subjects and buckets built on node paths:
 | KV | `bm-state` | `<path>` to State |
 | KV | `bm-runner` | `<path>` to RunnerSample |
 | KV | `bm-results` | `<kind>.<tree>[.<args8>][.<model-short>]` to Result (`[routines] keep_results`, default 30 days) |
-| KV | `bm-leases` | `<slot>.<n>` to `{"holder","expires_at"}` |
+| KV | `bm-leases` | `<slot>.<n>` to `{"holder","expires_at","priority","started","yield"}`; `<slot>.w-<holder>` to a waiter, `{"holder","priority","why","since","expires_at"}` |
 | KV | `bm-roster` | `roster` to the admin's signed roster, `registry` to its signed registry (see Hosts) |
 | KV | `bm-hosts` | `<host>` to that box's signed presence |
 | KV | `bm-claims` | `quota.<provider>.<reset unix>` to the claiming daemon (`daemon.<host>`); age limit 8 days |

@@ -360,7 +360,7 @@ func TestLandWaitsForHeldLease(t *testing.T) {
 	select {
 	case code := <-res:
 		if code != 0 || !strings.HasPrefix(out.String(), "required: verify (the repo's verify kind)\nverify ok t:"+gitOut(t, "rev-parse", "HEAD^{tree}")[:8]+" (recorded)\n"+
-			"waiting for land.repo (held by app-011)\nlease land.repo\n") ||
+			"waiting for land.repo (held by app-011); #1\nlease land.repo\n") ||
 			!strings.Contains(out.String(), "landed ") {
 			t.Fatalf("land: %d\n%s\nerr %q", code, out.String(), errb.String())
 		}
@@ -764,7 +764,7 @@ func TestLandReadsTheInboxWhileItWaitsForTheLease(t *testing.T) {
 	// prepare read an empty inbox (it got as far as waiting); the read
 	// while it waited found the message.
 	if out.String() != "required: verify (the repo's verify kind)\nverify ok t:"+gitOut(t, "rev-parse", "HEAD^{tree}")[:8]+" (recorded)\n"+
-		"waiting for land.repo (held by app-011)\n" ||
+		"waiting for land.repo (held by app-011); #1\n" ||
 		errb.String() != "bmesh: refused: 1 unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh land again\n" {
 		t.Fatalf("land:\n%s\nerr %q", out.String(), errb.String())
 	}

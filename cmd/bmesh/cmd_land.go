@@ -160,16 +160,14 @@ func (a *app) cmdLand(args []string) (err error) {
 		} else if again {
 			continue
 		}
-		key, err := a.acquireWait(slot, l.holder, *ttl, l.deadline, func(by string) error {
-			l.doing.Store(fmt.Sprintf("waiting for %s (held by %s)", slot, by))
-			return l.check(ctx)
-		})
+		w := l.wait(ctx)
+		key, err := a.acquireWait(slot, l.holder, *ttl, 1, &w)
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(a.stdout, "lease %s\n", slot)
 		l.doing.Store("landing under " + slot)
-		err = a.holdLeases([]string{key}, l.holder, *ttl, l.land)
+		err = a.holdLeases([]string{key}, l.holder, *ttl, false, l.land)
 		if !errors.Is(err, errReviewAgain) {
 			if err != nil {
 				return err
@@ -239,45 +237,24 @@ func (l *lander) setup(id *string) error {
 	return nil
 }
 
-// acquireWait takes the one place of slot for holder, trying again every
-// landPoll while someone else holds it (at once when it was released
-// between the try and the look); it names the holder once per holder, calls
-// check with it before each wait (an error ends the wait) and gives up at
-// deadline (exit 5).
-func (a *app) acquireWait(slot, holder string, ttl time.Duration, deadline time.Time, check func(by string) error) (string, error) {
-	said := ""
-	for {
-		ctx, cancel := cmdCtx()
-		key, err := mesh.AcquireLease(ctx, a.client, slot, holder, ttl, 1, time.Now())
-		if !errors.Is(err, mesh.ErrBusy) {
-			cancel()
-			return key, err
-		}
-		by := "someone"
-		if leases, err := mesh.ListLeases(ctx, a.client); err == nil {
-			i := slices.IndexFunc(leases, func(l mesh.Lease) bool { return l.Slot == slot })
-			if i < 0 {
-				// Released since the try: try again at once.
-				cancel()
-				continue
+// wait is how land waits for a slot (its lease, or an inline kind's):
+// urgent, naming the worktree it lands in any yield it asks, its line kept
+// as what land is doing, the hold and the mail read before each pause,
+// given up at --wait.
+func (l *lander) wait(ctx context.Context) leaseWait {
+	prev := ""
+	return leaseWait{prio: mesh.Urgent, why: "land of " + l.top, out: l.a.stdout, deadline: l.deadline,
+		say: func(text string) {
+			if text == "" {
+				l.doing.Store(prev)
+				return
 			}
-			by = leases[i].Holder
-		}
-		cancel()
-		if by != said {
-			fmt.Fprintf(a.stdout, "waiting for %s (held by %s)\n", slot, by)
-			said = by
-		}
-		if check != nil {
-			if err := check(by); err != nil {
-				return "", err
+			if prev == "" {
+				prev, _ = l.doing.Load().(string)
 			}
-		}
-		if time.Now().After(deadline) {
-			return "", fail(exitTimeout, "timed out waiting for %s, held by %s; nothing is pushed: run bmesh land again", slot, by)
-		}
-		time.Sleep(landPoll)
-	}
+			l.doing.Store(text)
+		},
+		check: func(string) error { return l.check(ctx) }}
 }
 
 // events publishes the node's land event, naming what land is doing, now
@@ -1465,7 +1442,7 @@ func (l *lander) inline(ctx context.Context, merged, tree, preTree string) error
 				continue
 			}
 		}
-		ok, output, how, err := l.a.runInline(ctx, k, l.top, merged, tree, l.holder, model, "", "", nil, false)
+		ok, output, how, err := l.a.runInline(ctx, k, l.top, merged, tree, l.holder, model, "", "", nil, false, l.wait(ctx))
 		if err != nil {
 			return err
 		}

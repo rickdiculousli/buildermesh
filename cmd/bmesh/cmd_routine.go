@@ -742,7 +742,7 @@ func (a *app) cmdRoutineRun(args []string) error {
 		// No record to answer from or keep, and no other box to share a
 		// slot with: the run alone says whether HEAD is ok.
 		self = cmp.Or(a.givenNode(), a.cfg.HostName())
-		reply, err := a.runKind(ctx, k, top, head, tree, self, *model, *effort, *text, jobArgs, nil)
+		reply, err := a.runKind(ctx, k, top, head, tree, self, *model, *effort, *text, jobArgs, nil, leaseWait{})
 		if err != nil {
 			return err
 		}
@@ -761,7 +761,9 @@ func (a *app) cmdRoutineRun(args []string) error {
 			return a.printRunVerdict(name, tree, *model, true, "", carriedHow(from))
 		}
 	}
-	ok, out, how, err := a.runInline(ctx, k, top, head, tree, self, *model, *effort, *text, jobArgs, *rerun)
+	w := a.roleWait(a.stdout)
+	w.say = a.stateSay(self)
+	ok, out, how, err := a.runInline(ctx, k, top, head, tree, self, *model, *effort, *text, jobArgs, *rerun, w)
 	if err != nil {
 		return err
 	}
@@ -769,11 +771,11 @@ func (a *app) cmdRoutineRun(args []string) error {
 }
 
 // runInline runs kind k on HEAD (head, tree) of the worktree top for self,
-// holding the kind's slots, and records the result; a deterministic kind is
+// holding the kind's slots (waiting for them as w says), and records the result; a deterministic kind is
 // answered from its record unless rerun. It returns the verdict, the output
 // and how it came to be: "recorded" or "answered from the record".
 func (a *app) runInline(ctx context.Context, k kind.Kind, top, head, tree, self, model, effort, text string, jobArgs []string,
-	rerun bool) (bool, string, string, error) {
+	rerun bool, w leaseWait) (bool, string, string, error) {
 	name := k.Name
 	key := mesh.ResultKey(name, tree, jobArgs, model)
 	if k.Deterministic && !rerun {
@@ -785,7 +787,7 @@ func (a *app) runInline(ctx context.Context, k kind.Kind, top, head, tree, self,
 			return r.OK, r.Output, "answered from the record", nil
 		}
 	}
-	reply, err := a.runKind(ctx, k, top, head, tree, self, model, effort, text, jobArgs, k.Slots)
+	reply, err := a.runKind(ctx, k, top, head, tree, self, model, effort, text, jobArgs, k.Slots, w)
 	if err != nil {
 		return false, "", "", err
 	}
@@ -808,11 +810,11 @@ func (a *app) runInline(ctx context.Context, k kind.Kind, top, head, tree, self,
 }
 
 // runKind runs kind k once on HEAD (head, tree) of the worktree top for
-// self, holding slots (none takes no lease, and needs no hub); a command
+// self, holding slots, waited for as w says (none takes no lease, and needs no hub); a command
 // kind runs the worktree's setup first. A model run whose claude never
 // answered is refused, as a failed setup is: it judged nothing.
 func (a *app) runKind(ctx context.Context, k kind.Kind, top, head, tree, self, model, effort, text string, jobArgs []string,
-	slots []string) (instance.Reply, error) {
+	slots []string, w leaseWait) (instance.Reply, error) {
 	rc, err := kind.LoadRepoConfig(top)
 	if err != nil {
 		return instance.Reply{}, err
@@ -836,7 +838,7 @@ func (a *app) runKind(ctx context.Context, k kind.Kind, top, head, tree, self, m
 	j := instance.Job{ID: newID(), Kind: k.Name, Commit: head, Tree: tree, From: self, Reply: self,
 		Args: jobArgs, Text: text, Dir: top, Effort: effort}
 	var reply instance.Reply
-	err = a.withLeases(slots, self, k.Timeout+time.Minute, capacity, func(ctx context.Context) error {
+	err = a.withLeases(slots, self, k.Timeout+time.Minute, capacity, w, func(ctx context.Context) error {
 		reply = inst.Run(ctx, j)
 		return nil
 	})

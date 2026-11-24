@@ -4,7 +4,7 @@ title: An inline run whose slot is busy waits its turn instead of failing, a lan
 kind: time-cost
 size: M
 judge: opus
-status: accepted
+status: done
 lens: eng
 proposed_by: coordinator on ricks-macbook, from the operator's request during the Bluke build
 proposed_on: 2026-11-23
@@ -73,6 +73,16 @@ A lead whose verify needs the emulator while another lead holds it no longer fai
 The manual's paragraph on inline slots (`docs/manual.md:2163`) says an inline run waits and how it is ordered.
 
 ## Shown
+- A run waits for a held slot instead of exiting 3, then runs and records: `TestInlineHoldsSlotLease` (cmd/bmesh/cmd_routine_run_test.go), its output `waiting for game (held by someone); #1`, then `played`, then `game ok t:<tree8> (recorded)`.
+- The wait's line, with the holder's priority and the place, in the output and on the node's status line: `TestWaitShowsOnStatusLine` (cmd/bmesh/slot_wait_test.go) reads the node's state text `waiting for game (held by app-040, best effort); #1` while it waits and `building` again once it holds the slot; `TestLandingWaiterGoesFirst` sees the second waiter print `waiting for x (held by someone); #2`.
+- Order: best-effort A and B, then a landing's verify C: C takes `x` next, then A, then B: `TestLandingWaiterGoesFirst` (cmd/bmesh/slot_wait_test.go), whose verify fails if A or B ran first, and where A moves from `#1` to `#2` when C joins.
+- Preemption by a landing: the best-effort holder's child is killed, its lease released, its output `preempted by app-012 (land of <worktree>); waiting again at #N`, and it runs again after the landing: `TestLandingPreemptsBestEffortRunOnce` (cmd/bmesh/slot_wait_test.go).
+- A run that waits again after a preemption isn't preempted a second time: the same test holds it as `urgent` and has the operator's urgent run wait behind it (`waiting for x (held by app-011, urgent); #1`) with no yield asked.
+- No flag sets priority: in `TestLandingWaiterGoesFirst`, A runs as `routine run slow --rerun --here --commit HEAD` from a lead node and holds `x` as `best-effort`.
+- On the real hub, the built binary: `bmesh --node operator lock-lease run demo119 -- ...` while best-effort `demo119-a` held it -> `preempted by operator (the operator's run); waiting again at #2` in a's output, and the operator's `op-ran` before a's second run.
+- The manual's paragraph on inline slots says an inline run waits and how it is ordered: docs/manual.md, Details of `bmesh routine run`.
+- Easy to miss: a renew must keep the yield mark and the priority, or a holder's own renew would erase the urgent waiter's ask: `TestSlotLineOrderAndYield` (internal/mesh/leases_test.go) renews after `AskYield` and still reads the yield.
+- Not shown: Bluke's `slots = ["emulator"]`, `[slots] emulator = 1`, `rig.py`'s refusal and the lock path: Bluke's own change, after this lands (Needs from the operator).
 
 ## Risks and the alternative considered
 - **Preemption throws away the killed run's work.** It only ever hits best-effort runs, and a run is preempted at most once.

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -192,24 +191,25 @@ func TestInlineHoldsSlotLease(t *testing.T) {
 	goFile := filepath.Join(t.TempDir(), "go")
 	t.Setenv("GO", goFile)
 
+	// A held slot is waited for, not refused: the run starts once it is released.
 	key, err := mesh.AcquireLease(ctx, c, "game", "someone", time.Minute, 1, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, errs, code := runCLI(t, nil, "routine", "run", "game")
-	if code != 3 || errs != "bmesh: slot game is busy\n" || exists(mark) {
-		t.Fatalf("busy: %d %q", code, errs)
+	slotWaitFast(t)
+	var out, errb meshtest.SyncBuffer
+	res := make(chan [3]any, 1)
+	go func() {
+		code := run([]string{"routine", "run", "game"}, strings.NewReader(""), &out, &errb)
+		res <- [3]any{code, out.String(), errb.String()}
+	}()
+	meshtest.Until(t, "the run to wait", func() bool { return out.String() == "waiting for game (held by someone); #1\n" })
+	if exists(mark) {
+		t.Fatal("the command ran under a held slot")
 	}
 	if err := mesh.ReleaseLease(ctx, c, key, "someone"); err != nil {
 		t.Fatal(err)
 	}
-
-	res := make(chan [3]any, 1)
-	go func() {
-		var out, errb bytes.Buffer
-		code := run([]string{"routine", "run", "game"}, strings.NewReader(""), &out, &errb)
-		res <- [3]any{code, out.String(), errb.String()}
-	}()
 	deadline := time.Now().Add(10 * time.Second)
 	for !exists(mark) {
 		if time.Now().After(deadline) {
@@ -226,7 +226,7 @@ func TestInlineHoldsSlotLease(t *testing.T) {
 	}
 	select {
 	case r := <-res:
-		if r[0] != 0 || r[1] != "played\ngame ok t:"+tree[:8]+" (recorded)\n" || r[2] != "" {
+		if r[0] != 0 || r[1] != "waiting for game (held by someone); #1\nplayed\ngame ok t:"+tree[:8]+" (recorded)\n" || r[2] != "" {
 			t.Fatalf("run: %v", r)
 		}
 	case <-time.After(10 * time.Second):
