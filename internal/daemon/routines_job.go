@@ -225,6 +225,15 @@ func (w *worker) setState(state string) {
 	}
 }
 
+// say keeps the instance working with text as its words.
+func (w *worker) say(text string) {
+	ctx, cancel := w.r.settleCtx()
+	defer cancel()
+	if _, err := mesh.WriteState(ctx, w.r.d.Client, w.path, mesh.State{State: "working", Text: text, By: "daemon"}); err != nil {
+		w.r.d.Log.Warn("routines: state", "path", w.path, "err", err)
+	}
+}
+
 // idle resets the state between jobs (R2: no transition leads to idle).
 func (w *worker) idle() {
 	ctx, cancel := w.r.settleCtx()
@@ -369,7 +378,11 @@ func (w *worker) handle(dl *delivery) {
 		Args: j.Args, Text: j.Text, Dir: w.dir, Effort: j.Effort}
 	if !kc.IsModel() {
 		// Each checkup is the requester's activity too: "job <id> running 4m: ...".
-		ij.Checkup = func(c proc.Checkup) { w.event("progress", "job "+j.ID+" running "+c.String(), dl.from.String()) }
+		ij.Checkup = func(c proc.Checkup) {
+			text := "job " + j.ID + " running " + c.String()
+			w.event("progress", text, dl.from.String())
+			w.say(text) // the routines page's words for the instance
+		}
 	}
 	rep, lost := w.run(w.instanceFor(kc), ij, keys, ttl)
 	held := slices.DeleteFunc(slices.Clone(keys), func(k string) bool { return k == lost })

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1016,10 +1017,31 @@ func TestCommandJobReportsCheckups(t *testing.T) {
 	cad := proc.Cadence
 	proc.Cadence = 500 * time.Millisecond
 	t.Cleanup(func() { proc.Cadence = cad })
-	f := routineSetup(t, map[string]string{".bmesh/routines/nap.toml": "mode = \"pooled\"\ntimeout = \"30s\"\ncommand = \"echo napping; sleep 2\"\n"})
+	f := routineSetup(t, map[string]string{".bmesh/routines/nap.toml": "mode = \"pooled\"\ntimeout = \"30s\"\ncommand = \"echo napping; sleep 3\"\n"})
 	f.start(t)
 	since := time.Now()
 	id := f.queue(t, mesh.Job{Kind: "nap", Commit: meshtest.Git(t, f.repo, "rev-parse", "HEAD"), Go: true})
+	// While it runs, the instance's words are its newest checkup.
+	deadline := meshtest.Deadline(t)
+	for {
+		hist, err := mesh.History(f.ctx, f.c, "bm.routine.>", since)
+		if err != nil {
+			t.Fatal(err)
+		}
+		i := slices.IndexFunc(hist, func(m mesh.Stored) bool { return strings.Contains(string(m.Data), "job "+id+" running ") })
+		if i >= 0 {
+			var ev mesh.Event
+			json.Unmarshal(hist[i].Data, &ev)
+			if st, _, err := mesh.ReadState(f.ctx, f.c, ev.From); err != nil || st.State != "working" || !strings.HasPrefix(st.Text, "job "+id+" running ") {
+				t.Fatalf("instance state %+v %v", st, err)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no checkup while the job ran")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 	r := f.reply(t, id, 20*time.Second)
 	if !r.OK || r.Output != "napping\n" || r.ResultKey == "" {
 		t.Fatalf("reply %+v", r)

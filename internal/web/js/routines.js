@@ -3,9 +3,13 @@ import { $, badge, card, check, clock, el, fetchJSON, keepOpen, loader, readStat
 
 import { checkSoon } from "./check.js";
 
+// instanceSub is an instance's uses and context, then, while a job runs,
+// its words: the newest checkup ("job <id> running 6m: ...; quiet 4m").
 function instanceSub(i) {
   const extra = [i.uses === 1 ? "1 use" : (i.uses || 0) + " uses"];
   if (i.context > 0) extra.push(Math.round(i.context / 1000) + "k ctx");
+  const st = i.state || {};
+  if (st.state === "working" && st.text) extra.push(st.text);
   return extra;
 }
 
