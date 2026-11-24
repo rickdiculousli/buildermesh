@@ -105,6 +105,7 @@ func seed(ctx context.Context, url string, leads int, worktree string) error {
 		{Path: "app-0039", Role: "lead", Repo: "app", Spec: "0039", StartedAt: ago(245), Branch: "bmesh/app-0039", Family: "app-batch-2"},
 		{Path: "app-0041", Role: "lead", Repo: "app", Spec: "0041", StartedAt: ago(300), Branch: "bmesh/app-0041", Family: "app-batch-2"},
 		{Path: "app-0045", Role: "lead", Repo: "app", Spec: "0045", StartedAt: ago(70), Branch: "bmesh/app-0045", Family: "app-batch-2"},
+		{Path: "app-0043", Role: "lead", Repo: "app", Spec: "0043", StartedAt: ago(150), Branch: "bmesh/app-0043", Model: "claude-opus-5-5"},
 		{Path: "app-0030", Role: "lead", Repo: "app", Spec: "0030", StartedAt: ago(batch1), Family: "app-batch-1"},
 		{Path: "app-0031", Role: "lead", Repo: "app", Spec: "0031", StartedAt: ago(batch1 - 10), Family: "app-batch-1"},
 		{Path: "app-0032", Role: "lead", Repo: "app", Spec: "0032", StartedAt: ago(batch1 - 20), Family: "app-batch-1"},
@@ -168,6 +169,7 @@ func seed(ctx context.Context, url string, leads int, worktree string) error {
 		{"app-0042", "progress", "api merged", "working", "", 180},
 		{"app-0039", "progress", "legend drawn", "working", "", 180},
 		{"app-round-1", "started", "", "working", "", 150},
+		{"app-0043", "started", "", "working", "", 149},
 		{"app-round-1.eng", "started", "", "working", "", 148},
 		{"app-round-1.ux", "started", "", "working", "", 148},
 		{"routine.review.opus-5-5-1", "started", "", "working", "", 160},
@@ -208,11 +210,12 @@ func seed(ctx context.Context, url string, leads int, worktree string) error {
 		{"routine.review.f9c0d1e2f", "started", "", "working", "", 24},
 		{"routine.review.f9c0d1e2f", "progress", "job seed-f9 started", "working", "", 23},
 		{"app-0041", "ready", "review fixed", "landing", "", 20},
-		{"app-0041", "land", "waiting for job 9f2kQ (review, running on seed)", "landing", "", 19},
-		{"daemon.seed", "landing", "waiting for job 9f2kQ (review, running on seed)", "landing", "app-0041", 18},
-		{"app-0041", "land", "waiting for job 9f2kQ (review, running on seed)", "landing", "", 17},
 		{"routine.review.f9c0d1e2f", "progress", "job seed-f9 ok 600000 ctx 58000", "working", "", 13},
 		{"routine.review.f9c0d1e2f", "done", "", "done", "", 13},
+		{"routine.review.opus-5-5-2", "started", "", "working", "", 9},
+		{"daemon.seed", "landing", "waiting for job 9f2kQ (review, running on seed)", "landing", "app-0041", 7},
+		{"app-0043", "ready", "ready to land", "landing", "", 6},
+		{"daemon.seed", "landing", "running verify on t:4208beec", "landing", "app-0043", 5},
 	} {
 		ev, path := mesh.Event{From: s.from, Event: s.event, Text: s.text, To: s.to, At: ago(s.ago)}, s.from
 		if s.to != "" {
@@ -241,6 +244,8 @@ func seed(ctx context.Context, url string, leads int, worktree string) error {
 		{From: "rick", To: "app-0042", Text: "ship the lead page before the strip"},
 		{From: "app-0042", To: "routine.review", Kind: "job", Text: "review api", At: ago(150),
 			Job: &mesh.Job{ID: "seed-j2", Kind: "review", Repo: "app", Commit: "0123abcd"}},
+		{From: "app-0041", To: "routine.review", Kind: "job", Text: "base: 0123abcd", At: ago(8),
+			Job: &mesh.Job{ID: "9f2kQ", Kind: "review", Repo: "app", Commit: "0123abcd", Effort: "high"}},
 	} {
 		if _, err := mesh.Send(ctx, c, m); err != nil {
 			return err
@@ -288,6 +293,9 @@ func seed(ctx context.Context, url string, leads int, worktree string) error {
 		return err
 	}
 	if err := seedUsage(ctx, c, now); err != nil {
+		return err
+	}
+	if err := seedLanding(ctx, c, now); err != nil {
 		return err
 	}
 	if err := seedHosts(ctx, c, now); err != nil {
@@ -657,4 +665,143 @@ func seedHosts(ctx context.Context, c *mesh.Client, now time.Time) error {
 		}
 	}
 	return nil
+}
+
+// landRun is one land run to publish: its lead, start and events, each an
+// offset from the start in seconds, its step and text, and its command,
+// jobs and end.
+type landRun struct {
+	path string
+	run  time.Time
+	evs  []landStep
+}
+
+type landStep struct {
+	sec        float64
+	step, text string
+	cmd        *mesh.LandCmd
+	jobs       []mesh.LandJob
+	end        string
+}
+
+// publish sends the run's land events, each step's since the time of its
+// first event in a row, the command's words on its first event only.
+func (lr landRun) publish(ctx context.Context, c *mesh.Client) error {
+	at := func(sec float64) string {
+		return lr.run.Add(time.Duration(sec * float64(time.Second))).UTC().Format(time.RFC3339)
+	}
+	since, said := "", map[string]bool{}
+	for i, e := range lr.evs {
+		if i == 0 || lr.evs[i-1].step != e.step {
+			since = at(e.sec)
+		}
+		l := &mesh.Land{Run: at(0), Step: e.step, Since: since, Jobs: e.jobs, End: e.end}
+		if e.cmd != nil {
+			cmd := *e.cmd
+			if said[cmd.Since] {
+				cmd.Command = ""
+			}
+			said[cmd.Since] = true
+			l.Cmd = &cmd
+		}
+		if err := mesh.PublishEvent(ctx, c, mesh.Event{From: lr.path, Event: "land", Text: e.text, At: at(e.sec), Land: l}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// seedLanding publishes the land runs the map's landing views draw:
+// app-0041's two (verify, then a timeout waiting for review job 9f2kQ;
+// then the wait again while routine.review.opus-5-5-2 runs it, with its
+// model calls), app-0043 mid-verify with output lines, and three landed
+// runs of app-batch-1 three days ago, so each step has its usual time.
+func seedLanding(ctx context.Context, c *mesh.Client, now time.Time) error {
+	ago := func(sec float64) time.Time { return now.Add(-time.Duration(sec * float64(time.Second))) }
+	rfc := func(t time.Time) string { return t.UTC().Format(time.RFC3339) }
+	var runs []landRun
+	// app-batch-1's landings, each ending at its done.
+	for i, l := range []struct {
+		path          string
+		done, verify  float64
+		lease, rebase float64
+	}{{"app-0030", batch1 - 95, 660, 4, 3}, {"app-0031", batch1 - 130, 720, 95, 6}, {"app-0033", batch1 - 240, 610, 2, 4}} {
+		t := l.verify + 30 + l.lease + l.rebase + 90 + 20
+		start := ago(float64(l.done)*60 + t)
+		vs := rfc(start.Add(time.Second))
+		v := l.verify
+		runs = append(runs, landRun{path: l.path, run: start, evs: []landStep{
+			{sec: 0, step: "checks", text: "checking"},
+			{sec: 1, step: "kinds", text: "running verify on t:1a2b3c4" + fmt.Sprint(i), cmd: &mesh.LandCmd{Kind: "verify", Command: "make test", Since: vs}},
+			{sec: 1 + v, step: "jobs", text: "review: on the branch already (ok at t:1a2b3c4" + fmt.Sprint(i) + ")"},
+			{sec: 30 + v, step: "lease", text: "taking land.app"},
+			{sec: 30 + v + l.lease, step: "rebase", text: "rebasing onto 5e6f7a8b"},
+			{sec: 30 + v + l.lease + l.rebase, step: "results", text: "running verify on the rebased tree t:9c8d7e6f", cmd: &mesh.LandCmd{Kind: "verify", Command: "make test", Since: rfc(start.Add(time.Duration(30+v+l.lease+l.rebase) * time.Second))}},
+			{sec: 120 + v + l.lease + l.rebase, step: "push", text: "pushing 0123abcd"},
+			{sec: t, step: "push", text: "pushing 0123abcd", end: "landed 0123abcd"},
+		}})
+	}
+	// app-0041: ready 20 minutes ago. Run 1 verifies for 12m and times out
+	// waiting for the review it queued; the daemon runs land again, which
+	// waits for that job, running on opus-5-5-2.
+	r1 := ago(19*60 + 55)
+	gradle := &mesh.LandCmd{Kind: "verify", Command: "./gradlew --no-daemon -q assembleDebug testDebugUnitTest && tools/hid-rig/run.sh", Since: rfc(r1.Add(time.Second))}
+	line := func(cmd *mesh.LandCmd, last string, lines int, at time.Time) *mesh.LandCmd {
+		c := *cmd
+		c.Last, c.LastAt, c.Lines = last, rfc(at), lines
+		return &c
+	}
+	waiting := []mesh.LandJob{{ID: "9f2kQ", Kind: "review", State: "waiting"}}
+	running := []mesh.LandJob{{ID: "9f2kQ", Kind: "review", State: "running", Host: "seed"}}
+	run1 := []landStep{{sec: 0, step: "checks", text: "checking"}, {sec: 1, step: "kinds", text: "running verify on t:ca2ec50d", cmd: gradle}}
+	for m := 1; m <= 12; m++ {
+		run1 = append(run1, landStep{sec: float64(1 + 60*m), step: "kinds", text: "running verify on t:ca2ec50d",
+			cmd: line(gradle, fmt.Sprintf("PASS case %d", m), 2*m, r1.Add(time.Duration(60*m-5)*time.Second))})
+	}
+	run1 = append(run1,
+		landStep{sec: 749, step: "jobs", text: "waiting for job 9f2kQ (review, waiting)", jobs: waiting},
+		landStep{sec: 750, step: "jobs", text: "waiting for job 9f2kQ (review, waiting)", jobs: waiting, end: "timed out waiting for job 9f2kQ (review)"})
+	runs = append(runs, landRun{path: "app-0041", run: r1, evs: run1})
+	r2 := ago(7*60 + 20)
+	run2 := []landStep{{sec: 0, step: "checks", text: "checking"}, {sec: 1, step: "kinds", text: "checking verify on t:ca2ec50d"},
+		{sec: 2, step: "jobs", text: "waiting for job 9f2kQ (review, waiting)", jobs: waiting},
+		{sec: 25, step: "jobs", text: "waiting for job 9f2kQ (review, running on seed)", jobs: running}}
+	for s := 85.0; s < 7*60; s += 60 {
+		run2 = append(run2, landStep{sec: s, step: "jobs", text: "waiting for job 9f2kQ (review, running on seed)", jobs: running})
+	}
+	runs = append(runs, landRun{path: "app-0041", run: r2, evs: run2})
+	// app-0043: mid-verify, its newest line 12 seconds old.
+	r3 := ago(5*60 + 55)
+	vcmd := &mesh.LandCmd{Kind: "verify", Command: "./gradlew --no-daemon -q assembleDebug testDebugUnitTest && tools/hid-rig/run.sh", Since: rfc(r3.Add(2 * time.Second))}
+	run3 := []landStep{{sec: 0, step: "checks", text: "checking"}, {sec: 2, step: "kinds", text: "running verify on t:4208beec", cmd: vcmd}}
+	for m, last := range []string{"> Task :app:assembleDebug", "PASS switch to android", "PASS switch to keyboard", "PASS switch to gamepad", "PASS switch to web_buttons"} {
+		sec := float64(62 + 60*m)
+		if m == 4 {
+			sec = 5*60 + 45
+		}
+		run3 = append(run3, landStep{sec: sec, step: "kinds", text: "running verify on t:4208beec",
+			cmd: line(vcmd, last, 4+3*m+1, r3.Add(time.Duration(sec-12)*time.Second))})
+	}
+	runs = append(runs, landRun{path: "app-0043", run: r3, evs: run3})
+	for _, lr := range runs {
+		if err := lr.publish(ctx, c); err != nil {
+			return err
+		}
+	}
+	// The review instance takes 9f2kQ and calls its model until 10 seconds ago.
+	if err := mesh.PublishEvent(ctx, c, mesh.Event{From: "routine.review.opus-5-5-2", Event: "progress", Text: "job 9f2kQ started",
+		To: "app-0041", At: rfc(ago(7*60 - 5))}); err != nil {
+		return err
+	}
+	if _, err := mesh.WriteState(ctx, c, "routine.review.opus-5-5-2", mesh.State{State: "working", By: "seed", At: rfc(ago(7*60 - 5))}); err != nil {
+		return err
+	}
+	r := rand.New(rand.NewPCG(122, 1))
+	ts := spread(r, 29, ago(7*60-10), ago(10))
+	ts[28] = ago(10)
+	t := thread{subj: "bmusage.node.routine.review.opus-5-5-2", agent: "routine.review.opus-5-5-2", role: "routine", repo: "app",
+		session: "5eed0122-0000-4000-8000-000000000001", file: "-home-seed-app/routine.review.opus-5-5-2.jsonl"}
+	t.calls = calls(r, "r0122", "", ts, ctxPath(r, 29, 30000, 139000, 0, 0), nil)
+	t.calls[28].Cause = "Bash: Find animations in surface files"
+	return t.publish(ctx, c)
 }
