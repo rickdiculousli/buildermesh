@@ -1,7 +1,7 @@
 // overview: the tree read, the KPI row, the digest strip, the needs-you
 // band and the overview's panels.
 import { $, badge, chartRoot, check, clock, dur, el, fetchJSON, hm, keep, keepOpen, legendOf, loader, niceMax, readState, svg, svgText, yAxis } from "./core.js";
-import { LIVE, NEEDS, WINDOWS, byStart, eachNode, hubNow, isStale, mesh, needRank, pages, setTree, specs, stateOf, strip, tl, tok } from "./state.js";
+import { LIVE, NEEDS, WINDOWS, byStart, eachNode, hubNow, isStale, mesh, needRank, setTree, specs, stateOf, strip, tl, tok } from "./state.js";
 import { showConn } from "./live.js";
 import { clampRow, hover } from "./drawer.js";
 import { abbrev, drawLanes, shortener } from "./timeline.js";
@@ -376,7 +376,7 @@ function drawCoords(box) {
 // drawCtxPanel draws the overview's context panel for ctxAgent().
 function drawCtxPanel() {
   const box = $("ctx-map");
-  if (!box || pages.view !== "map") return;
+  if (!box || $("view-map").hidden) return; // drawn on the overview only
   const agent = ctxAgent();
   const a = usageNow() && tok.data.agents.find((x) => x.agent === agent);
   $("ctx-sub").textContent = a ? agentName(agent) + " · " + (a.role || "") + (a.size ? " " + a.size : "") + " · peak " + fmtTok(a.peak) +

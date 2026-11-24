@@ -3,7 +3,7 @@
 # loopback ports, routines and ntfy off) in the background with a seeded mesh
 # holding every state the map draws, print the map's URL and a CLI config for
 # poking the mesh, and return; serve keeps running until `seed.sh stop`. The
-# page (index.html, map.js, map.css) is read from this checkout's
+# page (index.html, map.css, js/) is read from this checkout's
 # internal/web on every request (BMESH_WEB_DIR), so an edit shows on reload
 # without a restart; Go changes need a re-run. State lives under
 # ~/.cache/bmesh-scratch/seed/<checkout name> and is wiped on each run (serve's

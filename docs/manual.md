@@ -4094,6 +4094,8 @@ Internals: [internals](internals.md#t3-done)
 
 The map (`/`) is a console under a top bar: `BMESH`, the connection (`● live · <host> hub`, else `connecting` or `reconnecting`), the tabs `overview`, `timeline`, `tokens`, `specs` and `routines`, the window chips `1h 6h 24h 7d`, and the hub's clock in UTC. The window (default `6h`) is kept in the hash (`#/?w=24h`, `#/timeline?w=7d`, `#/tokens?w=1h`) and in this browser across reloads. The look is dark; a browser set to light gets the light palette. Every number, path and time is set in monospace.
 
+Each panel's read shows `loading <what>` until it answers. A read that fails before anything showed says `could not load <what>; retrying` (the lead page `no such node: <path>` for a node the mesh doesn't have, the session page `no model calls of <agent> in the last 30 days`), and the view's next minute re-read tries it again; a read that fails after something showed keeps what it shows.
+
 **The overview** shows, top to bottom:
 
 1. **The KPI row**, eight tiles:
@@ -4255,7 +4257,7 @@ Runner tests drive shell fakes instead of tmux and claude, and a fake T3. The `c
 - State lives under `~/.cache/bmesh-scratch/seed/<checkout directory name>` (`BMESH_SEED_DIR` overrides it, `BMESH_SEED_HTTP` the listen address), wiped each run, so two checkouts seed side by side. Serve's state dir is `state/` there (`XDG_STATE_HOME`), so the seed never writes the box's serve record or plugin dir. `seed.pid` there holds serve's pid; a run first stops its checkout's previous serve.
 - `go run ./scripts/seed -nats <url> -again <path>` seeds nothing: it publishes a new `ask` on the seeded `<path>` (an asking or silent node, such as `docs-0007`), so a band row dismissed with `×` shows again. `<url>` is the `nats` of the printed CLI config.
 - `scripts/seed.sh stop` stops it by that pidfile. Never `pkill -f` its command line: it matches the caller's own shell.
-- The seeded serve reads the page from the checkout's `internal/web/` on every request, so edits to `index.html`, `map.js` or `map.css` show on reload; a Go change needs a re-run. `BMESH_WEB_DIR=<dir>` does the same for any `bmesh serve` (logged as `bmesh serve: map page from <dir>`); unset, the page is the one embedded at build.
+- The seeded serve reads the page from the checkout's `internal/web/` on every request, so edits to `index.html`, `map.css` or a module under `js/` show on reload; a Go change needs a re-run. `BMESH_WEB_DIR=<dir>` does the same for any `bmesh serve` (logged as `bmesh serve: map page from <dir>`); unset, the page is the one embedded at build.
 
 **`node scripts/check.mjs <url> <width> <height> [png]`** (Node 22 or later) is the map's browser check:
 
