@@ -106,15 +106,21 @@ func (p *pass) nodeFor(id string, h first) (mesh.Node, bool) {
 	return best, best.Path != ""
 }
 
-// routine is the routine instance whose checkout is cwd:
-// <checkouts>/<repo>/routine.<kind>.<model-short>-<n> is
-// routine.<kind>.<host>-<model-short>-<n>, and a fresh instance's
-// routine.<kind>.f<id8> is its own path.
+// routine is the routine instance whose checkout is cwd (RoutineOf).
 func (p *pass) routine(cwd string) (path, repo string, ok bool) {
-	if p.env.Checkouts == "" || cwd == "" {
+	return RoutineOf(p.env.Checkouts, p.env.Host, p.here(), cwd)
+}
+
+// RoutineOf is the routine instance whose checkout under checkouts holds
+// dir: <checkouts>/<repo>/routine.<kind>.<model-short>-<n> is
+// routine.<kind>.<host>-<model-short>-<n>, and a fresh instance's
+// routine.<kind>.f<id8> is its own path; its repo is the node's of that
+// path among nodes, else the checkout's directory.
+func RoutineOf(checkouts, host string, nodes []mesh.Node, dir string) (path, repo string, ok bool) {
+	if checkouts == "" || dir == "" {
 		return "", "", false
 	}
-	rel, err := filepath.Rel(resolve(p.env.Checkouts), resolve(cwd))
+	rel, err := filepath.Rel(resolve(checkouts), resolve(dir))
 	if err != nil {
 		return "", "", false
 	}
@@ -129,10 +135,10 @@ func (p *pass) routine(cwd string) (path, repo string, ok bool) {
 	}
 	path = parts[1]
 	if strings.Contains(rest, "-") {
-		path = "routine." + kind + "." + mesh.RepoToken(p.env.Host) + "-" + rest
+		path = "routine." + kind + "." + mesh.RepoToken(host) + "-" + rest
 	}
 	repo = parts[0]
-	for _, n := range p.here() {
+	for _, n := range nodes {
 		if n.Path == path && n.Repo != "" {
 			repo = n.Repo
 		}
@@ -199,10 +205,13 @@ func linked(dir string) bool {
 	return len(f) == 2 && f[0] != f[1]
 }
 
-// repoOf is the registry row whose checkout holds dir's git common dir,
-// so a worktree counts as its repo; else the row whose checkout holds dir;
-// else other.
-func (p *pass) repoOf(dir string) string {
+// repoOf is dir's registry row (RepoOf).
+func (p *pass) repoOf(dir string) string { return RepoOf(p.env.Repos, dir) }
+
+// RepoOf is the row of repos (name to checkout) whose checkout holds dir's
+// git common dir, so a worktree counts as its repo; else the row whose
+// checkout holds dir; else other.
+func RepoOf(repos map[string]string, dir string) string {
 	if dir == "" {
 		return "other"
 	}
@@ -211,7 +220,7 @@ func (p *pass) repoOf(dir string) string {
 		at = filepath.Dir(strings.TrimSpace(string(out)))
 	}
 	at = resolve(at)
-	for name, rp := range p.env.Repos {
+	for name, rp := range repos {
 		if r := resolve(rp); at == r || strings.HasPrefix(at, r+string(filepath.Separator)) {
 			return name
 		}
