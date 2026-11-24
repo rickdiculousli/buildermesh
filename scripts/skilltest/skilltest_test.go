@@ -574,7 +574,9 @@ func fake(t *testing.T, dir, cwd string, args ...string) (int, string, string) {
 	t.Helper()
 	env := append(os.Environ(), "SKILLTEST_CELL="+dir, "SKILLTEST_LOG="+filepath.Join(dir, logFile))
 	env = append(env, gitEnv(dir)...)
-	return run(cwd, 3*time.Minute, env, filepath.Join(dir, "bin", "bmesh"), args...)
+	code, stdout, stderr := run(cwd, 3*time.Minute, env, filepath.Join(dir, "bin", "bmesh"), args...)
+	heldToManual(t, dir, args, stdout, stderr)
+	return code, stdout, stderr
 }
 
 // The fake answers what the skills ask, logs every call, starts nothing,
@@ -644,8 +646,8 @@ func TestFake(t *testing.T) {
 	expect("sent ", 0, "--node", "operator", "send", "shop-012", "hi")
 	expect("stopped shop-012", 0, "--node", "operator", "node", "stop", "shop-012", "--text", "why")
 	// This tree's manual has no choose-ideas, so its arm's fake refuses it as the binary does.
-	expect("unknown command \"choose-ideas\" (run `bmesh help`)", 2, "choose-ideas", "shop", "1 yes")
-	expect("unknown command \"frobnicate\" (run `bmesh help`)", 2, "frobnicate")
+	expect(`unknown command "choose-ideas"`, 2, "choose-ideas", "shop", "1 yes")
+	expect(`unknown command "frobnicate"`, 2, "frobnicate")
 	expect("unknown command \"frobnicate\"", 2, "--node", "operator", "frobnicate")
 
 	tree, _ := git(sandbox, gitEnv(dir), "rev-parse", "HEAD^{tree}")
@@ -826,21 +828,21 @@ func TestFakeLead(t *testing.T) {
 	}
 	expect("started shop-012", 0, "started", "--text", "012")
 	// The stop comes first: the operator wrote while the lead readied.
-	expect("bmesh: refused: 1 unread message(s) from the operator; run bmesh inbox, act on them, then run bmesh ready again", 3, "ready", "--text", "x")
+	// Each line's wording is held to the manual by fake; these tell the
+	// calls apart.
+	expect("refused: 1 unread message(s) from the operator", 3, "ready", "--text", "x")
 	expect("operator: go ahead and land it as it is", 0, "inbox")
 	expect("inbox: empty", 0, "inbox")
 	// Then the branch is read as it is.
-	expect("bmesh: refused: spec 012 reads proposed on bmesh/shop-012; a spec lands with its code reading done: "+
-		"run bmesh spec set --id 012 --status done, commit it, then run bmesh ready again", 3, "ready", "--text", "x")
+	expect("refused: spec 012 reads proposed on bmesh/shop-012", 3, "ready", "--text", "x")
 	expect("012  done", 0, "spec", "set", "--id", "012", "--status", "done")
 	if b, _ := os.ReadFile(filepath.Join(wt, leadSpecFile)); !strings.Contains(string(b), "\nstatus: done\n") {
 		t.Errorf("spec set left 012:\n%s", b)
 	}
-	expect("the worktree has changes not committed; commit them, then run bmesh ready again", 3, "ready", "--text", "x")
+	expect("refused: the worktree has changes not committed", 3, "ready", "--text", "x")
 	commit("012: done")
-	head, _ := git(wt, gitEnv(dir), "rev-parse", "HEAD")
-	expect("ready: "+thisBox()+"'s daemon lands "+head[:8]+"; it wakes you only if land needs you; bmesh mesh-status shows where it is", 0, "ready", "--text", "x")
-	expect("is not held (released already?); run bmesh inbox and carry on", 3, "held")
+	expect("ready: ", 0, "ready", "--text", "x")
+	expect("is not held", 3, "held")
 
 	exWT := filepath.Join(dir, "worktrees", "shop", "shop-012.a")
 	if out := expect(`"branch":"bmesh/shop-012-a"`, 0, "executor", "new", "--name", "a", "--model", "sonnet"); !strings.Contains(out, "You are executor shop-012.a in buildermesh. Work only in "+exWT+" on branch bmesh/shop-012-a:") ||

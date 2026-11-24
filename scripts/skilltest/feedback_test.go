@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rickdiculousli/buildermesh/internal/config"
 )
 
 // thisManual is this tree's manual, whose commands an arm of it knows.
@@ -21,7 +23,8 @@ func thisManual(t *testing.T) string {
 
 // The fake's feedback queue: list prints the canned issues still pending,
 // in the binary's formats; --repo leaves out what a fix commit or a spec on
-// origin's main names, and both leave out what was drained; drain --seq
+// origin's main names, a family's list what names bmesh's own repo (the fix
+// case's sandbox), and both leave out what was drained; drain --seq
 // deletes exactly those and says which were gone.
 func TestFakeFeedback(t *testing.T) {
 	manual := thisManual(t)
@@ -51,8 +54,9 @@ func TestFakeFeedback(t *testing.T) {
 		t.Errorf("list --repo isn't the binary's format:\n%s", all)
 	}
 	expect(all, "feedback", "list", "--repo", ".")
-	expect("41 shop-013 (shop 013, where cart/cart.go): "+fixIssues[0].Text+"\n43 shop-013 (shop 013, where store/store.go): "+fixIssues[2].Text+"\n",
-		"feedback", "list", "shop-build-2")
+	// The fix case's sandbox stands for bmesh's own repo, which a family's
+	// list leaves to the fixer.
+	expect("", "feedback", "list", "shop-build-2")
 	expect("", "feedback", "list", "--repo", "buildermesh")
 
 	gitIn := func(args ...string) {
@@ -67,19 +71,16 @@ func TestFakeFeedback(t *testing.T) {
 		gitIn("push", "-q", "origin", "HEAD:main")
 		expect(line(41, 42, 43, 44), "feedback", "list", "--repo", "shop")
 	}
-	// A fix landed but not drained is left out of --repo, not the family's.
+	// A fix landed but not drained is left out of --repo.
 	os.WriteFile(filepath.Join(wt, "cart", "note.go"), []byte("package cart\n"), 0o644)
 	gitIn("add", "-A")
 	gitIn("commit", "-qm", "Fix #41, #42: an empty cart totals 0.00")
 	gitIn("push", "-q", "origin", "HEAD:main")
 	expect(line(43, 44), "feedback", "list", "--repo", "shop")
-	expect("41 shop-013 (shop 013, where cart/cart.go): "+fixIssues[0].Text+"\n43 shop-013 (shop 013, where store/store.go): "+fixIssues[2].Text+"\n",
-		"feedback", "list", "shop-build-2")
 
 	expect("drained 1\n", "feedback", "drain", "--seq", "43")
 	expect("drained 2\nnot pending: 43,99\n", "--node", fixNode, "feedback", "drain", "--seq", "41,43,99,42")
 	expect(line(44), "feedback", "list", "--repo", "shop")
-	expect("", "feedback", "list", "shop-build-2")
 
 	// A spec on main whose from_feedback names it, whatever its status.
 	os.WriteFile(filepath.Join(wt, "docs", "proposals", "015-refunds.md"), []byte("---\nid: 015\nstatus: proposed\nfrom_feedback: shop-build-3 (shop-014) #44\n---\n"), 0o644)
@@ -91,7 +92,7 @@ func TestFakeFeedback(t *testing.T) {
 	// A family's drain takes what is pending up to --through.
 	dir, _ = caseCell(t, "drain", manual)
 	sandbox := filepath.Join(dir, sandboxDir)
-	if _, out, _ := fake(t, dir, sandbox, "feedback", "list", drainFamily); strings.Count(out, "\n") != 3 || !strings.Contains(out, "52 shop-013 (buildermesh 013, where bmesh land): ") {
+	if _, out, _ := fake(t, dir, sandbox, "feedback", "list", drainFamily); strings.Count(out, "\n") != 3 || !strings.Contains(out, "52 shop-013 ("+bmeshModule+" 013, where bmesh land): ") {
 		t.Errorf("list %s:\n%s", drainFamily, out)
 	}
 	// A coordinator's quick fix on main is left out of --repo too.
@@ -103,6 +104,10 @@ func TestFakeFeedback(t *testing.T) {
 	}
 	if _, out, _ := fake(t, dir, sandbox, "feedback", "list", "--repo", "shop"); !strings.HasPrefix(out, "53 shop-013 (shop 013, family "+drainFamily+", where store/store.go): ") || strings.Count(out, "\n") != 1 {
 		t.Errorf("list --repo after a quick fix:\n%s", out)
+	}
+	// A fix landed but not drained is left out of --repo, not the family's.
+	if _, out, _ := fake(t, dir, sandbox, "feedback", "list", drainFamily); !strings.HasPrefix(out, "51 ") || strings.Count(out, "\n") != 3 {
+		t.Errorf("the family's list after a quick fix:\n%s", out)
 	}
 	if _, out, _ := fake(t, dir, sandbox, "feedback", "drain", drainFamily, "--through", "52"); out != "drained 2 from "+drainFamily+"\n" {
 		t.Errorf("drain --through: %q", out)
@@ -237,6 +242,9 @@ func TestFakeWatchLands(t *testing.T) {
 // (100); an older arm's fake prints neither.
 func TestFakeDrainNext(t *testing.T) {
 	manual := thisManual(t)
+	if m := config.ModulePath(filepath.Join(repoRoot(t), "go.mod")); m != bmeshModule {
+		t.Errorf("bmeshModule is %s, but go.mod declares %s", bmeshModule, m)
+	}
 	for _, tc := range []struct {
 		name, manual string
 		next         bool
@@ -251,7 +259,9 @@ func TestFakeDrainNext(t *testing.T) {
 		if code != 0 || strings.Count(list, "\n") != len(drainIssues) {
 			t.Errorf("%s: feedback list: exit %d\n%s", tc.name, code, list)
 		}
-		if got := strings.Count(errs, "next: "); tc.next && (got != 3 || !strings.Contains(errs, "Quick fix from "+drainFamily+" #<seq>")) || !tc.next && got != 0 {
+		// The lines' text is held to the manual's by fake; here, that the
+		// GitHub-issue line leads, as #52 names bmesh's module.
+		if got := strings.Count(errs, "next: "); tc.next && (got != 4 || !strings.HasPrefix(errs, "next: an issue naming "+bmeshModule+" ")) || !tc.next && got != 0 {
 			t.Errorf("%s: feedback list's next lines:\n%s", tc.name, errs)
 		}
 	}

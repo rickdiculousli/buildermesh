@@ -5,8 +5,9 @@
 # status, the cwd, then each argument, tab-separated, with \, a tab and a
 # newline written \\, \t and \n.
 # It reads the cell's files under $SKILLTEST_CELL: fake.env (the row's name
-# and path, this box's name, and in a lead's or a round's cell its node,
-# worktree and a lead's spec), commands.txt (the arm's commands), canned/
+# and path, this box's name, the module bmesh is built from, the row that
+# stands for bmesh's own repo when one does, and in a lead's or a round's
+# cell its node, worktree and a lead's spec), commands.txt (the arm's commands), canned/
 # (the case's outputs, by command, and in _landed/<id> the change a watched
 # lead lands for spec <id>) and state/ (counters, the commits its land
 # pushed, and in pushed the commits it landed for a ledger write or another
@@ -19,6 +20,8 @@ state=$cell/state
 repo=
 repo_path=
 host=
+module=
+own=
 node=
 worktree=
 lead_spec=
@@ -766,17 +769,24 @@ fake_feedback_list() {
 	fi
 	f=$(first "$@")
 	f=${f:-$gnode}
-	list=$(pending "$canned/feedback-list.$f")
+	# What names bmesh's own repo here is its fixer's, left out, as
+	# familyFeedback leaves it.
+	list=$(pending "$canned/feedback-list.$f" | grep -v "^[0-9]* [^ ]* ($own " || :)
 	[ -n "$list" ] || return 0
 	printf '%s\n' "$list"
 	# A family's list that isn't a fixer's ends with the steps of draining
-	# it (100), on an arm whose manual documents them; no row here holds
-	# bmesh's module.
+	# it (100), on an arm whose manual documents them, as drainSteps says
+	# them: first the GitHub-issue line when an issue names bmesh's module.
 	case $f in *-fix-[0-9]*) return 0 ;; esac
 	if [ $json = 0 ] && saysnext feedback; then
-		echo "next: an issue naming bmesh's own repo is its fixer's: leave it pending. Of the rest, merge duplicates and drop what main already covers (a spec, or a commit naming its #<seq>)" >&2
+		rest="next: merge duplicates"
+		if printf '%s\n' "$list" | grep -q "^[0-9]* [^ ]* ($module "; then
+			echo "next: an issue naming $module is bmesh's own, whose repo isn't on this box: ask the operator once, listing them, which to file as GitHub issues (gh issue create --repo $module --title <title> --body <the issue>), file those and drain them all with the rest" >&2
+			rest="next: of the rest, merge duplicates"
+		fi
+		echo "$rest and drop what main already covers (a spec, or a commit naming its #<seq>)" >&2
 		echo "next: make each one-cause XS or S issue as the work skill's rung 3 makes a change, titled Quick fix from $f #<seq>: <what it changes>; write each other one as a proposed spec with from_feedback: $f (<its leads>) #<seq>, landed as Feedback NNN: proposed from $f, for the operator to pick" >&2
-		echo "next: then bmesh feedback drain --seq <the sequences you ruled on>, and report one line per issue: fixed by <sha8>, proposed NNN, already NNN, dropped: <why> or to the fixer" >&2
+		echo "next: then bmesh feedback drain --seq <the sequences you ruled on>, and report one line per issue: fixed by <sha8>, proposed NNN, already NNN, filed as <issue url>, not filed, or dropped: <why>" >&2
 	fi
 }
 
