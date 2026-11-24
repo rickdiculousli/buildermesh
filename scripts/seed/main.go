@@ -3,7 +3,8 @@
 // back-dated over the last six hours so the timeline's default window shows
 // every state and tick: two live leads and their executors (working,
 // asking, done and one idle), a held lead that asked first, a landing lead
-// (ready three times, refused twice, its box's daemon landing it), a done
+// (ready three times, refused twice, its box's daemon landing it, and the
+// same waiting text in two land events and the daemon's landing), a done
 // lead, a silent lead, a lead blocked for a day (stale: the band's older
 // fold), an orphan, a round and its two engineers (one blocked), a pooled
 // routine kind with instances in two repos and three spent fresh runs
@@ -207,7 +208,9 @@ func seed(ctx context.Context, url string, leads int, worktree string) error {
 		{"routine.review.f9c0d1e2f", "started", "", "working", "", 24},
 		{"routine.review.f9c0d1e2f", "progress", "job seed-f9 started", "working", "", 23},
 		{"app-0041", "ready", "review fixed", "landing", "", 20},
-		{"daemon.seed", "landing", "review job 9f2kQ running on seed", "landing", "app-0041", 18},
+		{"app-0041", "land", "waiting for job 9f2kQ (review, running on seed)", "landing", "", 19},
+		{"daemon.seed", "landing", "waiting for job 9f2kQ (review, running on seed)", "landing", "app-0041", 18},
+		{"app-0041", "land", "waiting for job 9f2kQ (review, running on seed)", "landing", "", 17},
 		{"routine.review.f9c0d1e2f", "progress", "job seed-f9 ok 600000 ctx 58000", "working", "", 13},
 		{"routine.review.f9c0d1e2f", "done", "", "done", "", 13},
 	} {
