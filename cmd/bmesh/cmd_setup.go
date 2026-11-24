@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rickdiculousli/buildermesh/internal/kind"
+	"github.com/rickdiculousli/buildermesh/internal/proc"
 	wsetup "github.com/rickdiculousli/buildermesh/internal/setup"
 )
 
@@ -63,7 +64,8 @@ func (a *app) cmdSetup(args []string) error {
 		return fail(exitError, "")
 	}
 	start := time.Now()
-	ran, _, err := wsetup.Ensure(ctx, top, s, wsetup.Options{Always: *force, Out: a.stdout})
+	ran, _, err := wsetup.Ensure(ctx, top, s, wsetup.Options{Always: *force, Out: a.stdout,
+		Checkup: func(c proc.Checkup) { fmt.Fprintf(a.stderr, "bmesh: setup %s\n", c) }})
 	if se := (*wsetup.Error)(nil); errors.As(err, &se) {
 		return fail(exitError, "%s; its output is above: fix what it says (the command is [setup] in %s), then run bmesh setup again", se.Msg, kind.ConfigFile)
 	}

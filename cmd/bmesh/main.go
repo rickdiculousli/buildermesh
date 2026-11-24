@@ -435,6 +435,8 @@ func (a *app) dispatch(args []string) error {
 		return a.cmdResult(rest)
 	case "lock-lease":
 		return a.cmdLease(rest)
+	case "run":
+		return a.cmdRun(rest)
 	case "routine":
 		return a.cmdRoutine(rest)
 	case "spec":

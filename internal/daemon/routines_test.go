@@ -22,6 +22,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/config"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 	"github.com/rickdiculousli/buildermesh/internal/meshtest"
+	"github.com/rickdiculousli/buildermesh/internal/proc"
 	"github.com/rickdiculousli/buildermesh/internal/web"
 )
 
@@ -1006,5 +1007,39 @@ batch_idle = "1s"
 	tree5 := meshtest.Git(t, f.repo, "rev-parse", c5+"^{tree}")
 	if _, ok, err := mesh.GetResult(f.ctx, f.c, mesh.ResultKey("check", tree5, nil, "")); err != nil || ok {
 		t.Fatalf("a failed setup recorded: %v %v", ok, err)
+	}
+}
+
+// A command kind's job reports a checkup while it runs, as the instance's
+// progress addressed to the requester, and is recorded as before.
+func TestCommandJobReportsCheckups(t *testing.T) {
+	cad := proc.Cadence
+	proc.Cadence = 500 * time.Millisecond
+	t.Cleanup(func() { proc.Cadence = cad })
+	f := routineSetup(t, map[string]string{".bmesh/routines/nap.toml": "mode = \"pooled\"\ntimeout = \"30s\"\ncommand = \"echo napping; sleep 2\"\n"})
+	f.start(t)
+	since := time.Now()
+	id := f.queue(t, mesh.Job{Kind: "nap", Commit: meshtest.Git(t, f.repo, "rev-parse", "HEAD"), Go: true})
+	r := f.reply(t, id, 20*time.Second)
+	if !r.OK || r.Output != "napping\n" || r.ResultKey == "" {
+		t.Fatalf("reply %+v", r)
+	}
+	if rec, ok, err := mesh.GetResult(f.ctx, f.c, r.ResultKey); err != nil || !ok || rec.Output != "napping\n" {
+		t.Fatalf("result %+v %v %v", rec, ok, err)
+	}
+	hist, err := mesh.History(f.ctx, f.c, "bm.routine.>", since)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var running []mesh.Event
+	for _, m := range hist {
+		var ev mesh.Event
+		if json.Unmarshal(m.Data, &ev) == nil && strings.HasPrefix(ev.Text, "job "+id+" running ") {
+			running = append(running, ev)
+		}
+	}
+	if len(running) == 0 || running[0].To != requester || running[0].Event != "progress" ||
+		!strings.Contains(running[len(running)-1].Text, ": napping; quiet ") {
+		t.Fatalf("checkups %+v", running)
 	}
 }

@@ -19,8 +19,12 @@ func group(cmd *exec.Cmd) {
 	cmd.SysProcAttr.Setsid = true
 }
 
-func killGroup(cmd *exec.Cmd) error {
-	err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+func killGroup(cmd *exec.Cmd) error { return signalGroup(cmd, syscall.SIGKILL) }
+
+func quitGroup(cmd *exec.Cmd) error { return signalGroup(cmd, syscall.SIGQUIT) }
+
+func signalGroup(cmd *exec.Cmd, sig syscall.Signal) error {
+	err := syscall.Kill(-cmd.Process.Pid, sig)
 	if errors.Is(err, syscall.ESRCH) {
 		return nil
 	}

@@ -174,7 +174,7 @@ func parsePSI(b []byte) (avg10, avg60 float64, ok bool) {
 }
 
 // parsePidStat reads /proc/<pid>/stat: comm is up to the last ")", as it
-// may hold spaces and parens; t is utime+stime+cutime+cstime, so a reaped
+// may hold spaces and parens; pgrp is its process group; t is utime+stime+cutime+cstime, so a reaped
 // child's time is its parent's; rss is in pages.
 func parsePidStat(b []byte, pageSize int64) (*rproc, error) {
 	s := string(b)
@@ -192,9 +192,11 @@ func parsePidStat(b []byte, pageSize int64) (*rproc, error) {
 		return v
 	}
 	ppid, _ := strconv.Atoi(f[4-3])
+	pgrp, _ := strconv.Atoi(f[5-3])
 	start, _ := strconv.ParseUint(f[22-3], 10, 64)
 	return &rproc{
 		ppid:  ppid,
+		pgrp:  pgrp,
 		comm:  s[i+1 : j],
 		start: start,
 		t:     (num(14) + num(15) + num(16) + num(17)) / userHZ,

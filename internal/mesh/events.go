@@ -32,6 +32,23 @@ type Event struct {
 	Can []string `json:"can,omitempty"`
 	// Land is a land event's account of where its run is.
 	Land *Land `json:"land,omitempty"`
+	// Run is a run event's account of the command bmesh run runs.
+	Run *Run `json:"run,omitempty"`
+}
+
+// Run is a command bmesh run runs under a node: the program's base name
+// (never its args or output), a sha256 of its argv and cwd, when it
+// started (RFC3339), the lines it printed and the CPU seconds its group
+// used so far, how many seconds it has been quiet, and, on its last
+// event, how it ended: ok, exit <n>, stalled, timed out or interrupted.
+type Run struct {
+	Prog  string `json:"prog"`
+	Key   string `json:"key"`
+	Since string `json:"since"`
+	Lines int64  `json:"lines"`
+	CPU   int64  `json:"cpu"`
+	Quiet int64  `json:"quiet"`
+	End   string `json:"end,omitempty"`
 }
 
 // The steps of a land run, in the order it takes them: before the lease

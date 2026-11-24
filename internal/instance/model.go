@@ -134,7 +134,7 @@ func (m *Model) Run(ctx context.Context, j Job) Reply {
 
 	var stdout, stderr bytes.Buffer
 	note, err := run(ctx, m.k.Timeout, j, func(ctx context.Context) *exec.Cmd { return exec.CommandContext(ctx, argv[0], argv[1:]...) },
-		strings.NewReader(text), &stdout, &stderr)
+		strings.NewReader(text), &stdout, &stderr, nil)
 	raw := stdout.String() + stderr.String()
 	res, parsed := parseResult(stdout.Bytes())
 

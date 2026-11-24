@@ -106,11 +106,13 @@ func Current(ctx context.Context, dir string, s kind.Setup) (bool, error) {
 // Options says how Ensure runs. Always runs even when the install is
 // current; Clean fails a run that leaves tracked changes or untracked,
 // unignored files (the tree a result is recorded for must be the
-// commit's); Out, when set, gets the output as it is printed.
+// commit's); Out, when set, gets the output as it is printed; Checkup,
+// when set, gets the run's checkup every proc.Every(timeout) while it runs.
 type Options struct {
-	Always bool
-	Clean  bool
-	Out    io.Writer
+	Always  bool
+	Clean   bool
+	Out     io.Writer
+	Checkup func(proc.Checkup)
 }
 
 // Ensure runs s in dir unless its install is current (or o.Always): it
@@ -134,7 +136,7 @@ func Ensure(ctx context.Context, dir string, s kind.Setup, o Options) (ran bool,
 	if err := os.Remove(m); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return false, "", err
 	}
-	out, err := run(ctx, dir, s, o.Out)
+	out, err := run(ctx, dir, s, o)
 	if err != nil {
 		return true, out, &Error{Msg: "setup failed: " + err.Error(), Output: out}
 	}
@@ -159,8 +161,9 @@ func Ensure(ctx context.Context, dir string, s kind.Setup, o Options) (ran bool,
 	return true, out, nil
 }
 
-// run runs s.Command in dir, the output captured (and copied to w).
-func run(ctx context.Context, dir string, s kind.Setup, w io.Writer) (string, error) {
+// run runs s.Command in dir, the output captured (and copied to o.Out),
+// its checkups to o.Checkup.
+func run(ctx context.Context, dir string, s kind.Setup, o Options) (string, error) {
 	timeout := s.Timeout
 	if timeout <= 0 {
 		timeout = kind.DefaultSetupTimeout
@@ -168,10 +171,16 @@ func run(ctx context.Context, dir string, s kind.Setup, w io.Writer) (string, er
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var buf bytes.Buffer
-	var out io.Writer = &buf
-	if w != nil {
-		out = io.MultiWriter(&buf, w)
+	ws := []io.Writer{&buf}
+	if o.Out != nil {
+		ws = append(ws, o.Out)
 	}
+	var watch *proc.Watch
+	if o.Checkup != nil {
+		watch = proc.NewWatch(timeout, o.Checkup)
+		ws = append(ws, watch)
+	}
+	out := io.MultiWriter(ws...)
 	cmd := shell.Command(runCtx, s.Command)
 	cmd.Dir, cmd.Stdout, cmd.Stderr = dir, out, out
 	cmd.Env = append(os.Environ(), "BMESH_SETUP=1")
@@ -182,7 +191,7 @@ func run(ctx context.Context, dir string, s kind.Setup, w io.Writer) (string, er
 		return proc.KillGroup(cmd)
 	}
 	cmd.WaitDelay = time.Second // a leftover child may hold the output open
-	err := cmd.Run()
+	err := proc.Run(cmd, watch)
 	proc.KillGroup(cmd) // nothing of the run outlives it
 	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState.Success() {
 		err = nil

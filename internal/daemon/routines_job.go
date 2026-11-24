@@ -19,6 +19,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/instance"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/proc"
 	wsetup "github.com/rickdiculousli/buildermesh/internal/setup"
 )
 
@@ -366,6 +367,10 @@ func (w *worker) handle(dl *delivery) {
 	start := time.Now()
 	ij := instance.Job{ID: j.ID, Kind: kc.Name, Commit: j.Commit, Tree: tree, From: w.path, Reply: dl.from.String(),
 		Args: j.Args, Text: j.Text, Dir: w.dir, Effort: j.Effort}
+	if !kc.IsModel() {
+		// Each checkup is the requester's activity too: "job <id> running 4m: ...".
+		ij.Checkup = func(c proc.Checkup) { w.event("progress", "job "+j.ID+" running "+c.String(), dl.from.String()) }
+	}
 	rep, lost := w.run(w.instanceFor(kc), ij, keys, ttl)
 	held := slices.DeleteFunc(slices.Clone(keys), func(k string) bool { return k == lost })
 	w.release(held)       // never the lost one: it may be someone else's now
@@ -422,7 +427,8 @@ func (w *worker) setup(ctx context.Context) string {
 	if s.Command == "" {
 		return ""
 	}
-	_, out, err := wsetup.Ensure(ctx, w.dir, s, wsetup.Options{Always: len(s.Inputs) == 0, Clean: true})
+	_, out, err := wsetup.Ensure(ctx, w.dir, s, wsetup.Options{Always: len(s.Inputs) == 0, Clean: true,
+		Checkup: func(c proc.Checkup) { w.r.d.Log.Info("routines: setup "+c.String(), "path", w.path) }})
 	if err == nil {
 		return ""
 	}

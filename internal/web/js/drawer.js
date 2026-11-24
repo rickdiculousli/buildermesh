@@ -41,11 +41,22 @@ export function landOf(f) {
   return rest.endsWith(".land") && !rest.startsWith("inbox.") ? { node: rest.slice(0, -5), text } : null;
 }
 
-// landFilter returns a function true for each frame that shows: not a land
-// or landing whose text equals the last shown for its node.
+// checkupOf is whether a frame is a run's checkup: a node's run event
+// without an end, or a routine instance's "job <id> running ..." progress.
+function checkupOf(f) {
+  const p = f.payload && typeof f.payload === "object" ? f.payload : {};
+  const rest = f.subject.replace(/^bm\./, "");
+  if (rest.endsWith(".run") && !rest.startsWith("inbox.") && !rest.startsWith("daemon.")) return !(p.run && p.run.end);
+  return rest.startsWith("routine.") && rest.endsWith(".progress") && /^job \S+ running /.test(String(p.text || ""));
+}
+
+// landFilter returns a function true for each frame that shows: not a
+// run's checkup, nor a land or landing whose text equals the last shown for
+// its node.
 export function landFilter() {
   const last = new Map();
   return (f) => {
+    if (checkupOf(f)) return false;
     const l = landOf(f);
     if (!l) return true;
     if (last.get(l.node) === l.text) return false;

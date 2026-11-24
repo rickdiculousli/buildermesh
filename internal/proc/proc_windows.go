@@ -28,3 +28,6 @@ func killGroup(cmd *exec.Cmd) error {
 	}
 	return nil
 }
+
+// quitGroup kills the tree: Windows has no quit signal to send it.
+func quitGroup(cmd *exec.Cmd) error { return killGroup(cmd) }

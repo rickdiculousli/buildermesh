@@ -668,7 +668,8 @@ func (a *app) cmdWatch(args []string) error {
 // a daemon event adds its to before the text, except settled, whose text
 // names the family. A node's land event, and the daemon's landing event
 // addressed to it, print only when their text differs from the last such
-// text printed for that node (shown, by node).
+// text printed for that node (shown, by node). A run event prints only
+// when its run ended stalled or timed out.
 func (a *app) printEvent(m mesh.Stored, leads map[string]bool, shown map[string]string) {
 	path, event, ok := splitSubject(m.Subject)
 	if !ok {
@@ -682,6 +683,11 @@ func (a *app) printEvent(m mesh.Stored, leads map[string]bool, shown map[string]
 			return
 		}
 	} else if p, err := mesh.ParsePath(path); err != nil || !leads[p.Lead()] {
+		return
+	}
+	// A run event prints only at an end bmesh made: the run stopped moving
+	// or outlived its bound.
+	if event == "run" && (ev.Run == nil || ev.Run.End != "stalled" && ev.Run.End != "timed out") {
 		return
 	}
 	node := ""

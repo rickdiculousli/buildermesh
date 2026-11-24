@@ -181,6 +181,7 @@ type raw struct {
 // reaped children's; start tells a reused pid apart (0: unknown).
 type rproc struct {
 	ppid   int
+	pgrp   int // its process group (Linux; 0 where not read)
 	comm   string
 	start  uint64
 	t      float64

@@ -24,6 +24,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/instance"
 	"github.com/rickdiculousli/buildermesh/internal/kind"
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
+	"github.com/rickdiculousli/buildermesh/internal/proc"
 	wsetup "github.com/rickdiculousli/buildermesh/internal/setup"
 	"github.com/rickdiculousli/buildermesh/internal/spec"
 )
@@ -827,7 +828,7 @@ func (a *app) runKind(ctx context.Context, k kind.Kind, top, head, tree, self, m
 		if w.track != nil && rc.Setup.Command != "" {
 			out = w.track("setup", rc.Setup.Command)
 		}
-		if err := a.runSetup(ctx, top, rc.Setup, out); err != nil {
+		if err := a.runSetup(ctx, top, rc.Setup, out, a.checkups("setup", w)); err != nil {
 			return instance.Reply{}, err
 		}
 	}
@@ -849,6 +850,7 @@ func (a *app) runKind(ctx context.Context, k kind.Kind, top, head, tree, self, m
 		}
 		j.Out = w.track(k.Name, command)
 	}
+	j.Checkup = a.checkups(k.Name, w)
 	var reply instance.Reply
 	err = a.withLeases(slots, self, k.Timeout+time.Minute, capacity, w, func(ctx context.Context) error {
 		reply = inst.Run(ctx, j)
@@ -865,15 +867,25 @@ func (a *app) runKind(ctx context.Context, k kind.Kind, top, head, tree, self, m
 	return reply, nil
 }
 
+// checkups is where an inline run's checkups of what (setup, or the kind)
+// go: a stderr line, "bmesh: verify 4m: 37 lines, cpu 61s: <newest line>",
+// or none when w says the run's own status carries them (land's cmd).
+func (a *app) checkups(what string, w leaseWait) func(proc.Checkup) {
+	if w.noCheckups {
+		return nil
+	}
+	return func(c proc.Checkup) { fmt.Fprintf(a.stderr, "bmesh: %s %s\n", what, c) }
+}
+
 // runSetup brings the worktree top's installs current (setup.Ensure, the
 // tree required clean after) before a command kind runs there, its output
-// copied to live as it is printed when live is set.
+// copied to live as it is printed when live is set, its checkups to checkup.
 // A failed setup is refused (exit 3) with the tail of its output: an
 // infrastructure error, never a recorded result.
-func (a *app) runSetup(ctx context.Context, top string, s kind.Setup, live io.Writer) error {
+func (a *app) runSetup(ctx context.Context, top string, s kind.Setup, live io.Writer, checkup func(proc.Checkup)) error {
 	start := time.Now()
 	// The setup's own timeout bounds it, not the caller's deadline.
-	ran, out, err := wsetup.Ensure(context.WithoutCancel(ctx), top, s, wsetup.Options{Clean: true, Out: live})
+	ran, out, err := wsetup.Ensure(context.WithoutCancel(ctx), top, s, wsetup.Options{Clean: true, Out: live, Checkup: checkup})
 	var se *wsetup.Error
 	if errors.As(err, &se) {
 		msg := se.Msg + "; nothing recorded: fix the setup (bmesh setup runs it alone), then run it again"

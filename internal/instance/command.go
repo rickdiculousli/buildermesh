@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/rickdiculousli/buildermesh/internal/kind"
+	"github.com/rickdiculousli/buildermesh/internal/proc"
 	"github.com/rickdiculousli/buildermesh/internal/shell"
 )
 
@@ -23,11 +24,17 @@ func NewCommand(k kind.Kind) Instance {
 
 func (c command) Run(ctx context.Context, j Job) Reply {
 	var out bytes.Buffer
-	var w io.Writer = &out
+	ws := []io.Writer{&out}
 	if j.Out != nil {
-		w = io.MultiWriter(&out, j.Out) // one writer for both, so exec copies them in one goroutine
+		ws = append(ws, j.Out)
 	}
-	note, err := run(ctx, c.k.Timeout, j, func(ctx context.Context) *exec.Cmd { return shell.Command(ctx, c.k.Command, j.Args...) }, nil, w, w)
+	var watch *proc.Watch
+	if j.Checkup != nil {
+		watch = proc.NewWatch(c.k.Timeout, j.Checkup)
+		ws = append(ws, watch)
+	}
+	w := io.MultiWriter(ws...) // one writer for all, so exec copies the output in one goroutine
+	note, err := run(ctx, c.k.Timeout, j, func(ctx context.Context) *exec.Cmd { return shell.Command(ctx, c.k.Command, j.Args...) }, nil, w, w, watch)
 	if note != "" {
 		return Reply{Judged: true, Output: out.String() + newline(out.String()) + note}
 	}

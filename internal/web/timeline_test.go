@@ -350,3 +350,12 @@ func TestTimelineEndpoint(t *testing.T) {
 		t.Fatalf("since=2h: %d, want 400", code)
 	}
 }
+
+// A routine's checkup ("job <id> running ...") is neither a job's start nor
+// its end, nor a use of the instance.
+func TestJobRunningIsNoJobEdge(t *testing.T) {
+	text := "job 3XANly81 running 4m: 37 lines, cpu 61s: ok internal/mesh 16.0s; quiet 4m"
+	if jobStartRE.MatchString(text) || jobEndRE.MatchString(text) || jobDoneRE.MatchString(text) || jobMsRE.MatchString(text) {
+		t.Fatalf("%q matched a job edge", text)
+	}
+}

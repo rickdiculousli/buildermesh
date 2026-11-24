@@ -16,3 +16,24 @@ func KillGroup(cmd *exec.Cmd) error {
 	}
 	return killGroup(cmd)
 }
+
+// QuitGroup asks cmd's process group to quit (SIGQUIT on Unix, so Go and
+// the JVM print their stacks; on Windows the group is killed); nil when it
+// is gone or never started.
+func QuitGroup(cmd *exec.Cmd) error {
+	if cmd.Process == nil {
+		return nil
+	}
+	return quitGroup(cmd)
+}
+
+// Run starts cmd, looks at its group with w (nil: not at all) while it
+// runs, and waits for it.
+func Run(cmd *exec.Cmd, w *Watch) error {
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	w.Start(cmd.Process.Pid)
+	defer w.Stop()
+	return cmd.Wait()
+}

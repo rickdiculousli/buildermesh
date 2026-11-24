@@ -251,9 +251,10 @@ func (l *lander) wait(ctx context.Context) leaseWait {
 				l.st.held()
 			}
 		},
-		at:    l.st.at,
-		track: l.st.track,
-		check: func(string) error { return l.check(ctx) }}
+		at:         l.st.at,
+		track:      l.st.track,
+		noCheckups: true,
+		check:      func(string) error { return l.check(ctx) }}
 }
 
 // events publishes the node's land events until the returned stop: each

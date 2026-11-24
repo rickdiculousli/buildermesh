@@ -25,6 +25,9 @@ type Job struct {
 	// Out, when set, gets a command's output as it is printed, besides the
 	// reply that records it whole; a model run writes nothing to it.
 	Out io.Writer
+	// Checkup, when set, gets a command run's checkup every
+	// proc.Every(timeout) while it runs; a model run gets none.
+	Checkup func(proc.Checkup)
 }
 
 // Reply is a job's outcome. Judged is whether the run judged the job: a
@@ -64,12 +67,12 @@ func (j Job) env() []string {
 }
 
 // run runs the command mk makes (with the run's context) in j.Dir with the
-// job's environment, in its own process
-// group, killing the group at timeout (0: none) or when ctx ends, and again
+// job's environment, in its own process group, looked at by watch (nil:
+// not at all), killing the group at timeout (0: none) or when ctx ends, and again
 // after the command exits so no descendant outlives the job. It returns a
 // note for the output when the run was killed, and the run's error; a command
 // that exited while a leftover child held its output is not an error.
-func run(ctx context.Context, timeout time.Duration, j Job, mk func(context.Context) *exec.Cmd, stdin io.Reader, stdout, stderr io.Writer) (string, error) {
+func run(ctx context.Context, timeout time.Duration, j Job, mk func(context.Context) *exec.Cmd, stdin io.Reader, stdout, stderr io.Writer, watch *proc.Watch) (string, error) {
 	runCtx, cancel := ctx, context.CancelFunc(func() {})
 	if timeout > 0 {
 		runCtx, cancel = context.WithTimeout(ctx, timeout)
@@ -88,7 +91,7 @@ func run(ctx context.Context, timeout time.Duration, j Job, mk func(context.Cont
 		return proc.KillGroup(cmd)
 	}
 	cmd.WaitDelay = time.Second // a leftover child may hold the output open
-	err := cmd.Run()
+	err := proc.Run(cmd, watch)
 	proc.KillGroup(cmd) // nothing left when the group is already gone
 	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState.Success() {
 		err = nil

@@ -27,7 +27,8 @@ const (
 	minTTL     = 3 * time.Second // renewals run every ttl/3
 )
 
-// leaseSignals delivers the signals that interrupt `lock-lease run`; tests replace it.
+// leaseSignals delivers the signals that interrupt `lock-lease run` and
+// `bmesh run`; tests replace it.
 var leaseSignals = func() (<-chan os.Signal, func()) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
@@ -185,6 +186,9 @@ type leaseWait struct {
 	// track, when set, is told each command an inline run starts (its
 	// setup, then the kind) and gets its output as it is printed.
 	track func(kind, command string) io.Writer
+	// noCheckups keeps the run's checkups off stderr: land's cmd carries
+	// the newest line instead.
+	noCheckups bool
 }
 
 // roleWait is an inline run's wait outside land: urgent from the operator
