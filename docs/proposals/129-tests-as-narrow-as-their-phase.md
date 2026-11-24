@@ -4,7 +4,7 @@ title: Tests run as narrow and as shallow as their phase allows, an executor's b
 kind: test-speed
 size: M
 judge: opus
-status: proposed
+status: done
 lens: eng
 proposed_by: 6df9de23-3ba1-4c33-8273-21cdd370289e
 proposed_on: 2026-11-24
@@ -75,6 +75,14 @@ Judge: opus, because every lead and executor loads these sentences, and they hav
 - **A brief test:** the executor template renders the done text with `slow:` before `Verified:`, and has the `Tests:` line.
 
 ## Shown
+- An executor's brief names its tests: `TestExecutorNewMakesWorktreeBranchNode` (cmd/bmesh) checks the brief's `- Tests: <files and test names, and the command that runs them>.` line; `go run ./scripts/skilltest --arm base=32e54f5 --arm cand=. --cases lead-s,lead-exec --runs 2` -> `lead-exec cand 1 True the executor's brief runs go test ./cart -run TestReceiptSaysTotal -v` (from its results.json).
+- Executors and leads run one test by name while building: the same run's summary, `named tests` per arm -> `| base | 4 | 50% | 0 | 0 | $1.22 | 173s | 0/16 |` and `| cand | 4 | 100% | 0 | 0 | $1.20 | 178s | 9/14 |`; lead-s alone -> `| lead-s | base | 2 | 2/2 | 0 | 0 | $0.45 | 64s | 494k | 24 | 0/2 |` and `| lead-s | cand | 2 | 2/2 | 0 | 0 | $0.46 | 70s | 499k | 24 | 2/2 |`.
+- Each scaffolded repo's `tests` block carries the two lines: `TestApplyRulesBringsAnOldTestsBlockUpToDate` (internal/scaffold) rewrites a block scaffold wrote with the old set and keeps an edited one; `TestTheManualHoldsEveryRuleSet` holds the manual to the set; this repo's block is rendered by `scaffold.ApplyRules` (marker hash `3daa1588`).
+- This repo's AGENTS.md names its slow suite: `grep -c "go test ./...\` takes about 3 minutes" AGENTS.md` -> `1`.
+- An executor's done line can carry `slow:` before `Verified:`: `TestExecutorNewMakesWorktreeBranchNode` checks `<what's there>[; slow: <command>: <why>]; Verified: ...` in the header and in the piece's report line; the executor skill and the manual's `bmesh executor new` say the same.
+- skilltest's case that flips: the run's summary -> `- lead-exec run 1: base fail, cand pass` and `- lead-exec run 2: base fail, cand pass` (expectation `executor_brief_tests`; it was tightened, after the first scoring, from "names a test" to "gives a `go test` that names a test", which the spec's "the command that runs them" asks, and the kept cells rescored with `--rescore`).
+- Easy to miss: `Verified` stays last on both of the executor template's lines, for the lead's `Verified: none` check: `TestExecutorNewMakesWorktreeBranchNode` checks the header's line and the piece's `... | none"` alone, once it holds` line.
+- Not shown: the lead's landed change carries the line an executor's `slow:` became: no executor in the skilltest run reported a `slow:` clause, and no live build has run under the new skills.
 
 ## Risks and the alternative considered
 - **Leads already break a sentence of this kind** (34% of their test time is wide). So the measure is `skilltest`'s count, not the text. If the new sentence doesn't move it, the next step is a check, not another sentence.
