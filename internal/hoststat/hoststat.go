@@ -37,29 +37,44 @@ const (
 	top = 15
 	// Other is the agent of what no agent's process accounts for.
 	Other = "other"
+	// minCover is the least of an agent's CPU seconds its threads' run must
+	// cover for its run and wait to be kept.
+	minCover = 0.5
 )
 
 // ErrUnsupported is a read on an OS with no reader (Windows).
 var ErrUnsupported = errors.New("hoststat: no reader for this OS")
 
 // Pressure is each resource's PSI `some` average over one window (Linux);
-// a resource whose file is missing is nil, never 0.
+// a resource whose file is missing is nil, never 0. MemFull is memory's
+// `full` (every non-idle task stalled on memory) over the read's interval,
+// in percent, from its total=: nil in a live answer's 10 s pressure.
 type Pressure struct {
-	CPU *float64 `json:"cpu"`
-	Mem *float64 `json:"mem"`
-	IO  *float64 `json:"io"`
+	CPU     *float64 `json:"cpu"`
+	Mem     *float64 `json:"mem"`
+	IO      *float64 `json:"io"`
+	MemFull *float64 `json:"mem_full"`
 }
 
-// Use is an agent's CPU in cores and resident memory in bytes.
+// Use is an agent's CPU in cores and resident memory in bytes, and the
+// seconds its threads ran and waited runnable for a core over the read's
+// interval (Linux; nil elsewhere, for Other, and while its run covers less
+// than half its CPU: its exited processes' share is lost, so the figure
+// would mislead).
 type Use struct {
-	CPU float64 `json:"cpu"`
-	RSS int64   `json:"rss"`
+	CPU  float64  `json:"cpu"`
+	RSS  int64    `json:"rss"`
+	Run  *float64 `json:"run"`
+	Wait *float64 `json:"wait"`
 }
 
 // Minute is one box's read on bmusage.host.<host>: CPU in cores since the
 // series' previous read, memory and swap in bytes, pressure (avg60) or
 // macOS's pressure level (1 normal, 2 warn, 4 critical), and each agent's
-// use, Other being the box's less the agents'.
+// use, Other being the box's less the agents'. Run and Wait are the
+// seconds the box's tasks ran and waited runnable for a core since the
+// previous read (Linux's /proc/schedstat, exited tasks included; nil on
+// macOS and on a kernel that doesn't count them).
 type Minute struct {
 	Host        string         `json:"host"`
 	OS          string         `json:"os"`
@@ -73,6 +88,11 @@ type Minute struct {
 	Pressure    *Pressure      `json:"pressure"`
 	MacPressure *int           `json:"mac_pressure"`
 	Agents      map[string]Use `json:"agents"`
+	Run         *float64       `json:"run"`
+	Wait        *float64       `json:"wait"`
+	// Cover is each agent's run over its CPU seconds in the interval, for
+	// the hostload harness; never published.
+	Cover map[string]float64 `json:"-"`
 }
 
 // Proc is one process in the live answer: its command name (never its
@@ -165,7 +185,9 @@ func run(ctx context.Context, name string, args ...string) ([]byte, error) {
 
 // raw is one read of the box before any diff. busy and total are Linux's
 // /proc/stat ticks (all CPUs); total 0 makes the box's CPU its processes'
-// sum (macOS).
+// sum (macOS). run and wait are /proc/schedstat's seconds (sched false:
+// none), memFull memory's full total= in µs (memFullOK false: none), and
+// threads each thread's schedstat by tid.
 type raw struct {
 	at                          time.Time
 	cores                       int
@@ -175,6 +197,19 @@ type raw struct {
 	p10, p60                    *Pressure
 	mac                         *int
 	procs                       map[int]*rproc
+	sched                       bool
+	run, wait                   float64
+	memFullOK                   bool
+	memFull                     float64
+	threads                     map[int]rthread
+}
+
+// rthread is one thread's schedstat: its process, its start time (tells a
+// reused tid apart), and the seconds it ran and waited runnable.
+type rthread struct {
+	pid       int
+	start     uint64
+	run, wait float64
 }
 
 // rproc is one process as read: t is its CPU seconds, its own and its
@@ -292,7 +327,21 @@ func (s *Sampler) diff(prev, cur *raw) (Minute, []Proc, map[string]Total) {
 	agents := attribute(cur.procs, s.match)
 	m := Minute{Host: s.env.Host, OS: s.env.GOOS, At: cur.at.UTC().Format(time.RFC3339), Cores: cur.cores,
 		Load1: cur.load1, MemUsed: cur.memUsed, MemTotal: cur.memTotal, SwapUsed: cur.swapUsed,
-		Pressure: cur.p60, MacPressure: cur.mac, Agents: map[string]Use{}}
+		MacPressure: cur.mac, Agents: map[string]Use{}}
+	if cur.p60 != nil {
+		p := *cur.p60
+		if prev.memFullOK && cur.memFullOK && dt > 0 && cur.memFull >= prev.memFull {
+			p.MemFull = ptr(round2((cur.memFull - prev.memFull) / 1e6 / dt * 100))
+		}
+		m.Pressure = &p
+	}
+	sched := prev.sched && cur.sched && cur.run >= prev.run && cur.wait >= prev.wait
+	var queued map[int][2]float64
+	if sched {
+		m.Run, m.Wait = ptr(round2(cur.run-prev.run)), ptr(round2(cur.wait-prev.wait))
+		queued = threadQueued(prev, cur)
+	}
+	runs := map[string][2]float64{}
 	totals := map[string]Total{}
 	var all []Proc
 	var sum float64
@@ -304,6 +353,8 @@ func (s *Sampler) diff(prev, cur *raw) (Minute, []Proc, map[string]Total) {
 		t := totals[a]
 		t.Procs, t.CPU, t.RSS = t.Procs+1, t.CPU+c, t.RSS+p.rss
 		totals[a] = t
+		q := runs[a]
+		runs[a] = [2]float64{q[0] + queued[pid][0], q[1] + queued[pid][1]}
 	}
 	if cur.total > 0 && cur.total > prev.total {
 		m.CPU = (cur.busy - prev.busy) / (cur.total - prev.total) * float64(cur.cores)
@@ -319,7 +370,21 @@ func (s *Sampler) diff(prev, cur *raw) (Minute, []Proc, map[string]Total) {
 		if a == Other {
 			continue
 		}
-		m.Agents[a] = Use{CPU: t.CPU, RSS: t.RSS}
+		u := Use{CPU: t.CPU, RSS: t.RSS}
+		if sched {
+			q := runs[a]
+			if secs := t.CPU * dt; secs > 0 {
+				if m.Cover == nil {
+					m.Cover = map[string]float64{}
+				}
+				m.Cover[a] = round2(q[0] / secs)
+			}
+			// shortcut: an agent's run and wait miss processes that exited between reads (a build's compiles); per-agent cgroups would keep them, upgrade if the agent figure misleads.
+			if q[0] >= minCover*t.CPU*dt {
+				u.Run, u.Wait = ptr(round2(q[0])), ptr(round2(q[1]))
+			}
+		}
+		m.Agents[a] = u
 		aCPU, aRSS = aCPU+t.CPU, aRSS+t.RSS
 	}
 	m.Agents[Other] = Use{CPU: round2(max(m.CPU-aCPU, 0)), RSS: max(m.MemUsed-aRSS, 0)}
@@ -349,6 +414,27 @@ func procCPU(prev, cur *raw, dt float64) map[int]float64 {
 	}
 	return out
 }
+
+// threadQueued is each process's threads' run and wait seconds since prev:
+// a thread is the same while its tid and start time are, and one not read
+// before counts all its run and wait.
+func threadQueued(prev, cur *raw) map[int][2]float64 {
+	out := map[int][2]float64{}
+	for tid, t := range cur.threads {
+		r, w := t.run, t.wait
+		if o, ok := prev.threads[tid]; ok && o.start == t.start {
+			r, w = r-o.run, w-o.wait
+		}
+		if r < 0 || w < 0 {
+			continue
+		}
+		q := out[t.pid]
+		out[t.pid] = [2]float64{q[0] + r, q[1] + w}
+	}
+	return out
+}
+
+func ptr(v float64) *float64 { return &v }
 
 // topProcs is the top processes by CPU and the top by memory, merged and
 // ordered by CPU, then memory.
