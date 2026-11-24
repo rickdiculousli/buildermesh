@@ -1,0 +1,121 @@
+<!doctype html>
+<!-- Mock for spec 122: bluke-003's first landing as the map would have shown it at 03:54Z on 2026-11-24,
+     rebuilt from its land events, its review job's progress events and that routine's model calls on the
+     usage stream. The "usually" figures are Bluke's earlier landings and review jobs that week. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>landing mock</title>
+<style>
+:root {
+  --page: #111110; --s1: #1a1a19; --s2: #232321; --line: #2e2e2b;
+  --tp: #f0efec; --ts: #c3c2b7; --tm: #8d8c84;
+  --c1: #3987e5; --c3: #199e70; --warn: #fab219; --crit: #d03b3b; --slate: #7b8494; --good: #0ca30c;
+  --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --landing: var(--c3);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--tp); font: 13px/1.4 var(--font); }
+a { color: var(--c1); text-decoration: none; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+header { display: flex; align-items: center; gap: 14px; border-bottom: 1px solid var(--line); padding: 10px 12px; }
+header h1 { margin: 0; font: 700 14px var(--mono); letter-spacing: .12em; }
+header nav { display: flex; gap: 14px; color: var(--tm); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.conn { font: 12px var(--mono); color: var(--good); }
+.clock { margin-left: auto; color: var(--ts); font: 12px var(--mono); }
+.view { padding: 12px; display: grid; gap: 12px; }
+.label { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--tm); margin: 6px 0 -4px; }
+.badge { display: inline-block; font: 700 11px var(--mono); letter-spacing: .06em; text-transform: uppercase;
+  border: 1px solid var(--landing); color: var(--landing); border-radius: 4px; padding: 1px 6px; }
+/* the overview's landing row: under the band, never in it */
+.need { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 0 14px; align-items: baseline;
+  background: var(--s1); border: 1px solid var(--line); border-left: 3px solid var(--crit); border-radius: 6px; padding: 8px 12px; }
+.need.landing { border-left-color: var(--landing); }
+.need .bdg { font: 700 11px var(--mono); letter-spacing: .06em; color: var(--crit); }
+.need.landing .bdg { color: var(--landing); }
+.need .p { font-family: var(--mono); color: var(--tp); margin-right: 10px; }
+.need .say { color: var(--ts); }
+.head { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }
+.head h2 { margin: 0 0 6px; font-size: 16px; width: 100%; }
+.muted { color: var(--tm); }
+.cols { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; align-items: start; }
+.card { background: var(--s1); border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; }
+.card h3 { margin: 0 0 8px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ts); }
+.card h3 .n { color: var(--tp); font: 15px var(--mono); letter-spacing: 0; text-transform: none; margin-left: 8px; }
+.run { font: 12px var(--mono); color: var(--tm); margin: 0 0 10px; }
+.steps { list-style: none; margin: 0; padding: 0; }
+.steps > li { display: grid; grid-template-columns: 18px 120px 90px minmax(0, 1fr); gap: 0 10px; padding: 5px 0; border-top: 1px solid var(--line); align-items: baseline; }
+.steps > li:first-child { border-top: 0; }
+.steps .g { font-family: var(--mono); color: var(--tm); }
+.steps .ok .g { color: var(--good); }
+.steps .now .g { color: var(--landing); }
+.steps .nm { font-family: var(--mono); }
+.steps .ahead .nm, .steps .ahead .t { color: var(--tm); }
+.steps .t { font-family: var(--mono); text-align: right; }
+.steps .now .t { color: var(--landing); font-weight: 600; }
+.steps .u { color: var(--tm); font: 12px var(--mono); }
+.detail { grid-column: 2 / -1; margin: 6px 0 2px; padding: 8px 10px; background: var(--s2); border-radius: 4px; font: 12px/1.6 var(--mono); color: var(--ts); }
+.detail .k { color: var(--tm); }
+.detail .last { color: var(--tp); }
+.fold { margin-top: 10px; font: 12px var(--mono); color: var(--tm); }
+.lines { margin: 6px 0 0; padding: 8px 10px; background: var(--s2); border-radius: 4px; font: 11px/1.6 var(--mono); color: var(--ts); white-space: pre; overflow-x: auto; }
+.side .card p { margin: 0 0 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>BMESH</h1><span class="conn">● live · k16 hub</span>
+  <nav><span>overview</span><span>timeline</span><span>tokens</span><span>specs</span><span>routines</span></nav>
+  <span class="clock">11-24 03:54Z</span>
+</header>
+<div class="view">
+  <div class="label">overview: under the needs-you band, never in it</div>
+  <div class="need" style="border-left-color:var(--warn)"><span class="bdg" style="color:var(--warn)">◌ SILENT</span><span><span class="p">bluke-005</span><span class="say">quiet for 20m · 3m ago</span></span></div>
+  <div class="need landing"><span class="bdg">▲ LANDING</span><span><a class="p" href="#">bluke-003</a><span class="say mono">16m · review 3m 29s on k16, usually 6m 30s · 29 calls · Bash: Find animations in surface files</span></span></div>
+
+  <div class="label">lead page: the landing card comes first while the lead is landing</div>
+  <div class="head">
+    <h2>bluke-003</h2>
+    <span class="badge">▲ landing</span>
+    <span>spec 003 · The input surfaces look and feel like a controller you hold, on a theme that works in dark mode</span>
+    <span class="mono muted">k16 claude-opus-5-5 started 11-23 23:39Z 4h 15m</span>
+  </div>
+  <div class="cols">
+    <div class="card">
+      <h3>landing <span class="n">16m 00s</span> <span class="muted" style="text-transform:none;letter-spacing:0;font:12px var(--mono)">since ready at 03:38:00Z · c9e97e5a</span></h3>
+      <p class="run">run 1 · 12m 29s · checks, verify 12m 28s, review queued · ended: timed out waiting for job 3XANly81 (review); the daemon ran land again</p>
+      <ol class="steps">
+        <li class="ok"><span class="g">✓</span><span class="nm">checks</span><span class="t">1s</span><span class="u"></span></li>
+        <li class="ok"><span class="g">✓</span><span class="nm">verify</span><span class="t">0s</span><span class="u">ok t:ca2ec50d, answered from the record (ran 12m 28s in run 1) · usually 12m (4)</span></li>
+        <li class="now"><span class="g">▸</span><span class="nm">review</span><span class="t">3m 29s</span><span class="u">usually 6m 30s (3)</span>
+          <div class="detail">
+            <div>job 3XANly81 · claude-opus-5-5 high · <a href="#">routine.review.k16-opus-5-5-1</a> on k16</div>
+            <div><span class="k">running</span> 3m 29s · 29 calls · read 2.4M · context 139k</div>
+            <div><span class="k">last:</span> <span class="last">Bash: Find animations in surface files</span> <span class="k">· 8s ago</span></div>
+          </div>
+        </li>
+        <li class="ahead"><span class="g">○</span><span class="nm">lease</span><span class="t">–</span><span class="u">land.Bluke</span></li>
+        <li class="ahead"><span class="g">○</span><span class="nm">rebase</span><span class="t">–</span><span class="u"></span></li>
+        <li class="ahead"><span class="g">○</span><span class="nm">results</span><span class="t">–</span><span class="u">verify again only if main moved under the code</span></li>
+        <li class="ahead"><span class="g">○</span><span class="nm">push</span><span class="t">–</span><span class="u"></span></li>
+      </ol>
+    </div>
+    <div class="side">
+      <div class="label" style="margin:0 0 8px">the verify step of the 04:09Z landing at 04:19Z, when the map read "running the inline kinds on t:4208beec" (its line is one of that run's recorded output)</div>
+      <div class="card">
+        <ol class="steps">
+          <li class="now" style="grid-template-columns:18px 70px 70px minmax(0,1fr)"><span class="g">▸</span><span class="nm">verify</span><span class="t">9m 48s</span><span class="u">usually 12m (4)</span>
+            <div class="detail">
+              <div>./gradlew --no-daemon -q assembleDebug testDebugUnitTest &amp;&amp; tools/hid-rig/run.sh</div>
+              <div><span class="k">last:</span> <span class="last">PASS switch to web_buttons</span> <span class="k">· 12s ago · 17 lines</span></div>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
