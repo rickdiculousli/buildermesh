@@ -49,6 +49,9 @@ type server struct {
 	usageMu    sync.Mutex            // held through a read of usageCache
 	usageCache map[string]usageEntry // /api/usage by window
 
+	hostsMu    sync.Mutex            // held through a read of hostsCache
+	hostsCache map[string]hostsEntry // /api/hosts' history by window
+
 	baseMu sync.Mutex // held through a read of base
 	base   baseEntry  // the baselines and the 30 days' use (108)
 }
@@ -104,7 +107,7 @@ func newServer(c *mesh.Client, o Options) *server {
 		quota = &Quota{Command: cfg.Quota.Command, Client: c, Host: o.Host}
 	}
 	return &server{c: c, cfg: cfg, host: o.Host, now: now, quota: quota, log: log,
-		usageCache: map[string]usageEntry{}, specs: map[string]specEntry{}, ledgers: map[string]ledgerEntry{}, fetched: map[string]time.Time{}}
+		usageCache: map[string]usageEntry{}, hostsCache: map[string]hostsEntry{}, specs: map[string]specEntry{}, ledgers: map[string]ledgerEntry{}, fetched: map[string]time.Time{}}
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
