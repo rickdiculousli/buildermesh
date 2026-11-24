@@ -4,7 +4,7 @@ title: bmesh land puts its step, the command it runs and that command's newest o
 kind: feature
 size: M
 judge: opus
-status: proposed
+status: accepted
 lens: eng
 proposed_by: 47745d6c-4585-4a15-b7a7-19807a4abecf
 proposed_on: 2026-11-24
