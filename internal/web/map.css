@@ -657,7 +657,9 @@ a.tile:hover { text-decoration: none; border-color: var(--tm); }
 .legend i.w-mem { background: var(--c2); }
 .legend i.w-io { background: var(--c4); }
 .legend i.refkey { background-image: linear-gradient(90deg, var(--tm) 50%, transparent 50%); background-size: 5px 3px; }
-.area.hue, .legend i.hue { fill: var(--c-fg); background: var(--c-fg); }
+.hue { --c-fill: hsl(var(--h) calc(62% * var(--sat)) 50%); }
+@media (prefers-color-scheme: dark) { .hue { --c-fill: hsl(var(--h) calc(55% * var(--sat)) 58%); } }
+.area.hue, .legend i.hue { fill: var(--c-fill); background: var(--c-fill); }
 .area.u-misc, .legend i.u-misc { fill: var(--slate); background: var(--slate); }
 .area.u-other, .legend i.u-other { fill: color-mix(in srgb, var(--tm) 40%, var(--s1)); background: color-mix(in srgb, var(--tm) 40%, var(--s1)); }
 .hosts .chip {

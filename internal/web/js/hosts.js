@@ -45,7 +45,7 @@ function cores(v) {
 
 // axisNum labels a cores axis: "8", "2.5".
 function axisNum(v) {
-  return String(+v.toFixed(2));
+  return String(v >= 10 ? Math.round(v) : +v.toFixed(2));
 }
 
 function isMac(m) {
