@@ -38,7 +38,7 @@ export function landOf(f) {
   const rest = f.subject.replace(/^bm\./, "");
   const text = String(p.text || "");
   if (rest.startsWith("daemon.")) return rest.endsWith(".landing") && p.to ? { node: p.to, text } : null;
-  return rest.endsWith(".land") ? { node: rest.slice(0, -5), text } : null;
+  return rest.endsWith(".land") && !rest.startsWith("inbox.") ? { node: rest.slice(0, -5), text } : null;
 }
 
 // landFilter returns a function true for each frame that shows: not a land

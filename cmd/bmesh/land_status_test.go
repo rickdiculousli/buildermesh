@@ -192,3 +192,49 @@ func TestLandEventsNameTheJobsStateAndHost(t *testing.T) {
 		t.Fatalf("steps %v: no checks after the jobs", steps)
 	}
 }
+
+// While an inline kind waits for its slot, its cmd carries where it waits
+// and the text names only the slot; once held, the text is the run's again.
+// The lease's wait names its holder.
+func TestLandStatusSlotWait(t *testing.T) {
+	s := newLandStatus(time.Now())
+	s.step(mesh.LandKinds, "running verify on t:4208beec")
+	s.track("verify", "./gradlew test")
+	s.at("emulator", "bluke-002", 2)
+	ev := s.event()
+	if ev.Text != "waiting for the emulator slot for verify" || ev.Land.Cmd.Wait == nil ||
+		*ev.Land.Cmd.Wait != (mesh.LandWait{Slot: "emulator", Holder: "bluke-002", Place: 2}) {
+		t.Fatalf("waiting: %+v %+v", ev, ev.Land.Cmd)
+	}
+	s.at("emulator", "bluke-003", 1) // a new holder or place changes no text
+	s.held()
+	if ev := s.event(); ev.Text != "running verify on t:4208beec" || ev.Land.Cmd.Wait != nil || ev.Land.Cmd.Command != "" {
+		t.Fatalf("held: %+v %+v", ev, ev.Land.Cmd)
+	}
+	s.step(mesh.LandLease, "taking land.repo")
+	s.at("land.repo", "app-013", 1)
+	if ev := s.event(); ev.Text != "waiting for land.repo (held by app-013)" || ev.Land.Cmd != nil {
+		t.Fatalf("lease: %+v", ev)
+	}
+	// The command's words go out once, on the first event after it started.
+	var texts []string
+	commands := 0
+	for len(s.changes) > 0 {
+		ev := <-s.changes
+		texts = append(texts, ev.Text)
+		if c := ev.Land.Cmd; c != nil && c.Command != "" {
+			commands++
+			if c.Command != "./gradlew test" || ev.Text != "waiting for the emulator slot for verify" {
+				t.Fatalf("command on %+v", ev)
+			}
+		}
+	}
+	if commands != 1 {
+		t.Fatalf("command sent %d times", commands)
+	}
+	want := []string{"running verify on t:4208beec", "waiting for the emulator slot for verify", "running verify on t:4208beec",
+		"taking land.repo", "waiting for land.repo (held by app-013)"}
+	if !slices.Equal(texts, want) {
+		t.Fatalf("queued %q, want %q", texts, want)
+	}
+}
