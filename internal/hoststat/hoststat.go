@@ -98,8 +98,8 @@ type Total struct {
 // every agent's totals, Other's included.
 type Live struct {
 	Minute
-	Pressure10 *Pressure       `json:"pressure10"`
-	Procs      []Proc          `json:"procs"`
+	Pressure10 *Pressure        `json:"pressure10"`
+	Procs      []Proc           `json:"procs"`
 	Totals     map[string]Total `json:"totals"`
 }
 
@@ -353,7 +353,9 @@ func procCPU(prev, cur *raw, dt float64) map[int]float64 {
 // ordered by CPU, then memory.
 func topProcs(all []Proc) []Proc {
 	keep := map[int]bool{}
-	sort.Slice(all, func(i, j int) bool { return all[i].RSS > all[j].RSS || all[i].RSS == all[j].RSS && all[i].PID < all[j].PID })
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].RSS > all[j].RSS || all[i].RSS == all[j].RSS && all[i].PID < all[j].PID
+	})
 	for _, p := range all[:min(top, len(all))] {
 		keep[p.PID] = true
 	}

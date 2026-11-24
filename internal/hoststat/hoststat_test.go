@@ -261,7 +261,7 @@ func TestAttribution(t *testing.T) {
 	procs := map[int]*rproc{
 		1:  {comm: "systemd"},
 		10: {ppid: 1, comm: "bash", cwd: filepath.Join(app, "src")},
-		11: {ppid: 10, comm: "java", cwd: "/"},              // an ancestor's agent
+		11: {ppid: 10, comm: "java", cwd: "/"},                // an ancestor's agent
 		20: {ppid: 1, comm: "make", cwd: filepath.Join(app2)}, // the sibling with the longer name
 		30: {ppid: 1, comm: "go", cwd: routineDir},
 		50: {ppid: 1, comm: "claude", cwd: "/home/me", start: 500},
