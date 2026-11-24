@@ -1006,6 +1006,10 @@ func leadReady(r *Rehearsal) {
 	r.Let("ready")
 }
 
+// waitByHandRE is a wait written by hand: a `sleep N`, or an `until` loop
+// that sleeps.
+var waitByHandRE = regexp.MustCompile(`(^|[^\w.-])sleep\s+\d|\buntil\b[\s\S]*\bsleep\b`)
+
 func leadCase(name string, stopFirst bool) *Case {
 	onBranch := "the lead's branch"
 	change := Pred{"change_on_branch", func(s *State) (bool, string) {
@@ -1083,6 +1087,14 @@ func leadCase(name string, stopFirst bool) *Case {
 		}
 		return false, "origin's main moved to " + clip(main, 8) + ", which no bmesh land pushed"
 	}}
+	noSleep := Pred{"no_sleep", func(s *State) (bool, string) {
+		for _, c := range s.BashCommands() {
+			if waitByHandRE.MatchString(c) {
+				return false, "waited by hand: " + clip(c, 120)
+			}
+		}
+		return true, "no sleep N and no until ... sleep loop"
+	}}
 	fix := func(r *Rehearsal) {
 		leadStarted(r)
 		fixTypo(r)
@@ -1103,7 +1115,7 @@ func leadCase(name string, stopFirst bool) *Case {
 			}
 			return writeFile(filepath.Join(e.Sandbox, leadSpecFile), leadSpec)
 		},
-		Expect: []Pred{change, tests, specDone, shown(), startedFirst, inboxFirst, landsOnce, noAsk, noPush},
+		Expect: []Pred{change, tests, specDone, shown(), startedFirst, inboxFirst, landsOnce, noAsk, noPush, noSleep},
 	}
 	if stopFirst {
 		k.Expect = append(k.Expect, tookStep)
@@ -1113,6 +1125,7 @@ func leadCase(name string, stopFirst bool) *Case {
 			{Name: "readied", Play: func(r *Rehearsal) {
 				fix(r)
 				setDone(r)
+				r.Bash("bmesh run --timeout 9m -- go test ./...")
 				r.Call("--node", leadNode, "routine", "run", "verify")
 				r.Call("--node", leadNode, "inbox")
 				ready(r)
@@ -1188,6 +1201,15 @@ func leadCase(name string, stopFirst bool) *Case {
 				r.Call("--node", leadNode, "inbox")
 				ready(r)
 				r.Reply("Ready; I asked about the case.")
+			}},
+			{Name: "waited by hand", Fails: "no_sleep", Play: func(r *Rehearsal) {
+				fix(r)
+				setDone(r)
+				r.Bash("go test ./... > test.log 2>&1 &")
+				r.Bash("until ! pgrep -f 'go test'; do sleep 3; done; tail test.log")
+				r.Call("--node", leadNode, "inbox")
+				ready(r)
+				r.Reply("Ready.")
 			}},
 			{Name: "pushed by hand", Fails: "no_push_by_hand", Play: func(r *Rehearsal) {
 				fix(r)

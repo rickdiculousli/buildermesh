@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -591,6 +592,39 @@ func (s *State) Skills() []string {
 		if !seen[m[1]] {
 			seen[m[1]] = true
 			out = append(out, m[1])
+		}
+	}
+	return out
+}
+
+// BashCommands are the Bash tool's commands in the session's transcripts,
+// its subagents' included.
+func (s *State) BashCommands() []string {
+	var out []string
+	for _, line := range strings.Split(s.Transcript(), "\n") {
+		var e struct {
+			Type    string `json:"type"`
+			Message struct {
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
+		}
+		if json.Unmarshal([]byte(line), &e) != nil || e.Type != "assistant" {
+			continue
+		}
+		var blocks []struct {
+			Type  string `json:"type"`
+			Name  string `json:"name"`
+			Input struct {
+				Command string `json:"command"`
+			} `json:"input"`
+		}
+		if json.Unmarshal(e.Message.Content, &blocks) != nil {
+			continue
+		}
+		for _, b := range blocks {
+			if b.Type == "tool_use" && b.Name == "Bash" {
+				out = append(out, b.Input.Command)
+			}
 		}
 	}
 	return out

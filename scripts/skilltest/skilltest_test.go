@@ -649,6 +649,12 @@ func TestFake(t *testing.T) {
 	expect(`unknown command "choose-ideas"`, 2, "choose-ideas", "shop", "1 yes")
 	expect(`unknown command "frobnicate"`, 2, "frobnicate")
 	expect("unknown command \"frobnicate\"", 2, "--node", "operator", "frobnicate")
+	// run runs its argv for real, in the cwd, with the command's exit.
+	if out := expect("", 3, "run", "--timeout", "9m", "--no-stall", "--", "sh", "-c", "pwd; echo err >&2; exit 3"); out != sandbox+"\n" {
+		t.Errorf("run's stdout %q", out)
+	}
+	expect("bmesh: usage: bmesh run [--timeout D] [--no-stall] -- <cmd...>", 2, "run", "true")
+	expect("bmesh: usage: bmesh run [--timeout D] [--no-stall] -- <cmd...>", 2, "run", "--")
 
 	tree, _ := git(sandbox, gitEnv(dir), "rev-parse", "HEAD^{tree}")
 	expect("verify ok t:"+tree[:8]+" (recorded)", 0, "routine", "run", "verify")

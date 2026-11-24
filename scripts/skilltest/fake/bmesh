@@ -1041,5 +1041,29 @@ feedback)
 	;;
 fix) echo "fix: $repo-fix-$(next fix) started (thread $(uuid "$(next thread)"), claude-opus-5-5, on $host)" ;;
 send) echo "sent $(uuid "$(next message)")" ;;
+run)
+	# The argv after -- runs for real, as the binary runs it, less its
+	# checkups, stall and timeout: a test that never ran can't score as passed.
+	dash=0
+	while [ $# -gt 0 ]; do
+		case $1 in
+		--)
+			dash=1
+			shift
+			break
+			;;
+		--no-stall | -no-stall | --timeout=* | -timeout=*) ;;
+		--timeout | -timeout) [ $# -gt 1 ] && shift ;;
+		*) break ;;
+		esac
+		shift
+	done
+	if [ $dash = 0 ] || [ $# -eq 0 ]; then
+		echo 'bmesh: usage: bmesh run [--timeout D] [--no-stall] -- <cmd...>' >&2
+		exit 2
+	fi
+	"$@"
+	exit $?
+	;;
 esac
 exit 0

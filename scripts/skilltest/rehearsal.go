@@ -221,6 +221,32 @@ func (r *Rehearsal) Call(args ...string) {
 	r.fail(f.Close())
 }
 
+// Bash records a Bash tool call in the session's transcript, as a live
+// session's is.
+func (r *Rehearsal) Bash(command string) {
+	if r.err != nil {
+		return
+	}
+	b, err := json.Marshal(map[string]any{"type": "assistant", "message": map[string]any{"role": "assistant",
+		"content": []any{map[string]any{"type": "tool_use", "name": "Bash", "input": map[string]any{"command": command}}}}})
+	if err != nil {
+		r.fail(err)
+		return
+	}
+	dir := filepath.Join(r.Dir, "claude-project")
+	if r.fail(os.MkdirAll(dir, 0o755)); r.err != nil {
+		return
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "rehearsal.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		r.fail(err)
+		return
+	}
+	_, err = f.Write(append(b, '\n'))
+	r.fail(err)
+	r.fail(f.Close())
+}
+
 // Let plays what the fake does when it lets a ready or land through: the
 // call is kept in state/accepted.
 func (r *Rehearsal) Let(what string) {

@@ -21,6 +21,7 @@ Never merge your branch into anyone's, rebase onto `main`, edit the spec or land
 - When your header puts `bmesh setup` first, run it, and again after you change dependencies.
 - `bmesh inbox` at each milestone and before any question: your lead's corrections arrive there.
 - The repo's routines are yours (`routine list`; `routine run <kind>` inline, or `routine queue <kind> --go` then `routine wait <job id>`). Commit first: a job names a commit.
+- Run a command you expect to take over 2 minutes in the foreground as `bmesh run --timeout 9m -- <cmd>`, with the Bash tool's timeout at 10 minutes. bmesh ends it once it stops moving, so the call returns. Ending your turn ends your task, so never end it to wait. A longer command is a routine's (`routine queue`) or your lead's. A stalled or timed-out end means: read its last lines (a Go or JVM stack is there), find what it waited on, and fix that before you run it again.
 - `progress --text "<one line>"` after a milestone, at most once every ten minutes, so long quiet work isn't marked silent.
 
 ## Report, ask, blocked
