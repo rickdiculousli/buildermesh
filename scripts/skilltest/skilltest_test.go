@@ -805,6 +805,11 @@ func TestFakeLead(t *testing.T) {
 	}
 	wt := filepath.Join(dir, cs.Cwd)
 	sandbox := filepath.Join(dir, sandboxDir)
+	// A cell of this tree's manual is one fake holds to it.
+	quotes(t)
+	if b, _ := os.ReadFile(filepath.Join(dir, "commands.txt")); string(b) != manualCommands {
+		t.Errorf("the cell's commands.txt isn't this manual's, so fake checks none of its lines:\n%s", b)
+	}
 	if b, _ := git(wt, gitEnv(dir), "branch", "--show-current"); cs.Cwd != filepath.Join("worktrees", "shop", "shop-012") || b != "bmesh/shop-012" {
 		t.Fatalf("the lead's worktree %s is on %q", cs.Cwd, b)
 	}

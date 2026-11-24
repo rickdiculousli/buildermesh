@@ -11,9 +11,14 @@ import (
 )
 
 // A manual quote: a line the manual says bmesh prints, as a pattern, and
-// its fixed start, the text before its first placeholder.
+// its fixed start, the text before its first placeholder. A form is a quote
+// that any text after its start matches (`refused: <check>`,
+// `landed <sha8>`): it holds no line, and passes one only when what follows
+// its start is one word, so a form never passes a line a fuller quote
+// holds.
 type quote struct {
 	text, start string
+	form        bool
 	re          *regexp.Regexp
 }
 
@@ -102,13 +107,14 @@ func codeSpans(l string) []string {
 }
 
 // placeholder is the manual's grammar for what varies in a quoted line:
-// <x> any text, NNN or N digits (or itself, as `--spec NNN` prints),
-// X.Y.Z a version, a|b either word, [...] optional, ... or … any text.
+// <x> any text, NNN or N digits, X.Y.Z a version, a|b either word, [...]
+// optional, ... or … any text; NNN, N and [...] also match themselves, as a
+// usage line prints them.
 var placeholder = regexp.MustCompile(`<[^<>]+>|\bN{1,3}\b|X\.Y\.Z\b|\w[\w-]*(?:\|\w[\w-]*)+|\[[^\[\]]+\]|\.\.\.|…`)
 
-// quoteOf reads a code span as a quote; ok is false when its fixed start
-// is less than a word and a space: a name (`verify`, `started`), not a
-// line, which every line beginning that word would otherwise be held to.
+// quoteOf reads a code span as a quote; ok is false for a name (`verify`,
+// `started`), whose fixed start is less than a word and a space, which
+// every line beginning that word would otherwise be held to.
 func quoteOf(s string) (quote, bool) {
 	s = strings.ReplaceAll(s, `\|`, `|`)
 	start := s
@@ -118,7 +124,11 @@ func quoteOf(s string) (quote, bool) {
 	if !strings.Contains(strings.TrimLeft(start, " "), " ") {
 		return quote{}, false
 	}
-	return quote{text: s, start: start, re: regexp.MustCompile("^" + pattern(s) + "$")}, true
+	q := quote{text: s, start: start, re: regexp.MustCompile("^" + pattern(s) + "$")}
+	if q.re.MatchString(start + "\x01 \x01") {
+		q.form, q.re = true, regexp.MustCompile("^"+regexp.QuoteMeta(start)+`\S+$`)
+	}
+	return q, true
 }
 
 func pattern(s string) string {
@@ -141,7 +151,7 @@ func pattern(s string) string {
 		case p == "X.Y.Z":
 			b.WriteString(`\d+\.\d+\.\d+`)
 		default:
-			b.WriteString("(?:" + pattern(p[1:len(p)-1]) + ")?")
+			b.WriteString("(?:" + regexp.QuoteMeta(p) + "|" + pattern(p[1:len(p)-1]) + ")?")
 		}
 		last = loc[1]
 	}
@@ -161,9 +171,24 @@ func mismatch(qs []quote, line string) []string {
 		if q.re.MatchString(line) {
 			return nil
 		}
-		begun = append(begun, q.text)
+		if !q.form {
+			begun = append(begun, q.text)
+		}
 	}
 	return begun
+}
+
+// closest is the three quotes sharing the longest start with line.
+func closest(quotes []string, line string) []string {
+	shared := func(q string) int {
+		n := 0
+		for n < len(q) && n < len(line) && q[n] == line[n] {
+			n++
+		}
+		return n
+	}
+	slices.SortStableFunc(quotes, func(a, b string) int { return shared(b) - shared(a) })
+	return quotes[:min(3, len(quotes))]
 }
 
 // heldToManual fails t for each line the fake printed in cell dir that
@@ -183,7 +208,7 @@ func heldToManual(t *testing.T, dir string, args []string, outs ...string) {
 				continue
 			}
 			if begun := mismatch(qs, l); begun != nil {
-				t.Errorf("bmesh %s printed %q, which the manual quotes as %q", strings.Join(args, " "), l, begun)
+				t.Errorf("bmesh %s printed %q, which the manual quotes as %q", strings.Join(args, " "), l, closest(begun, l))
 			}
 		}
 	}
@@ -198,28 +223,40 @@ func TestManualQuotes(t *testing.T) {
 	var qs []quote
 	for _, s := range []string{"verify", "next:", "<kind> ok t:<tree8>", "ready: <host>'s daemon lands <sha8>",
 		"drained N from <family>", "would release <repo> vX.Y.Z at <sha8> (...)", "this box is <host>[ (admin)]; secure: yes\\|no",
-		"land needs --spec NNN"} {
+		"land needs --spec NNN", "refused: <check>", "refused: <path> is not held (released already?)", "started <path>",
+		"usage: bmesh x <a> [--b B]"} {
 		if q, ok := quoteOf(s); ok {
 			qs = append(qs, q)
 		}
 	}
-	if len(qs) != 5 {
-		t.Fatalf("%d quotes read as lines, want 5 (not a name, a bare prefix or one opening with a placeholder): %v", len(qs), qs)
+	if len(qs) != 9 {
+		t.Fatalf("%d quotes read as lines, want 9 (not a name, a bare prefix or one opening with a placeholder): %v", len(qs), qs)
+	}
+	for _, q := range qs {
+		if q.form != (q.text == "refused: <check>" || q.text == "started <path>") {
+			t.Errorf("%q read as a form %v", q.text, q.form)
+		}
 	}
 	for line, held := range map[string]bool{
-		"ready: k16's daemon lands 0123abcd":               false,
-		"bmesh: ready: k16's daemon land 0123abcd":         true,
-		"drained 2 from shop-build-1":                      false,
-		"drained two from shop-build-1":                    true,
-		"would release shop v0.1.0 at 0123abcd (no specs)": false,
-		"would release shop vX at 0123abcd (no specs)":     true,
-		"this box is k16; secure: no":                      false,
-		"this box is k16 (admin); secure: yes":             false,
-		"this box is k16; secure: maybe":                   true,
-		"land needs --spec NNN":                            false,
-		"land needs --spec 012":                            false,
-		"verify ok t:0123abcd":                             false,
-		"started shop-012":                                 false,
+		"ready: k16's daemon lands 0123abcd":                false,
+		"bmesh: ready: k16's daemon land 0123abcd":          true,
+		"drained 2 from shop-build-1":                       false,
+		"drained two from shop-build-1":                     true,
+		"would release shop v0.1.0 at 0123abcd (no specs)":  false,
+		"would release shop vX at 0123abcd (no specs)":      true,
+		"this box is k16; secure: no":                       false,
+		"this box is k16 (admin); secure: yes":              false,
+		"this box is k16; secure: maybe":                    true,
+		"land needs --spec NNN":                             false,
+		"land needs --spec 012":                             false,
+		"verify ok t:0123abcd":                              false,
+		"started shop-012":                                  false,
+		"started 012 a title: shop-012":                     false, // no fuller quote here holds it
+		"refused: shop-012 is not held (released already?)": false,
+		"refused: shop-012 is not held":                     true,
+		"refused: anything":                                 false,
+		"usage: bmesh x <a> [--b B]":                        false,
+		"usage: bmesh x shop [--c C]":                       true,
 	} {
 		if got := mismatch(qs, line) != nil; got != held {
 			t.Errorf("%q fails the check %v, want %v", line, got, held)

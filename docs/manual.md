@@ -700,7 +700,7 @@ Sets the status and fields of one spec or several in their files: in the checkou
 4. pushes the commit to origin's `main` (`git push origin HEAD:refs/heads/main`, as [`bmesh land`](#bmesh-land) does), then fast-forwards `main` (`merge --ff-only` in the main checkout when it is on `main`, else `fetch . <branch>:main`); a checkout that can't follow is named on stderr and the landing stands. Without an origin it only fast-forwards `main`;
 5. removes the worktree and its branch.
 
-It prints the rows, then `landed <sha8> on main: Specs 012, 013: rejected`, or `nothing to land` when no file changed (no commit).
+It prints the rows, then `landed <sha8> on main: <the commit's subject>` (`landed <sha8> on main: Specs 012, 013: rejected`), or `nothing to land` when no file changed (no commit).
 
 **Refusals.** A refusal with exit 1 changes nothing.
 
@@ -860,6 +860,7 @@ Nothing started (every spec `building`, `waits` or `not started`, or `held`) pri
 
 | When | Exit | Message |
 |---|---|---|
+| A repo or no id given | 2 | ``usage: bmesh build <repo> <NNN> [<NNN>...] [--model M] [--effort E] [--path P] [--family F] [--hold land\|now] [--context <text\|->] [--force]`` |
 | `--hold` other than `land` or `now` | 2 | `--hold "<g>": want land or now` |
 | `--family` not one subject token | 2 | `--family: invalid family "<f>": want letters, digits, - or _, starting with a letter or digit` |
 | `--path` with several ids | 2 | `--path names one lead; pick one spec with it` |
@@ -1118,7 +1119,7 @@ Tags the repo's code head (see [Updates](#updates)) with an annotated `vX.Y.Z` t
 2. one `NNN <title>` per spec the release carries (`no specs landed since <tag>` when none);
 3. in bmesh's own repo, with upgrade notes: a blank line, `Upgrading to vX.Y.Z (docs/upgrading/vX.Y.Z.toml):`, the summary, what a start-over loses, one numbered line per step (see [Upgrade notes](#upgrade-notes)).
 
-**Output.** `released <repo> vX.Y.Z at <sha8> (NNN, NNN)`, or `(no specs)`. Without an origin, `; no origin, so it is local only` is appended. `--json` prints `{"repo","tag","commit","specs","pushed"}`; under `--dry-run` it adds `"dry_run": true`, with `pushed` false. A last tag on the code head itself (as a tag `release` cut is) prints `already released <repo> vX.Y.Z at <sha8>`, exit 0.
+**Output.** `released <repo> vX.Y.Z at <sha8> (NNN, NNN)`, or `released <repo> vX.Y.Z at <sha8> (no specs)`. Without an origin, `; no origin, so it is local only` is appended. `--json` prints `{"repo","tag","commit","specs","pushed"}`; under `--dry-run` it adds `"dry_run": true`, with `pushed` false. A last tag on the code head itself (as a tag `release` cut is) prints `already released <repo> vX.Y.Z at <sha8>`, exit 0.
 
 **Refusals** (exit 3, tagging nothing):
 
@@ -2832,7 +2833,7 @@ Prints the registry, `repos.toml`, as a table sorted by name, with the columns n
 bmesh repos show <name> [--json]
 ```
 
-Prints one row as `key: value` lines, `verify`'s commands joined by `; ` (`verify: <command>[; <command>...]`).
+Prints one row as `key: value` lines, `verify`'s commands joined by `; ` (`verify: go test ./...` for a row whose one command is `go test ./...`).
 
 | Flag | Default | Meaning |
 |---|---|---|
