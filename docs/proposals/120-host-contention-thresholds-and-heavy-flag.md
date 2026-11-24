@@ -4,10 +4,11 @@ title: Host contention reads ok, warn or red from measured thresholds, the overv
 kind: feature
 size: M
 judge: opus
-status: accepted
+status: later
 lens: ux
 proposed_by: coordinator
 proposed_on: 2026-11-23
+reason: its thresholds need 3 days of k16's host history and 1 of the Mac's, recorded only once a release carries 117
 ---
 
 ## Opportunity
