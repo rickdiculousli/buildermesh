@@ -1,7 +1,7 @@
 // lead: the lead page.
 import { $, badge, bare, card, check, dur, el, fetchJSON, field, hm, keepOpen, lastToken, loader, md, readState, stamp } from "./core.js";
 import { hubNow, pages, tl, tok } from "./state.js";
-import { clampRow, describe, frameKey } from "./drawer.js";
+import { clampRow, describe, frameKey, landFilter, landOf } from "./drawer.js";
 import { drawLanes, replayLive } from "./timeline.js";
 import { ctxChart, fmtTok, kindsRead } from "./tokens.js";
 import { checkSoon } from "./check.js";
@@ -111,12 +111,18 @@ function renderLead(path, v) {
     clampRow(li, "inbox " + (m.id || (m.from || "") + "@" + (m.at || "")));
     return li;
   });
-  const tl = (v.timeline || []).slice(-TIMELINE_MAX).reverse().map((f) => {
+  const show = landFilter();
+  const tl = (v.timeline || []).filter(show).slice(-TIMELINE_MAX).reverse().map((f) => {
     const d = describe(f);
     const who = el("span", "p", shortPath(d.path, path));
     who.title = d.path;
     const li = el("li", "ev-" + d.event, null, el("span", "t", stamp((f.payload && f.payload.at) || f.at)),
       who, el("span", "e", d.event), el("span", "x", d.text));
+    const l = landOf(f);
+    if (l) {
+      li.dataset.land = l.node;
+      li.dataset.landText = l.text;
+    }
     clampRow(li, frameKey(f));
     return li;
   });

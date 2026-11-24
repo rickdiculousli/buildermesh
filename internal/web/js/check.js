@@ -49,7 +49,22 @@ function selfCheck() {
     ` conn=${c.conn.join(">")} replay=${c.replay} live=${c.live}` +
     ` band=${$("needs").hidden ? "hidden" : $("needs").children.length}` +
     ` bandHeld=${n("#needs .need.st-held")} bandLanding=${n("#needs .need.st-landing")}` +
-    ` older=${n("#needs details.older .need")} digest=${$("strip").querySelector(".digest") ? 1 : 0} stateGaps=${stateGaps()}`;
+    ` older=${n("#needs details.older .need")} digest=${$("strip").querySelector(".digest") ? 1 : 0} stateGaps=${stateGaps()} landDup=${landDup()}`;
+}
+
+// landDup counts the land and landing rows, in the drawer and in the lead
+// page's timeline card, whose text equals the previous (older) one's for the
+// same node; the rows are newest first.
+function landDup() {
+  let dups = 0;
+  for (const ol of [$("recent"), ...document.querySelectorAll("#lead-panel .card ol.rows")]) {
+    const seen = new Map();
+    for (const li of [...ol.querySelectorAll("li[data-land]")].reverse()) {
+      if (seen.get(li.dataset.land) === li.dataset.landText) dups++;
+      seen.set(li.dataset.land, li.dataset.landText);
+    }
+  }
+  return dups;
 }
 
 // stateGaps counts the states in the node-state table with no ICON, or no
