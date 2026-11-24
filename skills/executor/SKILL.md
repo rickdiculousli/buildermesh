@@ -19,6 +19,7 @@ Never merge your branch into anyone's, rebase onto `main`, edit the spec or land
 ## While you work
 
 - When your header puts `bmesh setup` first, run it, and again after you change dependencies.
+- In your loop, run the tests your brief names, by name; when the piece is done, their package.
 - `bmesh inbox` at each milestone and before any question: your lead's corrections arrive there.
 - The repo's routines are yours (`routine list`; `routine run <kind>` inline, or `routine queue <kind> --go` then `routine wait <job id>`). Commit first: a job names a commit.
 - Run a command you expect to take over 2 minutes in the foreground as `bmesh run --timeout 9m -- <cmd>`, with the Bash tool's timeout at 10 minutes. bmesh ends it once it stops moving, so the call returns. Ending your turn ends your task, so never end it to wait. A longer command is a routine's (`routine queue`) or your lead's. A stalled or timed-out end means: read its last lines (a Go or JVM stack is there), find what it waited on, and fix that before you run it again.
@@ -26,6 +27,6 @@ Never merge your branch into anyone's, rebase onto `main`, edit the spec or land
 
 ## Report, ask, blocked
 
-- **Done**, once the piece meets its done condition and is committed: `bmesh --node <path> done --commit <sha> --text "<what's there>; Verified: <command> -> <a line it printed> | none"`, and nothing else (never a command you didn't run or a line you didn't see): it reaches your lead's inbox with your branch. End your turn with the same line.
+- **Done**, once the piece meets its done condition and is committed: `bmesh --node <path> done --commit <sha> --text "<what's there>[; slow: <command>: <why>]; Verified: <command> -> <a line it printed> | none"`, and nothing else (never a command you didn't run or a line you didn't see; `slow:` names a command of the repo's that ran far longer than its phase needed, and why, for your lead to write down): it reaches your lead's inbox with your branch. End your turn with the same line.
 - **Ask** (`ask --text "<question>"`) goes to your lead, never the operator. First write down what you tried, what the brief and code say, and the assumption you'd proceed on; ask only if that assumption could make the piece useless. Then stop: your lead resumes you with the answer.
 - **Blocked** (`blocked --text "<why, and what would unblock it>"`) when the piece can't be done as briefed. Then stop.

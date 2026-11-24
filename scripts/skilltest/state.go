@@ -599,7 +599,15 @@ func (s *State) Skills() []string {
 
 // BashCommands are the Bash tool's commands in the session's transcripts,
 // its subagents' included.
-func (s *State) BashCommands() []string {
+func (s *State) BashCommands() []string { return s.toolInputs("command", "Bash") }
+
+// AgentPrompts are the prompts the session started subagents with, by the
+// Agent tool (Task in older CLIs).
+func (s *State) AgentPrompts() []string { return s.toolInputs("prompt", "Agent", "Task") }
+
+// toolInputs are the string field of each use of the named tools in the
+// session's transcripts, in order.
+func (s *State) toolInputs(field string, tools ...string) []string {
 	var out []string
 	for _, line := range strings.Split(s.Transcript(), "\n") {
 		var e struct {
@@ -612,20 +620,40 @@ func (s *State) BashCommands() []string {
 			continue
 		}
 		var blocks []struct {
-			Type  string `json:"type"`
-			Name  string `json:"name"`
-			Input struct {
-				Command string `json:"command"`
-			} `json:"input"`
+			Type  string                     `json:"type"`
+			Name  string                     `json:"name"`
+			Input map[string]json.RawMessage `json:"input"`
 		}
 		if json.Unmarshal(e.Message.Content, &blocks) != nil {
 			continue
 		}
 		for _, b := range blocks {
-			if b.Type == "tool_use" && b.Name == "Bash" {
-				out = append(out, b.Input.Command)
+			var v string
+			if b.Type == "tool_use" && slices.Contains(tools, b.Name) && json.Unmarshal(b.Input[field], &v) == nil {
+				out = append(out, v)
 			}
 		}
 	}
 	return out
+}
+
+// goTestRE is one go test invocation, to the end of its command segment.
+var goTestRE = regexp.MustCompile(`\bgo\s+test\b[^;&|\n]*`)
+
+// namedTestRE is what makes a run name its tests: a -run pattern or a
+// test file.
+var namedTestRE = regexp.MustCompile(`\s-(test\.)?run[\s=]|\S_test\.go\b`)
+
+// TestRuns counts the session's go test invocations, its subagents'
+// included, and how many of them named a test.
+func (s *State) TestRuns() (runs, named int) {
+	for _, c := range s.BashCommands() {
+		for _, run := range goTestRE.FindAllString(c, -1) {
+			runs++
+			if namedTestRE.MatchString(run) {
+				named++
+			}
+		}
+	}
+	return runs, named
 }

@@ -223,12 +223,19 @@ func (r *Rehearsal) Call(args ...string) {
 
 // Bash records a Bash tool call in the session's transcript, as a live
 // session's is.
-func (r *Rehearsal) Bash(command string) {
+func (r *Rehearsal) Bash(command string) { r.tool("Bash", "command", command) }
+
+// Agent plays a subagent started with prompt, as Bash plays a command.
+func (r *Rehearsal) Agent(prompt string) { r.tool("Agent", "prompt", prompt) }
+
+// tool appends a use of the named tool with one string input to the
+// rehearsal's transcript.
+func (r *Rehearsal) tool(name, field, value string) {
 	if r.err != nil {
 		return
 	}
 	b, err := json.Marshal(map[string]any{"type": "assistant", "message": map[string]any{"role": "assistant",
-		"content": []any{map[string]any{"type": "tool_use", "name": "Bash", "input": map[string]any{"command": command}}}}})
+		"content": []any{map[string]any{"type": "tool_use", "name": name, "input": map[string]any{field: value}}}}})
 	if err != nil {
 		r.fail(err)
 		return

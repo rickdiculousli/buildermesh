@@ -44,7 +44,9 @@ type Row struct {
 	CostUSD       float64      `json:"cost_usd"`
 	DurationMS    int64        `json:"duration_ms"` // the CLI's, summed over turns
 	WallMS        int64        `json:"wall_ms"`
-	Turns         int          `json:"turns"` // the CLI's num_turns, summed
+	Turns         int          `json:"turns"`           // the CLI's num_turns, summed
+	TestRuns      int          `json:"test_runs"`       // the session's go test invocations, its subagents' included
+	TestRunsNamed int          `json:"test_runs_named"` // those naming a test: a -run pattern or a test file
 	Error         string       `json:"error,omitempty"`
 }
 
@@ -63,6 +65,7 @@ func score(s *State, k *Case) Row {
 	r := Row{Case: c.Case, Arm: c.Arm, Run: c.Run, Steers: c.Steers, OperatorTurns: len(c.Turns), Error: c.Error,
 		Commits: len(s.NewCommits()), Commands: []string{}, Skills: append([]string{}, s.Skills()...)}
 	r.Pass = c.Error == "" // a turn that failed proves nothing, whatever the state it left
+	r.TestRuns, r.TestRunsNamed = s.TestRuns()
 	for _, p := range k.Expect {
 		ok, why := p.Check(s)
 		r.Predicates = append(r.Predicates, PredResult{p.Name, ok, why})
@@ -161,6 +164,7 @@ func writeResults(dir string, res Results) error {
 
 type tally struct {
 	n, pass, steers, commits, turns int
+	tests, named                    int
 	cost                            float64
 	ms, tokens                      int64
 }
@@ -176,6 +180,8 @@ func (t *tally) add(r Row) {
 	t.cost += r.CostUSD
 	t.ms += r.WallMS
 	t.tokens += r.Tokens
+	t.tests += r.TestRuns
+	t.named += r.TestRunsNamed
 }
 
 // summary is summary.md: a row per case and arm, the totals per arm, then
@@ -195,9 +201,9 @@ func summary(res Results) string {
 	if res.Rescored {
 		b.WriteString(" Rescored from the kept cells.")
 	}
-	b.WriteString("\n\nPass is every expectation held; steers are the go-aheads the scripted operator had to send; commits are on the sandbox origin's main; cost and tokens are what the CLI stated for each turn; time is the turns' wall clock.\n\n")
+	b.WriteString("\n\nPass is every expectation held; steers are the go-aheads the scripted operator had to send; commits are on the sandbox origin's main; cost and tokens are what the CLI stated for each turn; time is the turns' wall clock; named tests are the go test runs (its subagents' included) that named a test by a -run pattern or a test file, of all its go test runs.\n\n")
 	b.WriteString(flips(res))
-	b.WriteString("| case | arm | runs | pass | steers | commits | cost | time | tokens | turns |\n|---|---|--:|--:|--:|--:|--:|--:|--:|--:|\n")
+	b.WriteString("| case | arm | runs | pass | steers | commits | cost | time | tokens | turns | named tests |\n|---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|\n")
 	type key struct{ k, a string }
 	groups := map[key]*tally{}
 	var keys []key
@@ -218,13 +224,13 @@ func summary(res Results) string {
 	}
 	for _, kk := range keys {
 		t := groups[kk]
-		fmt.Fprintf(&b, "| %s | %s | %d | %d/%d | %d | %d | $%.2f | %.0fs | %s | %d |\n", kk.k, kk.a, t.n, t.pass, t.n, t.steers, t.commits, t.cost, float64(t.ms)/1000, kilo(t.tokens), t.turns)
+		fmt.Fprintf(&b, "| %s | %s | %d | %d/%d | %d | %d | $%.2f | %.0fs | %s | %d | %d/%d |\n", kk.k, kk.a, t.n, t.pass, t.n, t.steers, t.commits, t.cost, float64(t.ms)/1000, kilo(t.tokens), t.turns, t.named, t.tests)
 	}
 	sort.Strings(armOrder)
-	b.WriteString("\n## Per arm\n\n| arm | cells | pass rate | steers | commits | cost | time |\n|---|--:|--:|--:|--:|--:|--:|\n")
+	b.WriteString("\n## Per arm\n\n| arm | cells | pass rate | steers | commits | cost | time | named tests |\n|---|--:|--:|--:|--:|--:|--:|--:|\n")
 	for _, a := range armOrder {
 		t := perArm[a]
-		fmt.Fprintf(&b, "| %s | %d | %.0f%% | %d | %d | $%.2f | %.0fs |\n", a, t.n, 100*float64(t.pass)/float64(max(1, t.n)), t.steers, t.commits, t.cost, float64(t.ms)/1000)
+		fmt.Fprintf(&b, "| %s | %d | %.0f%% | %d | %d | $%.2f | %.0fs | %d/%d |\n", a, t.n, 100*float64(t.pass)/float64(max(1, t.n)), t.steers, t.commits, t.cost, float64(t.ms)/1000, t.named, t.tests)
 	}
 	if named := plantedLines(res.Rows); len(named) > 0 {
 		b.WriteString("\n## Planted defects\n\n" + strings.Join(named, "\n") + "\n")

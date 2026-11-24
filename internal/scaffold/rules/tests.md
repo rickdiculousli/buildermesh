@@ -2,3 +2,5 @@
 - Test through the real entry point (the command, the package's public functions) where you can.
 - A piece isn't done while no test exercises its code.
 - A flaky test is a bug. Find the cause rather than retrying it away.
+- Test as narrow as the phase: while changing code, the one test that covers it, by name (else its file); when a piece is done, its package or module; the whole suite once the code is final, as the repo's verify.
+- Go deep as late as you can: fakes and unit tests in the loop; the real entry point when a piece is done; browsers, devices and repeated runs once, before landing.

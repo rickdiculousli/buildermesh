@@ -82,12 +82,13 @@ func TestExecutorNewMakesWorktreeBranchNode(t *testing.T) {
 	if !strings.Contains(rest, "You are executor demo-012.alpha in buildermesh. Work only in "+wt+" on branch t3code/lead-alpha:") ||
 		!strings.Contains(rest, "Every bmesh command carries --node demo-012.alpha.") || !strings.Contains(rest, "starts with `cd "+wt+" &&`") ||
 		!strings.Contains(rest, "`cd "+wt+" && bmesh --node demo-012.alpha started --text") || !strings.Contains(rest, "`buildermesh:executor` skill") ||
-		!strings.Contains(rest, "`bmesh --node demo-012.alpha done --commit <sha> --text \"<what's there>; Verified: <command> -> <a line it printed> | none\"` alone") {
+		!strings.Contains(rest, "`bmesh --node demo-012.alpha done --commit <sha> --text \"<what's there>[; slow: <command>: <why>]; Verified: <command> -> <a line it printed> | none\"` alone") {
 		t.Fatalf("header %q", rest)
 	}
 	// Then the rest of its brief: the piece to fill in, how it reports, and
 	// for the lead how to start it and when to resume it.
-	for _, w := range []string{"\n\n## Your piece\n", "- Done when: <", "`bmesh --node demo-012.alpha progress --text \"<one line>\"` at least every 15 minutes",
+	for _, w := range []string{"\n\n## Your piece\n", "- Done when: <", "\n- Tests: <files and test names, and the command that runs them>.\n",
+		"`bmesh --node demo-012.alpha done --commit <sha> --text \"<what's there>[; slow: <command>: <why>]; Verified: <command> -> <a line it printed> | none\"` alone, once it holds", "`bmesh --node demo-012.alpha progress --text \"<one line>\"` at least every 15 minutes",
 		"----- for the lead, not the prompt -----", "the Agent tool, in the background, on `claude-sonnet-5-5`, at medium effort (`effort: \"medium\"`)",
 		"resume it with SendMessage", "start a fresh one"} {
 		if !strings.Contains(rest, w) {

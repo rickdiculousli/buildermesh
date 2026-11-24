@@ -1522,6 +1522,10 @@ const (
 // `Verified: none`, or `Verified: <command> -> <a line it printed>`.
 var executorVerifiedRE = regexp.MustCompile(`Verified:\s*(none\b|\S.*->\s*\S)`)
 
+// namesTestRE is a test file or a Go test function, as a brief names the
+// tests that check its piece.
+var namesTestRE = regexp.MustCompile(`\b\w+_test\.go\b|\bTest[A-Z]\w*`)
+
 // leadExecCase is lead-s with the operator asking for the piece to go to
 // an executor: scored on the executor's whole chain (executor new, its
 // done, its branch merged, executor remove, then one ready or land) as
@@ -1578,12 +1582,26 @@ func leadExecCase() *Case {
 		}
 		return false, "no executor reported done"
 	}}
-	k.Expect = append(k.Expect, chain, merged, verified)
+	briefTests := Pred{"executor_brief_tests", func(s *State) (bool, string) {
+		for _, p := range s.AgentPrompts() {
+			if !strings.Contains(p, "You are executor ") {
+				continue
+			}
+			if m := namesTestRE.FindString(p); m != "" {
+				return true, "the executor's brief names " + m
+			}
+			return false, "the executor's brief names no test file or test"
+		}
+		return false, "no subagent was started with an executor's brief"
+	}}
+	k.Expect = append(k.Expect, chain, merged, verified, briefTests)
 	// handOff plays the executor's piece: made, its fix committed (the lead's
 	// worktree stands for its branch merged), done at that commit.
 	const verifiedText = "the receipt says Total, with its test; Verified: `go test ./cart` -> `ok  example.com/shop/cart`"
-	handOff := func(r *Rehearsal, commit, text string) {
+	const briefed = "You are executor " + execNode + " in buildermesh. ...\n\n## Your piece\n\nThe receipt says Total.\n\n- Tests: cart/receipt_test.go, TestReceiptSaysTotal: `go test -run '^TestReceiptSaysTotal$' ./cart`.\n"
+	handOffBriefed := func(r *Rehearsal, commit, text, prompt string) {
 		r.Call("--node", leadNode, "executor", "new", "--name", "receipt", "--model", "sonnet")
+		r.Agent(prompt)
 		r.Call("--node", execNode, "started", "--text", "the receipt says Total")
 		fixTypo(r)
 		if commit == "" {
@@ -1591,6 +1609,7 @@ func leadExecCase() *Case {
 		}
 		r.Call("--node", execNode, "done", "--commit", commit, "--text", text)
 	}
+	handOff := func(r *Rehearsal, commit, text string) { handOffBriefed(r, commit, text, briefed) }
 	remove := func(r *Rehearsal) { r.Call("--node", leadNode, "executor", "remove", "receipt") }
 	finish := func(r *Rehearsal) {
 		leadSetDone(r)
@@ -1609,6 +1628,12 @@ func leadExecCase() *Case {
 		{Name: "the executor verified nothing, and said so", Play: func(r *Rehearsal) {
 			leadStarted(r)
 			handOff(r, "", "the receipt says Total; Verified: none")
+			remove(r)
+			finish(r)
+		}},
+		{Name: "the executor's brief names no tests", Fails: "executor_brief_tests", Play: func(r *Rehearsal) {
+			leadStarted(r)
+			handOffBriefed(r, "", verifiedText, strings.Replace(briefed, "- Tests: cart/receipt_test.go, TestReceiptSaysTotal: `go test -run '^TestReceiptSaysTotal$' ./cart`.", "- Done when: the cart tests pass.", 1))
 			remove(r)
 			finish(r)
 		}},

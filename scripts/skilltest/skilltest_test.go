@@ -1312,3 +1312,26 @@ func TestTurnEndsItsGroup(t *testing.T) {
 		}
 	}
 }
+
+// A cell's test runs are its go test invocations, each segment of a
+// command apart, its subagents' and a bmesh run's included; one names a
+// test by a -run pattern or a test file.
+func TestTestRuns(t *testing.T) {
+	r := &Rehearsal{Dir: t.TempDir()}
+	for _, c := range []string{
+		"cd /w && go test ./...",
+		"go test -count=1 -run '^TestReceipt$' ./cart && go vet ./... && go test ./cart",
+		"bmesh run --timeout 9m -- go test -v ./cart/receipt_test.go",
+		"go build ./... ; gofmt -l .",
+	} {
+		r.Bash(c)
+	}
+	r.Agent("go test -run TestX ./cart")
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	s := &State{Dir: r.Dir, memo: map[string]check{}}
+	if runs, named := s.TestRuns(); runs != 4 || named != 2 {
+		t.Fatalf("runs %d named %d, want 4 and 2", runs, named)
+	}
+}

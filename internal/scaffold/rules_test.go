@@ -86,6 +86,30 @@ func TestApplyRulesKeepsAnEdit(t *testing.T) {
 	}
 }
 
+// A tests block scaffold wrote before the set gained its lines on how
+// narrow and how deep to test is rewritten with them; an edited one is kept.
+func TestApplyRulesBringsAnOldTestsBlockUpToDate(t *testing.T) {
+	old := "## Engineering rules\nFrom bmesh's rule set `tests`. Where the rest of this file says otherwise, the rest wins. Edit them freely: `bmesh scaffold` keeps an edited block and marks it customized.\n\n### tests\n" +
+		"- Test what callers can observe, not how the code does it. A test that breaks on a rename is testing internals.\n" +
+		"- Test through the real entry point (the command, the package's public functions) where you can.\n" +
+		"- A piece isn't done while no test exercises its code.\n" +
+		"- A flaky test is a bug. Find the cause rather than retrying it away."
+	block := func(body string) string {
+		return "# A\n\n<!-- bmesh:rules tests " + RulesHash(old) + " -->\n" + body + "\n<!-- /bmesh:rules -->\n"
+	}
+	narrow := "\n- Test as narrow as the phase: while changing code, the one test that covers it, by name (else its file); when a piece is done, its package or module; the whole suite once the code is final, as the repo's verify.\n"
+	deep := "\n- Go deep as late as you can: fakes and unit tests in the loop; the real entry point when a piece is done; browsers, devices and repeated runs once, before landing.\n"
+	out, customized, err := ApplyRules(block(old))
+	if err != nil || customized || !strings.Contains(out, narrow) || !strings.Contains(out, deep) {
+		t.Fatalf("%v %v\n%s", err, customized, out)
+	}
+	edited := strings.Replace(old, "A flaky test is a bug.", "A flaky test is ours.", 1)
+	out, customized, err = ApplyRules(block(edited))
+	if err != nil || !customized || !strings.Contains(out, "A flaky test is ours.") || strings.Contains(out, "as narrow as the phase") {
+		t.Fatalf("%v %v\n%s", err, customized, out)
+	}
+}
+
 func TestApplyRulesReadsCRLFAsUnedited(t *testing.T) {
 	once, _, _ := ApplyRules("# A\n")
 	if _, customized, _ := ApplyRules(strings.ReplaceAll(once, "\n", "\r\n")); customized {

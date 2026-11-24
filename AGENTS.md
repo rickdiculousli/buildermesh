@@ -1,6 +1,6 @@
 # Working in buildermesh
 
-`bmesh` is a Go CLI and daemon; `docs/manual.md` is the reference for every command, flag, config key, output and refusal, and `docs/internals.md` for how it works inside (subjects, buckets, record shapes, signing); the README's command index lists every command and flag, each linked to its manual section. All three are kept exact: a change to behaviour changes them in the same commit. Tests never use `/tmp` (`meshtest.Start` refuses it), so run them with `TMPDIR=$HOME/.cache/bmesh-scratch/tmp`. Runner tests drive the shell fakes in `testdata/`, never a real T3, tmux or `claude`.
+`bmesh` is a Go CLI and daemon; `docs/manual.md` is the reference for every command, flag, config key, output and refusal, and `docs/internals.md` for how it works inside (subjects, buckets, record shapes, signing); the README's command index lists every command and flag, each linked to its manual section. All three are kept exact: a change to behaviour changes them in the same commit. Tests never use `/tmp` (`meshtest.Start` refuses it), so run them with `TMPDIR=$HOME/.cache/bmesh-scratch/tmp`. `go test ./...` takes about 3 minutes, 2½ of them in `internal/daemon`; while changing code, run the one test (`go test -run '^TestX$' ./internal/daemon`, under 10 s). Runner tests drive the shell fakes in `testdata/`, never a real T3, tmux or `claude`.
 
 The skills in `skills/` are the plugin every node runs on; `docs/agents-snippet.md` is the paragraph other repos quote. Both must stay true for someone who has only `bmesh`, `docs/manual.md` and `docs/internals.md`: nothing of any particular fleet, coordinator repo or optional plugin is assumed there. A change to a skill's text is measured with `scripts/skilltest` (its README says how) against the skills before it. The ponytail files `third_party/ponytail/PIN` names are ponytail's own text, never edited by hand: a release levels it first: when `scripts/ponytail.sh check` says a newer ponytail is out, `scripts/ponytail.sh level` copies it in, for you to read before committing (the copies become agents' instructions) as `Level ponytail to vX.Y.Z`, then verify and push, and only then write the upgrade notes `bmesh release buildermesh --dry-run` asks for.
 
@@ -25,7 +25,7 @@ Half-page specs live in `docs/proposals/NNN-slug.md` (the template is `bmesh spe
 Builds here run as nodes on a buildermesh mesh through the `bmesh` CLI: a lead owns one spec in its own worktree, executors build pieces on branches under the lead's and hand them back through the mesh, and routines run this repo's checks. The repo's routine kinds live in `.bmesh/routines/<kind>.toml` (`verify` runs `TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test -count=1 ./...`, `go vet ./...`, `GOOS=windows go vet ./...`, `test -z "$(gofmt -l .)"`; `review` asks Opus, in a session that never saw the change, for findings; add a kind rather than a script when a check should be recorded). Commit before queueing a job: a job names a commit, and every result is recorded under that commit's tree hash, so a deterministic kind answers a repeat run from its record. A spec lands with its code, reading `done` in the tree that lands, and `bmesh land` rewords the landed commit to carry its proof as two trailers, `Spec: NNN` and `Verified: <entries>` (`verify ok t:<tree8>; review ok t:<tree8> m:<model>`), composed from the results recorded for the landed tree; `bmesh done` is the last word: it refuses until that commit is on `origin/main` with a result for every entry. Every read of the admin or approve key first shows a `bmesh:` dialog naming what it signs; a Keychain prompt about bmesh with no such dialog before it is not bmesh's, and the operator denies it.
 <!-- /bmesh:mesh -->
 
-<!-- bmesh:rules core design tests ponytail 5fd19472 -->
+<!-- bmesh:rules core design tests ponytail 3daa1588 -->
 ## Engineering rules
 From bmesh's rule sets `core`, `design`, `tests`, `ponytail`. Where the rest of this file says otherwise, the rest wins. Edit them freely: `bmesh scaffold` keeps an edited block and marks it customized.
 
@@ -53,6 +53,8 @@ From bmesh's rule sets `core`, `design`, `tests`, `ponytail`. Where the rest of 
 - Test through the real entry point (the command, the package's public functions) where you can.
 - A piece isn't done while no test exercises its code.
 - A flaky test is a bug. Find the cause rather than retrying it away.
+- Test as narrow as the phase: while changing code, the one test that covers it, by name (else its file); when a piece is done, its package or module; the whole suite once the code is final, as the repo's verify.
+- Go deep as late as you can: fakes and unit tests in the loop; the real entry point when a piece is done; browsers, devices and repeated runs once, before landing.
 
 ### ponytail
 You are a lazy senior developer. The best code is the code never written. You solve the whole problem with the least new code. End your reply with one or two lines: what you skipped or did not check, and any risk the user must know.
