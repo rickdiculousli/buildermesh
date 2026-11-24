@@ -228,7 +228,7 @@ func setupCell(dir string, k *Case, a Arm, fixture, host string, now time.Time) 
 	}
 	fn := fakeNode{}
 	if l := k.Lead; l != nil {
-		fn = fakeNode{Node: l.Node, Worktree: l.worktree(), Spec: l.Spec, StopFirst: l.StopFirst}
+		fn = fakeNode{Node: l.Node, Worktree: l.worktree(), Spec: l.Spec, StopFirst: l.StopFirst, Own: l.Brief == "fix"}
 	}
 	if rd := k.Round; rd != nil {
 		text, err := rd.brief(a, dir, sandbox, host, now)
@@ -276,10 +276,12 @@ func setupCell(dir string, k *Case, a Arm, fixture, host string, now time.Time) 
 type fakeNode struct {
 	Node, Worktree, Spec string
 	StopFirst, Round     bool
+	Own                  bool // the sandbox stands for bmesh's own repo (the fix case)
 }
 
 // installFake writes the fake bmesh, the stubs, the arm's commands and the
-// fake's env file (with the cell's node, worktree and a lead's spec), and
+// fake's env file (bmesh's module, the row standing for bmesh's own repo
+// when one does, and the cell's node, worktree and a lead's spec), and
 // an inert bmesh config: the real binary, called by its path, finds no mesh
 // to reach.
 func installFake(dir string, a Arm, sandbox, host string, n fakeNode) error {
@@ -319,7 +321,10 @@ func installFake(dir string, a Arm, sandbox, host string, n fakeNode) error {
 		}
 	}
 	q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
-	fakeEnv := "repo=" + q(repoName) + "\nrepo_path=" + q(sandbox) + "\nhost=" + q(host) + "\n"
+	fakeEnv := "repo=" + q(repoName) + "\nrepo_path=" + q(sandbox) + "\nhost=" + q(host) + "\nmodule=" + q(bmeshModule) + "\n"
+	if n.Own {
+		fakeEnv += "own=" + q(repoName) + "\n"
+	}
 	if n.Node != "" {
 		stop, round := "0", "0"
 		if n.StopFirst {

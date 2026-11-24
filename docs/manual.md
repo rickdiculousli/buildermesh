@@ -21,7 +21,7 @@ Every `bmesh` command with its flags, output and refusals, then the model behind
 bmesh [--config FILE] [--node PATH] [--json] <command> [args]
 ```
 
-`bmesh help` (or `-h`) prints the usage text, one line per command, on stdout; `bmesh help <command> [<subcommand>]` prints only the entries that command begins (`bmesh help executor` every `executor` entry), and an unknown one exits 2 as below. `--help` (or `-h`) on a subcommand exits 2 printing its usage line, ``usage: bmesh <command> [--flag] ... (see `bmesh help`)``, then each of its flags with what it means, one per line. `bmesh` with no command prints it on stderr and exits 2. An unknown command exits 2 with ``unknown command "<name>" (run `bmesh help`)``.
+`bmesh help` (or `-h`) prints the usage text, ``usage: bmesh [--config FILE] [--node PATH] [--json] <command> [args]`` and then one line per command, on stdout; `bmesh help <command> [<subcommand>]` prints only the entries that command begins (`bmesh help executor` every `executor` entry), and an unknown one exits 2 as below. `--help` (or `-h`) on a subcommand exits 2 printing its usage line, ``usage: bmesh <command><its flags, each as [--flag]> (see `bmesh help`)``, then each of its flags with what it means, one per line. A command given the wrong arguments exits 2 printing its synopsis, `usage: bmesh <synopsis>`, and an unknown flag exits 2 with the command's name and Go's flag error, as `build: flag provided but not defined: -<flag>`. `bmesh` with no command prints it on stderr and exits 2. An unknown command exits 2 with ``unknown command "<name>" (run `bmesh help`)``.
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -893,7 +893,7 @@ With several ids, the rows above `Spec done` refuse the command before anything 
 *Several ids.* Each spec, in id order, takes the step 3 refusals, then the two `waits` checks below, then the node checks and the start; one refusal doesn't stop the next. It prints one line per spec:
 
 - `building NNN <title>: <path> (<state>)`: its newest lead is live, so it is not started twice;
-- `started NNN <title>: <path> on <model> (thread, branch, family F)`, then `; warning: <warning>` per warning;
+- `started NNN <title>: <path> on <model> (thread <thread>, branch <branch>, family <family>[, held <gate>])`, then `; warning: <warning>` per warning;
 - `waits NNN <title>: on 004 (proposed)`: its body names a lower id (`004`, or a run `001 to 004`) whose spec is not yet `done`, `rejected` or `later`, picked in this batch or not; a higher id is a pointer, not a dependency;
 - `waits NNN <title>: 3 leads working on <repo>`: three leads of the repo (on any box) are live, counting those just started;
 - `not started NNN <title>: <the refusal>`.
@@ -1018,7 +1018,7 @@ A lead runs `feedback` to leave one line per issue of friction outside its spec 
 **`list <family>`** prints the family's pending feedback, oldest first, less what names bmesh's own repo on this box (the fixer's; see [The fixer](#the-fixer)): `<seq> <from> (<repo> <spec>[, where W][, fixed F]): <text>` (`--json`: an array of the records, each with `seq`). With nothing pending it prints nothing. Without `--json`, a list with anything in it, of a family that is not a fixer's (whose issues about other repos wait for the operator; see [The fixer](#the-fixer)), ends with these lines on stderr, the steps of **Draining a family** (below), `<module>` the module bmesh was built from:
 
 - when an issue names `<module>` (bmesh, with no row of its repo here): `next: an issue naming <module> is bmesh's own, whose repo isn't on this box: ask the operator once, listing them, which to file as GitHub issues (gh issue create --repo <module> --title <title> --body <the issue>), file those and drain them all with the rest`;
-- `next: merge duplicates and drop what main already covers (a spec, or a commit naming its #<seq>)`, beginning `next: of the rest, merge duplicates` after the line above;
+- `next: merge duplicates and drop what main already covers (a spec, or a commit naming its #<seq>)`, or after the line above `next: of the rest, merge duplicates and drop what main already covers (a spec, or a commit naming its #<seq>)`;
 - `next: make each one-cause XS or S issue as the work skill's rung 3 makes a change, titled Quick fix from <family> #<seq>: <what it changes>; write each other one as a proposed spec with from_feedback: <family> (<its leads>) #<seq>, landed as Feedback NNN: proposed from <family>, for the operator to pick`;
 - `next: then bmesh feedback drain --seq <the sequences you ruled on>, and report one line per issue: fixed by <sha8>, proposed NNN, already NNN, filed as <issue url>, not filed, or dropped: <why>`.
 
@@ -1565,7 +1565,7 @@ A node never registered reads as `idle`. Nothing leaves `done`. A `landing` lead
 
 **The session.** `started` run from a Claude Code session (`CLAUDE_CODE_SESSION_ID` set, as [the context line](#bmesh-context) reads it) keeps the session id on the node's record as `session`, so [`bmesh audit <path>`](#bmesh-audit) finds its transcript on the node's box. A node with a parent (a `.` in its path) keeps none, as it hears no context line: its session may be its lead's. A node never registered has no record to keep it on. A later `started` from another session replaces it. A lead's `started` (a node with no parent whose record's `role` is `lead`) also marks its session a lead's in the session's context state, so [the context line](#bmesh-context) from `compact_from` says to hand off rather than compact; a `started` from the session already recorded still marks it, and a mark it can't write is `started`'s error.
 
-**Output.** `started`, `progress`, `ask` and `blocked` print `<event> <path>`. `done` prints `done <path> <sha8>` (`<sha8>` the `--commit` given), or `already done at <sha8>` for a repeat.
+**Output.** `started`, `progress`, `ask` and `blocked` print `<event> <path>`, as `started <path>`. `done` prints `done <path> <sha8>` (`<sha8>` the `--commit` given), or `already done at <sha8>` for a repeat.
 
 **Refusals.** Each message prints on stderr after `bmesh: `.
 
@@ -2139,7 +2139,7 @@ Runs a kind inline, in the requester's process, on the cwd worktree's HEAD, and 
 | `--text T` | none | text for a model kind |
 | `-- args...` | none | the run's args |
 
-**Output.** The run's output, then its verdict line, `<kind> ok|fail t:<tree8>[ m:<model>] (recorded)`, or `(answered from the record)` when a deterministic kind's record answered it (the recorded output is printed above), or `(not recorded: no hub at <addr>)` with no hub (see **No hub**). A `verify` with no record for HEAD's tree is answered from the nearest verify at or below HEAD that changed nothing under the repo's code (see **Carried verify**), and nothing runs: `verify ok t:<new8> (carried from t:<old8>: nothing under code changed)`. The line is a `verified` entry, not part of the recorded output. It exits 0 when the run is ok, and 1 when it failed. A job text's `base: <sha>` that isn't a commit records no patch-id; `routine run` says so on stderr.
+**Output.** The run's output, then its verdict line, `<kind> ok|fail t:<tree8>[ m:<model>] (recorded)` (`verify ok|fail t:<tree8> (recorded)` for `verify`), or `(answered from the record)` when a deterministic kind's record answered it (the recorded output is printed above), or `(not recorded: no hub at <addr>)` with no hub (see **No hub**). A `verify` with no record for HEAD's tree is answered from the nearest verify at or below HEAD that changed nothing under the repo's code (see **Carried verify**), and nothing runs: `verify ok t:<new8> (carried from t:<old8>: nothing under code changed)`. The line is a `verified` entry, not part of the recorded output. It exits 0 when the run is ok, and 1 when it failed. A job text's `base: <sha>` that isn't a commit records no patch-id; `routine run` says so on stderr.
 
 **Carried verify.** A commit that changes nothing under the repo's code (its row's `code`, see [repos.toml](#repostoml)) has the code of its first parent. So `verify`, a deterministic kind with no record for the tree, looks down HEAD's first parents to the newest commit that changes code (`git rev-list --first-parent -1 HEAD -- <code>`), at most 100 commits, and takes the nearest one with a `verify` record of its own under the same args. A record carried there is passed over for the commits below it. If that record is ok and its tree differs from HEAD's only outside the code, it carries: it is stored for HEAD's tree, unless a record is already there, with HEAD as its commit and its output led by `carried from t:<old8>: nothing under code changed`, so `done` and `spec verified` match it as any record. If it is a fail, verify runs: a fail over the same code is a flake or a file `code` misses, and an older ok doesn't hide it. A branch with only docs since `main` reaches `main`'s verified commits this way. A change under the code, or to `.bmesh/`, runs it, and so does `--rerun`. No other kind carries.
 
@@ -2311,7 +2311,7 @@ The holder is the node, else the host name. A lead runs `land` in the background
 3. **The spec reads `done`.** The spec must be in the worktree and read `done`: the lead sets it on its branch (`bmesh spec set --id NNN --status done`, committed), so the spec lands with its code. Otherwise it is refused here (exit 3), before anything is queued or waited for: `refused: spec NNN reads <status> on <branch>; a spec lands with its code reading done: run bmesh spec set --id NNN --status done, commit it, then run bmesh land again`.
 4. Run from a node, reads its inbox as the daemon's wake does (see [Config: Wake text](#wake-text)), holding and acking nothing. An unread message sent by `operator` with `bmesh send` refuses it (exit 3); there is no `--force`. Anything else unread (a report, a reply, another node's message) is named on one line, each item as the wake names it, `unread: done from <path> (branch <b> at <sha8>); reply to job <id> (<kind> ok|fail); message from <path>`. Outside a node there is no inbox and no check.
 5. Prints the kinds it will require of the landed tree and where each came from, `required: verify (the repo's verify kind), review (t:<tree8> at HEAD)`, or `review (t:<tree8> before the rebase at <sha8>)` for a result from before a rebase by hand (`required: nothing` when none). A kind it doesn't require that has a result on an earlier commit of the branch (its own first-parent commits back to its fork point from main, and those of a head a rebase by hand rewrote) is named after them, from the nearest such commit: `required: verify (the repo's verify kind); left behind by later commits: review ok t:<tree8> at <sha8> (on the verified line as at:<sha8>)`, or `review fail ...` for a review that failed and was fixed. It isn't required because a review is one pass, its findings fixed in later commits and landed; a second pass (`routine queue review --again`) is for code a rebase changed. The review still goes on the verified line, as a record of the review that ran (step 5 under the lease); another kind left behind reads `(not on the verified line)`.
-6. **Verify first.** Runs the required inline kinds on HEAD, as step 4 under the lease runs them, so a review never reads code that fails its tests. A failing one prints its output and exits 1. Under the lease, a kind ok at the same tree here prints `<entry> (ran before the lease)` and isn't run again.
+6. **Verify first.** Runs the required inline kinds on HEAD, as step 4 under the lease runs them, so a review never reads code that fails its tests. A failing one prints its output and exits 1. Under the lease, a kind ok at the same tree here prints `<entry> (ran before the lease)` (`verify ok t:<tree8> (ran before the lease)`) and isn't run again.
 7. **The review, sized by the spec.** Run from a node, in a repo whose `review` kind is queued (not inline), prints one of:
     - `review: waiting for job <id>`: the node has an unanswered `review` job for a commit of the branch (one `land` queued before it timed out, or one the lead queued by hand); `land` waits for it instead of queueing another.
     - `review: on the branch already (ok|fail at t:<tree8>)`: a commit of the branch has a review result (the check `routine queue review` makes, including the heads a rebase by hand rewrote, so a hand rebase carries its review). It queues nothing, so a failing review that was then fixed lands on verify alone.
@@ -2832,7 +2832,7 @@ Prints the registry, `repos.toml`, as a table sorted by name, with the columns n
 bmesh repos show <name> [--json]
 ```
 
-Prints one row as `key: value` lines.
+Prints one row as `key: value` lines, `verify`'s commands joined by `; ` (`verify: <command>[; <command>...]`).
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -3588,9 +3588,9 @@ The notes are `<config dir>/notes.md`, the box's session guidance (see [Several 
 
 Each minute, after presence, the daemon writes `<state dir>/this-box.txt`, through a temporary file and a rename:
 
-`this box is <host>[ (admin)]; secure: yes|no; on the mesh: <host> (<state>[ <age>][, secure][, admin][, <N> held]), …[; held for your approval: <hold>, … (bmesh hosts held)]`
+``this box is <host>[ (admin)]; secure: yes|no; on the mesh: <boxes>[; held for your approval: <hold>, … (bmesh hosts held)][; notes: `bmesh hosts --notes`]``
 
-It lists every other roster box with its presence state, and `<N> held` when its presence carries holds. This box's own holds follow the list, each as `buildermesh +62 commits` or `a registry proposal from k16 (2 row changes)`. An asleep box shows how long ago it was seen, `asleep 2h`: in minutes, hours, or days past two days. With no other box it says `no other box`. When any verified box has notes, it ends with ``; notes: `bmesh hosts --notes` ``. [`bmesh hosts --here`](#bmesh-hosts---here) prints the file.
+`<boxes>` lists every other roster box, `<host> (<state>[ <age>][, secure][, admin][, <N> held])`, comma-separated, with its presence state, and `<N> held` when its presence carries holds. This box's own holds follow the list, each as `buildermesh +62 commits` or `a registry proposal from k16 (2 row changes)`. An asleep box shows how long ago it was seen, `asleep 2h`: in minutes, hours, or days past two days. With no other box it says `no other box`. When any verified box has notes, it ends with the notes pointer. [`bmesh hosts --here`](#bmesh-hosts---here) prints the file.
 
 #### Jobs and replies
 

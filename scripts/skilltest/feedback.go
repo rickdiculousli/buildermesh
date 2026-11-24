@@ -524,22 +524,32 @@ func lastDoneText(s *State) string {
 }
 
 // The drain case: the work skill, as the operator's coordinator, builds
-// 013 and at its family's watch-done drains the queue its lead left.
+// 013 and at its family's watch-done drains the queue its lead left. The
+// cell's registry has no row of bmesh's own repo, so the lead's feedback
+// naming buildermesh was recorded as bmesh's module, as the binary records
+// it, and the list opens with the line offering it as a GitHub issue.
 const (
 	drainFamily = "shop-build-1"
 	drainXS     = 51 // the receipt's typo, one cause
-	drainBmesh  = 52 // bmesh's own: its fixer's
+	drainBmesh  = 52 // names bmesh's module: the operator's to file
 	drainLarger = 53 // needs a design: a proposed spec
+
+	// bmeshModule is the module bmesh is built from (this repo's go.mod),
+	// which the binary records an issue naming bmesh under on a box with
+	// no row of its repo.
+	bmeshModule = "github.com/rickdiculousli/buildermesh"
 )
 
 var drainIssues = []issue{
 	{drainXS, "shop-013", repoName, "013", drainFamily, "cart/receipt.go",
 		"the receipt's last line says Totl instead of Total"},
-	{drainBmesh, "shop-013", "buildermesh", "013", drainFamily, "bmesh land",
+	{drainBmesh, "shop-013", bmeshModule, "013", drainFamily, "bmesh land",
 		"bmesh land ran the whole verify again after a rebase that brought in no commits"},
 	{drainLarger, "shop-013", repoName, "013", drainFamily, "store/store.go",
 		"every order rewrites the whole orders.json, so checkout slows as the store grows; an append-only log or a file per day needs a design"},
 }
+
+var drainBmeshRE = regexp.MustCompile(fmt.Sprintf(`\b%d\b`, drainBmesh))
 
 func drainCase() *Case {
 	quick := Pred{fmt.Sprintf("quick_fix_%d", drainXS), func(s *State) (bool, string) {
@@ -550,14 +560,21 @@ func drainCase() *Case {
 		}
 		return false, fmt.Sprintf("no Quick fix from %s #%d: commit on origin's main", drainFamily, drainXS)
 	}}
-	left := Pred{"bmesh_one_pending", func(s *State) (bool, string) {
-		if slices.Contains(s.drainedSeqs(), drainBmesh) {
-			return false, fmt.Sprintf("#%d drained", drainBmesh)
+	// The list says to ask the operator which of bmesh's issues to file.
+	offered := Pred{"bmesh_one_offered", func(s *State) (bool, string) {
+		for _, r := range s.Replies {
+			if asksOperator(r) && drainBmeshRE.MatchString(r) {
+				return true, "asked: " + clip(lastParagraph(r), 80)
+			}
 		}
+		return false, fmt.Sprintf("no reply asks the operator about #%d", drainBmesh)
+	}}
+	// bmesh's issue is filed with bmesh or not at all, never built here.
+	notHere := Pred{"bmesh_one_not_here", func(s *State) (bool, string) {
 		if ok, why := s.namedOnMain(drainBmesh); ok {
 			return false, fmt.Sprintf("#%d: %s", drainBmesh, why)
 		}
-		return true, fmt.Sprintf("#%d never drained, and nothing on origin's main names it", drainBmesh)
+		return true, fmt.Sprintf("nothing on origin's main names #%d", drainBmesh)
 	}}
 	words := "build 013"
 	begin := func(r *Rehearsal) {
@@ -580,6 +597,16 @@ func drainCase() *Case {
 		r.Commit("Feedback 015: " + status + " from " + drainFamily)
 		r.Push()
 	}
+	// ask is the turn that offers #52 to the operator; the steer answers it.
+	ask := func(r *Rehearsal) {
+		r.Reply("013 landed. 51 is fixed (the receipt says Total) and 53 is proposed as 015. 52 is bmesh's own (bmesh land verifies again after an empty rebase) and its repo isn't on this box: shall I file it as a GitHub issue on " + bmeshModule + "?")
+	}
+	// fileAndDrain is the steered turn: gh is not in the sandbox, so 52 is
+	// not filed, and all three are drained.
+	fileAndDrain := func(r *Rehearsal, seqs string) {
+		r.Call("feedback", "drain", "--seq", seqs)
+		r.Reply("51 fixed by the Quick fix commit, 53 proposed as 015, 52 not filed: gh isn't available here. All three drained.")
+	}
 	const typoSubject = "Quick fix from shop-build-1 #51: the receipt says Total"
 	return &Case{
 		Name:  "drain",
@@ -593,15 +620,15 @@ func drainCase() *Case {
 			out["watch"] = e.Ago(0) + " shop-013 started building 013\n" + e.Ago(0) + " shop-013 done 013 landed at @LANDED@\nwatch-done; next: bmesh feedback list " + drainFamily + "\n"
 			return out
 		},
-		Expect: []Pred{quick, hidden("typo_fixed", "cart", "TestSkilltestHiddenReceiptSaysTotal"), testsPass(), left,
-			specFrom("larger_proposed", drainLarger, "proposed"), drainsExactly(drainXS, drainLarger)},
+		Expect: []Pred{quick, hidden("typo_fixed", "cart", "TestSkilltestHiddenReceiptSaysTotal"), testsPass(), offered, notHere,
+			specFrom("larger_proposed", drainLarger, "proposed"), drainsExactly(drainXS, drainBmesh, drainLarger)},
 		Refs: []Ref{
 			{Name: "drained", Play: func(r *Rehearsal) {
 				begin(r)
 				quickFix(r, typoSubject)
 				propose(r, "proposed")
-				r.Call("feedback", "drain", "--seq", "51,53")
-				r.Reply("013 landed. Its lead's feedback: 51 fixed (the receipt says Total), 53 proposed as 015 for your pick, 52 is bmesh's and waits for its fixer.")
+				ask(r)
+				fileAndDrain(r, "51,52,53")
 			}},
 			{Name: "drained one at a time", Play: func(r *Rehearsal) {
 				begin(r)
@@ -609,7 +636,8 @@ func drainCase() *Case {
 				r.Call("feedback", "drain", "--seq", "51")
 				propose(r, "proposed")
 				r.Call("feedback", "drain", "--seq", "53")
-				r.Reply("Starting leads for 013: it landed; 51 fixed, 53 proposed as 015, 52 to the fixer.")
+				ask(r)
+				fileAndDrain(r, "52")
 			}},
 			{Name: "never fixed", Fails: "typo_fixed", Play: func(r *Rehearsal) {
 				begin(r)
@@ -617,38 +645,30 @@ func drainCase() *Case {
 				r.Commit(typoSubject)
 				r.Push()
 				propose(r, "proposed")
-				r.Call("feedback", "drain", "--seq", "51,53")
-				r.Reply("Done.")
+				ask(r)
+				fileAndDrain(r, "51,52,53")
 			}},
 			{Name: "titled with no space after the colon", Fails: quick.Name, Play: func(r *Rehearsal) {
 				begin(r)
 				quickFix(r, "Quick fix from shop-build-1 #51:the receipt says Total")
 				propose(r, "proposed")
-				r.Call("feedback", "drain", "--seq", "51,53")
-				r.Reply("Done.")
+				ask(r)
+				fileAndDrain(r, "51,52,53")
 			}},
 			{Name: "fixed under another title", Fails: quick.Name, Play: func(r *Rehearsal) {
 				begin(r)
 				quickFix(r, "The receipt says Total")
 				propose(r, "proposed")
-				r.Call("feedback", "drain", "--seq", "51,53")
-				r.Reply("Done.")
+				ask(r)
+				fileAndDrain(r, "51,52,53")
 			}},
-			{Name: "the bmesh one drained", Fails: left.Name, Play: func(r *Rehearsal) {
+			{Name: "the bmesh one never offered", Fails: offered.Name, Play: func(r *Rehearsal) {
 				begin(r)
 				quickFix(r, typoSubject)
 				propose(r, "proposed")
-				r.Call("feedback", "drain", "--seq", "51,52,53")
-				r.Reply("Done.")
+				fileAndDrain(r, "51,52,53")
 			}},
-			{Name: "the family drained whole", Fails: left.Name, Play: func(r *Rehearsal) {
-				begin(r)
-				quickFix(r, typoSubject)
-				propose(r, "proposed")
-				r.Call("feedback", "drain", drainFamily)
-				r.Reply("Done.")
-			}},
-			{Name: "the bmesh one specced here", Fails: left.Name, Play: func(r *Rehearsal) {
+			{Name: "the bmesh one specced here", Fails: notHere.Name, Play: func(r *Rehearsal) {
 				begin(r)
 				quickFix(r, typoSubject)
 				propose(r, "proposed")
@@ -656,26 +676,34 @@ func drainCase() *Case {
 					"id: 016\ntitle: land skips a needless verify\nstatus: proposed\nfrom_feedback: "+drainFamily+" (shop-013) #52\n", "bmesh land verifies twice.")
 				r.Commit("Feedback 016: proposed from " + drainFamily)
 				r.Push()
-				r.Call("feedback", "drain", "--seq", "51,53")
-				r.Reply("Done.")
+				ask(r)
+				fileAndDrain(r, "51,52,53")
+			}},
+			{Name: "the bmesh one left pending", Fails: "drains_exactly", Play: func(r *Rehearsal) {
+				begin(r)
+				quickFix(r, typoSubject)
+				propose(r, "proposed")
+				ask(r)
+				fileAndDrain(r, "51,53")
 			}},
 			{Name: "the larger one dropped", Fails: "larger_proposed", Play: func(r *Rehearsal) {
 				begin(r)
 				quickFix(r, typoSubject)
-				r.Call("feedback", "drain", "--seq", "51,53")
-				r.Reply("Done.")
+				ask(r)
+				fileAndDrain(r, "51,52,53")
 			}},
 			{Name: "the larger one accepted", Fails: "larger_proposed", Play: func(r *Rehearsal) {
 				begin(r)
 				quickFix(r, typoSubject)
 				propose(r, "accepted")
-				r.Call("feedback", "drain", "--seq", "51,53")
-				r.Reply("Done.")
+				ask(r)
+				fileAndDrain(r, "51,52,53")
 			}},
 			{Name: "never drained", Fails: "drains_exactly", Play: func(r *Rehearsal) {
 				begin(r)
 				quickFix(r, typoSubject)
 				propose(r, "proposed")
+				ask(r)
 				r.Reply("Done.")
 			}},
 		},
