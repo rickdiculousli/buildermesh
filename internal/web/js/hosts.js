@@ -262,7 +262,8 @@ function procTable(live) {
 // boxCard is a box's card; charts lists the chart boxes to draw once the
 // card is in the page and has its width.
 function boxCard(b, charts) {
-  if (!b.last && !b.live) return [bare(b.host, "no stats"), 0];
+  // Windows reads nothing; any other box with nothing runs a release before the sampler, or sleeps.
+  if (!b.last && !b.live) return [bare(b.host, b.os === "windows" ? "no stats" : "no live stats"), 0];
   const m = b.live || b.last;
   const parts = [];
   if (!b.live) parts.push(el("p", "empty", "no live stats"));

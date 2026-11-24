@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/rickdiculousli/buildermesh/internal/hosts"
 	"github.com/rickdiculousli/buildermesh/internal/hoststat"
 )
 
@@ -28,8 +30,9 @@ func hostMinute(host, os string, t time.Time, cpu float64, agents map[string]hos
 
 // /api/hosts draws each box's minutes in buckets of the window's step,
 // this box first; with live=1 it asks this box and the boxes with a recent
-// minute, a box that never answers (mac) and one not recent (old) read
-// null; the agents table gains each agent's mean cpu and peak memory.
+// minute, a box that never answers (mac), one not recent (old) and one
+// with a presence entry and no minutes (win, asked, no responder) read null;
+// the agents table gains each agent's mean cpu and peak memory.
 func TestHostsHistoryLiveAndAgentColumns(t *testing.T) {
 	srv, ctx, c := usageMesh(t) // this box is k16, its clock usageNow
 	pub := func(m *hoststat.Minute) {
@@ -56,12 +59,23 @@ func TestHostsHistoryLiveAndAgentColumns(t *testing.T) {
 	}
 	defer sub.Unsubscribe()
 
+	// win publishes no minutes (Windows, or a release before the sampler):
+	// its presence entry alone gives it a card.
+	kv, err := c.JS.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: hosts.BucketHosts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kv.Put(ctx, "win", []byte(`{"host":"win","os":"windows"}`)); err != nil {
+		t.Fatal(err)
+	}
+
 	var v HostsView
 	raw := getJSON(t, srv, "/api/hosts?since=1h", 200, &v)
 	if strings.Contains(raw, `"live"`) {
 		t.Fatalf("no live=1: want no live answers: %s", raw)
 	}
-	if v.Step != 60 || v.Host != "k16" || len(v.Boxes) != 2 || v.Boxes[0].Host != "k16" || v.Boxes[1].Host != "mac" {
+	if v.Step != 60 || v.Host != "k16" || len(v.Boxes) != 3 || v.Boxes[0].Host != "k16" || v.Boxes[1].Host != "mac" ||
+		v.Boxes[2].Host != "win" || v.Boxes[2].OS != "windows" || v.Boxes[2].Last != nil || len(v.Boxes[2].Points) != 0 {
 		t.Fatalf("%+v", v)
 	}
 	k := v.Boxes[0]
@@ -70,7 +84,7 @@ func TestHostsHistoryLiveAndAgentColumns(t *testing.T) {
 		t.Fatalf("k16 %+v", k)
 	}
 	getJSON(t, srv, "/api/hosts?since=6h", 200, &v)
-	if len(v.Boxes) != 3 || v.Step != 600 {
+	if len(v.Boxes) != 4 || v.Step != 600 {
 		t.Fatalf("6h: %+v", v)
 	}
 	// 6h buckets of 10 minutes: 12:08 and 12:09 share one, its means.
@@ -92,8 +106,8 @@ func TestHostsHistoryLiveAndAgentColumns(t *testing.T) {
 	if took := time.Since(start); took > 4*time.Second {
 		t.Fatalf("live=1 took %v", took)
 	}
-	if strings.Count(raw, `"live":`) != 3 || lv.Boxes[0].Live == nil || len(lv.Boxes[0].Live.Procs) != 1 ||
-		lv.Boxes[0].Live.Procs[0].Agent != lead || lv.Boxes[1].Live != nil || lv.Boxes[2].Live != nil {
+	if strings.Count(raw, `"live":`) != 4 || lv.Boxes[0].Live == nil || len(lv.Boxes[0].Live.Procs) != 1 ||
+		lv.Boxes[0].Live.Procs[0].Agent != lead || lv.Boxes[1].Live != nil || lv.Boxes[2].Live != nil || lv.Boxes[3].Live != nil {
 		t.Fatalf("live: %s", raw)
 	}
 

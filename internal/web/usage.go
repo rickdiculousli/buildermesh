@@ -343,7 +343,7 @@ func (s *server) usageView(r *http.Request, now time.Time, key string, span time
 	}
 	hosts, err := s.hostsData(ctx, key)
 	if err != nil {
-		return UsageView{}, err
+		s.log.Warn("usage: host history", "err", err) // the columns read null; the view stands
 	}
 	for _, a := range rep.Agents {
 		calls := rep.ByAgent[a.Agent]
