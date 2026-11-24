@@ -572,7 +572,7 @@ func (l *landers) stepWithdrawn(ctx context.Context, n mesh.Node, r mesh.Ready, 
 func (l *landers) writeLanding(ctx context.Context, n mesh.Node, srev uint64, text string) bool {
 	d := l.d
 	now := d.Now().UTC().Format(time.RFC3339)
-	if _, err := mesh.WriteStateAt(ctx, d.Client, n.Path, srev, mesh.State{State: "landing", Text: text, By: "daemon", At: now}); err != nil {
+	if _, err := mesh.WriteStateAt(ctx, d.Client, n.Path, srev, mesh.State{State: must(mesh.DaemonStateFor("landing")), Text: text, By: "daemon", At: now}); err != nil {
 		if !errors.Is(err, mesh.ErrStateMoved) {
 			d.Log.Warn("land: write state", "path", n.Path, "err", err)
 		}
@@ -594,7 +594,7 @@ func (l *landers) writeWithdrawn(ctx context.Context, n mesh.Node, st mesh.State
 	d := l.d
 	now := d.Now().UTC().Format(time.RFC3339)
 	text := "ready withdrawn: " + why
-	if _, err := mesh.WriteStateAt(ctx, d.Client, n.Path, srev, mesh.State{State: "working", Text: text, By: "daemon", At: now}); err != nil {
+	if _, err := mesh.WriteStateAt(ctx, d.Client, n.Path, srev, mesh.State{State: must(mesh.DaemonStateFor("land-withdrawn")), Text: text, By: "daemon", At: now}); err != nil {
 		if !errors.Is(err, mesh.ErrStateMoved) {
 			d.Log.Warn("land: write state", "path", n.Path, "err", err)
 		}
@@ -648,7 +648,7 @@ func (l *landers) refusedWake(ctx context.Context, n mesh.Node, r mesh.Ready, re
 	now := d.Now().UTC().Format(time.RFC3339)
 	if err != nil {
 		text := "land refused, and the wake carrying it failed for an hour: " + r.Refusal
-		if _, werr := mesh.WriteStateAt(ctx, d.Client, n.Path, srev, mesh.State{State: "blocked", Text: text, By: "daemon", At: now}); werr != nil {
+		if _, werr := mesh.WriteStateAt(ctx, d.Client, n.Path, srev, mesh.State{State: must(mesh.StateFor("blocked")), Text: text, By: "daemon", At: now}); werr != nil {
 			return
 		}
 		if perr := mesh.PublishEvent(ctx, d.Client, mesh.Event{From: n.Path, Event: "blocked", Text: text, At: now}); perr != nil {
@@ -657,7 +657,7 @@ func (l *landers) refusedWake(ctx context.Context, n mesh.Node, r mesh.Ready, re
 		return
 	}
 	text := "land refused: " + r.Refusal
-	if _, werr := mesh.WriteStateAt(ctx, d.Client, n.Path, srev, mesh.State{State: "working", Text: text, By: "daemon", At: now}); werr != nil {
+	if _, werr := mesh.WriteStateAt(ctx, d.Client, n.Path, srev, mesh.State{State: must(mesh.DaemonStateFor("land-refused")), Text: text, By: "daemon", At: now}); werr != nil {
 		return
 	}
 	if perr := mesh.PublishEvent(ctx, d.Client, mesh.Event{From: d.from(), Event: "land-refused", To: n.Path, Text: r.Refusal, At: now}); perr != nil {
@@ -790,3 +790,6 @@ func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
 func gitOK(ctx context.Context, dir string, args ...string) bool {
 	return exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...).Run() == nil
 }
+
+// must is the state a table lookup of a known event names.
+func must(state string, _ bool) string { return state }

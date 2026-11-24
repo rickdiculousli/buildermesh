@@ -17,19 +17,6 @@ const histFor = 30 * time.Second
 // windows are the spans /api/timeline?since= takes.
 var windows = map[string]time.Duration{"1h": time.Hour, "6h": 6 * time.Hour, "24h": 24 * time.Hour, "7d": 7 * 24 * time.Hour}
 
-// nodeState is the state a node's own event sets; done ends the lane.
-// daemonState is the state a daemon event sets on the node it is addressed
-// to (to). Both are the map's live state table (map.js EVENT_STATE and
-// DAEMON_STATE).
-var (
-	nodeState   = map[string]string{"started": "working", "progress": "working", "ask": "asking", "blocked": "blocked", "held": "held", "ready": "landing", "done": "done"}
-	daemonState = map[string]string{"silent": "silent", "landing": "landing", "land-refused": "working", "land-withdrawn": "working"}
-	// tickKind is the tick an event draws on its lane.
-	tickKind = map[string]string{"progress": "progress", "job": "job", "land-refused": "refused", "ready": "ready", "done": "done"}
-	// needRank orders lanes as the needs-you band orders states.
-	needRank = map[string]int{"blocked": 0, "asking": 1, "silent": 2, "working": 3, "landing": 4, "held": 5, "idle": 6, "done": 7}
-)
-
 var (
 	jobStartRE = regexp.MustCompile(`^job (\S+) started$`)
 	jobEndRE   = regexp.MustCompile(`^job (\S+) (?:ok|fail) \d+`)
@@ -113,7 +100,7 @@ func laneEvents(hist []mesh.Stored) []laneEvent {
 			out = append(out, laneEvent{at: at, path: msg.From, name: "job", text: text})
 		case "daemon":
 			name := rest[strings.LastIndex(rest, ".")+1:]
-			if _, ok := daemonState[name]; ok && ev.To != "" {
+			if _, ok := mesh.DaemonStateFor(name); ok && ev.To != "" {
 				out = append(out, laneEvent{at: at, path: ev.To, name: name, text: ev.Text})
 			}
 		default:
@@ -184,8 +171,8 @@ func Timeline(nodes []mesh.Node, states map[string]mesh.State, hist []mesh.Store
 			}
 			continue
 		}
-		state := nodeState[e.name]
-		if d, ok := daemonState[e.name]; ok {
+		state, _ := mesh.StateFor(e.name)
+		if d, ok := mesh.DaemonStateFor(e.name); ok {
 			state = d
 		}
 		if state != "" {
@@ -196,7 +183,7 @@ func Timeline(nodes []mesh.Node, states map[string]mesh.State, hist []mesh.Store
 			}
 			trans[e.path] = append(tr, transition{at, state})
 		}
-		if k := tickKind[e.name]; k != "" && at >= f && at <= t {
+		if k, _ := mesh.TickFor(e.name); k != "" && at >= f && at <= t {
 			ticks[e.path] = append(ticks[e.path], Tick{at, k, e.text})
 		}
 	}
@@ -297,12 +284,9 @@ func newLane(path string, byPath map[string]mesh.Node) Lane {
 // parent has no lane is a top lane.
 func ordered(lanes []Lane, staleBefore int64) []Lane {
 	rank := func(l Lane) int {
-		r, ok := needRank[l.State]
-		if !ok {
-			r = needRank["idle"]
-		}
-		if r <= needRank["silent"] && l.since < staleBefore {
-			return 2*needRank["held"] + 1
+		r := mesh.NeedRank(l.State)
+		if mesh.Needs(l.State) && l.since < staleBefore {
+			return 2*mesh.NeedRank("held") + 1
 		}
 		return 2 * r
 	}

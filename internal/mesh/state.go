@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -46,41 +47,77 @@ func (e ErrIllegalTransition) Error() string {
 	return fmt.Sprintf("illegal state transition %s -> %s", e.From, e.To)
 }
 
-var transitions = map[string][]string{
-	"idle":    {"working"},
-	"working": {"working", "blocked", "asking", "done", "silent", "held", "landing"},
-	"blocked": {"working", "done"},
-	"asking":  {"working", "blocked", "asking", "done", "held"},
-	"silent":  {"working", "blocked", "asking", "done", "held"},
-	// held: a lead waiting at a coordinator's gate (bmesh held). Only an
-	// event of its own moves it on; the daemon never calls it silent.
-	"held": {"working", "blocked", "asking", "done", "held", "landing"},
+// StateRow is one node state: its need rank (the needs-you band's and the timeline's order), whether a node in it is live (the Live agents tile), whether it needs the operator (the band), the states it may move to, the node events that set it and the daemon events that set it on their `to`.
+type StateRow struct {
+	Need   int      `json:"need"`
+	Live   bool     `json:"live"`
+	Needs  bool     `json:"needs"`
+	Next   []string `json:"next"`
+	Events []string `json:"events"`
+	Daemon []string `json:"daemon"`
+}
+
+// States is the node-state table; the page reads it as /js/mesh-table.js.
+var States = map[string]StateRow{
+	"blocked": {Need: 0, Live: true, Needs: true, Next: []string{"working", "done"}, Events: []string{"blocked"}, Daemon: []string{}},
+	"asking":  {Need: 1, Live: true, Needs: true, Next: []string{"working", "blocked", "asking", "done", "held"}, Events: []string{"ask"}, Daemon: []string{}},
+	"silent":  {Need: 2, Live: true, Needs: true, Next: []string{"working", "blocked", "asking", "done", "held"}, Events: []string{}, Daemon: []string{"silent"}},
+	"working": {Need: 3, Live: true, Next: []string{"working", "blocked", "asking", "done", "silent", "held", "landing"}, Events: []string{"started", "progress"}, Daemon: []string{"land-refused", "land-withdrawn"}},
 	// landing: a lead that ran bmesh ready, whose box's daemon lands its
 	// change. The daemon moves it on (held at a hold, done, working after a
 	// refusal, landing again as land's text changes); the daemon never calls
 	// it silent.
-	"landing": {"landing", "held", "done", "working", "blocked"},
+	"landing": {Need: 4, Live: true, Next: []string{"landing", "held", "done", "working", "blocked"}, Events: []string{"ready"}, Daemon: []string{"landing"}},
+	// held: a lead waiting at a coordinator's gate (bmesh held). Only an
+	// event of its own moves it on; the daemon never calls it silent.
+	"held": {Need: 5, Live: true, Next: []string{"working", "blocked", "asking", "done", "held", "landing"}, Events: []string{"held"}, Daemon: []string{}},
+	"idle": {Need: 6, Next: []string{"working"}, Events: []string{}, Daemon: []string{}},
+	"done": {Need: 7, Next: []string{}, Events: []string{"done"}, Daemon: []string{}},
 }
 
-var eventStates = map[string]string{
-	"started": "working", "progress": "working", "blocked": "blocked", "ask": "asking", "done": "done",
-	"held": "held", "ready": "landing",
+// Ticks gives each event the tick it draws on its lane.
+var Ticks = map[string]string{"progress": "progress", "job": "job", "land-refused": "refused", "ready": "ready", "done": "done"}
+
+func stateOf(event string, daemon bool) (string, bool) {
+	for name, r := range States {
+		list := r.Events
+		if daemon {
+			list = r.Daemon
+		}
+		if slices.Contains(list, event) {
+			return name, true
+		}
+	}
+	return "", false
 }
 
 // StateFor maps a node event to the state it sets.
-func StateFor(event string) (string, bool) {
-	s, ok := eventStates[event]
-	return s, ok
-}
+func StateFor(event string) (string, bool) { return stateOf(event, false) }
+
+// DaemonStateFor maps a daemon event to the state it sets on its `to`.
+func DaemonStateFor(event string) (string, bool) { return stateOf(event, true) }
 
 // Legal reports whether from -> to is allowed.
-func Legal(from, to string) bool {
-	for _, t := range transitions[from] {
-		if t == to {
-			return true
-		}
+func Legal(from, to string) bool { return slices.Contains(States[from].Next, to) }
+
+// NeedRank orders states as the needs-you band does; an unknown state ranks as idle.
+func NeedRank(state string) int {
+	if r, ok := States[state]; ok {
+		return r.Need
 	}
-	return false
+	return States["idle"].Need
+}
+
+// Live reports whether a node in state is a live agent.
+func Live(state string) bool { return States[state].Live }
+
+// Needs reports whether a node in state needs the operator.
+func Needs(state string) bool { return States[state].Needs }
+
+// TickFor is the tick an event draws on its lane.
+func TickFor(event string) (string, bool) {
+	k, ok := Ticks[event]
+	return k, ok
 }
 
 func decodeState(data []byte) (State, error) {

@@ -24,9 +24,6 @@ const (
 // roleStep is each window's bucket in seconds.
 var roleStep = map[string]int64{"1h": 60, "6h": 600, "24h": 1800, "7d": 10800}
 
-// liveStates are the node states a live agent is in.
-var liveStates = map[string]bool{"working": true, "asking": true, "blocked": true, "silent": true, "landing": true, "held": true}
-
 // UsageAgent is one agent's row on the map.
 type UsageAgent struct {
 	Agent       string       `json:"agent"`
@@ -264,7 +261,7 @@ func (s *server) agentRow(ctx context.Context, a usage.Agent, calls []usage.Call
 	if st, ok := h.states[a.Agent]; ok && st.State != "" {
 		u.State = st.State
 	}
-	u.Live = liveStates[u.State]
+	u.Live = mesh.Live(u.State)
 	for _, n := range h.nodes {
 		if n.Path == a.Agent {
 			u.Size = s.specSize(ctx, n)
@@ -396,7 +393,8 @@ func agentEvents(h histEntry, path string, from, to int64) []AgentEvent {
 		return out
 	}
 	for _, e := range laneEvents(h.msgs) {
-		k, at := tickKind[e.name], e.at.Unix()
+		k, _ := mesh.TickFor(e.name)
+		at := e.at.Unix()
 		if e.path != path || k == "" || k == "job" || at < from || at > to {
 			continue
 		}
