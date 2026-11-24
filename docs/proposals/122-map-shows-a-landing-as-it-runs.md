@@ -4,7 +4,7 @@ title: The map shows a landing as it runs: how long, each step against how long 
 kind: feature
 size: M
 judge: opus
-status: accepted
+status: done
 lens: eng
 proposed_by: 47745d6c-4585-4a15-b7a7-19807a4abecf
 proposed_on: 2026-11-24
@@ -94,6 +94,16 @@ Judge: opus, because the endpoint joins four sources and the card has to read at
   - Screenshots at 390x844, 1000x800 and 1600x1000, dark and light.
 
 ## Shown
+- The overview shows one line per landing under the band, with its time, its step against that step's usual, and the review's latest tool use or the command's newest line: on the seed, `CHECK_COLOR_SCHEME=dark node scripts/check.mjs "http://127.0.0.1:45863/" 1600 1000 <png>` -> `bmesh ok view=map ... landing=2`, and its screenshot reads `app-0041 20m · review 7m 03s on seed, usually 7m · 29 calls · Bash: Find animations in surface files` and `app-0043 6m · verify 6m 01s, usually 11m · PASS switch to web_buttons` under the operator row, outside `#needs` (`bandLanding=0`)
+- The lead page's landing card shows every step's time and usual, the review's instance, calls, read, context and last tool use, and why the earlier run ended: `node scripts/check.mjs "http://127.0.0.1:45863/#/lead/app-0041" 1600 1000 <png>` -> `bmesh ok view=lead firstCard=landing landSteps=7`; its screenshot reads `run 1 · 12m 30s · checks, verify 12m 28s, review · ended: timed out waiting for job 9f2kQ (review); the daemon ran land again`, then `review 7m 29s usually 7m (5)` and `job 9f2kQ · claude-opus-5-5 high · routine.review.opus-5-5-2 on seed`, `running 7m 06s · 29 calls · read 2.4M · context 139k`, `last: Bash: Find animations in surface files · 21s ago`; on `#/lead/app-0043` the command view `verify · ./gradlew --no-daemon -q assembleD…`, `last: PASS switch to web_buttons · 34s ago · 17 lines`
+- Two runs, the first ended by a timeout; a review job's start, end and calls (count, read, newest cause): `TestLandingTwoRunsAndItsReview` in `internal/web/landing_test.go`; `TMPDIR=$HOME/.cache/bmesh-scratch/tmp go test -count=1 -run 'TestLanding' -v ./internal/web` -> `--- PASS: TestLandingTwoRunsAndItsReview (0.14s)`
+- A run gone quiet (listed while landing, not once working); a job not yet taken reads waiting: `TestLandingQuiet`, `TestLandingJobWaiting` -> `--- PASS: TestLandingQuiet (0.05s)`, `--- PASS: TestLandingJobWaiting (0.05s)`
+- An own-turn land whose lead is working; a land with no `land` object: `TestLandingOwnTurnAndBefore121` -> `--- PASS: TestLandingOwnTurnAndBefore121 (0.06s)`
+- Medians at 3 samples and none at 2, a lease holder's text: `TestLandingUsualAndLease` -> `--- PASS: TestLandingUsualAndLease (0.06s)`
+- The seed and the browser check: app-0041's two runs, app-0043 mid-verify and three landed runs of app (`scripts/seed/main.go` `seedLanding`); `check.mjs` reads `landing=` and `landSteps=`; 3 views × 390x844, 1000x800, 1600x1000 × dark and light all exit 0 (the executor's 18 runs; after the card moved above the lanes, the 1000x800 runs in both schemes on the three views -> `exit=0` each)
+- Easy to miss: a step taken twice counts once in its run's usual, its stays summed: `TestLandingUsualAndLease` (lib-1 runs verify for 100 s and 200 s; the median is over 300, 700 and 800), and the main row only when the run waited there (lib-1 only fetched, so main has two samples and no usual)
+- Not shown: a quiet run, a slot wait, a lease wait and a land before 121 drawn in the browser: the seed has none; the endpoint's tests cover each, the card's code for them was never drawn
+- Not shown: a real landing on the map: k16's daemon runs the installed release (the step below)
 
 ## Risks and the alternative considered
 - **The review's last tool use lags.** The usage pass runs every 30 seconds, and a call is published only once the next one shows it finished. So `last` always shows its age.
