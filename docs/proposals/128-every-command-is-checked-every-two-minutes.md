@@ -4,7 +4,7 @@ title: Every command bmesh runs reports a checkup every 2 minutes (5 for a run b
 kind: time-cost
 size: M
 judge: opus
-status: proposed
+status: done
 lens: eng
 proposed_by: 6df9de23-3ba1-4c33-8273-21cdd370289e
 proposed_on: 2026-11-24
@@ -125,6 +125,19 @@ Judge: opus, because the watcher must read a process group's CPU on two OSes wit
 - **On k16:** `bmesh run -- sleep 300` ends stalled at about 4 minutes.
 
 ## Shown
+- `routine run verify` prints a checkup on stderr: `cache/bmesh-v --node buildermesh-128 routine run verify` (this branch's build) -> `bmesh: verify 2m: 3 lines, cpu 446s: ok  	github.com/rickdiculousli/buildermesh/addons/t3done	0.872s`; and `TestRoutineRunPrintsCheckups` (cmd/bmesh/cmd_run_unix_test.go): a sleeping kind's last line ends `; quiet`, its result recorded as before.
+- A daemon job's instance reads `job <id> running …`: `TestCommandJobReportsCheckups` (internal/daemon/routines_test.go) reads the instance's state text `job <id> running …` mid-run, its progress event `to` the requester, the last ending `; quiet`; the routines page shows a working instance's text (`instanceSub`, internal/web/js/routines.js).
+- A hang ends within 4 minutes, and so does an executor's foreground call: `bmesh run -- sleep 300` on k16 -> `bmesh run: stalled: no output and no CPU for 4m`, exit 5 after 241 s, after `bmesh run 2m: 0 lines, cpu 0s; quiet 2m` and `bmesh run 4m: 0 lines, cpu 0s; quiet 4m`.
+- The node isn't silent while it runs: `TestRunEventsAndWatch`: run events under the node at start, each checkup and end (`run` moves no state; any event under the node is its activity).
+- `bmesh run -- bmesh land` is refused: `cache/bmesh run -- bmesh land` -> `bmesh run: bmesh land bounds itself; run it as it is` (exit 2).
+- `bmesh watch` shows a run only when it stalled or timed out: `TestRunEventsAndWatch` (one ` a run sh: stalled after …` line, none for the ok run).
+- `internal/proc` checkups: `TestWatchSleepIsQuiet`, `TestWatchBusyLoopIsNeverQuiet`, `TestWatchProgressMeterIsNeverQuiet` (internal/proc/watch_unix_test.go); the group's per-pid CPU with a reaped child: `TestGroupCPU` (internal/hoststat/group_test.go).
+- Entry points: `TestRunEndsAStall` (exit 5, the QUIT trap's line printed, the grandchild gone), `TestRunTimeoutCodeAndRefusal` (`--no-stall` -> `bmesh run: timed out after 3s`, `exit 3` -> 3, bmesh refused, usage), `TestRunEventsAndWatch` (events carry `end`, no args), `TestRoutineRunPrintsCheckups`.
+- Daemon: `TestCommandJobReportsCheckups`; the regexes skip it: `TestJobRunningIsNoJobEdge` (internal/web/timeline_test.go: `jobStartRE`, `jobEndRE`, `jobDoneRE`, `jobMsRE`).
+- The threshold's run count on k16, under `bmesh run` at load 15 to 27: 10 × `go test -count=1 ./...` (155 to 224 s each) and 3 × `go test -count=3 ./internal/daemon` (442, 497, 604 s): no run stalled, the longest quiet stretch of every one `none` (no checkup ever quiet). Two runs failed their tests, not on a stall: run 10's `TestSyncLevelsEveryBoxAndHoldsOnASecureOne` (an invite that got no answer under load; `go test -count=3 -run TestSyncLevelsEveryBoxAndHoldsOnASecureOne ./cmd/bmesh` -> `ok`), and daemon run 3 reached go test's own 10m limit (`panic: test timed out after 10m0s`, the test running then 2 s old).
+- The skills, measured: `scripts/skilltest --cases lead-s,lead-stop,lead-exec --runs 2 --model opus`, base vs this text: 6/6 vs 6/6, no expectation flipped, $1.68 vs $1.65; the lead cases now expect no `sleep N` or `until … sleep` loop (`no_sleep`, scripts/skilltest/cases.go, failing reference "waited by hand"), and the fake runs `run`'s argv for real. A first try with only the spec's sentences scored 5/6 (a lead ran `sleep 60; bmesh inbox` after `ready`), so the lead skill keeps "Never wait with `sleep` or a poll." ahead of them.
+- Easy to miss: the `run` event never carries the command's args or an output line: `TestRunEventsAndWatch` fails on any event holding `secret-arg` or `secret-out`.
+- Not shown: the routines page drawn in a browser with a running job's words: no capture run; the state text it reads is tested.
 
 ## Risks and the alternative considered
 - **A false stall ends good work, in `bmesh run` only.**
