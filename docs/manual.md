@@ -2282,11 +2282,11 @@ Waits on an agent's long command, bounds it, and ends it once it stops moving. L
 
 **The `run` event.** From a node (one resolves, as [How a command finds its node](#synopsis) says), it publishes a `run` event under the node at the start, at each checkup and at the end. Like `land`'s, it sets no state but counts as the node's activity, so a node waiting on its command isn't silent. It carries the program's base name (`go`, `./gradlew` as typed when it names a path in the cwd) and a `key`, a sha256 of the argv and of the cwd relative to the worktree's top, and never the args or an output line: the stream is readable by any holder of the hub's token. Its text is `go 4m: 37 lines, cpu 61s` (`; quiet 4m` while quiet), and at the end `go: ok after 3m12s`, `go: exit 1 after 40s`, `go: stalled after 4m` or `go: timed out after 20m`. With no node, or no hub, it runs all the same and publishes nothing. [`bmesh watch`](#bmesh-watch) prints a `run` event only when the run ended stalled or timed out.
 
-**Refusals.**
+**Refusals.** The usage line prints after `bmesh: `; the rest as shown.
 
 | When | Exit | Message |
 |---|---|---|
-| no `--`, no command after it, or a positional before it | 2 | `bmesh: usage: bmesh run [--timeout D] [--no-stall] -- <cmd...>` |
+| no `--`, no command after it, or a positional before it | 2 | `usage: bmesh run [--timeout D] [--no-stall] -- <cmd...>` |
 | `--timeout` not positive | 2 | `bmesh run: --timeout must be positive` |
 | the command is bmesh (named `bmesh`, its own executable, or `bmesh` on PATH) | 2 | `bmesh run: bmesh <cmd> bounds itself; run it as it is` |
 | the command can't start | 1 | `bmesh run: <error>` |
