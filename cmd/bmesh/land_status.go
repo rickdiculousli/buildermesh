@@ -159,13 +159,21 @@ func (s *landStatus) held() {
 }
 
 // waitFor enters the jobs step waiting for jobs, or, with none, saying
-// line (what land found of the review).
+// line (what land found of the review). In the step already, a job it knows
+// keeps the state and host read last: the caller's may be older.
 func (s *landStatus) waitFor(jobs []mesh.LandJob, line string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	moved := s.land.Step != mesh.LandJobs
 	if moved {
 		s.land.Step, s.land.Since, s.land.Cmd = mesh.LandJobs, rfc(time.Now()), nil
+	} else {
+		jobs = slices.Clone(jobs)
+		for i, j := range jobs {
+			if k := slices.IndexFunc(s.land.Jobs, func(o mesh.LandJob) bool { return o.ID == j.ID }); k >= 0 {
+				jobs[i] = s.land.Jobs[k]
+			}
+		}
 	}
 	s.land.Jobs = jobs
 	if len(jobs) > 0 {

@@ -95,11 +95,15 @@ func TestLandEventsSayWhereItIs(t *testing.T) {
 			}
 		}
 	}
-	for _, w := range []string{"checking", "running verify on t:" + tree[:8], "no jobs to wait for", "fetching origin/main",
-		"taking land.repo", "rebasing onto " + base[:8], "running verify on the rebased tree t:" + tree[:8], "pushing " + rec[:8]} {
+	for _, w := range []string{"checking", "checking verify on t:" + tree[:8], "running verify on t:" + tree[:8], "no jobs to wait for",
+		"fetching origin/main", "taking land.repo", "rebasing onto " + base[:8], "reading the results for t:" + tree[:8], "pushing " + rec[:8]} {
 		if !slices.Contains(texts, w) {
 			t.Fatalf("texts %q lack %q", texts, w)
 		}
+	}
+	// Verify ran before the lease: under it, nothing says it runs.
+	if slices.Contains(texts, "running verify on the rebased tree t:"+tree[:8]) {
+		t.Fatalf("texts %q say a verify that didn't run", texts)
 	}
 	// The heartbeat during the sleep: the newest non-empty line, trimmed.
 	if commands != 1 || mid == nil || mid.Last != "two" || mid.Lines != 3 || mid.LastAt == "" || mid.LastAt < mid.Since {
@@ -185,6 +189,13 @@ func TestLandEventsNameTheJobsStateAndHost(t *testing.T) {
 			return ev.Text == text && slices.Equal(ev.Land.Jobs, []mesh.LandJob{{ID: j.ID, Kind: "review", State: "running", Host: "k16"}})
 		})
 	})
+	// The wait's own polls, every landPoll, keep what the heartbeat read.
+	time.Sleep(200 * time.Millisecond)
+	evs := landEvents(t, c, ctx)
+	seen := slices.IndexFunc(evs, func(ev mesh.Event) bool { return ev.Text == text })
+	if slices.ContainsFunc(evs[seen:], func(ev mesh.Event) bool { return ev.Text != text }) {
+		t.Fatalf("the text went back after reading %q: %+v", text, evs[seen:])
+	}
 	answer(t, c, ctx, j, true, true, "VERDICT: ok")
 	landEnds(t, res, 0, out, errb)
 	steps := landSteps(t, landEvents(t, c, ctx))

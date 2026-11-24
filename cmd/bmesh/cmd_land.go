@@ -1470,7 +1470,7 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA, preTree str
 // code run of merged and of each head before the rebase. A kind that was ok
 // at tree earlier in this run is not run again. A failing one refuses (exit
 // 1). It enters step (kinds before the lease, results under it), saying
-// each kind it runs.
+// each kind as it runs it.
 func (l *lander) inline(ctx context.Context, merged, tree, preTree, step string) error {
 	out := l.a.stdout
 	running := func(name string) string { return "running " + name + " on t:" + tree[:8] }
@@ -1484,16 +1484,15 @@ func (l *lander) inline(ctx context.Context, merged, tree, preTree, step string)
 		}
 	}
 	switch {
-	case len(names) > 0:
-		l.st.step(step, running(names[0]))
 	case step == mesh.LandResults:
 		l.st.step(step, "reading the results for t:"+tree[:8])
+	case len(names) > 0:
+		l.st.step(step, "checking "+strings.Join(names, ", ")+" on t:"+tree[:8])
 	default:
 		l.st.step(step, "no inline kinds to run on t:"+tree[:8])
 	}
 	for _, name := range names {
 		k, _ := l.kind(name)
-		l.st.say(running(name))
 		model := ""
 		if k.IsModel() {
 			model = k.ModelsList()[0]
@@ -1521,6 +1520,7 @@ func (l *lander) inline(ctx context.Context, merged, tree, preTree, step string)
 				continue
 			}
 		}
+		l.st.say(running(name))
 		ok, output, how, err := l.a.runInline(ctx, k, l.top, merged, tree, l.holder, model, "", "", nil, false, l.wait(ctx))
 		l.st.cmdDone()
 		if err != nil {

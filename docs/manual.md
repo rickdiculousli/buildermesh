@@ -2335,12 +2335,12 @@ The holder is the node, else the host name. A lead runs `land` in the background
 | Step | Steps above | Its text |
 |---|---|---|
 | `checks` | 1 to 5 | `checking` |
-| `kinds` | 6 | `running <kind> on t:<tree8>` for each inline kind; `waiting for the <slot> slot for <kind>` while it waits for a slot; `no inline kinds to run on t:<tree8>` |
+| `kinds` | 6 | `checking <kinds> on t:<tree8>`, then `running <kind> on t:<tree8>` for each inline kind it runs (one answered from its record, carried or ok earlier in the run isn't run); `waiting for the <slot> slot for <kind>` while it waits for a slot; `no inline kinds to run on t:<tree8>` |
 | `jobs` | 7 and 8 | `waiting for job <id> (<kind>, waiting\|held\|running[ on <host>])`, the jobs joined with `, `; with none to wait for, the review's line (`review: on the branch already (fail at t:<tree8>)`, `review: none (size S)`), or `no jobs to wait for` |
 | `main` | 9 | `fetching origin/main` (`reading main` with no origin), then `waiting for main in <path> to be pushed` while it waits |
 | `lease` | 10 | `taking land.<repo>`, then `waiting for land.<repo> (held by <holder>)` while it waits |
 | `rebase` | 1 to 3 under the lease | `fetching origin/main`, `waiting for main in <path> to be pushed` while it waits, then `rebasing onto <sha8>` |
-| `results` | 4 | `running <kind> on the rebased tree t:<tree8>`, or `reading the results for t:<tree8>` with no inline kind |
+| `results` | 4 | `reading the results for t:<tree8>`, then `running <kind> on the rebased tree t:<tree8>` for each inline kind it runs |
 | `push` | 5 to 8 | `pushing <sha8>`, the reworded commit |
 
 A pass that waited for jobs starts again at `checks`, and so does a review queued again after the rebase; a push refused because `main` moved goes back to `rebase`. While an inline kind's command or the worktree's `[setup]` runs, the event names it, its newest non-empty output line and how many lines it has printed; that line, the slot's holder and the place in its line are never in the text, so they change no state. The minute's event reads each waited-for job's state and host again. The last event ends `landed <sha8>`, or `land`'s error line up to `; nothing is pushed` (a refusal, `timed out waiting for job <id> (review)`, `interrupted`).
