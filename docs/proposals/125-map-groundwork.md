@@ -4,7 +4,7 @@ title: The map's groundwork - one node-state table in mesh that Go, the daemon a
 kind: maintenance
 size: L
 judge: opus
-status: proposed
+status: done
 lens: ux
 proposed_by: coordinator
 proposed_on: 2026-11-24
@@ -177,6 +177,19 @@ Judge: opus, because the move must keep every view's behaviour across 2,700 line
 - **Docs:** `docs/ui-skills.md`'s profile, the manual's Testing section and `docs/internals.md`'s state table and map sections describe the modules and the one table.
 
 ## Shown
+- The map looks and behaves as before: `~/.cache/bmesh-scratch/125/compare.sh before after` -> exit 0, `#/: excluded (moved between before-runs): none; stateGaps ignored` (every view; only `#/tokens` excludes `band live replay`); the six titles per view are `docs/proposals/assets/125-before-titles.txt` and `125-after-titles.txt`, the comparison `125-after-compare.txt`.
+- A failed read says so on every page: `docs/proposals/assets/125-after-failed.txt` -> `#routines-panel: "could not load routines; retrying"`, `#lead-panel: "could not load app-0041; retrying"`, `#session-head: "could not load session.seed.ec03a02c-5eed-4a1b-9c0d-000000000001; retrying"`, for a failed connection and for an HTTP 500 (before: routines empty, session empty or `could not load` by kind, `125-before-failed.txt`).
+- A session page keeps what it shows when a re-read fails: `125-after-failed.txt` -> `after failed re-read (hashchange event): "app\nseed\n... 25.0M read · 98k out ..."`, the same text as `shown:`, under both failure kinds (before, the 500 kind replaced it with `could not load`).
+- A live frame still lands: `125-after-live.txt` -> `live=0` before `seed -again docs-0007`, `live=1` after, `needs-has-docs-0007: true` (before: `125-before-live.txt`, the same).
+- Adding a state or daemon event is one row: `internal/mesh/state.go` `States`/`Ticks`; the page derives `EVENT_STATE`, `DAEMON_STATE`, `NEED`, `LIVE`, `NEEDS`, `TICK` from `/js/mesh-table.js` in `internal/web/js/state.js`; `grep -rn 'nodeState\|daemonState\|needRank\|tickKind\|liveStates' internal --include=*.go` -> nothing.
+- The state table answers as the deleted maps did: `TestStateTableMatchesTheOldMaps` in `internal/mesh/state_test.go`; the daemon's writers go through it in `silence.go` and `land.go`, covered by `TestSilenceIsTreeAware`, `TestSilenceNeverMarksHeld` and the `TestLand*` tests in `internal/daemon/`.
+- The page's files are served as modules: `TestNodesAndPage` (`/` loads `type="module" src="/js/main.js"`), `TestAssets` and `TestAssetsFromDir` (every embedded `js/` file as `text/javascript` embedded and under `Options.Dir`, a missing one 500, `/js/mesh-table.js` with every state and tick, `/js/`, an unknown name and `/map.js` 404) in `internal/web/web_test.go`; the stale lane order: `TestTimelineChildrenFollowTheirLeadInNeedOrder`.
+- The page's tables: `grep -n setInterval internal/web/js/*.js` -> `internal/web/js/core.js:233:  setInterval(() => {` (inside `every`); `grep -n 'pages.view !==' internal/web/js/*.js` -> nothing; `VIEWS` and `FRAMES` in `internal/web/js/main.js` hold every hash `route()` took and every case `apply` and `pagesApply` handled (the host-traffic case dropped as dead).
+- `stateGaps=0`: `node scripts/check.mjs "<seed>#/" 1600 1000` -> `... digest=0 stateGaps=0`, required by `RULES`.
+- A count forced wrong exits 1 with its rule's message: the page copied to `cache/web-broken` with one KPI tile dropped, served with `BMESH_WEB_DIR`, `node scripts/check.mjs "<seed>#/" 1600 1000` -> `check.mjs: the KPI row hasn't 8 tiles`, exit 1.
+- The manual's check table names every rule in `RULES`: `docs/manual.md`, the table after the exit codes (15 rows); "To check a UI change" runs three widths in both themes: `CHECK_COLOR_SCHEME=dark|light node scripts/check.mjs "<seed>#/" <390 844|1000 800|1600 1000>` -> exit 0 for all six, e.g. `light 390x844: bmesh ok view=map scrollWidth=390 innerWidth=390 minTap=36`.
+- Docs describe the modules and the one table: `docs/internals.md` "The page" and "The state table", `docs/ui-skills.md`'s profile, `docs/manual.md`'s Map section (the read states) and Testing section.
+- Easy to miss: a failed re-read keeps what is shown on every page, the session page included, and "retrying" is true (the 60 s re-read runs any of the view's reads that failed): `internal/web/js/core.js` `loader` keeps `shown` on a failed re-read; `internal/web/js/main.js`'s 60 s `every` runs failed reads; `125-after-failed.txt` session re-read lines.
 
 ## Risks and the alternative considered
 - **The move can break a view in a way only a browser shows.** The checks are the three-run titles on every view, the live-frame run and the failed-read runs. The UI-change check at three widths in both themes catches layout breaks.

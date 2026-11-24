@@ -1,0 +1,26 @@
+######## failure kind: request fails (Fetch.failRequest Failed)
+== #/routines failing /api/routines
+title: bmesh ok view=routines scrollWidth=1600 innerWidth=1600 minTap=40 window=6h trees=2 lanes=0 segs=none ticks=0 kpis=8 roles=0 agents=0 ctx=0 quota=0 flags=0 flagsRunaway=0 outliers=0 burndown=0 conn=live replay=81 live=0 band=5 bandHeld=0 bandLanding=0 older=1 digest=0 stateGaps=0
+#routines-panel: "could not load routines; retrying"
+== #/lead/app-0041 failing /api/lead/*
+title: bmesh ok view=lead scrollWidth=1600 innerWidth=1600 minTap=40 firstCard=none window=6h trees=2 lanes=0 segs=none ticks=0 kpis=8 roles=0 agents=0 ctx=0 quota=0 flags=0 flagsRunaway=0 outliers=0 burndown=0 conn=live replay=81 live=0 band=5 bandHeld=0 bandLanding=0 older=1 digest=0 stateGaps=0
+#lead-panel: "could not load app-0041; retrying"
+== #/session failing /api/usage/agent*
+title: bmesh ok view=session scrollWidth=1600 innerWidth=1600 minTap=40 window=6h trees=2 lanes=0 segs=none ticks=0 kpis=8 roles=0 agents=0 ctx=0 quota=0 flags=0 flagsRunaway=0 outliers=0 burndown=0 conn=live replay=81 live=0 band=5 bandHeld=0 bandLanding=0 older=1 digest=0 stateGaps=0
+#session-head: "could not load session.seed.ec03a02c-5eed-4a1b-9c0d-000000000001; retrying"
+== #/session shown, then /api/usage/agent* failing and a hashchange event dispatched
+shown: "app\nseed\n11-24 01:42Z – 11-24 05:47Z\n25.0M read · 98k out\ndesign 5.6M · exec 19.4M · 22% design"
+after failed re-read (hashchange event): "app\nseed\n11-24 01:42Z – 11-24 05:47Z\n25.0M read · 98k out\ndesign 5.6M · exec 19.4M · 22% design"
+######## failure kind: HTTP 500 (Fetch.fulfillRequest)
+== #/routines failing /api/routines
+title: bmesh ok view=routines scrollWidth=1600 innerWidth=1600 minTap=40 window=6h trees=2 lanes=0 segs=none ticks=0 kpis=8 roles=0 agents=0 ctx=0 quota=0 flags=0 flagsRunaway=0 outliers=0 burndown=0 conn=live replay=81 live=0 band=5 bandHeld=0 bandLanding=0 older=1 digest=0 stateGaps=0
+#routines-panel: "could not load routines; retrying"
+== #/lead/app-0041 failing /api/lead/*
+title: bmesh ok view=lead scrollWidth=1600 innerWidth=1600 minTap=40 firstCard=none window=6h trees=2 lanes=0 segs=none ticks=0 kpis=8 roles=0 agents=0 ctx=0 quota=0 flags=0 flagsRunaway=0 outliers=0 burndown=0 conn=live replay=81 live=0 band=5 bandHeld=0 bandLanding=0 older=1 digest=0 stateGaps=0
+#lead-panel: "could not load app-0041; retrying"
+== #/session failing /api/usage/agent*
+title: bmesh ok view=session scrollWidth=1600 innerWidth=1600 minTap=40 window=6h trees=2 lanes=0 segs=none ticks=0 kpis=8 roles=0 agents=0 ctx=0 quota=0 flags=0 flagsRunaway=0 outliers=0 burndown=0 conn=live replay=81 live=0 band=5 bandHeld=0 bandLanding=0 older=1 digest=0 stateGaps=0
+#session-head: "could not load session.seed.ec03a02c-5eed-4a1b-9c0d-000000000001; retrying"
+== #/session shown, then /api/usage/agent* failing and a hashchange event dispatched
+shown: "app\nseed\n11-24 01:42Z – 11-24 05:47Z\n25.0M read · 98k out\ndesign 5.6M · exec 19.4M · 22% design"
+after failed re-read (hashchange event): "app\nseed\n11-24 01:42Z – 11-24 05:47Z\n25.0M read · 98k out\ndesign 5.6M · exec 19.4M · 22% design"
