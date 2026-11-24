@@ -42,6 +42,7 @@ type LandingView struct {
 	Text        string        `json:"text"`
 	At          string        `json:"at,omitempty"`
 	Running     bool          `json:"running"`
+	Waiting     bool          `json:"waiting,omitempty"` // readied, and land hasn't started a run since
 	Runs        []LandRun     `json:"runs"`
 	Now         *mesh.Land    `json:"now"`
 	Jobs        []LandingJob  `json:"jobs"`
@@ -244,14 +245,15 @@ func rowLabel(r stepRow) string {
 }
 
 // landingRuns is the runs of the node's newest landing among evs: those
-// from its newest ready (readyAt, zero for none) on, starting again after
-// a run that ended other than by timing out (the lead landing in its own
-// turn); fromReady says the landing began at the ready.
-func landingRuns(evs []landEv, readyAt time.Time) (runs [][]landEv, fromReady bool) {
+// that started at or after since (its ready, or after the ready was
+// withdrawn; zero for none), starting again after a run that ended other
+// than by timing out (the lead landing in its own turn); fromReady, given
+// as whether since is the ready, says the landing began there.
+func landingRuns(evs []landEv, since time.Time, fromReady bool) (runs [][]landEv, _ bool) {
 	all := byRun(evs)
-	from, fromReady := 0, !readyAt.IsZero()
+	from := 0
 	for i, r := range all {
-		if fromReady && parseAt(r[0].land.Run, r[0].at).Before(readyAt.Truncate(time.Second)) {
+		if parseAt(r[0].land.Run, r[0].at).Before(since.Truncate(time.Second)) {
 			from = i + 1
 			continue
 		}
@@ -289,14 +291,33 @@ func (s *server) landing(ctx context.Context, n mesh.Node, st mesh.State, h hist
 	}
 	v := LandingView{Path: n.Path, Repo: n.Repo, State: st.State, Runs: []LandRun{}, Jobs: []LandingJob{}, Usual: []Usual{}}
 	if len(evs) > 0 {
-		last := evs[len(evs)-1]
-		v.Text, v.At = last.text, last.at.UTC().Format(time.RFC3339)
-		if last.land == nil { // a land before 121: its text alone
+		if last := evs[len(evs)-1]; last.land == nil && !last.at.Before(readyAt.Truncate(time.Second)) { // a land before 121: its text alone
+			v.Text, v.At = last.text, last.at.UTC().Format(time.RFC3339)
 			v.Running = now.Sub(last.at) <= landQuiet
 			return v, true, nil
 		}
 	}
-	runs, fromReady := landingRuns(evs, readyAt)
+	// A ready the daemon withdrew (a message came, the lead acted) starts no
+	// later landing: a run after the withdrawal is the lead's own turn.
+	since, fromReady := readyAt, !readyAt.IsZero()
+	var withdrawn time.Time
+	if fromReady {
+		if withdrawn, err = s.withdrawnAfter(ctx, n.Path, readyAt); err != nil {
+			return LandingView{}, false, err
+		}
+		if !withdrawn.IsZero() && slices.ContainsFunc(byRun(evs), func(r []landEv) bool {
+			return !parseAt(r[0].land.Run, r[0].at).Before(withdrawn.Truncate(time.Second))
+		}) {
+			since, fromReady = withdrawn, false
+		}
+	}
+	runs, fromReady := landingRuns(evs, since, fromReady)
+	switch {
+	case len(runs) == 0 && fromReady && withdrawn.IsZero():
+		v.Waiting = true // asked to land; land hasn't started
+	case len(runs) == 0:
+		return LandingView{}, false, nil
+	}
 	if fromReady {
 		v.ReadyAt = readyAt.UTC().Format(time.RFC3339)
 	}
@@ -326,10 +347,11 @@ func (s *server) landing(ctx context.Context, n mesh.Node, st mesh.State, h hist
 		r := runs[len(runs)-1]
 		l := *r[len(r)-1].land
 		if l.Cmd != nil && l.Cmd.Command == "" {
-			// land sends the command once, on the event it started in.
+			// land sends the command once, on the event it started in (its
+			// since moves when a slot wait ends); the kind's newest wins.
 			c := *l.Cmd
 			for _, e := range r {
-				if e.land.Cmd != nil && e.land.Cmd.Kind == c.Kind && e.land.Cmd.Since == c.Since && e.land.Cmd.Command != "" {
+				if e.land.Cmd != nil && e.land.Cmd.Kind == c.Kind && e.land.Cmd.Command != "" {
 					c.Command = e.land.Cmd.Command
 				}
 			}
@@ -357,6 +379,26 @@ func (s *server) landing(ctx context.Context, n mesh.Node, st mesh.State, h hist
 		}
 	}
 	return v, true, nil
+}
+
+// withdrawnAfter is the newest land-withdrawn daemon event addressed to
+// path at or after ready, zero for none.
+func (s *server) withdrawnAfter(ctx context.Context, path string, ready time.Time) (time.Time, error) {
+	msgs, err := mesh.History(ctx, s.c, "bm.daemon.*.land-withdrawn", ready.Add(-time.Minute))
+	if err != nil {
+		return time.Time{}, err
+	}
+	var out time.Time
+	for _, m := range msgs {
+		var ev mesh.Event
+		if json.Unmarshal(m.Data, &ev) != nil || ev.To != path {
+			continue
+		}
+		if at := parseAt(ev.At, m.At); !at.Before(ready.Truncate(time.Second)) && at.After(out) {
+			out = at
+		}
+	}
+	return out, nil
 }
 
 // landingJobs is each job waited on with the routine instance that took
@@ -481,7 +523,9 @@ func usuals(h histEntry, repo string) ([]Usual, *Usual) {
 		for _, r := range byRun(landEvs(msgs)) {
 			sum := map[key]int64{}
 			for _, row := range runRows(r) {
-				if !row.past {
+				// A kinds or results row that ran nothing was answered from
+				// the record in a second: not a sample of the kind's time.
+				if !row.past || (row.Step == mesh.LandKinds || row.Step == mesh.LandResults) && len(row.kinds) == 0 {
 					continue
 				}
 				k := key{row.Step, row.Label}

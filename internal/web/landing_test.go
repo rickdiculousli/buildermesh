@@ -225,11 +225,13 @@ func TestLandingOwnTurnAndBefore121(t *testing.T) {
 // The usual time of a step and label is the median over the repo's runs
 // that went past it, a step taken twice in a run summed; a step with two
 // samples (main, waited in two runs, only fetched in the third) has none;
+// a kinds row that ran nothing (answered from the record) is no sample;
 // the review's is the median of the repo's review jobs. While a run waits
 // for the lease, the holder and its newest land text show.
 func TestLandingUsualAndLease(t *testing.T) {
 	srv, ctx, c := landMesh(t, []mesh.Node{
 		{Path: "lib-1", Role: "lead", Repo: "lib"}, {Path: "lib-2", Role: "lead", Repo: "lib"}, {Path: "lib-3", Role: "lead", Repo: "lib"},
+		{Path: "lib-4", Role: "lead", Repo: "lib"},
 		{Path: "lib-8", Role: "lead", Repo: "lib"}, {Path: "lib-9", Role: "lead", Repo: "lib"},
 		{Path: "routine.review.r1", Role: "routine", Repo: "lib"}, {Path: "other-1", Role: "lead", Repo: "other"},
 	}, map[string]string{"lib-8": "landing", "lib-9": "landing"})
@@ -260,6 +262,13 @@ func TestLandingUsualAndLease(t *testing.T) {
 			{at: s(30 + verify), step: "push", text: "pushing abcd1234", end: "landed abcd1234"},
 		})
 	}
+	// lib-4's rerun answers verify from the record in a second: no sample.
+	publishRun(t, ctx, c, "lib-4", lt(2, 50, 0), []lstep{
+		{at: lt(2, 50, 0), step: "checks", text: "checking"},
+		{at: lt(2, 50, 1), step: "kinds", text: "checking verify on t:ab"},
+		{at: lt(2, 50, 2), step: "jobs", text: "waiting for job J9 (review, waiting)", jobs: []mesh.LandJob{{ID: "J9", Kind: "review", State: "waiting"}}},
+		{at: lt(2, 51, 0), step: "jobs", text: "waiting for job J9 (review, waiting)", end: "timed out waiting for job J9 (review)"},
+	})
 	// Another repo's run is not lib's.
 	publishRun(t, ctx, c, "other-1", lt(2, 30, 0), []lstep{
 		{at: lt(2, 30, 0), step: "kinds", text: "running verify", cmd: cmd(lt(2, 30, 0))},
@@ -277,7 +286,7 @@ func TestLandingUsualAndLease(t *testing.T) {
 	var v LandingView
 	getJSON(t, srv, "/api/landing?lead=lib-9", 200, &v)
 	want := []Usual{
-		{Step: "checks", Label: "checks", Secs: 10, N: 4}, // lib-1's 10 + 5, lib-2, lib-3 and lib-9's 10
+		{Step: "checks", Label: "checks", Secs: 10, N: 5}, // lib-1's 10 + 5, lib-2, lib-3 and lib-9's 10, lib-4's 1
 		{Step: "kinds", Label: "verify", Secs: 700, N: 3},
 		{Step: "lease", Label: "lease", Secs: 1, N: 3},
 		{Step: "push", Label: "push", Secs: 9, N: 3},
@@ -290,5 +299,46 @@ func TestLandingUsualAndLease(t *testing.T) {
 	}
 	if v.Lease == nil || *v.Lease != (LandingLease{Holder: "lib-8", Text: "rebasing onto 1234abcd"}) {
 		t.Fatalf("lease %+v", v.Lease)
+	}
+}
+
+// The readies a landing begins from: one not started yet reads waiting
+// (not a land before 121); one the daemon withdrew starts no later landing,
+// so a run after it is the lead's own turn. A command that waited for its
+// slot keeps its words once its since moves.
+func TestLandingReadiesAndSlotWait(t *testing.T) {
+	srv, ctx, c := landMesh(t, []mesh.Node{
+		{Path: "app-1", Role: "lead", Repo: "app"}, {Path: "app-2", Role: "lead", Repo: "app"}, {Path: "app-3", Role: "lead", Repo: "app"},
+	}, map[string]string{"app-1": "held", "app-2": "working", "app-3": "landing"})
+	// app-1: an old land before 121, then a ready the operator holds.
+	publish(t, ctx, c,
+		mesh.Event{From: "app-1", Event: "land", Text: "old text", At: lt(1, 0, 0).Format(time.RFC3339)},
+		mesh.Event{From: "app-1", Event: "ready", At: lt(3, 50, 0).Format(time.RFC3339)},
+		mesh.Event{From: "app-2", Event: "ready", At: lt(2, 0, 0).Format(time.RFC3339)},
+		mesh.Event{From: "daemon.k16", Event: "land-withdrawn", To: "app-2", Text: "ready withdrawn: a message came", At: lt(2, 1, 0).Format(time.RFC3339)})
+	publishRun(t, ctx, c, "app-2", lt(3, 59, 0), []lstep{{at: lt(3, 59, 0), step: "checks", text: "checking"}})
+	t0, t1 := lt(3, 58, 0).Format(time.RFC3339), lt(3, 58, 40).Format(time.RFC3339)
+	publishRun(t, ctx, c, "app-3", lt(3, 57, 0), []lstep{
+		{at: lt(3, 57, 0), step: "checks", text: "checking"},
+		{at: lt(3, 58, 0), step: "kinds", text: "waiting for the emulator slot for verify",
+			cmd: &mesh.LandCmd{Kind: "verify", Command: "make test", Since: t0, Wait: &mesh.LandWait{Slot: "emulator", Holder: "app-9", Place: 1}}},
+		{at: lt(3, 58, 40), step: "kinds", text: "running verify on t:ab", cmd: &mesh.LandCmd{Kind: "verify", Since: t1}},
+		{at: lt(3, 59, 40), step: "kinds", text: "running verify on t:ab", cmd: &mesh.LandCmd{Kind: "verify", Since: t1, Last: "ok", Lines: 1}},
+	})
+
+	var held LandingView
+	getJSON(t, srv, "/api/landing?lead=app-1", 200, &held)
+	if !held.Waiting || held.Now != nil || held.Text != "" || held.ReadyAt != "2026-11-24T03:50:00Z" || len(held.Runs) != 0 {
+		t.Fatalf("waiting: %+v", held)
+	}
+	var own LandingView
+	getJSON(t, srv, "/api/landing?lead=app-2", 200, &own)
+	if own.ReadyAt != "" || own.Waiting || len(own.Runs) != 1 || own.Runs[0].Run != "2026-11-24T03:59:00Z" {
+		t.Fatalf("own turn after a withdrawn ready: %+v", own)
+	}
+	var slot LandingView
+	getJSON(t, srv, "/api/landing?lead=app-3", 200, &slot)
+	if slot.Now == nil || slot.Now.Cmd == nil || slot.Now.Cmd.Command != "make test" || slot.Now.Cmd.Since != t1 {
+		t.Fatalf("command after the slot wait: %+v", slot.Now)
 	}
 }

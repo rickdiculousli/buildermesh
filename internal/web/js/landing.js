@@ -90,7 +90,7 @@ function current(v) {
 // ended reports a landing whose newest run is neither running nor quiet.
 export function landEnded(v) {
   const r = newest(v);
-  return !v.running && !(r && r.quiet);
+  return !v.running && !v.waiting && !(r && r.quiet);
 }
 
 // usualOf is step row s's usual time: the repo's review jobs' for a row
@@ -176,6 +176,10 @@ export function landCard(v) {
     el("span", "muted", v.ready_at ? " since ready at " + v.ready_at.slice(11, 19) + "Z" : ""));
   const c = el("section", "card landing", null, head);
   c.dataset.card = "landing";
+  if (v.waiting) {
+    c.append(el("p", "lsay", "ready, land not started" + (v.state === "held" ? " · held" : "")));
+    return c;
+  }
   if (!v.now && !(v.runs || []).length) {
     c.append(el("p", "lsay", v.text || ""), el("p", "muted", "this bmesh publishes no steps"));
     return c;
