@@ -10,6 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nats-io/nats.go/jetstream"
+
+	"github.com/rickdiculousli/buildermesh/internal/hosts"
 	"github.com/rickdiculousli/buildermesh/internal/hoststat"
 	"github.com/rickdiculousli/buildermesh/internal/usage"
 )
@@ -37,16 +40,20 @@ type HostPoint struct {
 }
 
 // HostBox is one box on /api/hosts: its newest minute in the window, its
-// buckets, and with live=1 its live answer (null when it gave none).
+// buckets, and with live=1 its live answer (null when it gave none); a box
+// with no minute in the window carries its presence entry's OS.
 type HostBox struct {
-	Host   string           `json:"host"`
+	Host string `json:"host"`
+	OS   string `json:"os,omitempty"` // a box known only by presence: its OS there
+
 	Last   *hoststat.Minute `json:"last"`
 	Points []HostPoint      `json:"points"`
 	Live   json.RawMessage  `json:"live,omitempty"`
 }
 
 // HostsView is /api/hosts: the window, its bucket step, this box and every
-// box with a minute in the window (this box first, then by name).
+// box with a minute in the window or a presence entry (this box first,
+// then by name).
 type HostsView struct {
 	From  int64     `json:"from"`
 	To    int64     `json:"to"`
@@ -121,8 +128,17 @@ func (s *server) hostsData(ctx context.Context, key string) (hostsEntry, error) 
 			h.rss[t/60] += u.RSS
 		}
 	}
-	if _, ok := boxes[s.host]; !ok && s.host != "" {
-		boxes[s.host] = &acc{box: &HostBox{Host: s.host, Points: []HostPoint{}}}
+	known, err := s.knownHosts(ctx)
+	if err != nil {
+		return hostsEntry{}, err
+	}
+	if _, ok := known[s.host]; !ok {
+		known[s.host] = "" // this box, presence or not
+	}
+	for h, os := range known {
+		if _, ok := boxes[h]; !ok && h != "" {
+			boxes[h] = &acc{box: &HostBox{Host: h, OS: os, Points: []HostPoint{}}}
+		}
 	}
 	for _, b := range boxes {
 		for at, ba := range b.buckets {
@@ -137,6 +153,38 @@ func (s *server) hostsData(ctx context.Context, key string) (hostsEntry, error) 
 	})
 	s.hostsCache[key] = e
 	return e, nil
+}
+
+// knownHosts is the boxes with a presence entry in bm-hosts, each with the
+// OS it names (none without the bucket, as with [hosts] off), so a box that
+// publishes no minutes (a release before the sampler, Windows) still gets a
+// card. The entry isn't verified: it only names a card.
+func (s *server) knownHosts(ctx context.Context) (map[string]string, error) {
+	out := map[string]string{}
+	kv, err := s.c.JS.KeyValue(ctx, hosts.BucketHosts)
+	if errors.Is(err, jetstream.ErrBucketNotFound) {
+		return out, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	keys, err := kv.Keys(ctx)
+	if errors.Is(err, jetstream.ErrNoKeysFound) {
+		return out, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	for _, k := range keys {
+		var p struct {
+			OS string `json:"os"`
+		}
+		if e, err := kv.Get(ctx, k); err == nil {
+			_ = json.Unmarshal(e.Value(), &p)
+		}
+		out[k] = p.OS
+	}
+	return out, nil
 }
 
 // bucketAcc sums a bucket's minutes.
@@ -204,7 +252,8 @@ func round2(v float64) float64 { return math.Round(v*100) / 100 }
 // hostsAPI is /api/hosts?since=1h|6h|24h|7d (default 6h)[&live=1]: each
 // box's history, and with live=1 each live answer, asked in parallel of
 // this box and every box with a minute in the last liveRecent, liveWait in
-// all; one that doesn't answer (asleep, an older release) is null.
+// all; one that doesn't answer (asleep, an older release) is null. A box
+// known only by its presence entry is asked too.
 func (s *server) hostsAPI(w http.ResponseWriter, r *http.Request) {
 	key, _, ok := sinceParam(w, r, windows["6h"])
 	if !ok {
@@ -226,8 +275,9 @@ func (s *server) hostsAPI(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, v)
 }
 
-// askLive fills each box's Live: this box's and those with a recent minute
-// asked, the rest null.
+// askLive fills each box's Live: this box, the boxes with a recent minute
+// and those with none in the window (a presence entry only) are asked, the
+// rest null.
 func (s *server) askLive(ctx context.Context, boxes []HostBox) {
 	ctx, cancel := context.WithTimeout(ctx, liveWait)
 	defer cancel()
@@ -237,8 +287,8 @@ func (s *server) askLive(ctx context.Context, boxes []HostBox) {
 		b := &boxes[i]
 		b.Live = json.RawMessage("null")
 		recent := b.Last != nil && now.Sub(time.Unix(unix(b.Last.At), 0)) <= liveRecent
-		if b.Host != s.host && !recent {
-			continue
+		if b.Host != s.host && !recent && b.Last != nil {
+			continue // asleep: its last minute is old
 		}
 		wg.Add(1)
 		go func() {
