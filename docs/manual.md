@@ -2160,7 +2160,7 @@ Runs a kind inline, in the requester's process, on the cwd worktree's HEAD, and 
 
 It also refuses (exit 2) a `--model` with spaces or `;`, a `--model` the kind lacks, an `--effort` outside the five values, and any effort for a command kind, with the messages of [`bmesh routine queue`](#bmesh-routine-queue).
 
-**Details.** With a hub, an inline run leases the kind's `slots` for `timeout` + 1m, as the daemon does (see [Leases](#leases)). Before it (and after a record has answered nothing), a command kind runs the worktree's `[setup]` when its installs aren't current (see [Setup](#setup)), printing `bmesh: setup ran (<command>) in <duration>` on stderr. A setup that fails, or leaves tracked changes or untracked, unignored files, refuses the run: nothing runs or is recorded. A model kind runs no setup. `land` and the build's verify of `main` run inline kinds the same way.
+**Details.** With a hub, an inline run leases the kind's `slots` for `timeout` + 1m, as the daemon does (see [Leases](#leases)). A slot with no free place is waited for, never refused: the run waits its turn, printing `waiting for <slot> (held by <holder>, <priority>); #N` each time the line changes, `#N` its place among the slot's waiters and `<priority>` the holder's (left out for a lease with none: one `lock-lease acquire` or a daemon job took). A run from a node in state `working` puts the same line on the node's status line (`mesh-status`, `thread-status`), and gives the old text back once it holds the slot, unless the state was written meanwhile. The wait's priority comes from who runs it, never from a flag: urgent inside `land` and from the operator node (`--node operator`), best effort otherwise. Waiters are served urgent first, then oldest first. An urgent waiter (`land`'s, or the operator's) that finds every place held, at least one by a best-effort run, asks the best-effort holder that started last to yield (one per urgent waiter in line up to it). That holder, within 2 s, kills its command's process group, releases its leases, prints `preempted by <holder> (<why>); waiting again at #N` (`<why>` `land of <the landing worktree>` or `the operator's run`), puts it on its status line, and waits again as urgent, so it is never asked to yield twice; it runs the kind again from the start once it holds the slot, and only that run records. A waiter that stops polling (killed) drops out of line within 30 s. Daemon jobs take slots without waiting in line (see [Jobs](#jobs)). Before it (and after a record has answered nothing), a command kind runs the worktree's `[setup]` when its installs aren't current (see [Setup](#setup)), printing `bmesh: setup ran (<command>) in <duration>` on stderr. A setup that fails, or leaves tracked changes or untracked, unignored files, refuses the run: nothing runs or is recorded. A model kind runs no setup. `land` and the build's verify of `main` run inline kinds the same way.
 
 See also: [Checkouts](#checkouts), [Results](#results), [Modes](#modes).
 
@@ -2243,7 +2243,7 @@ Takes, renews and gives back leases on a repo's slots (see [Leases](#leases)). I
 
 **`release <key>`** gives back a held lease. It refuses a lease held by someone else (exit 3).
 
-**`run <slot> -- <cmd...>`** holds a lease while a command runs. It runs the command in its own process group (on Unix, a session of its own, with no controlling terminal), renews the lease every ttl/3, and exits with the command's code. On SIGINT or SIGTERM it kills the group, releases the lease and exits 1. When a renew fails, the lease is lost, the command is killed and `lock-lease run` exits 1.
+**`run <slot> -- <cmd...>`** holds a lease while a command runs. A busy slot is waited for, as an inline run waits (see Details in [`bmesh routine run`](#bmesh-routine-run)), with its waiting lines on stderr; it is best effort except from the operator node, and a yield it is asked for kills the command, waits again and runs it again. It runs the command in its own process group (on Unix, a session of its own, with no controlling terminal), renews the lease every ttl/3, and exits with the command's code. On SIGINT or SIGTERM it kills the group, releases the lease and exits 1. When a renew fails, the lease is lost, the command is killed and `lock-lease run` exits 1.
 
 **Refusals.**
 
@@ -2251,7 +2251,7 @@ Takes, renews and gives back leases on a repo's slots (see [Leases](#leases)). I
 |---|---|---|
 | `--ttl` under 3 s | 2 | `lease <sub>: --ttl must be at least 3s` |
 | a slot name that isn't valid | 2 | `invalid slot "<s>"` |
-| the slot is busy | 3 | `slot <slot> is busy` |
+| `acquire`: the slot is busy | 3 | `slot <slot> is busy` |
 | `renew` or `release` of a lease someone else holds | 3 | `lease <key> is not held by you` |
 | `run`: the lease is lost | 1 | `lease lost` |
 | `run`: SIGINT or SIGTERM | 1 | `interrupted` |
@@ -2326,7 +2326,7 @@ The holder is the node, else the host name. A lead runs `land` in the background
 
     Once the replies are in, `land` starts again from step 1, so the results they recorded are required (a second `required:` line). Outside a node it waits for no job.
 9. **The main checkout.** While the main checkout's `main` has commits `origin/main` doesn't (someone's unpushed work, which `land` never pushes), prints `waiting for main in <path> to be pushed: it has <n> commits origin/main doesn't (someone's unpushed work; land never pushes it)` once per count and fetches again every 15 s.
-10. While another holder has the lease, prints `waiting for land.<repo> (held by <holder>)` once per holder and retries every 2 s.
+10. While another holder has the lease, prints `waiting for land.<repo> (held by <holder>, urgent); #N` each time the line changes and retries every 2 s; waiting landings take the lease oldest first. An inline kind of step 6 or under the lease whose slot is busy waits the same way, as urgent (see Details in [`bmesh routine run`](#bmesh-routine-run)), and its waiting line is what `land` is doing.
 
 **Waiting.** Every wait (steps 8 to 10, and the main checkout and a moving `main` under the lease) reads the node's hold and its mail again at each poll: a hold refuses at once, as step 1 does, and so does an unread operator message, or any the operator sent since `land` started, read or not, since a lead woken mid-land can't act on it before the push (`refused: <n> message(s) from the operator since land started; ...`). `--wait` bounds all of the waiting together; past it, `land` exits 5 with `timed out waiting for <what>; nothing is pushed: run bmesh land again, which waits for the same jobs rather than queueing them twice`, `<what>` the job or the main checkout it waited for (`timed out waiting for land.<repo>, held by <holder>; nothing is pushed: run bmesh land again` for the lease). Run again, it waits for the same jobs rather than queueing them twice. Run from a node, `land` publishes a `land` event under the node when it starts and then once a minute until it ends, its text what it is doing (`waiting for job <id> (review)`, `landing under land.<repo>`). It sets no state, but it is the node's activity, so a lead waiting in `land` isn't called silent, and `watch` shows where it is.
 
@@ -3430,6 +3430,7 @@ timeout = "10m"
 - An expired lease is free.
 - A holder renews every ttl/3. A failed renew loses the lease: the run is killed and the job answered `ok=false` with `lease lost`, nothing recorded.
 - Kinds lease their `slots` for `timeout` + 1m (inline runs and the daemon alike). An inline run with no hub leases none (see [`bmesh routine run`](#bmesh-routine-run)).
+- An inline run, `lock-lease run` and `land` wait their turn for a busy slot, urgent before best effort, and an urgent wait can make a best-effort run yield (see Details in [`bmesh routine run`](#bmesh-routine-run)). `lock-lease acquire` and daemon jobs don't wait in line.
 
 The command is [`bmesh lock-lease`](#bmesh-lock-lease).
 

@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -134,9 +136,10 @@ func slotCapacity(slot string) (int, error) {
 	return 1, nil
 }
 
-// leaseRun holds a lease on slot while argv runs. The command runs in its
-// own process group so the whole group can be killed when the lease is lost
-// or the run interrupted; otherwise the command's exit code is returned.
+// leaseRun holds a lease on slot while argv runs, waiting its turn for it
+// as withLeases does. The command runs in its own process group so the
+// whole group can be killed when the lease is lost, yielded or the run
+// interrupted; otherwise the command's exit code is returned.
 func (a *app) leaseRun(slot string, argv []string, ttl time.Duration) error {
 	ctx, cancel := cmdCtx()
 	holder, err := a.identityOrHost(ctx, "lock-lease")
@@ -144,7 +147,7 @@ func (a *app) leaseRun(slot string, argv []string, ttl time.Duration) error {
 	if err != nil {
 		return err
 	}
-	return a.withLeases([]string{slot}, holder, ttl, slotCapacity, func(ctx context.Context) error {
+	return a.withLeases([]string{slot}, holder, ttl, slotCapacity, a.roleWait(a.stderr), func(ctx context.Context) error {
 		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = a.stdin, a.stdout, a.stderr
 		proc.Group(cmd)
@@ -163,32 +166,199 @@ func (a *app) leaseRun(slot string, argv []string, ttl time.Duration) error {
 	})
 }
 
-// withLeases takes a place in each slot for holder (capacity per slot from
-// capacity), then runs body, renewing every lease each ttl/3. A busy slot
-// releases the places already taken and is refused (exit 3). A failed renew
-// cancels body's context and exits 1 "lease lost"; SIGINT or SIGTERM cancels
-// it, releases the leases and exits 1 "interrupted"; otherwise the leases
-// are released and body's error is returned.
-func (a *app) withLeases(slots []string, holder string, ttl time.Duration, capacity func(slot string) (int, error),
-	body func(ctx context.Context) error) error {
-	var keys []string
-	ctx, cancel := cmdCtx()
-	for _, slot := range slots {
-		n, err := capacity(slot)
+// leaseWait is how a run waits for its slots: its priority, set by role
+// and never by a flag, and where it says that it waits.
+type leaseWait struct {
+	prio      mesh.Priority
+	why       string                // an urgent wait's reason, named in the yield it asks of a best-effort holder; "" asks none
+	out       io.Writer             // where each new waiting line goes
+	say       func(text string)     // the run's status line, given each new waiting line and "" once it holds; nil: none
+	check     func(by string) error // called with the holder before each pause; an error ends the wait
+	deadline  time.Time             // given up at (exit 5); zero: none
+	preempted string                // who made this run yield, while it waits again
+	said      bool                  // say was given a line since the run last held its slots
+}
+
+// roleWait is an inline run's wait outside land: urgent from the operator
+// node, best effort from any other.
+func (a *app) roleWait(out io.Writer) leaseWait {
+	if a.givenNode() == "operator" {
+		return leaseWait{prio: mesh.Urgent, why: "the operator's run", out: out}
+	}
+	return leaseWait{prio: mesh.BestEffort, out: out}
+}
+
+// waiterTTL is how long a waiter's place outlasts its last poll, so a
+// waiter that died drops out of line. Tests shorten it.
+var waiterTTL = 30 * time.Second
+
+// acquireWait takes a place in slot (capacity places) for holder, waiting
+// its turn: it records holder as a waiter beside the slot's leases every
+// landPoll, and takes a place once one is free for it in the waiters'
+// order (urgent first, then oldest first). An urgent wait with every place
+// held marks the best-effort holder that started last to yield (one per
+// urgent waiter ahead of it and itself). Each new line of the wait is
+// printed and said; check runs before each pause, and past the deadline
+// it gives up (exit 5). The waiter's record goes when it returns.
+func (a *app) acquireWait(slot, holder string, ttl time.Duration, capacity int, w *leaseWait) (string, error) {
+	since, said := time.Now(), ""
+	defer func() {
+		ctx, cancel := cmdCtx()
+		defer cancel()
+		mesh.DeleteWaiter(ctx, a.client, slot, holder) // one that outlives a failure expires
+	}()
+	for {
+		ctx, cancel := cmdCtx()
+		now := time.Now()
+		err := mesh.PutWaiter(ctx, a.client, slot, mesh.Waiter{Holder: holder, Priority: w.prio, Why: w.why, Since: since}, waiterTTL, now)
+		var line mesh.SlotLine
 		if err == nil {
-			var key string
-			if key, err = a.acquireAs(ctx, slot, holder, ttl, n); err == nil {
-				keys = append(keys, key)
-				continue
+			line, err = mesh.SlotQueue(ctx, a.client, slot, capacity, now)
+		}
+		if err != nil {
+			cancel()
+			return "", err
+		}
+		place := slices.IndexFunc(line.Waiters, func(x mesh.Waiter) bool { return x.Holder == holder })
+		if place < 0 {
+			place = len(line.Waiters) // expired between the write and the read: last until the next poll
+		}
+		text, by := waitLine(slot, line, place+1, w.preempted)
+		if place < line.Free {
+			key, err := mesh.AcquireRanked(ctx, a.client, slot, holder, w.prio, ttl, capacity, time.Now())
+			cancel()
+			if errors.Is(err, mesh.ErrBusy) {
+				continue // taken since the read: read again at once
 			}
+			if err == nil && w.preempted != "" {
+				if said == "" {
+					w.tell(text)
+				}
+				w.preempted = ""
+			}
+			return key, err
+		}
+		if w.prio == mesh.Urgent && w.why != "" && line.Free == 0 {
+			err = askYield(ctx, a.client, line, place, holder+" ("+w.why+")")
 		}
 		cancel()
-		a.releaseLeases(keys, holder)
-		return err
+		if err != nil {
+			return "", err
+		}
+		if text != said {
+			w.tell(text)
+			said = text
+		}
+		if w.check != nil {
+			if err := w.check(by); err != nil {
+				return "", err
+			}
+		}
+		if !w.deadline.IsZero() && time.Now().After(w.deadline) {
+			return "", fail(exitTimeout, "timed out waiting for %s, held by %s; nothing is pushed: run bmesh land again", slot, by)
+		}
+		time.Sleep(landPoll)
 	}
-	cancel()
-	return a.holdLeases(keys, holder, ttl, body)
 }
+
+// tell prints a line of the wait and says it.
+func (w *leaseWait) tell(text string) {
+	fmt.Fprintln(w.out, text)
+	if w.say != nil {
+		w.say(text)
+		w.said = true
+	}
+}
+
+// waitLine is a wait's line at place in line, and who holds the slot
+// ("someone" when no place is held): "waiting for <slot> (held by
+// <holder>, <priority>); #N", or, waiting again after a yield,
+// "preempted by <holder> (<why>); waiting again at #N".
+func waitLine(slot string, line mesh.SlotLine, place int, preempted string) (text, by string) {
+	by, held := "someone", ""
+	if len(line.Held) > 0 {
+		// shortcut: names the first place's holder only; name each when a slot of capacity > 1 needs it.
+		h := line.Held[0]
+		by, held = h.Holder, " (held by "+h.Holder
+		if p := h.Priority.Word(); p != "" {
+			held += ", " + p
+		}
+		held += ")"
+	}
+	if preempted != "" {
+		return fmt.Sprintf("preempted by %s; waiting again at #%d", preempted, place), by
+	}
+	return fmt.Sprintf("waiting for %s%s; #%d", slot, held, place), by
+}
+
+// askYield marks the best-effort holder of line that started last to yield
+// to by, the urgent waiter at place, unless the places already marked
+// cover every urgent waiter up to it.
+func askYield(ctx context.Context, c *mesh.Client, line mesh.SlotLine, place int, by string) error {
+	ahead := 0
+	for _, w := range line.Waiters[:min(place, len(line.Waiters))] {
+		if w.Priority == mesh.Urgent {
+			ahead++
+		}
+	}
+	var pick *mesh.Lease
+	marked := 0
+	for i, l := range line.Held {
+		switch {
+		case l.Yield != "":
+			marked++
+		case l.Priority == mesh.BestEffort && (pick == nil || l.Started.After(pick.Started)):
+			pick = &line.Held[i]
+		}
+	}
+	if pick == nil || marked > ahead {
+		return nil
+	}
+	return mesh.AskYield(ctx, c, *pick, by)
+}
+
+// withLeases waits for a place in each slot for holder, in turn (capacity
+// per slot from capacity; see acquireWait), then runs body, renewing every
+// lease each ttl/3. A failed wait releases the places already taken. A
+// failed renew cancels body's context and exits 1 "lease lost"; SIGINT or
+// SIGTERM cancels it, releases the leases and exits 1 "interrupted". A
+// best-effort run asked to yield has body's context cancelled (its
+// child's process group killed), releases its leases and waits again as
+// urgent, so it yields at most once, then runs body again; otherwise the
+// leases are released and body's error is returned.
+func (a *app) withLeases(slots []string, holder string, ttl time.Duration, capacity func(slot string) (int, error),
+	w leaseWait, body func(ctx context.Context) error) error {
+	for {
+		var keys []string
+		for _, slot := range slots {
+			n, err := capacity(slot)
+			if err == nil {
+				var key string
+				if key, err = a.acquireWait(slot, holder, ttl, n, &w); err == nil {
+					keys = append(keys, key)
+					continue
+				}
+			}
+			a.releaseLeases(keys, holder)
+			return err
+		}
+		if w.said {
+			w.say("")
+			w.said = false
+		}
+		err := a.holdLeases(keys, holder, ttl, w.prio == mesh.BestEffort, body)
+		var y *yielded
+		if !errors.As(err, &y) {
+			return err
+		}
+		w.prio, w.why, w.preempted = mesh.Urgent, "", y.by
+	}
+}
+
+// yielded is holdLeases giving its leases up to an urgent waiter, by.
+type yielded struct{ by string }
+
+func (y *yielded) Error() string { return "preempted by " + y.by }
 
 // releaseLeases gives back keys held by holder; the first failure is
 // returned after every key was tried.
@@ -205,24 +375,45 @@ func (a *app) releaseLeases(keys []string, holder string) error {
 }
 
 // holdLeases runs body while holder holds keys, as withLeases describes,
-// and releases them after.
-func (a *app) holdLeases(keys []string, holder string, ttl time.Duration, body func(ctx context.Context) error) error {
+// and releases them after. A preemptable holder reads its leases every
+// landPoll for a yield asked of it; asked, it returns *yielded.
+func (a *app) holdLeases(keys []string, holder string, ttl time.Duration, preemptable bool, body func(ctx context.Context) error) error {
 	release := func() error { return a.releaseLeases(keys, holder) }
 	sigs, stopSigs := leaseSignals()
 	defer stopSigs()
 	runCtx, kill := context.WithCancel(context.Background())
 	defer kill()
 	var lost, interrupted atomic.Bool
+	yieldTo := "" // written before watched closes
 	stop := make(chan struct{})
 	watched := make(chan struct{})
 	go func() {
 		defer close(watched)
 		t := time.NewTicker(ttl / 3)
 		defer t.Stop()
+		var polls <-chan time.Time
+		if preemptable {
+			p := time.NewTicker(landPoll)
+			defer p.Stop()
+			polls = p.C
+		}
 		for {
 			select {
 			case <-stop:
 				return
+			case <-polls:
+				ctx, cancel := cmdCtx()
+				for _, key := range keys {
+					if by, err := mesh.LeaseYield(ctx, a.client, key, holder); err == nil && by != "" {
+						yieldTo = by
+						break
+					}
+				}
+				cancel()
+				if yieldTo != "" {
+					kill()
+					return
+				}
 			case <-sigs:
 				interrupted.Store(true)
 				kill()
@@ -253,8 +444,39 @@ func (a *app) holdLeases(keys []string, holder string, ttl time.Duration, body f
 	if err := release(); err != nil {
 		return err
 	}
+	if yieldTo != "" && !interrupted.Load() {
+		return &yielded{by: yieldTo}
+	}
 	if interrupted.Load() {
 		return fail(exitError, "interrupted")
 	}
 	return runErr
+}
+
+// stateSay puts a run's wait on its node's status line, as mesh-status
+// shows it: while the node is working, its text is the wait's newest line,
+// and goes back to what it was once the run holds its slots, unless
+// someone wrote the state since. A path with no working state is left
+// alone.
+func (a *app) stateSay(path string) func(text string) {
+	var orig *mesh.State
+	var rev uint64
+	return func(text string) {
+		ctx, cancel := cmdCtx()
+		defer cancel()
+		st, now, err := mesh.ReadState(ctx, a.client, path)
+		if err != nil || st.State != "working" || orig != nil && now != rev || orig == nil && text == "" {
+			return
+		}
+		if orig == nil {
+			orig = &st
+		}
+		to := mesh.State{State: st.State, Text: text, By: st.By}
+		if text == "" {
+			to = *orig
+		}
+		if rev, err = mesh.WriteStateAt(ctx, a.client, path, now, to); err != nil || text == "" {
+			orig = nil
+		}
+	}
 }

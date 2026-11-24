@@ -211,7 +211,7 @@ func (a *app) verifyMain(ctx context.Context, row config.Repo, repoPath, tip, sh
 			return nil
 		default:
 			fmt.Fprintf(note, "verify main %s: running at t:%s\n", sha[:8], tree[:8])
-			if ok, output, how, err = a.runInline(ctx, k, wt, sha, tree, a.cfg.HostName(), model, "", "", nil, false); err != nil {
+			if ok, output, how, err = a.runInline(ctx, k, wt, sha, tree, a.cfg.HostName(), model, "", "", nil, false, a.roleWait(note)); err != nil {
 				// A setup that fails refuses the build and records
 				// nothing: a registry flake never turns main red.
 				if ee := (*exitErr)(nil); errors.As(err, &ee) && strings.HasPrefix(ee.msg, "setup ") {
