@@ -30,6 +30,64 @@ type Event struct {
 	// Can is what a daemon's started event says it does beyond the
 	// basics: "land" when it lands for its box's leads (bmesh ready).
 	Can []string `json:"can,omitempty"`
+	// Land is a land event's account of where its run is.
+	Land *Land `json:"land,omitempty"`
+}
+
+// The steps of a land run, in the order it takes them: before the lease
+// (steps 1-5, 6, 7-8, 9, 10 of bmesh land), then under it (1-3, 4, 5-8).
+const (
+	LandChecks  = "checks"
+	LandKinds   = "kinds"
+	LandJobs    = "jobs"
+	LandMain    = "main"
+	LandLease   = "lease"
+	LandRebase  = "rebase"
+	LandResults = "results"
+	LandPush    = "push"
+)
+
+// Land is where a land run is: when the run and its step began (RFC3339),
+// the command it runs, the jobs it waits for, and, on the run's last event,
+// how it ended (landed <sha8>, or its error line).
+type Land struct {
+	Run   string    `json:"run"`
+	Step  string    `json:"step"`
+	Since string    `json:"since"`
+	Cmd   *LandCmd  `json:"cmd,omitempty"`
+	Jobs  []LandJob `json:"jobs,omitempty"`
+	End   string    `json:"end,omitempty"`
+}
+
+// LandCmd is an inline kind's command (or the worktree's setup, kind
+// "setup") a land run runs: the command itself only on the first event
+// after it started, its newest non-empty output line and when it was
+// printed, the lines so far, and while it waits for a slot, where it waits.
+type LandCmd struct {
+	Kind    string    `json:"kind"`
+	Command string    `json:"command,omitempty"`
+	Since   string    `json:"since"`
+	Last    string    `json:"last,omitempty"`
+	LastAt  string    `json:"last_at,omitempty"`
+	Lines   int       `json:"lines"`
+	Wait    *LandWait `json:"wait,omitempty"`
+}
+
+// LandWait is the slot an inline kind waits for, who holds it, and the
+// run's place in its line.
+type LandWait struct {
+	Slot   string `json:"slot"`
+	Holder string `json:"holder"`
+	Place  int    `json:"place"`
+}
+
+// LandJob is a job a land run waits for the reply to: waiting, held or
+// running, and the box holding it.
+type LandJob struct {
+	ID    string `json:"id"`
+	Kind  string `json:"kind"`
+	State string `json:"state"`
+	Host  string `json:"host,omitempty"`
 }
 
 // Stored is a stream message as read back.

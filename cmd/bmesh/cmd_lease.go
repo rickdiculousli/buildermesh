@@ -179,6 +179,12 @@ type leaseWait struct {
 	said      bool                  // say was given a line since the run last held its slots
 	held      []string              // the places a wait for a later slot already took: renewed each poll, and given up when one is asked to yield
 	sigs      <-chan os.Signal      // ends the wait, "interrupted"; nil: none
+	// at, when set, is told at each poll that waits the slot waited for,
+	// who holds it and the run's place in its line.
+	at func(slot, holder string, place int)
+	// track, when set, is told each command an inline run starts (its
+	// setup, then the kind) and gets its output as it is printed.
+	track func(kind, command string) io.Writer
 }
 
 // roleWait is an inline run's wait outside land: urgent from the operator
@@ -253,6 +259,9 @@ func (a *app) acquireWait(slot, holder string, ttl time.Duration, capacity int, 
 		cancel()
 		if err != nil {
 			return "", err
+		}
+		if w.at != nil {
+			w.at(slot, by, place+1)
 		}
 		if text != said {
 			w.tell(text)

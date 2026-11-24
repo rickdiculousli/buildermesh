@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -82,7 +83,7 @@ func TestReadyThenTheDaemonLands(t *testing.T) {
 	readyLead(t, c, ctx, r)
 	head := gitOut(t, "rev-parse", "HEAD")
 	out, errs, code := runCLI(t, as("app-012"), "ready", "--text", "built the thing")
-	if code != 0 || out != "ready: testhost's daemon lands "+head[:8]+"; it wakes you only if land needs you\n" {
+	if code != 0 || out != "ready: testhost's daemon lands "+head[:8]+"; it wakes you only if land needs you; bmesh mesh-status shows where it is\n" {
 		t.Fatalf("ready: %d %q %q", code, out, errs)
 	}
 	if s := stateOf(t, c, ctx, "app-012"); s != "landing" {
@@ -251,5 +252,54 @@ func TestReadyCancel(t *testing.T) {
 	}
 	if out, _, code := runCLI(t, as("app-012"), "ready", "--cancel"); code != 0 || !strings.HasPrefix(out, "too late: landed 01234567;") {
 		t.Fatalf("cancel after the push: %d %q", code, out)
+	}
+}
+
+// mesh-status's landing line reads the lead's newest land event of a run
+// started since the request: its text, its step's age and the command's
+// newest line, or how the run ended; an event of an earlier run is not
+// used.
+func TestMeshStatusSaysWhereALandingIs(t *testing.T) {
+	c, ctx := setup(t)
+	r := newLandRepo(t)
+	readyLead(t, c, ctx, r)
+	head := gitOut(t, "rev-parse", "HEAD")
+	if _, errs, code := runCLI(t, as("app-012"), "ready", "--text", "x"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	now := time.Now()
+	at := func(d time.Duration) string { return now.Add(-d).UTC().Format(time.RFC3339) }
+	publish := func(ev mesh.Event) {
+		t.Helper()
+		ev.From, ev.Event = "app-012", "land"
+		if err := mesh.PublishEvent(ctx, c, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	line := func() string {
+		t.Helper()
+		out, _, _ := runCLI(t, nil, "mesh-status")
+		for _, l := range strings.Split(out, "\n") {
+			if strings.HasPrefix(l, "app-012 landing ") {
+				return l
+			}
+		}
+		t.Fatalf("no landing line:\n%s", out)
+		return ""
+	}
+	publish(mesh.Event{Text: "running verify on t:00000000", At: at(time.Hour),
+		Land: &mesh.Land{Run: at(time.Hour), Step: mesh.LandKinds, Since: at(time.Hour)}})
+	if got := line(); got != "app-012 landing 0m: ready to land "+head[:8] {
+		t.Fatalf("an earlier run's event: %q", got)
+	}
+	publish(mesh.Event{Text: "running verify on t:4208beec", At: at(0), Land: &mesh.Land{Run: at(0), Step: mesh.LandKinds, Since: at(10 * time.Minute),
+		Cmd: &mesh.LandCmd{Kind: "verify", Since: at(10 * time.Minute), Last: "PASS switch to android", LastAt: at(40 * time.Second), Lines: 19}}})
+	if got := line(); !regexp.MustCompile(`^app-012 landing 0m: running verify on t:4208beec, 10m[01]s in: PASS switch to android \(4[01]s ago\)$`).MatchString(got) {
+		t.Fatalf("a fresh run: %q", got)
+	}
+	publish(mesh.Event{Text: "waiting for job 3XANly81 (review, running on k16)", At: at(20 * time.Second),
+		Land: &mesh.Land{Run: at(0), Step: mesh.LandJobs, Since: at(0), End: "timed out waiting for job 3XANly81 (review)"}})
+	if got := line(); !regexp.MustCompile(`^app-012 landing 0m: last run ended 2[01]s ago: timed out waiting for job 3XANly81 \(review\)$`).MatchString(got) {
+		t.Fatalf("an ended run: %q", got)
 	}
 }

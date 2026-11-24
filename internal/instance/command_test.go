@@ -99,3 +99,13 @@ func waitGone(t *testing.T, pidfile string) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+// A job's Out gets the command's output as it is printed, and the reply
+// still records it whole.
+func TestCommandInstanceTeesToOut(t *testing.T) {
+	var live strings.Builder
+	r := NewCommand(kind.Kind{Command: "echo one; echo two >&2"}).Run(context.Background(), Job{Dir: t.TempDir(), Out: &live})
+	if !r.OK || r.Output != "one\ntwo\n" || live.String() != "one\ntwo\n" {
+		t.Fatalf("reply %+v, out %q", r, live.String())
+	}
+}

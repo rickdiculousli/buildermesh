@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -822,7 +823,11 @@ func (a *app) runKind(ctx context.Context, k kind.Kind, top, head, tree, self, m
 	// A command kind runs against the repo's installs; a model kind reads
 	// diffs and needs none.
 	if !k.IsModel() {
-		if err := a.runSetup(ctx, top, rc.Setup); err != nil {
+		var out io.Writer
+		if w.track != nil && rc.Setup.Command != "" {
+			out = w.track("setup", rc.Setup.Command)
+		}
+		if err := a.runSetup(ctx, top, rc.Setup, out); err != nil {
 			return instance.Reply{}, err
 		}
 	}
@@ -837,6 +842,13 @@ func (a *app) runKind(ctx context.Context, k kind.Kind, top, head, tree, self, m
 	capacity := func(slot string) (int, error) { return max(rc.Slots[slot], 1), nil }
 	j := instance.Job{ID: newID(), Kind: k.Name, Commit: head, Tree: tree, From: self, Reply: self,
 		Args: jobArgs, Text: text, Dir: top, Effort: effort}
+	if w.track != nil {
+		command := k.Command
+		if k.IsModel() {
+			command = "claude -p"
+		}
+		j.Out = w.track(k.Name, command)
+	}
 	var reply instance.Reply
 	err = a.withLeases(slots, self, k.Timeout+time.Minute, capacity, w, func(ctx context.Context) error {
 		reply = inst.Run(ctx, j)
@@ -854,13 +866,14 @@ func (a *app) runKind(ctx context.Context, k kind.Kind, top, head, tree, self, m
 }
 
 // runSetup brings the worktree top's installs current (setup.Ensure, the
-// tree required clean after) before a command kind runs there.
+// tree required clean after) before a command kind runs there, its output
+// copied to live as it is printed when live is set.
 // A failed setup is refused (exit 3) with the tail of its output: an
 // infrastructure error, never a recorded result.
-func (a *app) runSetup(ctx context.Context, top string, s kind.Setup) error {
+func (a *app) runSetup(ctx context.Context, top string, s kind.Setup, live io.Writer) error {
 	start := time.Now()
 	// The setup's own timeout bounds it, not the caller's deadline.
-	ran, out, err := wsetup.Ensure(context.WithoutCancel(ctx), top, s, wsetup.Options{Clean: true})
+	ran, out, err := wsetup.Ensure(context.WithoutCancel(ctx), top, s, wsetup.Options{Clean: true, Out: live})
 	var se *wsetup.Error
 	if errors.As(err, &se) {
 		msg := se.Msg + "; nothing recorded: fix the setup (bmesh setup runs it alone), then run it again"

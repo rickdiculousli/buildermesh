@@ -48,7 +48,7 @@ func TestWatchAndMeshStatusPrintFlags(t *testing.T) {
 	var b bytes.Buffer
 	a := &app{stdout: &b}
 	a.printEvent(mesh.Stored{Subject: "bm.daemon.k16.runaway",
-		Data: []byte(`{"at":"` + at + `","to":"app-096","text":"runaway app-096: read 154M in the last hour"}`)}, map[string]bool{"app-096": true})
+		Data: []byte(`{"at":"` + at + `","to":"app-096","text":"runaway app-096: read 154M in the last hour"}`)}, map[string]bool{"app-096": true}, map[string]string{})
 	if got := b.String(); got != at+" daemon.k16 runaway app-096 runaway app-096: read 154M in the last hour\n" {
 		t.Fatalf("watch printed %q", got)
 	}

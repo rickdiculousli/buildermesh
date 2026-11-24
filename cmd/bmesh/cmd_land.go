@@ -15,7 +15,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -40,7 +39,7 @@ const landUsage = "usage: bmesh land [--spec NNN] [--size XS|S|M|L] [--ttl D] [-
 // landPoll is how often land tries a held lease again and looks for a job's
 // reply; landMainPoll how often it fetches again while the main checkout
 // has unpushed commits; landEventEvery how often it publishes its land
-// event. Tests shorten them.
+// event when nothing changed. Tests shorten them.
 var (
 	landPoll       = 2 * time.Second
 	landMainPoll   = 15 * time.Second
@@ -74,7 +73,7 @@ type lander struct {
 	requeued map[string]bool    // the jobs land queued once more after a reply that recorded nothing
 	answered map[string]bool    // the jobs whose replies land read
 	kinds    []kind.Kind        // the repo's kinds
-	doing    atomic.Value       // what land is doing, for its land events
+	st       *landStatus        // where the run is, for its land events
 	heads    []string           // the branch's heads before land touched it: HEAD and the heads a rebase by hand rewrote
 	before   map[string]*source // per kind with a result before land touched the branch: where it is
 	required []string           // the kinds the landed tree must carry
@@ -137,12 +136,16 @@ func (a *app) cmdLand(args []string) (err error) {
 	}
 	l := &lander{a: a, top: top, size: *size, deadline: time.Now().Add(*wait),
 		ran: map[string]string{}, requeued: map[string]bool{}, answered: map[string]bool{}}
-	l.doing.Store("landing")
+	l.st = newLandStatus(time.Now())
 	if err := l.setup(id); err != nil {
 		return err
 	}
 	stop := l.events()
-	defer stop()
+	// Last: the run's ending, the interrupted line below included.
+	defer func() {
+		l.st.end(landEnd(err, l.landed))
+		stop()
+	}()
 	// Land's waits outlast a command's minute; each mesh call bounds its own.
 	// An interrupt (the daemon cancelling a step, or Ctrl-C) ends the waits
 	// and the kinds running before the lease; under it, holdLeases cleans up.
@@ -161,12 +164,12 @@ func (a *app) cmdLand(args []string) (err error) {
 			continue
 		}
 		w := l.wait(ctx)
+		l.st.step(mesh.LandLease, "taking "+slot)
 		key, err := a.acquireWait(slot, l.holder, *ttl, 1, &w)
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(a.stdout, "lease %s\n", slot)
-		l.doing.Store("landing under " + slot)
 		err = a.holdLeases([]string{key}, l.holder, *ttl, false, l.land)
 		if !errors.Is(err, errReviewAgain) {
 			if err != nil {
@@ -238,53 +241,94 @@ func (l *lander) setup(id *string) error {
 }
 
 // wait is how land waits for a slot (its lease, or an inline kind's):
-// urgent, naming the worktree it lands in any yield it asks, its line kept
-// as what land is doing, the hold and the mail read before each pause,
-// given up at --wait.
+// urgent, naming the worktree it lands in any yield it asks, where it
+// waits and the inline run's commands told to its land events, the hold
+// and the mail read before each pause, given up at --wait.
 func (l *lander) wait(ctx context.Context) leaseWait {
-	prev := ""
 	return leaseWait{prio: mesh.Urgent, why: "land of " + l.top, out: l.a.stdout, deadline: l.deadline,
 		say: func(text string) {
 			if text == "" {
-				l.doing.Store(prev)
-				return
+				l.st.held()
 			}
-			if prev == "" {
-				prev, _ = l.doing.Load().(string)
-			}
-			l.doing.Store(text)
 		},
+		at:    l.st.at,
+		track: l.st.track,
 		check: func(string) error { return l.check(ctx) }}
 }
 
-// events publishes the node's land event, naming what land is doing, now
-// and every landEventEvery until the returned stop: it sets no state but is
-// the node's activity, so a lead waiting in land is not called silent.
-// Land run outside a node publishes none.
+// events publishes the node's land events until the returned stop: each
+// change of what land is doing at once, in order, and the run as it stands
+// every landEventEvery between (the jobs' states read again first), and
+// last its ending. They set no state but are the node's activity, so a lead
+// waiting in land is not called silent. Land run outside a node publishes
+// none.
 func (l *lander) events() (stop func()) {
 	if l.node == nil {
 		return func() {}
+	}
+	publish := func(ev mesh.Event) {
+		ctx, cancel := cmdCtx()
+		defer cancel()
+		ev.From = l.node.String()
+		if err := mesh.PublishEvent(ctx, l.a.client, ev); err != nil {
+			fmt.Fprintf(l.a.stderr, "bmesh: land event: %v\n", err)
+		}
 	}
 	done, finished := make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(finished)
 		t := time.NewTicker(landEventEvery)
 		defer t.Stop()
+		publish(l.st.event())
 		for {
-			ctx, cancel := cmdCtx()
-			text, _ := l.doing.Load().(string)
-			if err := mesh.PublishEvent(ctx, l.a.client, mesh.Event{From: l.node.String(), Event: "land", Text: text}); err != nil {
-				fmt.Fprintf(l.a.stderr, "bmesh: land event: %v\n", err)
-			}
-			cancel()
 			select {
-			case <-done:
-				return
+			case ev := <-l.st.changes:
+				publish(ev)
 			case <-t.C:
+				if !l.readJobs() {
+					publish(l.st.event())
+				}
+			case <-done:
+				for {
+					select {
+					case ev := <-l.st.changes:
+						publish(ev)
+					default:
+						publish(l.st.event())
+						return
+					}
+				}
 			}
 		}
 	}()
 	return func() { close(done); <-finished }
+}
+
+// readJobs reads the state and host of each job land waits for again
+// (KindJobs); it reports an event queued because their text changed. A job
+// no longer listed keeps what was read last.
+func (l *lander) readJobs() bool {
+	jobs := l.st.jobs()
+	if len(jobs) == 0 {
+		return false
+	}
+	ctx, cancel := cmdCtx()
+	defer cancel()
+	listed := map[string][]mesh.QueuedJob{}
+	for i, j := range jobs {
+		q, ok := listed[j.Kind]
+		if !ok {
+			var err error
+			if q, err = mesh.KindJobs(ctx, l.a.client, j.Kind); err != nil {
+				return false
+			}
+			listed[j.Kind] = q
+		}
+		if k := slices.IndexFunc(q, func(x mesh.QueuedJob) bool { return x.ID == j.ID }); k >= 0 {
+			jobs[i] = landJobs([]waitJob{{j.Kind, q[k]}})[0]
+		}
+	}
+	return l.st.update(jobs)
 }
 
 // check reads the node's hold and its mail again, as every wait does
@@ -300,7 +344,6 @@ func (l *lander) check(ctx context.Context) error {
 // (check), then a sleep of d, cut short at the deadline; past the deadline
 // it gives up (exit 5).
 func (l *lander) pause(ctx context.Context, d time.Duration, what string) error {
-	l.doing.Store("waiting for " + what)
 	if err := l.check(ctx); err != nil {
 		return err
 	}
@@ -329,11 +372,10 @@ func (l *lander) ready(ctx context.Context) (again bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	l.doing.Store("running the inline kinds on t:" + tree[:8])
-	if err := l.inline(ctx, l.waited, tree, tree); err != nil {
+	if err := l.inline(ctx, l.waited, tree, tree, mesh.LandKinds); err != nil {
 		return false, err
 	}
-	jobs, err := l.review(ctx)
+	jobs, said, err := l.review(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -349,7 +391,17 @@ func (l *lander) ready(ctx context.Context) (again bool, err error) {
 	if len(jobs) > 0 {
 		return true, l.waitJobs(ctx, jobs)
 	}
+	l.st.waitFor(nil, cmp.Or(said, "no jobs to wait for"))
+	l.st.step(mesh.LandMain, l.fetching())
 	return false, l.mainPushed(ctx)
+}
+
+// fetching is what land says while it fetches main.
+func (l *lander) fetching() string {
+	if l.origin {
+		return "fetching origin/main"
+	}
+	return "reading main"
 }
 
 // prepare refuses a worktree land can't start from and reads the results
@@ -360,6 +412,7 @@ func (l *lander) ready(ctx context.Context) (again bool, err error) {
 // result for it. It prints the kinds and where each came from. A pass after
 // the first refuses a HEAD other than the one land waited on.
 func (l *lander) prepare(ctx context.Context) error {
+	l.st.step(mesh.LandChecks, "checking")
 	if err := l.gate(ctx); err != nil {
 		return err
 	}
@@ -661,16 +714,17 @@ type waitJob struct {
 // branch, it waits for that job; with a review result on the branch (spec
 // 038's hand rebase included) it queues none, so a fixed failing review
 // lands on verify alone; else it queues one on HEAD at the size's effort,
-// or none for XS or S. It returns the jobs to wait for. Land run outside a
-// node, or in a repo with no queued review kind, does nothing here.
-func (l *lander) review(ctx context.Context) ([]waitJob, error) {
+// or none for XS or S. It returns the jobs to wait for and, when it waits
+// for none, the line it printed. Land run outside a node, or in a repo with
+// no queued review kind, does nothing here.
+func (l *lander) review(ctx context.Context) ([]waitJob, string, error) {
 	k, ok := l.kind(reviewKind)
 	if l.node == nil || !ok || k.Mode == "inline" {
-		return nil, nil
+		return nil, "", nil
 	}
 	queued, err := mesh.KindJobs(ctx, l.a.client, reviewKind)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	var mine []waitJob
 	for _, j := range queued {
@@ -680,29 +734,31 @@ func (l *lander) review(ctx context.Context) ([]waitJob, error) {
 		}
 	}
 	if len(mine) > 0 {
-		return mine, nil
+		return mine, "", nil
 	}
 	prior, ok, err := l.a.priorReview(ctx, l.top)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if ok {
-		fmt.Fprintf(l.a.stdout, "review: on the branch already (%s at t:%.8s)\n", okWord(prior.OK), prior.Tree)
-		return nil, nil
+		line := fmt.Sprintf("review: on the branch already (%s at t:%.8s)", okWord(prior.OK), prior.Tree)
+		fmt.Fprintln(l.a.stdout, line)
+		return nil, line, nil
 	}
 	size, effort, err := l.sized()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if effort == "" {
-		fmt.Fprintf(l.a.stdout, "review: none (size %s)\n", size)
-		return nil, nil
+		line := fmt.Sprintf("review: none (size %s)", size)
+		fmt.Fprintln(l.a.stdout, line)
+		return nil, line, nil
 	}
 	j, err := l.queueReview(ctx, false)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return []waitJob{j}, nil
+	return []waitJob{j}, "", nil
 }
 
 // queueReview queues the review kind on HEAD at the effort the change's size
@@ -838,6 +894,7 @@ func (l *lander) waitJobs(ctx context.Context, jobs []waitJob) error {
 	for _, j := range jobs {
 		say(j)
 	}
+	l.st.waitFor(landJobs(jobs), "")
 	// A job queued without --go waits for a go its batch never gets from
 	// land's lead: land needs it now, so it starts each kind's batch once.
 	kinds := map[string]bool{}
@@ -905,6 +962,7 @@ func (l *lander) waitJobs(ctx context.Context, jobs []waitJob) error {
 		if jobs = left; len(jobs) == 0 {
 			return nil
 		}
+		l.st.waitFor(landJobs(jobs), "")
 		ids := make([]string, len(jobs))
 		for i, j := range jobs {
 			ids[i] = fmt.Sprintf("job %s (%s)", j.ID, j.kind)
@@ -962,6 +1020,7 @@ func (l *lander) mainPushed(ctx context.Context) error {
 			fmt.Fprintf(l.a.stdout, "waiting for %s: it has %s commits origin/main doesn't (someone's unpushed work; land never pushes it)\n", what, n)
 			said = n
 		}
+		l.st.say("waiting for " + what)
 		if err := l.pause(ctx, landMainPoll, what); err != nil {
 			return err
 		}
@@ -1016,6 +1075,7 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 		defer cancel()
 		return gitIn(c, l.top, args...)
 	}
+	l.st.step(mesh.LandRebase, l.fetching())
 	// Read again under the lease: the operator may have held or written
 	// while land waited for it.
 	if err := l.gate(ctx); err != nil {
@@ -1033,6 +1093,7 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 		return false, err
 	}
 	fmt.Fprintf(out, "fetch %s %s\n", l.base, baseSHA[:8])
+	l.st.say("rebasing onto " + baseSHA[:8])
 	preTree, err := git("rev-parse", "HEAD^{tree}")
 	if err != nil {
 		return false, err
@@ -1096,6 +1157,7 @@ func (l *lander) once(ctx context.Context) (moved bool, err error) {
 		return false, err
 	}
 	fmt.Fprintf(out, "trailers %s: %s %03d, %s\n", rec[:8], spec.SpecTrailer, l.id, spec.VerifiedTrailer)
+	l.st.step(mesh.LandPush, "pushing "+rec[:8])
 	undo := func() { _, _ = cleanup("reset", "--quiet", "--keep", merged) }
 
 	// The push is past the point of no return: an interrupt during it
@@ -1303,7 +1365,7 @@ func (l *lander) mainMoved(ctx context.Context, baseSHA string) bool {
 // failing one.
 func (l *lander) results(ctx context.Context, merged, tree, baseSHA, preTree string) ([]spec.Entry, error) {
 	out := l.a.stdout
-	if err := l.inline(ctx, merged, tree, preTree); err != nil {
+	if err := l.inline(ctx, merged, tree, preTree, mesh.LandResults); err != nil {
 		return nil, err
 	}
 	byName := map[string]kind.Kind{}
@@ -1407,14 +1469,31 @@ func (l *lander) results(ctx context.Context, merged, tree, baseSHA, preTree str
 // in this run or its source's tree, and verify then by carryVerify from the
 // code run of merged and of each head before the rebase. A kind that was ok
 // at tree earlier in this run is not run again. A failing one refuses (exit
-// 1).
-func (l *lander) inline(ctx context.Context, merged, tree, preTree string) error {
+// 1). It enters step (kinds before the lease, results under it), saying
+// each kind it runs.
+func (l *lander) inline(ctx context.Context, merged, tree, preTree, step string) error {
 	out := l.a.stdout
+	running := func(name string) string { return "running " + name + " on t:" + tree[:8] }
+	if step == mesh.LandResults {
+		running = func(name string) string { return "running " + name + " on the rebased tree t:" + tree[:8] }
+	}
+	var names []string
 	for _, name := range l.required {
-		k, ok := l.kind(name)
-		if !ok || k.Mode != "inline" {
-			continue
+		if k, ok := l.kind(name); ok && k.Mode == "inline" {
+			names = append(names, name)
 		}
+	}
+	switch {
+	case len(names) > 0:
+		l.st.step(step, running(names[0]))
+	case step == mesh.LandResults:
+		l.st.step(step, "reading the results for t:"+tree[:8])
+	default:
+		l.st.step(step, "no inline kinds to run on t:"+tree[:8])
+	}
+	for _, name := range names {
+		k, _ := l.kind(name)
+		l.st.say(running(name))
 		model := ""
 		if k.IsModel() {
 			model = k.ModelsList()[0]
@@ -1443,6 +1522,7 @@ func (l *lander) inline(ctx context.Context, merged, tree, preTree string) error
 			}
 		}
 		ok, output, how, err := l.a.runInline(ctx, k, l.top, merged, tree, l.holder, model, "", "", nil, false, l.wait(ctx))
+		l.st.cmdDone()
 		if err != nil {
 			return err
 		}

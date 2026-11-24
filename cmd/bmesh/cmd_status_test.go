@@ -48,7 +48,7 @@ func TestMeshStatusAndWatchSaySettled(t *testing.T) {
 	var b bytes.Buffer
 	a := &app{stdout: &b}
 	a.printEvent(mesh.Stored{Subject: "bm.daemon.k16.settled",
-		Data: []byte(`{"at":"2026-10-24T09:00:00Z","to":"app-001","text":"app-build-1: 2 threads"}`)}, map[string]bool{"app-001": true})
+		Data: []byte(`{"at":"2026-10-24T09:00:00Z","to":"app-001","text":"app-build-1: 2 threads"}`)}, map[string]bool{"app-001": true}, map[string]string{})
 	if want := "2026-10-24T09:00:00Z daemon.k16 settled app-build-1: 2 threads\n"; b.String() != want {
 		t.Fatalf("watch printed %q, want %q", b.String(), want)
 	}
