@@ -67,7 +67,7 @@ let recentTW = 0; // the widest time column seen, for the lanes' origin
 
 // paint gives e the hue of path: --h, --l (the step, 0 to 2) and --sat (0
 // for grey), which map.css's .hue turns into --c-fg and --c-bg.
-function paint(e, path) {
+export function paint(e, path) {
   const segs = String(path).split(".");
   let h = 0, sat = 0;
   if (!NEUTRAL.has(segs[0])) {

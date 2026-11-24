@@ -10,6 +10,7 @@ import { drawOverview, liveDigest, liveState, stripLoad, tree } from "./overview
 import { drawTokens, usage } from "./tokens.js";
 import { drawSpecs, specsLoad } from "./specs.js";
 import { routines } from "./routines.js";
+import { drawHosts, hosts, hostsPoll } from "./hosts.js";
 import { drawLead, enterLead, lead, touchesLead } from "./lead.js";
 import { drawSession, enterSession, sessionPage } from "./session.js";
 
@@ -17,6 +18,7 @@ const POLL_MS = 30000; // unread counts and runners change without an event
 const STRIP_MS = 60000; // the server caches the quota 5 min; never poll faster
 const ROUTINES_MS = 30000;
 const NOW_MS = 30000; // the now line moves this often
+const HOSTS_MS = 10000; // the hosts tab's live poll; hostsPoll slows it to 60 s
 
 // VIEWS are the console's views: the hash that shows each (exact, or a
 // prefix when it ends in "/", whose rest enter() reads), its section,
@@ -34,6 +36,8 @@ const VIEWS = [
     reads: () => [specsLoad], poll: () => [specsLoad] },
   { name: "routines", hash: "routines", section: "view-routines", windows: false, draw: () => {},
     reads: () => [routines], poll: () => [] },
+  { name: "hosts", hash: "hosts", section: "view-hosts", windows: true, draw: () => drawHosts(),
+    reads: () => [hosts], poll: () => [] },
   { name: "lead", hash: "lead/", section: "view-lead", windows: false, enter: (rest, q) => enterLead(rest, q), draw: () => drawLead(),
     reads: () => [lead], poll: () => [] },
   { name: "session", hash: "session/", section: "view-session", windows: false, enter: (rest) => enterSession(rest), draw: () => drawSession(),
@@ -55,7 +59,7 @@ export function drawAll() {
 }
 
 // route shows the view the hash names (#/ the overview, #/timeline,
-// #/tokens, #/specs, #/routines, #/lead/<path>?vs=<path>,
+// #/tokens, #/specs, #/routines, #/hosts, #/lead/<path>?vs=<path>,
 // #/session/<host>/<id>), takes its ?w=<window>, and runs its reads.
 function route() {
   const [h, q] = location.hash.replace(/^#\/?/, "").split("?");
@@ -181,6 +185,7 @@ every(2 * POLL_MS, () => {
   for (const l of v.reads()) if (poll.includes(l) || l.state.phase === "failed") l.run();
 });
 every(ROUTINES_MS, () => { if (pages.view === "routines") routines.run(); });
+every(HOSTS_MS, hostsPoll);
 every(NOW_MS, drawAll, { hidden: true });
 every(1000, () => { tick(); showClock(); }, { hidden: true });
 showClock();

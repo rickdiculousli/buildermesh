@@ -118,7 +118,7 @@ export function storedWindow() {
 
 // setWin is the window's one writer: it moves tl.win to w, drops the loaded
 // timeline and stores w; with hash (a window button) it also rewrites the
-// hash of the overview, timeline or tokens tab. It reports whether w moved.
+// hash of the overview, timeline, tokens or hosts tab. It reports whether w moved.
 export function setWin(w, hash) {
   if (!WINDOWS[w] || w === tl.win) return false;
   tl.win = w;
@@ -129,7 +129,7 @@ export function setWin(w, hash) {
     // Storage off: the hash still carries it.
   }
   if (hash) {
-    const base = pages.view === "timeline" || pages.view === "tokens" ? "#/" + pages.view : "#/";
+    const base = ["timeline", "tokens", "hosts"].includes(pages.view) ? "#/" + pages.view : "#/";
     history.replaceState(null, "", base + "?w=" + w);
   }
   return true;
