@@ -159,7 +159,8 @@ func decodeEvent(data []byte) (mesh.Event, error) {
 // reset reminders when [quota] remind_topic is set, and, when
 // [repos] names any repo, the routine loop and (with this binary's module
 // known) the fixer loop, with a binary to run (or RunStep) the lander that
-// lands for this box's leads, with [hosts] enabled the hosts loop, and each
+// lands for this box's leads, the sampler of the box's load (117), with
+// [hosts] enabled the hosts loop, and each
 // add-on [addons] enable names; it
 // returns once ctx ends and every loop has stopped.
 func Run(ctx context.Context, d Deps) error {
@@ -226,6 +227,7 @@ func Run(ctx context.Context, d Deps) error {
 	if d.lands() {
 		start(func() { landLoop(ctx, d, act, pollEvery) })
 	}
+	start(func() { hostStatRun(ctx, d) })
 	if d.Cfg.Hosts.Enabled {
 		start(func() { hostsRun(ctx, d) })
 	}
