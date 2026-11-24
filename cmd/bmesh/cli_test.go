@@ -561,16 +561,43 @@ func TestWatchPrinterSkipsInternalSubjects(t *testing.T) {
 	leads := map[string]bool{"app": true, "host": true, "hostreply": true, "inbox": true, "feedback": true}
 	ev := func(to string) []byte { return []byte(`{"at":"2026-10-16T09:00:00Z","to":"` + to + `","text":"t"}`) }
 	for _, s := range []string{"bm.inbox.host.k16", "bm.hostreply.k16.abc", "bm.host.k16.x", "bm.inbox.app", "bm.feedback.app.x"} {
-		a.printEvent(mesh.Stored{Subject: s, Data: ev("app")}, leads)
+		a.printEvent(mesh.Stored{Subject: s, Data: ev("app")}, leads, map[string]string{})
 	}
 	if b.Len() != 0 {
 		t.Fatalf("printed %q", b.String())
 	}
-	a.printEvent(mesh.Stored{Subject: "bm.daemon.k16.silent", Data: ev("app")}, leads)
-	a.printEvent(mesh.Stored{Subject: "bm.daemon.k16.silent", Data: ev("other")}, leads)
-	a.printEvent(mesh.Stored{Subject: "bm.app.progress", Data: ev("")}, leads)
+	a.printEvent(mesh.Stored{Subject: "bm.daemon.k16.silent", Data: ev("app")}, leads, map[string]string{})
+	a.printEvent(mesh.Stored{Subject: "bm.daemon.k16.silent", Data: ev("other")}, leads, map[string]string{})
+	a.printEvent(mesh.Stored{Subject: "bm.app.progress", Data: ev("")}, leads, map[string]string{})
 	want := "2026-10-16T09:00:00Z daemon.k16 silent app t\n2026-10-16T09:00:00Z app progress t\n"
 	if b.String() != want {
 		t.Fatalf("got %q, want %q", b.String(), want)
+	}
+}
+
+// watch prints a landing once per change: a node's land event, the
+// daemon's landing event addressed to it with the same text, and a land
+// event with new text print two lines.
+func TestWatchPrintsALandingOncePerChange(t *testing.T) {
+	c, ctx := setup(t)
+	putNode(t, c, ctx, mesh.Node{Path: "a"})
+	if _, errs, code := runCLI(t, as("a"), "started"); code != 0 {
+		t.Fatal(code, errs)
+	}
+	since := time.Now().UTC().Format(time.RFC3339)
+	for _, ev := range []mesh.Event{
+		{From: "a", Event: "land", Text: "running verify on t:4208beec"},
+		{From: "daemon.k16", Event: "landing", To: "a", Text: "running verify on t:4208beec"},
+		{From: "a", Event: "land", Text: "running verify on t:4208beec"},
+		{From: "a", Event: "land", Text: "waiting for job 3XANly81 (review, running on k16)"},
+	} {
+		if err := mesh.PublishEvent(ctx, c, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, errs, code := runCLI(t, nil, "watch", "--nodes", "a", "--since", since, "--timeout", "1s")
+	if code != 5 || strings.Count(out, " a land ") != 2 || strings.Contains(out, " landing ") ||
+		!strings.Contains(out, " a land waiting for job 3XANly81 (review, running on k16)\n") {
+		t.Fatalf("watch: %d\n%s\nerr %q", code, out, errs)
 	}
 }

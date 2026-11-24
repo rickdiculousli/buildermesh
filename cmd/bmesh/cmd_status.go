@@ -96,8 +96,12 @@ type readyRow struct {
 }
 
 // readyLine says a ready request as mesh-status prints it, after its
-// path: landing 6m: <the lead's landing text>, or the wake still owed.
-func readyLine(r mesh.Ready, st mesh.State, now time.Time) string {
+// path: the wake still owed, or landing <age>: from the lead's newest land
+// event (land, nil for none) when its run started no earlier than the
+// request, what land is doing and how long its step has run, then its
+// command's newest line and how long ago it was printed, or how the run
+// ended; else the lead's landing text.
+func readyLine(r mesh.Ready, st mesh.State, land *mesh.Event, now time.Time) string {
 	age := "?"
 	if at, err := time.Parse(time.RFC3339, r.At); err == nil {
 		age = mesh.HoldAge(now.Sub(at))
@@ -111,12 +115,65 @@ func readyLine(r mesh.Ready, st mesh.State, now time.Time) string {
 		return fmt.Sprintf("landing %s: cancelled, the daemon ends it", age)
 	}
 	s := "landing " + age
+	if st.State == "held" {
+		return s + ": held, waiting for the release"
+	}
+	if l := landRun(r, land); l != nil {
+		if l.End != "" {
+			return s + ": last run ended " + agoSince(land.At, now) + " ago: " + l.End
+		}
+		s += ": " + land.Text + ", " + agoSince(l.Since, now) + " in"
+		if c := l.Cmd; c != nil && c.Last != "" {
+			s += ": " + c.Last + " (" + agoSince(c.LastAt, now) + " ago)"
+		}
+		return s
+	}
 	if st.State == "landing" && st.Text != "" {
 		s += ": " + st.Text
-	} else if st.State == "held" {
-		s += ": held, waiting for the release"
 	}
 	return s
+}
+
+// landRun is the land object of ev, when its run started no earlier than
+// ready request r; nil otherwise.
+func landRun(r mesh.Ready, ev *mesh.Event) *mesh.Land {
+	if ev == nil || ev.Land == nil {
+		return nil
+	}
+	run, err := time.Parse(time.RFC3339, ev.Land.Run)
+	at, aerr := time.Parse(time.RFC3339, r.At)
+	if err != nil || aerr != nil || run.Before(at) {
+		return nil
+	}
+	return ev.Land
+}
+
+// agoSince is how long before now the RFC3339 time at was, to the second
+// ("?" when it doesn't parse).
+func agoSince(at string, now time.Time) string {
+	t, err := time.Parse(time.RFC3339, at)
+	if err != nil {
+		return "?"
+	}
+	return max(now.Sub(t), 0).Round(time.Second).String()
+}
+
+// lastLand is node path's newest land event; nil when it has none or it
+// can't be read.
+func lastLand(ctx context.Context, c *mesh.Client, path string) *mesh.Event {
+	p, err := mesh.ParsePath(path)
+	if err != nil {
+		return nil
+	}
+	m, ok, err := mesh.Last(ctx, c, mesh.EventSubject(p, "land"))
+	if err != nil || !ok {
+		return nil
+	}
+	var ev mesh.Event
+	if json.Unmarshal(m.Data, &ev) != nil {
+		return nil
+	}
+	return &ev
 }
 
 // cmdMeshStatus prints the registered nodes with their state, runner and
@@ -226,7 +283,7 @@ func (a *app) cmdMeshStatus(args []string) error {
 		fmt.Fprintf(a.stdout, "%s %s\n", h.Path, h.Line(now))
 	}
 	for _, r := range readies {
-		fmt.Fprintf(a.stdout, "%s %s\n", r.Path, readyLine(r, states[r.Path], now))
+		fmt.Fprintf(a.stdout, "%s %s\n", r.Path, readyLine(r, states[r.Path], lastLand(ctx, a.client, r.Path), now))
 	}
 	for _, l := range flagLines(ctx, a.client, nodes, states, now) {
 		fmt.Fprintln(a.stdout, l)
@@ -558,8 +615,9 @@ func (a *app) cmdWatch(args []string) error {
 	}
 	sort.Slice(hist, func(i, j int) bool { return hist[i].Seq < hist[j].Seq })
 	var lastSeq uint64
+	landed := map[string]string{}
 	for _, m := range hist {
-		a.printEvent(m, leads)
+		a.printEvent(m, leads, landed)
 		lastSeq = m.Seq
 	}
 
@@ -574,7 +632,7 @@ func (a *app) cmdWatch(args []string) error {
 				return fail(exitTimeout, "watch timed out")
 			}
 			if m.Seq > lastSeq {
-				a.printEvent(m, leads)
+				a.printEvent(m, leads, landed)
 			}
 		case u, ok := <-runners:
 			if !ok {
@@ -608,8 +666,10 @@ func (a *app) cmdWatch(args []string) error {
 
 // printEvent prints a stream message in a watched tree as "<at> <path> <event> <text>";
 // a daemon event adds its to before the text, except settled, whose text
-// names the family.
-func (a *app) printEvent(m mesh.Stored, leads map[string]bool) {
+// names the family. A node's land event, and the daemon's landing event
+// addressed to it, print only when their text differs from the last such
+// text printed for that node (shown, by node).
+func (a *app) printEvent(m mesh.Stored, leads map[string]bool, shown map[string]string) {
 	path, event, ok := splitSubject(m.Subject)
 	if !ok {
 		return
@@ -623,6 +683,19 @@ func (a *app) printEvent(m mesh.Stored, leads map[string]bool) {
 		}
 	} else if p, err := mesh.ParsePath(path); err != nil || !leads[p.Lead()] {
 		return
+	}
+	node := ""
+	switch {
+	case event == "land" && !strings.HasPrefix(path, "daemon."):
+		node = path
+	case event == "landing" && strings.HasPrefix(path, "daemon."):
+		node = ev.To
+	}
+	if node != "" {
+		if text, ok := shown[node]; ok && text == ev.Text {
+			return
+		}
+		shown[node] = ev.Text
 	}
 	line := fmt.Sprintf("%s %s %s", stamp(ev.At, m.At), path, event)
 	if ev.To != "" && event != "settled" { // a settled line names its family in its text

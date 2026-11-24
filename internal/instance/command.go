@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os/exec"
 	"strings"
 
@@ -22,7 +23,11 @@ func NewCommand(k kind.Kind) Instance {
 
 func (c command) Run(ctx context.Context, j Job) Reply {
 	var out bytes.Buffer
-	note, err := run(ctx, c.k.Timeout, j, func(ctx context.Context) *exec.Cmd { return shell.Command(ctx, c.k.Command, j.Args...) }, nil, &out, &out)
+	var w io.Writer = &out
+	if j.Out != nil {
+		w = io.MultiWriter(&out, j.Out) // one writer for both, so exec copies them in one goroutine
+	}
+	note, err := run(ctx, c.k.Timeout, j, func(ctx context.Context) *exec.Cmd { return shell.Command(ctx, c.k.Command, j.Args...) }, nil, w, w)
 	if note != "" {
 		return Reply{Judged: true, Output: out.String() + newline(out.String()) + note}
 	}

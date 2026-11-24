@@ -839,7 +839,7 @@ func TestFakeLead(t *testing.T) {
 	expect("the worktree has changes not committed; commit them, then run bmesh ready again", 3, "ready", "--text", "x")
 	commit("012: done")
 	head, _ := git(wt, gitEnv(dir), "rev-parse", "HEAD")
-	expect("ready: "+thisBox()+"'s daemon lands "+head[:8]+"; it wakes you only if land needs you", 0, "ready", "--text", "x")
+	expect("ready: "+thisBox()+"'s daemon lands "+head[:8]+"; it wakes you only if land needs you; bmesh mesh-status shows where it is", 0, "ready", "--text", "x")
 	expect("is not held (released already?); run bmesh inbox and carry on", 3, "held")
 
 	exWT := filepath.Join(dir, "worktrees", "shop", "shop-012.a")

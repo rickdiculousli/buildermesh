@@ -22,6 +22,9 @@ type Job struct {
 	ID, Kind, Commit, Tree, From, Reply string
 	Args                                []string
 	Text, Dir, Effort                   string
+	// Out, when set, gets a command's output as it is printed, besides the
+	// reply that records it whole; a model run writes nothing to it.
+	Out io.Writer
 }
 
 // Reply is a job's outcome. Judged is whether the run judged the job: a

@@ -151,7 +151,7 @@ func (a *app) cmdReady(args []string) error {
 	if err := mesh.PublishEvent(ctx, a.client, mesh.Event{From: path, Event: "ready", Text: *text, Commit: head, At: now}); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.stdout, "ready: %s's daemon lands %s; it wakes you only if land needs you\n", host, short8(head))
+	fmt.Fprintf(a.stdout, "ready: %s's daemon lands %s; it wakes you only if land needs you; bmesh mesh-status shows where it is\n", host, short8(head))
 	return nil
 }
 
