@@ -133,7 +133,9 @@ func TestLandingPreemptsBestEffortRunOnce(t *testing.T) {
 	if !strings.Contains(out.String(), "waiting for x (held by app-011, best effort); #1\n") {
 		t.Fatalf("land:\n%s", out.String())
 	}
-	preempted := regexp.MustCompile(`^preempted by app-012 \(land of ` + regexp.QuoteMeta(r.wt) + `\); waiting again at #[12]\n$`)
+	// At #2 while the landing's waiter record outlives its wait, then #1.
+	line := `preempted by app-012 \(land of ` + regexp.QuoteMeta(r.wt) + `\); waiting again at #`
+	preempted := regexp.MustCompile(`^(?:` + line + `2\n)?` + line + `[12]\n$`)
 	meshtest.Until(t, "the run to run again", func() bool { return exists(filepath.Join(marks, "second")) })
 	if !preempted.MatchString(pOut.String()) {
 		t.Fatalf("the run's output %q", pOut.String())
