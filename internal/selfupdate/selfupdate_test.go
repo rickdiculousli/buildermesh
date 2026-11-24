@@ -284,6 +284,9 @@ func TestInstallRealBuildInWorktree(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "bm")
 	files := strings.Split(strings.TrimRight(meshtest.Git(t, root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"), "\x00"), "\x00")
 	for _, f := range files {
+		if fi, err := os.Lstat(filepath.Join(root, f)); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			continue // a link (the vendored skills' .claude/skills): not part of the build
+		}
 		b, err := os.ReadFile(filepath.Join(root, f))
 		if errors.Is(err, os.ErrNotExist) {
 			continue // deleted, not yet committed
