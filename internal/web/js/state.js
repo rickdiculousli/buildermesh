@@ -152,3 +152,7 @@ export const tok = {
 
 // specs is the last /api/specs.
 export const specs = { data: null };
+
+// land is the last /api/landing (list, the overview's rows) and the lead
+// page's /api/landing?lead= ({path, status, body}).
+export const land = { list: null, lead: null };

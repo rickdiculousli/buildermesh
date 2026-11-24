@@ -11,7 +11,8 @@ import { drawTokens, usage } from "./tokens.js";
 import { drawSpecs, specsLoad } from "./specs.js";
 import { routines } from "./routines.js";
 import { drawHosts, hosts, hostsPoll } from "./hosts.js";
-import { drawLead, enterLead, lead, touchesLead } from "./lead.js";
+import { drawLead, enterLead, lead, leadLandPoll, touchesLead } from "./lead.js";
+import { landPoll, landTick, landing } from "./landing.js";
 import { drawSession, enterSession, sessionPage } from "./session.js";
 
 const POLL_MS = 30000; // unread counts and runners change without an event
@@ -19,6 +20,7 @@ const STRIP_MS = 60000; // the server caches the quota 5 min; never poll faster
 const ROUTINES_MS = 30000;
 const NOW_MS = 30000; // the now line moves this often
 const HOSTS_MS = 10000; // the hosts tab's live poll; hostsPoll slows it to 60 s
+const LANDING_MS = 5000; // a landing's rows and card while one runs
 
 // VIEWS are the console's views: the hash that shows each (exact, or a
 // prefix when it ends in "/", whose rest enter() reads), its section,
@@ -27,7 +29,7 @@ const HOSTS_MS = 10000; // the hosts tab's live poll; hostsPoll slows it to 60 s
 // the 60 s re-read covers. The first is the default.
 const VIEWS = [
   { name: "map", hash: "", section: "view-map", windows: true, draw: () => drawOverview(),
-    reads: () => [timeline, usage, specsLoad], poll: () => [timeline, usage, specsLoad] },
+    reads: () => [timeline, usage, specsLoad, landing], poll: () => [timeline, usage, specsLoad, landing] },
   { name: "timeline", hash: "timeline", section: "view-timeline", windows: true, draw: () => drawTimeline(),
     reads: () => [timeline, usage], poll: () => [timeline, usage] },
   { name: "tokens", hash: "tokens", section: "view-tokens", windows: true, draw: () => drawTokens(),
@@ -107,6 +109,7 @@ function frameOf(f) {
 // runs. Node and daemon events move the node's state and its lane, a job
 // sent marks its sender's lane, a node the tree doesn't have refetches it,
 // a digest fills the strip, and the open page re-reads what it touches.
+const LAND_EVENTS = new Set(["landing", "land-refused", "land-withdrawn"]);
 const FRAMES = [
   { match: (fr) => fr.kind === "inbox" && fr.p.kind === "job" && fr.p.from,
     effect: (fr) => liveLane(String(fr.p.from), "", fr.at, "job", String(fr.p.text || (fr.p.job && fr.p.job.kind) || "")) },
@@ -124,6 +127,8 @@ const FRAMES = [
     } },
   { match: (fr) => fr.kind === "node" && (fr.ev === "started" || fr.ev === "done" || !known(fr.path)), effect: () => tree.soon() },
   { match: (fr) => /^daemon\.[^.]+\.digest$/.test(fr.rest), effect: (fr) => liveDigest(fr.f) },
+  { match: (fr) => pages.view === "map" && (fr.kind === "node" && fr.ev === "land" || fr.kind === "daemon" && LAND_EVENTS.has(fr.ev)),
+    effect: () => landing.soon() },
   { match: (fr) => pages.view === "lead" && touchesLead(fr.rest, fr.p), effect: () => lead.soon() },
   { match: (fr) => pages.view === "routines" && fr.routine, effect: () => routines.soon() },
   { match: (fr) => fr.routine, effect: () => tree.soon() }, // the Routines tile
@@ -187,5 +192,6 @@ every(2 * POLL_MS, () => {
 every(ROUTINES_MS, () => { if (pages.view === "routines") routines.run(); });
 every(HOSTS_MS, hostsPoll);
 every(NOW_MS, drawAll, { hidden: true });
-every(1000, () => { tick(); showClock(); }, { hidden: true });
+every(LANDING_MS, () => { landPoll(); leadLandPoll(); });
+every(1000, () => { tick(); landTick(); showClock(); }, { hidden: true });
 showClock();

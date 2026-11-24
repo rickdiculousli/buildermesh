@@ -70,10 +70,12 @@ const RULES = {
       ["ctx", "no points on the context-per-call chart"], ["quota", "no points on the quota chart"],
       ["flags", "no flag row in the needs-you band"], ["flagsRunaway", "the seed's runaway has no band row"],
       ["outliers", "no points on the outliers chart"], ["burndown", "no marks on the burndowns"],
+      ["landing", "no landing row under the needs-you band"],
     ].map(([key, msg]) => ({ key, test: ">= 1", required: true, msg })),
   ],
   hosts: [["hosts", "no host card drawn"], ["procs", "no live process rows on the hosts tab"]]
     .map(([key, msg]) => ({ key, test: ">= 1", required: true, msg })),
+  lead: [{ key: "landSteps", test: ">= 1", msg: "the lead page's landing card has no step rows" }],
   timeline: [{ key: "segs", test: `has ${SEGS}`, required: true, msg: "no $ segment on the timeline" }],
 };
 

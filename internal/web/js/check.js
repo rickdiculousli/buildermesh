@@ -1,6 +1,6 @@
 // check: the ?check=1 self-check title.
 import { $, ICON, check } from "./core.js";
-import { STATE_NAMES, pages, tl } from "./state.js";
+import { STATE_NAMES, land, pages, tl } from "./state.js";
 
 // tallyCheck keeps, under ?check=1, the counts of the timeline the view shows.
 export function tallyCheck(box, c) {
@@ -28,7 +28,9 @@ export function checkSoon() {
 // smallest tap target, the tree reads, the timeline drawn (lanes, segments
 // per state, ticks), the KPI tiles, the usage panels' counts, the band's
 // flag rows (runaway ones too), the outliers' points, the burndowns' marks, the host cards and process rows,
-// the band's rows (held and landing ones too), the older fold, the digest,
+// the band's rows (held and landing ones too), the overview's landing rows
+// (landing=), the lead page's landing step rows (landSteps=, only when its
+// landing read answered), the older fold, the digest,
 // the state table's gaps (stateGaps) and the connection history into document.title.
 function selfCheck() {
   const sw = document.documentElement.scrollWidth, iw = window.innerWidth;
@@ -42,13 +44,15 @@ function selfCheck() {
   const n = (sel) => document.querySelectorAll(sel).length;
   document.title = `bmesh ${sw <= iw ? "ok" : "SCROLLS"} view=${pages.view} scrollWidth=${sw} innerWidth=${iw} minTap=${Math.round(tap)}` +
     (pages.view === "lead" ? ` firstCard=${firstCard()}` : "") +
+    (pages.view === "lead" && land.lead && land.lead.path === pages.lead && land.lead.status === 200
+      ? ` landSteps=${n("#lead-panel [data-card=landing] .lstep")}` : "") +
     ` window=${tl.win} trees=${c.trees} lanes=${c.lanes} segs=${segs} ticks=${c.ticks} kpis=${n("#kpis .tile")}` +
     ` roles=${c.roles} agents=${c.agents} ctx=${c.ctx} quota=${c.quota}` +
     ` flags=${n("#needs .need.flag")} flagsRunaway=${n("#needs .need.flag.fl-runaway")} outliers=${c.outliers} burndown=${c.burndown}` +
     ` hosts=${c.hosts} procs=${c.procs}` +
     ` conn=${c.conn.join(">")} replay=${c.replay} live=${c.live}` +
     ` band=${$("needs").hidden ? "hidden" : $("needs").children.length}` +
-    ` bandHeld=${n("#needs .need.st-held")} bandLanding=${n("#needs .need.st-landing")}` +
+    ` bandHeld=${n("#needs .need.st-held")} bandLanding=${n("#needs .need.st-landing")} landing=${n("#landing .need")}` +
     ` older=${n("#needs details.older .need")} digest=${$("strip").querySelector(".digest") ? 1 : 0} stateGaps=${stateGaps()} landDup=${landDup()}`;
 }
 
