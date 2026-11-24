@@ -4,7 +4,7 @@
 package web
 
 import (
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -20,8 +20,8 @@ import (
 //go:embed index.html
 var page []byte
 
-//go:embed map.js
-var mapJS []byte
+//go:embed js
+var jsFS embed.FS
 
 //go:embed map.css
 var mapCSS []byte
@@ -82,7 +82,15 @@ func Handler(c *mesh.Client, hist time.Duration, opts Options) http.Handler {
 	s := newServer(c, opts)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", asset(opts.Dir, "index.html", page, "text/html; charset=utf-8"))
-	mux.HandleFunc("GET /map.js", asset(opts.Dir, "map.js", mapJS, "text/javascript; charset=utf-8"))
+	mux.HandleFunc("GET /js/{name}", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		body, err := jsFS.ReadFile("js/" + name)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		asset(opts.Dir, filepath.Join("js", name), body, "text/javascript; charset=utf-8")(w, r)
+	})
 	mux.HandleFunc("GET /map.css", asset(opts.Dir, "map.css", mapCSS, "text/css; charset=utf-8"))
 	mux.HandleFunc("GET /api/nodes", func(w http.ResponseWriter, r *http.Request) { nodes(w, r, c) })
 	mux.HandleFunc("GET /api/tree", s.tree)
