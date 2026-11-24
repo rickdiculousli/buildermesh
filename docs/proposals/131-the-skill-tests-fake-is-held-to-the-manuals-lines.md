@@ -4,7 +4,7 @@ title: Every line the skill test's fake bmesh prints is checked against the line
 kind: maintenance
 size: M
 judge: opus
-status: accepted
+status: done
 lens: eng
 proposed_by: buildermesh-fix-23
 proposed_on: 2026-11-24
@@ -44,6 +44,13 @@ The repo's verify, plus these failing-first runs, recorded in Shown:
 - `go test ./scripts/skilltest -run TestReferences` passes with the `drain` case's updated references.
 
 ## Shown
+- The check names a line the manual quotes differently (the old `ready` line, put back in the fake only): `go test -run 'TestFakeLead$' ./scripts/skilltest` -> `bmesh ready --text x printed "ready: k16's daemon lands 884b549d; it wakes you only if land needs you", which the manual quotes as ["ready: <host>'s daemon lands <sha8>; it wakes you only if land needs you; bmesh mesh-status shows where it is"]`
+- The silent drift before this change (main's tests, the old `ready` line in the fake and in `TestFakeLead`): `go test -run 'TestFakeLead$' ./scripts/skilltest` -> `ok  	github.com/rickdiculousli/buildermesh/scripts/skilltest	0.673s`
+- The check fails on the fake's `feedback list` `next:` lines before the fake is fixed: `go test ./scripts/skilltest` -> `feedback_test.go:54: bmesh feedback list shop-build-2 printed "next: an issue naming bmesh's own repo is its fixer's: leave it pending. Of the rest, merge duplicates and drop what main already covers (a spec, or a commit naming its #<seq>)", which the manual quotes as ["next: an issue naming <module> is bmesh's own, whose repo isn't on this box: ...`; after: `ok  	github.com/rickdiculousli/buildermesh/scripts/skilltest`
+- The `drain` case's coordinator sees the binary's `next:` lines, the GitHub-issue line first as #52 names bmesh's module: `TestFakeDrainNext` in `scripts/skilltest/feedback_test.go`, its lines held to the manual by the check
+- The `drain` case's references hold under its new premise: `go test -run 'TestReferences/drain' -v ./scripts/skilltest` -> `--- PASS: TestReferences/drain (3.21s)`
+- The shorthand quotes the check met are made exact in `docs/manual.md`, with no exempt list: `started NNN <title>: <path> on <model> (thread <thread>, branch <branch>, family <family>[, held <gate>])` and the rest; the matcher's grammar is `TestManualQuotes` in `scripts/skilltest/manual_test.go`
+- Easy to miss: one copy fewer, the tests keep only enough of a held line to tell the call apart: `expect("ready: ", 0, "ready", "--text", "x")` in `TestFakeLead`
 
 ## Risks and the alternative considered
 A loose matcher passes drift, and a strict one forces exemptions. The prototype found 7 false candidates against one real drift, and making the manual's quotes exact fixes most of them while keeping the manual's promise. The alternative was to check only `next:` and `refused:` lines. That misses 121's own `ready:` line, so it lost.
