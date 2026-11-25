@@ -26,9 +26,7 @@ const (
 // HostPoint is a bucket of a box's minutes: the means over the minutes in
 // it (an agent missing from a minute counts 0 there, so the agents and
 // other sum to the box), the pressure means over the minutes that have
-// one, and the worst macOS pressure level. Run and Wait are the box's
-// means over the minutes that have them, and an agent's run and wait the
-// means over its minutes that have them.
+// one, and the worst macOS pressure level.
 type HostPoint struct {
 	At          int64                   `json:"at"`
 	N           int                     `json:"n"`
@@ -39,8 +37,6 @@ type HostPoint struct {
 	Pressure    *hoststat.Pressure      `json:"pressure"`
 	MacPressure *int                    `json:"mac_pressure"`
 	Agents      map[string]hoststat.Use `json:"agents"`
-	Run         *float64                `json:"run"`
-	Wait        *float64                `json:"wait"`
 }
 
 // HostBox is one box on /api/hosts: its newest minute in the window, its
@@ -196,33 +192,10 @@ type bucketAcc struct {
 	n         int
 	cpu, load float64
 	mem, swap int64
-	pr        [4]float64
-	pn        [4]int
+	pr        [3]float64
+	pn        [3]int
 	mac       *int
 	agents    map[string]hoststat.Use
-	q         queued
-	aq        map[string]*queued
-}
-
-// queued sums run and wait over the n minutes that have them.
-type queued struct {
-	n         int
-	run, wait float64
-}
-
-func (q *queued) add(run, wait *float64) {
-	if run != nil && wait != nil {
-		q.n, q.run, q.wait = q.n+1, q.run+*run, q.wait+*wait
-	}
-}
-
-// mean is the means, nil for none.
-func (q *queued) mean() (*float64, *float64) {
-	if q == nil || q.n == 0 {
-		return nil, nil
-	}
-	r, w := round2(q.run/float64(q.n)), round2(q.wait/float64(q.n))
-	return &r, &w
 }
 
 func (b *bucketAcc) add(m *hoststat.Minute) {
@@ -232,7 +205,7 @@ func (b *bucketAcc) add(m *hoststat.Minute) {
 	b.mem += m.MemUsed
 	b.swap += m.SwapUsed
 	if p := m.Pressure; p != nil {
-		for i, v := range []*float64{p.CPU, p.Mem, p.IO, p.MemFull} {
+		for i, v := range []*float64{p.CPU, p.Mem, p.IO} {
 			if v != nil {
 				b.pr[i] += *v
 				b.pn[i]++
@@ -243,19 +216,14 @@ func (b *bucketAcc) add(m *hoststat.Minute) {
 		v := *m.MacPressure
 		b.mac = &v
 	}
-	b.q.add(m.Run, m.Wait)
 	if b.agents == nil {
-		b.agents, b.aq = map[string]hoststat.Use{}, map[string]*queued{}
+		b.agents = map[string]hoststat.Use{}
 	}
 	for a, u := range m.Agents {
 		x := b.agents[a]
 		x.CPU += u.CPU
 		x.RSS += u.RSS
 		b.agents[a] = x
-		if b.aq[a] == nil {
-			b.aq[a] = &queued{}
-		}
-		b.aq[a].add(u.Run, u.Wait)
 	}
 }
 
@@ -263,9 +231,8 @@ func (b *bucketAcc) point(at int64) HostPoint {
 	n := float64(b.n)
 	p := HostPoint{At: at, N: b.n, CPU: round2(b.cpu / n), Load1: round2(b.load / n), MemUsed: b.mem / int64(b.n),
 		SwapUsed: b.swap / int64(b.n), MacPressure: b.mac, Agents: map[string]hoststat.Use{}}
-	p.Run, p.Wait = b.q.mean()
 	var pr hoststat.Pressure
-	for i, f := range []**float64{&pr.CPU, &pr.Mem, &pr.IO, &pr.MemFull} {
+	for i, f := range []**float64{&pr.CPU, &pr.Mem, &pr.IO} {
 		if b.pn[i] > 0 {
 			v := round2(b.pr[i] / float64(b.pn[i]))
 			*f = &v
@@ -275,9 +242,7 @@ func (b *bucketAcc) point(at int64) HostPoint {
 		p.Pressure = &pr
 	}
 	for a, u := range b.agents {
-		x := hoststat.Use{CPU: round2(u.CPU / n), RSS: u.RSS / int64(b.n)}
-		x.Run, x.Wait = b.aq[a].mean()
-		p.Agents[a] = x
+		p.Agents[a] = hoststat.Use{CPU: round2(u.CPU / n), RSS: u.RSS / int64(b.n)}
 	}
 	return p
 }

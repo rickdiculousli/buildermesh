@@ -4,10 +4,11 @@ title: A box records how long its CPU work queued for a core, and the hosts tab 
 kind: feature
 size: M
 judge: opus
-status: done
+status: rejected
 lens: ux
 proposed_by: coordinator
 proposed_on: 2026-11-23
+reason: built, then removed: the box's queued share reads 73% for a test suite alone, counting its own threads, so the hosts tab's "CPU queued" words misled; the per-thread reads cost about 1,400 file reads a minute for it
 ---
 
 ## Opportunity

@@ -10,7 +10,7 @@ const FAST_MS = 10000; // the live poll while a box is busy
 const SLOW_MS = 60000; // while no box's live CPU is over half its cores
 const GB = 1024 * 1024 * 1024;
 const MAC_LEVEL = { 1: "normal", 2: "warn", 4: "critical" };
-// WAITS are the contention chart's lines: pressure's key, its words, its class.
+// WAITS are the contention lines: pressure's key, its words, its class.
 const WAITS = [["cpu", "CPU wait", "w-cpu"], ["mem", "mem wait", "w-mem"], ["io", "io wait", "w-io"]];
 
 let data = null; // the last /api/hosts for the window shown
@@ -61,42 +61,19 @@ function group(agent) {
   return agent.split(".")[0];
 }
 
-// RUN_FLOOR is the seconds a box or an agent must run in a minute for its
-// queued share to be said: under a tenth of a core a few wakeups make it.
-const RUN_FLOOR = 6;
-
-// queued is run and wait's queued share in whole percent, or null.
-function queued(run, wait) {
-  return run == null || wait == null || run + wait <= 0 ? null : Math.round(wait / (run + wait) * 100);
-}
-
-// headLine is "k16 · CPU queued 22% · bluke-004 queued 31% · bluke-002 holds 52% · load 25.5/16 · 11/29 GB":
-// the contention words (the box's queued share, the agent that queued
-// most, the agent holding the most CPU) from its newest minute (the live
-// answer when it has none), then load and memory from the live answer
-// when there is one.
+// headLine is "k16 · CPU wait 11% · mem wait 0% · io wait 2% · load 25.5/16 · 11/29 GB".
 function headLine(b) {
-  const q = b.last || b.live, m = b.live || b.last;
-  const words = [];
-  if (isMac(q)) {
-    words.push("pressure " + (MAC_LEVEL[q.mac_pressure] || "–"));
+  const m = b.live || b.last;
+  const parts = [b.host];
+  if (isMac(m)) {
+    parts.push("pressure " + (MAC_LEVEL[m.mac_pressure] || "–"));
   } else {
-    const s = q.run >= RUN_FLOOR ? queued(q.run, q.wait) : null;
-    words.push("CPU queued " + (s == null ? "–" : s + "%"));
+    const p = (b.live && b.live.pressure10) || m.pressure || {};
+    for (const [k, words] of WAITS) parts.push(words + " " + (p[k] == null ? "–" : Math.round(p[k]) + "%"));
   }
-  const agents = Object.entries(q.agents || {}).filter(([a]) => a !== "other");
-  let most = null, holds = null;
-  for (const [a, u] of agents) {
-    const s = u.run >= RUN_FLOOR ? queued(u.run, u.wait) : null;
-    if (s != null && (!most || s > most[1])) most = [a, s];
-    if (+u.cpu > 0 && (!holds || +u.cpu > holds[1])) holds = [a, +u.cpu];
-  }
-  const who = (a) => a.startsWith("session.") ? fold(a) : a;
-  if (most) words.push(who(most[0]) + " queued " + most[1] + "%");
-  if (holds && +q.cpu > 0) words.push(who(holds[0]) + " holds " + Math.round(holds[1] / q.cpu * 100) + "%");
-  const tail = ["load " + (+m.load1 || 0).toFixed(1) + "/" + m.cores,
-    ((+m.mem_used || 0) / GB).toFixed(0) + "/" + ((+m.mem_total || 0) / GB).toFixed(0) + " GB"];
-  return [b.host, ...words, ...tail].join(" · ");
+  parts.push("load " + (+m.load1 || 0).toFixed(1) + "/" + m.cores);
+  parts.push(((+m.mem_used || 0) / GB).toFixed(0) + "/" + ((+m.mem_total || 0) / GB).toFixed(0) + " GB");
+  return parts.join(" · ");
 }
 
 // runs splits a box's sparse buckets into runs of adjacent ones: a missing

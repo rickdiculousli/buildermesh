@@ -16,12 +16,10 @@ import (
 const userHZ = 100
 
 // readLinux reads the box from root (/proc): stat, meminfo, loadavg,
-// schedstat, pressure/{cpu,memory,io} and each <pid>/stat and cwd (a
-// node's cmdline too, to tell Claude Code's apart), and the schedstat and
-// stat of each thread of a process whose cwd reads (this user's: an
-// agent's processes are).
+// pressure/{cpu,memory,io} and each <pid>/stat and cwd (a node's cmdline
+// too, to tell Claude Code's apart).
 func readLinux(root string, pageSize int64, now time.Time) (*raw, error) {
-	r := &raw{at: now, procs: map[int]*rproc{}, threads: map[int]rthread{}}
+	r := &raw{at: now, procs: map[int]*rproc{}}
 	b, err := os.ReadFile(filepath.Join(root, "stat"))
 	if err != nil {
 		return nil, err
@@ -37,9 +35,6 @@ func readLinux(root string, pageSize int64, now time.Time) (*raw, error) {
 		return nil, err
 	}
 	r.load1 = parseLoadavg(b)
-	if b, err = os.ReadFile(filepath.Join(root, "schedstat")); err == nil {
-		r.run, r.wait, r.sched = parseSchedstat(b)
-	}
 	r.p10, r.p60 = &Pressure{}, &Pressure{}
 	any := false
 	for _, f := range []struct {
@@ -52,9 +47,6 @@ func readLinux(root string, pageSize int64, now time.Time) (*raw, error) {
 		}
 		if a10, a60, ok := parsePSI(b); ok {
 			*f.ten, *f.six, any = &a10, &a60, true
-		}
-		if f.name == "memory" {
-			r.memFull, r.memFullOK = parseFullTotal(b)
 		}
 	}
 	if !any {
@@ -79,9 +71,6 @@ func readLinux(root string, pageSize int64, now time.Time) (*raw, error) {
 			continue
 		}
 		p.cwd, _ = os.Readlink(filepath.Join(dir, "cwd")) // another user's: none
-		if r.sched && p.cwd != "" {
-			readThreads(dir, pid, r.threads)
-		}
 		if p.comm == "node" {
 			args, _ := os.ReadFile(filepath.Join(dir, "cmdline"))
 			p.claude = IsClaude(p.comm, strings.Split(string(args), "\x00"))
@@ -91,77 +80,6 @@ func readLinux(root string, pageSize int64, now time.Time) (*raw, error) {
 		r.procs[pid] = p
 	}
 	return r, nil
-}
-
-// readThreads adds the threads of the process in dir to out; a thread gone
-// mid-read is skipped.
-func readThreads(dir string, pid int, out map[int]rthread) {
-	ents, err := os.ReadDir(filepath.Join(dir, "task"))
-	if err != nil {
-		return
-	}
-	for _, e := range ents {
-		tid, err := strconv.Atoi(e.Name())
-		if err != nil {
-			continue
-		}
-		b, err := os.ReadFile(filepath.Join(dir, "task", e.Name(), "schedstat"))
-		if err != nil {
-			continue
-		}
-		f := strings.Fields(string(b))
-		if len(f) < 2 {
-			continue
-		}
-		run, err1 := strconv.ParseFloat(f[0], 64)
-		wait, err2 := strconv.ParseFloat(f[1], 64)
-		st, err3 := os.ReadFile(filepath.Join(dir, "task", e.Name(), "stat"))
-		if err1 != nil || err2 != nil || err3 != nil {
-			continue
-		}
-		p, err := parsePidStat(st, 0)
-		if err != nil {
-			continue
-		}
-		out[tid] = rthread{pid: pid, start: p.start, run: run / 1e9, wait: wait / 1e9}
-	}
-}
-
-// parseSchedstat sums /proc/schedstat's cpuN lines' fields 8 and 9 (after
-// the name, the 7th and 8th): the nanoseconds tasks ran and waited
-// runnable on each CPU, in seconds. ok is false with no cpu line, or when
-// every one reads 0 (a kernel without CONFIG_SCHED_INFO).
-func parseSchedstat(b []byte) (run, wait float64, ok bool) {
-	for _, line := range strings.Split(string(b), "\n") {
-		f := strings.Fields(line)
-		if len(f) < 9 || !strings.HasPrefix(f[0], "cpu") {
-			continue
-		}
-		r, err1 := strconv.ParseFloat(f[7], 64)
-		w, err2 := strconv.ParseFloat(f[8], 64)
-		if err1 != nil || err2 != nil {
-			continue
-		}
-		run, wait = run+r/1e9, wait+w/1e9
-	}
-	return run, wait, run+wait > 0
-}
-
-// parseFullTotal is a pressure file's `full` total= (µs).
-func parseFullTotal(b []byte) (float64, bool) {
-	for _, line := range strings.Split(string(b), "\n") {
-		f := strings.Fields(line)
-		if len(f) == 0 || f[0] != "full" {
-			continue
-		}
-		for _, kv := range f[1:] {
-			if v, ok := strings.CutPrefix(kv, "total="); ok {
-				x, err := strconv.ParseFloat(v, 64)
-				return x, err == nil
-			}
-		}
-	}
-	return 0, false
 }
 
 // parseProcStat reads /proc/stat's cpu line: busy ticks (all but idle and

@@ -44,7 +44,6 @@ import (
 	"math"
 	"math/rand/v2"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -650,39 +649,8 @@ func seedHosts(ctx context.Context, c *mesh.Client, now time.Time) error {
 			if b.os == "linux" {
 				over := math.Max(0, mm.CPU-float64(b.cores)*0.5) / float64(b.cores) * 100
 				cp, mp, ip := math.Round(math.Min(over*2, 60)*100)/100, 0.0, math.Round(r.Float64()*3*100)/100
-				// Memory stalls every task for a short stretch, and less for a longer one.
-				full := 0.0
-				switch {
-				case m >= 400 && m < 410:
-					full = 6
-				case m >= 200 && m < 215:
-					full = 1.5
-				}
-				mp += full * 2
-				mm.Pressure = &hoststat.Pressure{CPU: &cp, Mem: &mp, IO: &ip, MemFull: &full}
+				mm.Pressure = &hoststat.Pressure{CPU: &cp, Mem: &mp, IO: &ip}
 				mm.SwapUsed = 256 << 20
-				// The queued share rises as the box's CPU passes half its cores,
-				// and the newest minutes queue hard, so the head line has a share
-				// now; run is its CPU over the minute.
-				share := math.Min(0.5, over/100*1.4)
-				if m <= 3 {
-					share = math.Max(share, 0.3)
-				}
-				run := math.Round(mm.CPU*60*100) / 100
-				wait := math.Round(run*share/(1-share)*100) / 100
-				mm.Run, mm.Wait = &run, &wait
-				for _, ag := range b.agents { // the slice, not the map: the seed's draws stay in order
-					a := ag.name
-					u, ok := mm.Agents[a]
-					if !ok || strings.HasPrefix(a, "routine.") { // a routine's processes exit between reads: under half coverage
-						continue
-					}
-					s := math.Min(0.6, share*(0.6+0.8*r.Float64()))
-					ar := math.Round(u.CPU*60*0.9*100) / 100
-					aw := math.Round(ar*s/(1-s)*100) / 100
-					u.Run, u.Wait = &ar, &aw
-					mm.Agents[a] = u
-				}
 			} else {
 				lvl := 1
 				if m >= 120 && m < 180 {
