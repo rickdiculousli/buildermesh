@@ -4,11 +4,11 @@ title: A box reads ok, warn or red by how long a cgroup's work stood waiting whi
 kind: feature
 size: L
 judge: opus
-status: later
+status: rejected
 lens: eng
 proposed_by: 9769bad1-0a19-48cd-bcac-a9ae45399211
 proposed_on: 2026-11-25
-reason: k16's daemon memory cap, the cost both measured, was removed from its unit instead; kept for a box that needs a bound or a level later
+reason: not worth an L: agents barely slow each other under fair CPU sharing, the red it found came from the daemon's 512M cap (removed), and it can't see the hyperthread slowdown that remains
 ---
 
 ## Opportunity
