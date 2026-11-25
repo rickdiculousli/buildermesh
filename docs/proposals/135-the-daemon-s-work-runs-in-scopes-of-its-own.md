@@ -4,10 +4,11 @@ title: On Linux under systemd, the daemon runs each landing and each routine job
 kind: time-cost
 size: M
 judge: opus
-status: proposed
+status: later
 lens: eng
 proposed_by: 51ddd145-01e0-478b-9081-d503e79bd874
 proposed_on: 2026-11-25
+reason: k16's daemon memory cap, the cost both measured, was removed from its unit instead; kept for a box that needs a bound or a level later
 ---
 
 ## Opportunity
