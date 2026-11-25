@@ -1,0 +1,4 @@
+# Upgrade notes for v0.8.1. It carries no spec: it removes 120's
+# queued-time readings, which v0.8.0's notes described.
+
+summary = "Nothing to run on a box. The hosts tab's head line is back to CPU, memory and io wait with each agent's CPU and memory: v0.8.0's queued, queued-most and holds words are gone, since the box's queued share counted a test suite's own threads and read high with nothing contended."
