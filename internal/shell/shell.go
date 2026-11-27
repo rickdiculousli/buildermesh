@@ -1,5 +1,5 @@
 // Package shell runs a command line through the platform's shell: sh on
-// Unix, cmd on Windows. Nothing else in bmesh names a shell.
+// Unix, cmd on Windows. Elsewhere bmesh never names a shell.
 package shell
 
 import (

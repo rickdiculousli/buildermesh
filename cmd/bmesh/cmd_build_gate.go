@@ -44,7 +44,7 @@ func (h buildHold) line() string { return fmt.Sprintf("held: %s %s %s", h.who, h
 // fixer's) and every other family, and neither holds the other's builds.
 // Feedback naming bmesh itself (bmeshIssue) never holds: the fixer owns
 // it, or with no row of its repo here the operator files it. Nil when
-// nothing does. A release passes no family: every family of
+// unheld. A release passes no family: every family of
 // either pipeline is another.
 func (a *app) heldBy(ctx context.Context, repo, family string) (*buildHold, error) {
 	nodes, err := mesh.ListNodes(ctx, a.client)

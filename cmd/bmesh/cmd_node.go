@@ -86,7 +86,7 @@ func (a *app) cmdNodeStop(args []string) error {
 	}
 	if s, ok := finished(path); ok {
 		// A stopped node's thread here is interrupted again (a stop whose
-		// interrupt failed is run again), quietly: it is already stopped.
+		// interrupt failed is run again), silently: it is already stopped.
 		if mesh.Stopped(states[path]) && n.Runner.Thread != "" && (n.Host == "" || n.Host == a.cfg.HostName()) && n.Runner.Kind == a.cfg.Runner.Kind {
 			r, err := runner.New(a.cfg)
 			if err != nil {

@@ -13,7 +13,7 @@ import (
 	"github.com/rickdiculousli/buildermesh/internal/mesh"
 )
 
-// freeAddr is a loopback address nothing listens on just now.
+// freeAddr is a loopback address with no listener just now.
 func freeAddr(t *testing.T) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")

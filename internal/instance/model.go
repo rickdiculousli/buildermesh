@@ -151,7 +151,7 @@ func (m *Model) Run(ctx context.Context, j Job) Reply {
 	}
 	m.mu.Unlock()
 
-	// Every reply but the last judges nothing: claude never answered. Its
+	// Every reply but the last has no verdict: claude never answered. Its
 	// first line is why (Reply.Unjudged).
 	switch {
 	case note != "":

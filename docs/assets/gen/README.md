@@ -72,7 +72,7 @@ model ids purple.
 - A message in flight is a 4-5 px dot in its kind's colour with a soft glow
   (a second circle at 30% opacity, r+4), moving along an edge.
 - Motion is calm: ease-in-out, 0.4-0.8 s moves, a loop of 10-16 s with a
-  short rest before it restarts. Nothing flashes or blinks faster than 1 Hz.
+  short rest before it restarts. No element flashes or blinks faster than 1 Hz.
 - `@media (prefers-reduced-motion: reduce) { * { animation: none !important } }`
   and the **un-animated state must be a complete, meaningful picture**
   (everything visible, final state), since some viewers see only that.
@@ -93,5 +93,5 @@ Render frames with
 `TMPDIR=$HOME/.cache/bmesh-scratch/tmp node docs/assets/gen/frames.mjs <svg> <outprefix> 960 dark 0,2,4,6,8 [reduce]`
 (writes `<outprefix>-<t>.png`; frames freeze CSS animations at t seconds) and
 look at the PNGs with the Read tool. Check: dark and light; mid-animation
-frames; the reduced-motion frame; nothing overlaps, clips or runs off a box.
+frames; the reduced-motion frame; no element overlaps, clips or runs off a box.
 Write frames outside the repo, e.g. under `~/.cache/bmesh-scratch/`. `frames.mjs` needs Playwright's headless Chromium (`npx playwright install chromium-headless-shell`); the script finds the newest one in Playwright's cache on macOS or Linux (or `PLAYWRIGHT_BROWSERS_PATH`).

@@ -1,7 +1,7 @@
 #!/bin/sh
 # bmesh, faked for scripts/skilltest. A cell puts this first on PATH, so a
-# session under test reaches no mesh, repo or thread: nothing it answers is
-# real. Each call appends one line to $SKILLTEST_LOG as it exits: its exit
+# session under test reaches no mesh, repo or thread: every answer it gives is
+# fake. Each call appends one line to $SKILLTEST_LOG as it exits: its exit
 # status, the cwd, then each argument, tab-separated, with \, a tab and a
 # newline written \\, \t and \n.
 # It reads the cell's files under $SKILLTEST_CELL: fake.env (the row's name
@@ -647,7 +647,7 @@ spectitle() {
 }
 
 # fake_build: a lead started for each id, as the binary starts one whose
-# spec nothing refuses (the fake has no live leads). One id prints its JSON
+# spec isn't refused (the fake has no live leads). One id prints its JSON
 # object; several print a started line each and the family, or with
 # --json one array of their objects. --accepted is answered from canned/
 # only on an arm whose manual documents it; elsewhere it is the binary's

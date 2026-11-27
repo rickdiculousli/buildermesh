@@ -187,8 +187,8 @@ func TestClaudeInterruptKillsTurn(t *testing.T) {
 	if st, _ := r.Status(context.Background(), "th-1"); !st.Running {
 		t.Fatalf("status %+v", st)
 	}
-	// A send queued behind the turn is dropped with it: nothing restarts
-	// a stopped session.
+	// A send queued behind the turn is dropped with it: a stopped session
+	// never restarts.
 	if err := r.Send(context.Background(), "th-1", "wake"); err != nil {
 		t.Fatal(err)
 	}

@@ -101,7 +101,7 @@ func TestLandEventsSayWhereItIs(t *testing.T) {
 			t.Fatalf("texts %q lack %q", texts, w)
 		}
 	}
-	// Verify ran before the lease: under it, nothing says it runs.
+	// Verify ran before the lease: under it, no text says it runs.
 	if slices.Contains(texts, "running verify on the rebased tree t:"+tree[:8]) {
 		t.Fatalf("texts %q say a verify that didn't run", texts)
 	}

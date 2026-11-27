@@ -233,7 +233,7 @@ func watchNext(w io.Writer, paths []string) {
 // leadsNext is what the coordinator does with the leads a build started
 // (100): the watch that follows them, then how to relay, hold, stop and
 // wipe one, to stderr so stdout stays the command's result. paths are the
-// started leads'; nothing started says nothing.
+// started leads'; with none started it prints nothing.
 func leadsNext(w io.Writer, paths []string) {
 	if len(paths) == 0 {
 		return

@@ -16,8 +16,8 @@ import (
 
 const (
 	stepsUsage = "usage: bmesh spec steps [<NNN>] [--repo R] [--tick N,N [--note W] | --check [--wait D]]"
-	// checkTTL is how long a check-step job lives: past the wait, nobody
-	// is listening for its answer.
+	// checkTTL is how long a check-step job lives: past the wait, its answer
+	// has no listener.
 	checkTTL = 10 * time.Minute
 )
 

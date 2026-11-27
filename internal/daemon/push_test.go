@@ -626,7 +626,7 @@ func TestBatch(t *testing.T) {
 	if line := strings.Split(req.Body, "\n")[2]; utf8.RuneCountInString(line) != batchLineMax || !strings.HasSuffix(line, "…") {
 		t.Errorf("long line %q", line)
 	}
-	// Every lead stopped: the operator did it, nothing pushes.
+	// Every lead stopped: the operator did it, no push.
 	if req, _, ok := Batch(ev(c, "blocked", mesh.StoppedBy("operator", "")), c, nodes, map[string]mesh.State{"demo-001": stop, "demo-002": stop}, cfg); ok {
 		t.Errorf("all stopped pushed: %+v", req)
 	}

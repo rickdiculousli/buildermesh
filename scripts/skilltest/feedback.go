@@ -50,7 +50,7 @@ func feedbackCanned(issues ...issue) map[string]string {
 var (
 	seqRE = regexp.MustCompile(`#(\d+)`)
 	// fixSubjectRE is the binary's (internal/spec): a subject it reads as
-	// fixing those issues, so one it would miss scores nothing here.
+	// fixing those issues, so one it would miss isn't credited here.
 	fixSubjectRE = regexp.MustCompile(`^(?:Fix|Quick fix from (\S+)) (#\d+(?:, #\d+)*): `)
 	fromFeedRE   = regexp.MustCompile(`(?m)^from_feedback:\s*(.*)$`)
 )
@@ -187,7 +187,7 @@ func (s *State) namedOnMain(seq int) (bool, string) {
 			return true, n.Path + " names it in from_feedback"
 		}
 	}
-	return false, "nothing on origin's main names it"
+	return false, "unnamed on origin's main"
 }
 
 // specFrom is a new spec on origin's main whose from_feedback names seq,
@@ -322,9 +322,9 @@ func fixCase() *Case {
 			return false, fmt.Sprintf("#%d: %s", fixCovered, why)
 		}
 		if !slices.Contains(s.drainedSeqs(), fixCovered) {
-			return false, fmt.Sprintf("#%d named on main by nothing, and never drained", fixCovered)
+			return false, fmt.Sprintf("#%d unnamed on main, and never drained", fixCovered)
 		}
-		return true, fmt.Sprintf("#%d named on main by nothing, and drained", fixCovered)
+		return true, fmt.Sprintf("#%d unnamed on main, and drained", fixCovered)
 	}}
 	report := Pred{"report_names_all", func(s *State) (bool, string) {
 		t := lastDoneText(s)
@@ -574,7 +574,7 @@ func drainCase() *Case {
 		if ok, why := s.namedOnMain(drainBmesh); ok {
 			return false, fmt.Sprintf("#%d: %s", drainBmesh, why)
 		}
-		return true, fmt.Sprintf("nothing on origin's main names #%d", drainBmesh)
+		return true, fmt.Sprintf("#%d unnamed on origin's main", drainBmesh)
 	}}
 	words := "build 013"
 	begin := func(r *Rehearsal) {

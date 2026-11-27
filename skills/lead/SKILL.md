@@ -7,7 +7,7 @@ description: Use when you were started as a buildermesh lead - your brief names 
 
 You are the DRI for one spec: one node, one worktree on your own branch, and the only node that lands on `main`. Your brief carries what only it knows (the spec, your node, the repo's done rule, the operator's words); this skill is how you decide; `bmesh` says the rest: every refusal names its next step, and `bmesh help` lists the commands.
 
-The spec is the record: build what it puts in and nothing it puts out. Nobody under you lands anything, and until you land, `main` reads the spec as it was when picked; your node is what says it's being built.
+The spec is the record: build what it puts in and nothing it puts out. No agent or process under you lands anything, and until you land, `main` reads the spec as it was when picked; your node is what says it's being built.
 
 ## Start, and shape the work
 

@@ -405,7 +405,7 @@ func (a *app) cmdRoutineQueue(args []string) error {
 		return err
 	}
 	// A daemon defers a repo its registry lacks to a box whose registry has
-	// it, so a repo no registry names would wait for nobody.
+	// it, so no daemon would take a repo no registry names.
 	if _, ok := a.cfg.Repos[repo]; !ok {
 		return fail(exitRefused, "%s is not in the registry, so no daemon would run the job; ask the operator to add it (bmesh repos propose)", repo)
 	}
@@ -814,7 +814,7 @@ func (a *app) runInline(ctx context.Context, k kind.Kind, top, head, tree, self,
 // runKind runs kind k once on HEAD (head, tree) of the worktree top for
 // self, holding slots, waited for as w says (none takes no lease, and needs no hub); a command
 // kind runs the worktree's setup first. A model run whose claude never
-// answered is refused, as a failed setup is: it judged nothing.
+// answered is refused, as a failed setup is: it gave no verdict.
 func (a *app) runKind(ctx context.Context, k kind.Kind, top, head, tree, self, model, effort, text string, jobArgs []string,
 	slots []string, w leaseWait) (instance.Reply, error) {
 	rc, err := kind.LoadRepoConfig(top)

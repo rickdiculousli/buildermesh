@@ -133,7 +133,7 @@ func AcquireRanked(ctx context.Context, c *Client, slot, holder string, prio Pri
 
 // RenewLease moves key's expiry to now+ttl, keeping the rest of its value;
 // ErrNotHolder unless holder holds it (whether or not it has expired, so
-// long as nobody took it over). An update that loses to another write (a
+// long as it wasn't taken over). An update that loses to another write (a
 // waiter asking it to yield) reads again.
 func RenewLease(ctx context.Context, c *Client, key, holder string, ttl time.Duration, now time.Time) error {
 	kv, err := bucket(ctx, c, BucketLeases)
@@ -160,7 +160,7 @@ func RenewLease(ctx context.Context, c *Client, key, holder string, ttl time.Dur
 	return ErrNotHolder
 }
 
-// LeaseYield reads who asked holder's key to yield ("" when nobody did);
+// LeaseYield reads who asked holder's key to yield ("" when not asked);
 // ErrNotHolder unless holder holds it.
 func LeaseYield(ctx context.Context, c *Client, key, holder string) (string, error) {
 	kv, err := bucket(ctx, c, BucketLeases)

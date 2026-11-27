@@ -332,7 +332,7 @@ if (ONE) {
   const BEAT = 1.2; // on one box every wire is short and close together: a longer beat keeps messages apart
   const LONG = 2.2; // and a longer one still between the story's steps
   const POST = 2.6; // and after a lead lands and the phone hears it, before the next action
-  // a lead lands: the box's checkout quietly takes the new commit; then its done goes to the phone
+  // a lead lands: the box's checkout takes the new commit; then its done goes to the phone
   // (the coordinator hears it too, but on one box that branch is left out so the push reads clearly)
   const land = (i, t) => {
     const e = route(MSG, t + 0.7, [...up("h", i), ...svIn("h"), W_.ntfy]);

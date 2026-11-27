@@ -259,7 +259,7 @@ func (l *landers) step(ctx context.Context, n mesh.Node) (again bool) {
 		}
 		d.Log.Info("land: " + n.Path + " withdrawn: " + why)
 		if message || r.Phase == mesh.PhaseCancelled {
-			// Nothing lands it now: the lead is working again, so silence
+			// It won't be landed now: the lead is working again, so silence
 			// applies to it.
 			l.writeWithdrawn(ctx, n, st, srev, why)
 		}

@@ -224,8 +224,8 @@ func (a *app) mainHighest(ctx context.Context, repoPath string) (int, error) {
 }
 
 // landFail is ledgerFail for a command about to push the ledger: a
-// duplicate id is refused (exit 3) naming both files, so a ledger nobody
-// can read never reaches main.
+// duplicate id is refused (exit 3) naming both files, so an unreadable ledger
+// never reaches main.
 func landFail(err error) error {
 	var le *spec.LedgerError
 	if errors.As(err, &le) && le.Shared[0] != "" {

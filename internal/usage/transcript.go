@@ -105,7 +105,7 @@ func cmpOr(a, b string) string {
 }
 
 // cut is how many of ls a pass may read: all of them, unless the newest
-// call began among them and nothing after it shows it finished (a later
+// call began among them and no later line shows it finished (a later
 // call, an api-request, a compaction) while the file is fresh; then up to
 // that call's first line, so its tool uses and phase are read whole. last
 // is the newest call id read in an earlier pass.

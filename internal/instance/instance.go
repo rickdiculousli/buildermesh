@@ -40,10 +40,10 @@ type Reply struct {
 	Context    int
 }
 
-// UnjudgedPrefix starts the answer for a reply that judged nothing.
+// UnjudgedPrefix starts the answer for a reply with no verdict.
 const UnjudgedPrefix = "model run failed: "
 
-// Unjudged is the answer for a reply that judged nothing:
+// Unjudged is the answer for a reply with no verdict:
 // "model run failed: <the output's first non-empty line>; nothing recorded".
 func (r Reply) Unjudged() string {
 	why := ""

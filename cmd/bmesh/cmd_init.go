@@ -169,7 +169,7 @@ func (a *app) cmdInit(args []string) error {
 			case unitUnchanged:
 				fmt.Fprintf(a.stdout, "unchanged %s\n", path)
 			case unitKept:
-				// Nobody enables a unit they haven't looked at.
+				// A unit they haven't looked at is never enabled.
 				fmt.Fprintf(a.stdout, "kept %s (it differs from what init writes); the new one is %s.new: diff them, and move it over to take it\n", path, path)
 				continue
 			}

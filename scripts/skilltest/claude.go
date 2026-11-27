@@ -191,8 +191,8 @@ func makeHome(dir string, h Host) error {
 	return nil
 }
 
-// unlinkHome removes the links makeHome made, so nothing that archives or
-// removes the cell's home reaches this box's; and whatever claude left in
+// unlinkHome removes the links makeHome made, so archiving or
+// removing the cell's home never reaches this box's; and whatever claude left in
 // their place (a config it renamed over its link is a copy of this box's),
 // which is no work of the session's.
 func unlinkHome(dir string) {

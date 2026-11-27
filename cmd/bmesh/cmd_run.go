@@ -213,8 +213,8 @@ type runEv struct {
 	run  mesh.Run
 }
 
-// runEvents resolves the node the run is under: none when nothing names
-// one or the hub can't be reached.
+// runEvents resolves the node the run is under: none when no node resolves
+// or the hub can't be reached.
 func (a *app) runEvents(argv []string) *runEv {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

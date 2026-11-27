@@ -300,7 +300,7 @@ func Join(ctx context.Context, nc *nats.Conn, code string, req JoinRequest) (Joi
 	for {
 		msg, err := sub.NextMsgWithContext(ctx)
 		if err != nil {
-			// No responders: nobody serves this invite any more.
+			// No responders: this invite is no longer served.
 			if ctx.Err() != nil || errors.Is(err, nats.ErrNoResponders) {
 				return JoinReply{}, fmt.Errorf("no answer to invite %s: the code is wrong, used or expired", id)
 			}

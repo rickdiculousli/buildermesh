@@ -340,7 +340,7 @@ func installFake(dir string, a Arm, sandbox, host string, n fakeNode) error {
 		return err
 	}
 	inert := "# skilltest: an inert config. A real bmesh run by its path in this cell reads it\n" +
-		"# and dials a port nothing listens on, so it reaches no mesh.\n" +
+		"# and dials a port with no listener, so it reaches no mesh.\n" +
 		"[mesh]\nnats = \"nats://127.0.0.1:9\"\n"
 	if err := writeFile(filepath.Join(dir, "bmesh-config", "config.toml"), inert); err != nil {
 		return err

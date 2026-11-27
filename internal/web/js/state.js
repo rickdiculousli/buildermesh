@@ -27,7 +27,7 @@ export const mesh = {
   // event's words and time (since) and when the page saw it (at).
   live: new Map(),
   recent: [], // newest first
-  staleMs: 0, // [serve] stale_after from /api/tree; 0 = nothing goes stale
+  staleMs: 0, // [serve] stale_after from /api/tree; 0 = never stale
   host: "", // the serving daemon's host
   skew: 0, // the hub's clock less this browser's, in ms
 };

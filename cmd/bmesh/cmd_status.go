@@ -504,7 +504,7 @@ var terminal = map[string]bool{"done": true, "blocked": true, "silent": true}
 // drainNext is what watch-done adds for the build families of the watched
 // leads that have feedback pending (100), a fixer's family left out: "; next: bmesh feedback list
 // <family>", one per family, "" for none. A node or a queue it can't read
-// adds nothing.
+// is skipped.
 func (a *app) drainNext(ctx context.Context, paths []string) string {
 	var next []string
 	for _, p := range paths {

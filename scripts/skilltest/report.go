@@ -64,7 +64,7 @@ func score(s *State, k *Case) Row {
 	c := s.Cell
 	r := Row{Case: c.Case, Arm: c.Arm, Run: c.Run, Steers: c.Steers, OperatorTurns: len(c.Turns), Error: c.Error,
 		Commits: len(s.NewCommits()), Commands: []string{}, Skills: append([]string{}, s.Skills()...)}
-	r.Pass = c.Error == "" // a turn that failed proves nothing, whatever the state it left
+	r.Pass = c.Error == "" // a turn that failed isn't evidence, whatever the state it left
 	r.TestRuns, r.TestRunsNamed = s.TestRuns()
 	for _, p := range k.Expect {
 		ok, why := p.Check(s)
@@ -303,7 +303,7 @@ func flips(res Results) string {
 		var words []string
 		seen := map[bool]bool{}
 		for _, a := range arms {
-			// A cell that never ran or errored proves nothing either way.
+			// A cell that never ran or errored isn't evidence either way.
 			r, ok := rows[kk][a]
 			switch {
 			case !ok:

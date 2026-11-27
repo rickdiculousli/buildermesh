@@ -366,7 +366,7 @@ func (a *app) dispatch(args []string) error {
 	a.pending = !slices.Contains([]string{"init", "help", "version", "update", "serve"}, cmd)
 	// hosts --here runs from a session hook: it reads one file and never
 	// sets the box up or refuses, so a session on a box without bmesh set
-	// up opens as quietly as one with [hosts] off.
+	// up opens as silently as one with [hosts] off.
 	// So does update --notice, beside it in the same hook.
 	here := cmd == "hosts" && slices.Contains(rest, "--here") || cmd == "update" && slices.Contains(rest, "--notice")
 	// Every other command tells a session it can measure its context once
@@ -583,7 +583,7 @@ func (a *app) loadConfig() error {
 
 // noHubError is connect's error when no server answers at the hub's
 // address (nats.ErrNoServers): bmesh serve isn't running the embedded hub,
-// or nothing serves [mesh] nats. It reports as err; routine run runs on
+// or [mesh] nats has no server. It reports as err; routine run runs on
 // without a hub.
 type noHubError struct {
 	addr string // the hub's address, without nats://
@@ -633,7 +633,7 @@ func (a *app) connect(ctx context.Context, name string) error {
 	return nil
 }
 
-// errNoNode is identity's error when nothing names this node.
+// errNoNode is identity's error when no node resolves.
 var errNoNode = fail(exitUsage, "no node for this directory; pass --node or set BMESH_NODE")
 
 // givenNode is the node path --node, else BMESH_NODE, names; "" for none.

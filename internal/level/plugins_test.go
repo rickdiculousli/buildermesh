@@ -152,13 +152,13 @@ func TestRefreshUpdateFails(t *testing.T) {
 }
 
 // A checkout sessions load is one a marketplace reads, not one that has a
-// marketplace file: the same checkout levels once nothing reads it.
+// marketplace file: the same checkout levels once no marketplace reads it.
 func TestLoadsPlugins(t *testing.T) {
 	setup(t)
 	ctx := context.Background()
 	d := checkout(t, "mk")
 	if LoadsPlugins(ctx, d) {
-		t.Fatal("a marketplace file nothing reads")
+		t.Fatal("an unread marketplace file")
 	}
 	t.Setenv("FAKE_CLAUDE_MARKETPLACES", fmt.Sprintf(`[{"name":"mk","source":"directory","path":%q}]`, d))
 	if !LoadsPlugins(ctx, d) {

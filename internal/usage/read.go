@@ -96,7 +96,7 @@ func Read(ctx context.Context, c *mesh.Client, since time.Time, f Filter) (Repor
 	var msgs []Message
 	err := Fetch(ctx, c, since, filters, func(data []byte) {
 		var m Message
-		if json.Unmarshal(data, &m) == nil { // a message it can't read counts as nothing
+		if json.Unmarshal(data, &m) == nil { // a message it can't read is skipped
 			msgs = append(msgs, m)
 		}
 	})

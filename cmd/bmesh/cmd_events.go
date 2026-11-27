@@ -159,7 +159,7 @@ func illegalMove(from, to, again string) error {
 	why := mesh.ErrIllegalTransition{From: from, To: to}
 	switch {
 	case from == "done":
-		return fail(exitRefused, "refused: %v; nothing leaves done", why)
+		return fail(exitRefused, "refused: %v; done is final", why)
 	case from == "landing":
 		return fail(exitRefused, "refused: %v; your box's daemon is landing you: run bmesh ready --cancel first, then %s again", why, again)
 	case from == "idle" || from == "":

@@ -131,7 +131,7 @@ function olderFold(rows) {
 
 // renderBand draws the band between the strip and the map: a needRow per
 // needRows entry, the flagRows, the stale and dismissed ones folded into
-// olderFold at the foot, then the operatorRows. Hidden when nothing needs the operator.
+// olderFold at the foot, then the operatorRows. Hidden when it has no rows.
 export function renderBand() {
   const band = $("needs");
   const gone = dismissals(), live = [], older = [];

@@ -25,7 +25,7 @@ func singleBox(t *testing.T, listen string) {
 	t.Setenv("BMESH_CONFIG", cfg)
 }
 
-// closedAddr is a 127.0.0.1 address nothing listens on.
+// closedAddr is a 127.0.0.1 address with no listener.
 func closedAddr(t *testing.T) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -33,7 +33,7 @@ func closedAddr(t *testing.T) string {
 		t.Fatal(err)
 	}
 	addr := ln.Addr().String()
-	ln.Close() // nothing listens there now
+	ln.Close() // no listener there now
 	return addr
 }
 

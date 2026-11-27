@@ -110,7 +110,7 @@ func TestEventsMoveState(t *testing.T) {
 	if code != 3 || errs != "bmesh: refused: illegal state transition blocked -> asking; run bmesh progress --text \"<one line>\" first, then bmesh ask again\n" {
 		t.Fatalf("code %d err %q", code, errs)
 	}
-	// A node never started is told to start; nothing leaves done.
+	// A node never started is told to start; done is final.
 	putNode(t, c, ctx, mesh.Node{Path: "app-002"})
 	if _, errs, code := runCLI(t, as("app-002"), "ask", "--text", "early"); code != 3 ||
 		errs != "bmesh: refused: illegal state transition idle -> asking; run bmesh started --text \"<one line>\" first, then bmesh ask again\n" {

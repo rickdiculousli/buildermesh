@@ -685,7 +685,7 @@ func TestBuildBriefAsksForUpgradingInOwnRepo(t *testing.T) {
 }
 
 // A lead's brief opens with bmesh setup when main names a [setup], and
-// says nothing of it otherwise.
+// doesn't mention it otherwise.
 func TestBuildBriefStartsWithSetup(t *testing.T) {
 	_, repo, _ := buildSetup(t)
 	read := func(id string) string {

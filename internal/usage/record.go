@@ -2,7 +2,7 @@
 // (105): each box's daemon reads the Claude Code transcripts on its disk,
 // decides once per file which agent it is, and publishes the new calls to
 // the bm-usage stream; Read sums them per agent for `bmesh usage` and the
-// map. Unknown transcript lines count as nothing: a missing number beats a
+// map. Unknown transcript lines are skipped: a missing number beats a
 // wrong one.
 package usage
 
