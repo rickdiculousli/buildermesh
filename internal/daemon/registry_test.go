@@ -32,7 +32,7 @@ func (h *hostsFixture) putRegistry(t *testing.T, r hosts.Registry) {
 
 func waitTrue(t *testing.T, what string, f func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(30 * time.Second) // a rescaffold attempt under a full verify has taken 11 s
 	for !f() {
 		if time.Now().After(deadline) {
 			t.Fatalf("never: %s", what)
