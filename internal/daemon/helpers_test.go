@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -101,10 +102,18 @@ func setupOn(t *testing.T, url string, daemon bool) *fixture {
 		t.Fatal(err)
 	}
 	f := &fixture{ctx: ctx, c: c, now: time.Now(), rn: &fakeRunner{}}
+	// The daemon's log, shown only when the test fails.
+	logs := &meshtest.SyncBuffer{}
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("daemon log:\n%s", logs.String())
+		}
+	})
 	f.d = Deps{
 		Client: c, Cfg: cfg, Host: testHost,
 		Runner: f.rn,
 		Now:    func() time.Time { return f.now },
+		Log:    slog.New(slog.NewTextHandler(logs, nil)),
 	}
 	f.d.defaults()
 	return f
